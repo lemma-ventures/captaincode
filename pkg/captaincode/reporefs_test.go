@@ -15,7 +15,7 @@ import (
 func fakeWorkspaceRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Compliance/lemma-ventures-website", "notes", "Beacon", "euclid", "RepoG", "ledger-app"} {
+	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Compliance/lemma-ventures-website", "notes", "Signal", "euclid", "RepoG", "ledger-app"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
 	}
 	require.NoError(t, os.Remove(filepath.Join(root, "notes", ".git"))) // a plain folder, not a repo
@@ -56,11 +56,11 @@ func TestRepoRefsMatchesKnownNamesAsWholeWords(t *testing.T) {
 	assert.Empty(t, RepoRefs("captaincodex is not a repo", cwd), "whole words only")
 	// Folder names that are words (2026-09-15: "prove agentic compliance" moved a worker to ~/Gits/Compliance).
 	assert.Empty(t, RepoRefs("prove agentic compliance for the regulated agent", cwd))
-	assert.Empty(t, RepoRefs("add a relay between the gateway and the ledger", cwd))
-	assert.Empty(t, RepoRefs("Beacon the message to the ledger", cwd), "capitalised at a sentence start is still prose")
+	assert.Empty(t, RepoRefs("add a signal between the gateway and the ledger", cwd))
+	assert.Empty(t, RepoRefs("Signal the message to the ledger", cwd), "capitalised at a sentence start is still prose")
 	assert.Empty(t, RepoRefs("load the euclid memory first", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "euclid")}, RepoRefs("fix the search in the euclid repo", cwd), "a cue makes it a repo")
-	assert.Equal(t, []string{filepath.Join(root, "Beacon")}, RepoRefs("port this to the Beacon project", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "Signal")}, RepoRefs("port this to the Signal project", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "RepoG")}, RepoRefs("same fix in RepoG", cwd), "not a word, spelt as the folder")
 	assert.Empty(t, RepoRefs("the repog bot", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "ledger-app")}, RepoRefs("mirror it in ledger-app", cwd), "hyphenated names are never prose")
@@ -97,7 +97,7 @@ func TestRepoRefsOnADictionarylessLinuxTempDir(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(root) })
 	require.True(t, strings.HasPrefix(root, "/tmp/"), "this test is about a /tmp path, got %s", root)
-	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Beacon"} {
+	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Signal"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
 	}
 	t.Setenv("CAPTAIN_WORKSPACE_ROOT", root)
@@ -107,7 +107,7 @@ func TestRepoRefsOnADictionarylessLinuxTempDir(t *testing.T) {
 
 	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
 		RepoRefs("in captaincode, make /repeat finish gracefully", cwd))
-	assert.Empty(t, RepoRefs("Beacon the message to the ledger", cwd))
+	assert.Empty(t, RepoRefs("Signal the message to the ledger", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "ash")},
 		RepoRefs("check "+root+"/ash too", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
