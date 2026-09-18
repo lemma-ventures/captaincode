@@ -104,8 +104,10 @@ func ResetKnownReposForTest() {
 	knownReposCache.mu.Unlock()
 }
 
-// A path in prose: ~/x, /Users/x, /home/x - up to whitespace or a quote.
-var pathTokenRe = regexp.MustCompile("(?:~|/Users|/home|/srv|/opt|/var|/private)(?:/[^\\s\"'`<>|)\\]},;:]+)+")
+// A path in prose: ~/x, /Users/x, /home/x, /tmp/x - up to whitespace or a quote.
+// /tmp is where Linux, and GitHub Actions, put temporary directories. Without
+// it a path in the task is invisible, and a bare name is what gets matched.
+var pathTokenRe = regexp.MustCompile("(?:~|/Users|/home|/srv|/opt|/var|/private|/tmp)(?:/[^\\s\"'`<>|)\\]},;:]+)+")
 
 var repoCueRe = `(?i)(?:repo(?:sitory)?|project|codebase|folder|website|site|app)`
 
@@ -252,30 +254,44 @@ func partsInOrder(lower string, parts []string) bool {
 var dictOnce sync.Once
 var dictWords map[string]bool
 
-// isWord: the name is an ordinary word (the system dictionary, lowercase
-// match). Without a dictionary every plain lowercase name counts as one -
-// the safe side: a cue is then needed, a worker is never moved by prose.
+// dictFiles is the system word list. Tests point it at nothing to force the
+// embedded list, which is what a machine without one (the GitHub Ubuntu
+// runner) actually uses.
+var dictFiles = []string{"/usr/share/dict/words", "/usr/dict/words"}
+
+// isWord: the name is an ordinary word (lowercase match). The system
+// dictionary is used when the machine has one; otherwise the embedded
+// Webster list. Treating every lowercase name as a word when the file is
+// missing made "in captaincode" stay put, and "Relay the message" move.
 func isWord(name string) bool {
 	dictOnce.Do(func() {
-		for _, p := range []string{"/usr/share/dict/words", "/usr/dict/words"} {
-			b, err := os.ReadFile(p)
-			if err != nil {
-				continue
-			}
-			dictWords = map[string]bool{}
-			for _, w := range strings.Split(string(b), "\n") {
-				if w != "" {
-					dictWords[strings.ToLower(w)] = true
-				}
-			}
-			return
+		dictWords = readDictFiles(dictFiles)
+		if dictWords == nil {
+			dictWords = embeddedWords()
 		}
 	})
 	lower := strings.ToLower(name)
-	if dictWords == nil {
-		return lower == name // no dictionary: a plain lowercase name is prose-shaped
+	if len(dictWords) == 0 {
+		return lower == name
 	}
 	return dictWords[lower]
+}
+
+func readDictFiles(paths []string) map[string]bool {
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		out := map[string]bool{}
+		for _, w := range strings.Split(string(b), "\n") {
+			if w != "" {
+				out[strings.ToLower(w)] = true
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // nameTokens splits a folder name on -, _ and . into lowercase parts.

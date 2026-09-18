@@ -1,0 +1,14 @@
+title = "captaincode"
+
+[extend]
+useDefault = true
+
+# Redaction fixtures. The strings are synthetic and exist so the scrubber
+# has something to remove. They are not credentials.
+[allowlist]
+description = "synthetic tokens in redaction tests"
+paths = [
+  '''pkg/captaincode/redact_test\.go''',
+  '''cmd/captaincode/sharedctx_test\.go''',
+  '''cmd/captaincode/brain_proxy_test\.go''',
+]

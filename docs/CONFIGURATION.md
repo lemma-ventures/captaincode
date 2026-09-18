@@ -8,7 +8,7 @@ is sent anywhere; all of it lives under your home directory.
 
 | Path | What it is | Written by |
 |---|---|---|
-| `~/.config/captain/env` | Environment for the brain and the workers it spawns. Sourced by the launcher. | `captain init` scaffolds it |
+| `~/.config/captain/env` | Environment for the brain and the workers it spawns. Loaded at startup. | `captain init` scaffolds it |
 | `~/.config/opencode/opencode.jsonc` | opencode's config: providers, models, worker permissions, the `captain` provider entries. | `captain init`, `captain legs add` |
 | `~/.captaincode/legs.json` | Leg registry overlay - add, re-point or disable legs without a rebuild. | `captain legs add/remove` |
 | `~/.captaincode/priors.json` | Quality priors per leg and domain. Optional: compiled defaults are used when absent. | `captain priors sync` |
@@ -100,7 +100,7 @@ captain jev ask --state @notes.txt --questions '{"urgent": {"type": "noul", "ins
 
 How often it is asked: the free-leg classify (~5s) only refines a heuristic under `CAPTAIN_TRIAGE_CONF` (0.6), where jev goes first and a miss falls through to it. jev alone (~0.8s, ~$0.00002) is also asked while the heuristic is under `CAPTAIN_TRIAGE_JEV_BELOW` (0.9); in that band a miss keeps the heuristic. A task the heuristics are certain about (a typo fix, 0.95) routes in 0ms with no call. `captain why` shows the step: `hi=0[] lo=2[] dom=general[] → jev: …`.
 
-A brain started before the key was set does not see it: restart it (`./captain-code.sh restart`) and the startup log names jev as tier 1.
+A brain started before the key was set does not see it: stop it and start `captain brain` again, and the startup log names jev as tier 1.
 
 ### Shadow decisions: reading jev's calibration
 
@@ -152,7 +152,7 @@ A prompt that is only **queued in the TUI** (typed while a turn runs, shown as `
 | `CAPTAIN_WORKER_CLI_TOOL_TIMEOUT` | `2h` | How long a CLI leg may be silent while one of its tools runs (a benchmark, a long test): the CLI bounds its own tools, opencode's 10m bash cap does not apply. |
 | `CAPTAIN_WORKER_FIRST_EVENT_TIMEOUT` | `90s` | Nothing at all from a fresh worker ⇒ treat the leg as down. |
 | `CAPTAIN_WORKER_LOGS` | on (`0` disables) | Write `~/.captaincode/runs/<id>-<leg>.log`. |
-| `CAPTAIN_CWD` | process cwd | The terminal's workspace: the launcher exports it to the TUI, which names it on every brain call (`X-Captain-Cwd`). The brain itself only uses it for CLI commands (`captain euclid …`) and as the fallback for a caller that sent none. |
+| `CAPTAIN_CWD` | process cwd | The terminal's workspace. The TUI names it on every brain call (`X-Captain-Cwd`). The brain itself only uses it for CLI commands (`captain euclid …`) and as the fallback for a caller that sent none. |
 | `CAPTAIN_WORKSPACE_ROOT` | `~/Gits` | Where linked repositories are looked for. |
 | `CAPTAIN_CLAUDE_PERMISSIONS` | `--dangerously-skip-permissions` | Flags passed to `claude -p`. See [SECURITY](../SECURITY.md) before changing. Workers also get `--add-dir` for the workspace root's siblings and the temp dirs, and `captain init` removes `permissions.blockReadsOutsideWorkingDirectories` from `~/.claude/settings.json` - under it a worker cannot run any shell command with a `$expansion`, redirect or computed path. |
 | `CAPTAIN_CURSOR_PERMISSIONS` | `--trust --force` | Flags passed to `cursor-agent -p` (`default` = `--trust` only; a headless approval prompt is a hang). |

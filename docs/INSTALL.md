@@ -15,12 +15,13 @@ code and reported by `captain doctor` rather than assumed.
 | Shape | What runs | Who it is for |
 |---|---|---|
 | **Brain-only** | the Go binary (`captain brain`) plus at least one adapter CLI | routing, `captain why`, `captain stats`, HTTP/MCP callers, CI and evaluation runs |
-| **Full terminal** | the brain plus the opencode TUI fork (`./captain-code.sh`) | interactive day-to-day use |
+| **Full terminal** | brain-only, plus [opencode](https://opencode.ai) as the TUI (`captain init` writes the config it reads) | interactive day-to-day use |
 
-Brain-only is the supported shape for reproducing an evidence report: it has no
-terminal state, no saved session and no TUI version to pin. The full terminal is
-the brain-only install plus the launcher; anything the terminal can do, the
-brain can be asked to do directly.
+Brain-only is the supported shape for reproducing an evidence report, and it is
+what this repository installs: `go install` or `go build`, then `captain brain`.
+It has no terminal state, no saved session and no TUI version to pin. The full
+terminal is that install plus opencode. This repository does not ship a TUI
+launcher. Anything the terminal can do, the brain can be asked to do directly.
 
 ## Captain's own version
 
@@ -92,9 +93,7 @@ None are strictly required — one runnable leg is enough — but the table lets
 
 ## Binary name, PATH and alias
 
-`go install` (or direct `go build`) produces a binary named `captaincode` (last path segment of the package).
-
-The supported path is the launcher script which installs it as `captain`:
+`go install` (or direct `go build`) produces a binary named `captaincode` (last path segment of the package). The docs say `captain`. Either name works; an alias is the usual bridge:
 
 ```bash
 # one-time PATH (zsh example)
@@ -121,7 +120,7 @@ Canonical order:
 1. Install Go + at least one agent CLI (see table).
 2. `captain init`   ← writes opencode.jsonc + ~/.config/captain/env (derived director/fallback from PATH)
 3. `captain euclid init`   *(optional; project memory — needs a brain for the first model call)*
-4. Start the brain: `captain brain`   (or `./captain-code.sh` which launches it)
+4. Start the brain: `captain brain`
 5. `captain doctor`   ← verify; every ✗ line names the exact command
 
 **After any change to ~/.config/captain/env or opencode.jsonc: restart the brain.** Doctor (and health, and the director the workers see) reflect the running process, not the files on disk.
@@ -136,11 +135,11 @@ cannot drift apart. `captain upgrade --check` lists installed versions;
 `captain upgrade` runs each adapter's own updater.
 
 ```bash
-# the brain itself (or use the captain-code.sh launcher which does this + TUI)
+# the brain
 go build -o ~/.local/bin/captain ./cmd/captaincode/
 
 captain init
-captain brain &     # or the launcher
+captain brain &
 captain doctor
 ```
 

@@ -135,7 +135,7 @@ memory  main  ~/.euclid · no runs to distill · distilled 1h ago
 memory  local ~/Gits/dlm/.euclid · 4 runs to distill · never distilled · doctrine inherited
 ```
 
-The same check runs in the launcher, at brain boot (in the brain log), in
+The same check runs at brain boot (in the brain log), in
 `captain doctor`, in `/euclid` and `captain euclid status`, and as a hint on
 the sidebar's memory links. It is filesystem only, so it answers with the brain
 down and never blocks a launch. It reports, with the command that repairs it:

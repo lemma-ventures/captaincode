@@ -26,12 +26,10 @@ runs are the ones its sidebar and control words show (`captain stop` ends
 that folder's loops; `--all` reaches every folder). The TUI's own state -
 the prompt history behind the arrow keys, the last model, its preferences -
 is per folder too (`~/.captaincode/state/<folder>`, prepared by `captain
-state` and exported as `XDG_STATE_HOME` by the launcher; seeded from the
-folder's past sessions on first use). What is shared is what is
-shared by nature: leg
-cooldowns (a rate limit is per account, not per folder), the scorecard, the
-main Euclid brain, and the one `opencode serve` that hosts worker sessions
-(each pinned to its workspace).
+state`). What is shared is what is shared by nature: leg cooldowns (a rate
+limit is per account, not per folder), the scorecard, the main Euclid brain,
+and the one `opencode serve` that hosts worker sessions (each pinned to its
+workspace).
 
 ## The brain speaks OpenAI
 
@@ -105,18 +103,9 @@ the documentation cannot drift from the parser.
 
 ## What is deliberately not here
 
-- **No daemon on a port you did not start.** The launcher starts the brain,
-  supervises it while any terminal is open, and `captain-code.sh down` stops it.
-  `restart` restarts the binary on PATH; it does not compile. `rebuild` compiles
-  this checkout and installs it; `-rr` (`rebuild-restart`) does both. A restart
-  or a `down` ends every open terminal's workers, so when any worker (or an
-  in-flight workflow) is still active the launcher asks
-  `n workers are still active are you sure to want to restart? Y/n` (or
-  `…want to stop? Y/n` for `down`) and keeps
-  the brain unless the answer is Y. With no TTY it refuses. It only says when
-  the running brain predates the binary, never restarts on its own. `-c`
-  resumes the newest session of the folder itself, never a session of a deleted
-  subfolder.
+- **No daemon on a port you did not start.** `captain brain` is the process.
+  Nothing in this repository backgrounds it, supervises it, or restarts it.
+  Stop that process and its workers stop with it.
 - **No telemetry.** Nothing leaves the machine except the prompts you asked a
   provider to answer.
 - **No credential storage.** Captain Code holds no keys; it uses what the
