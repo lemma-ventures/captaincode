@@ -18,6 +18,12 @@ upstream opencode, and carries opencode's own copyright and MIT license:
 
   sst/opencode - Copyright (c) 2025 opencode, MIT License
 
+Third-party data
+----------------
+`pkg/captaincode/web2.txt.gz` is the word list of Webster's Second
+International Dictionary (public domain, 1934), lowercased. It classifies
+folder names when the machine has no `/usr/share/dict/words`.
+
 Third-party services
 --------------------
 Model providers reached through this software are governed by their own terms.

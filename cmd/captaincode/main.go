@@ -41,8 +41,8 @@ const (
 )
 
 func main() {
-	// The provider keys live in ~/.config/captain/env; the launcher sources
-	// it, a bare `captain` from a terminal must load it itself (envfile.go).
+	// The provider keys live in ~/.config/captain/env. A process that was not
+	// given them already loads the file itself (envfile.go).
 	captaincode.LoadCaptainEnv()
 	if _, err := captaincode.LoadRegistry(""); err != nil {
 		fmt.Fprintf(os.Stderr, "captain: legs.json: %v\n", err)

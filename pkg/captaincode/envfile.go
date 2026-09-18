@@ -6,13 +6,12 @@ import (
 )
 
 // LoadCaptainEnv puts ~/.config/captain/env into this process's environment
-// for every variable it does not already have. The launcher sources the file
-// before starting the brain, so the brain and its serve see the provider
-// keys; a bare `captain "task"` from a terminal did not, and once the
-// OpenRouter key moved out of opencode.jsonc into that file (2026-09-13)
-// every OpenRouter leg of the standalone CLI answered 401 "no cookie auth
-// credentials found" (live 2026-09-15). Values already in the environment
-// win, as with `set -a; . env`. Returns the names it set.
+// for every variable it does not already have. A bare `captain "task"` from
+// a terminal did not see the file, and once the OpenRouter key moved out of
+// opencode.jsonc into that file (2026-09-13) every OpenRouter leg of the
+// standalone CLI answered 401 "no cookie auth credentials found" (live
+// 2026-09-15). Values already in the environment win, as with `set -a; . env`.
+// Returns the names it set.
 func LoadCaptainEnv() []string {
 	raw, err := os.ReadFile(CaptainEnvPath())
 	if err != nil {

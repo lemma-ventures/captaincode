@@ -375,8 +375,8 @@ func configHome() string {
 // worker `opencode serve` read.
 func OpencodeConfigPath() string { return filepath.Join(configHome(), "opencode", "opencode.jsonc") }
 
-// CaptainEnvPath is sourced (set -a) by captain-code.sh before starting the
-// brain, so the brain AND any opencode serve it spawns inherit it.
+// CaptainEnvPath is read by the brain at startup, and inherited by any
+// opencode serve the brain spawns when the process environment includes it.
 func CaptainEnvPath() string { return filepath.Join(configHome(), "captain", "env") }
 
 // EnsureOpencodeConfig creates the config if missing, otherwise normalizes its
@@ -601,10 +601,10 @@ func writeConfig(path string, cfg map[string]any) error {
 }
 
 const captainEnvScaffoldTemplate = `
-# captain env - sourced by captain-code.sh (set -a) before starting the brain,
-# so the brain AND any opencode serve it spawns inherit these.
-# Values below were derived from legs present on PATH at 'captain init' time.
-# Edit and 'captain brain' (or launcher restart) to change the helm.
+# captain env - export this file (set -a; . this file; set +a) before
+# starting the brain, so the brain AND any opencode serve it spawns inherit
+# these. Values below were derived from legs present on PATH at
+# 'captain init' time. Edit, then stop the brain and start it again.
 CAPTAIN_DIRECTOR=%s
 CAPTAIN_ROUTE_TIMEOUT_MS=30000
 CAPTAIN_FALLBACK_LEG=%s
@@ -738,7 +738,7 @@ func RunInit(opts InitOptions) (report string, changed bool, err error) {
 	b.WriteString("\nWorkers may now search online, fetch pages, edit files and run commands without asking.\nStill blocked: reading .env / .env.* files (secrets stay out of prompts).\n")
 	changed = ocChanged || projChanged || envChanged
 	if changed && opts.Apply {
-		b.WriteString("\nConfig is read at startup - restart `opencode serve` and the TUI to apply\n(`captain upgrade` restarts both when idle, or relaunch captain-code.sh).\n")
+		b.WriteString("\nConfig is read at startup - restart `opencode serve` and the TUI to apply\n(`captain upgrade` restarts both when idle, otherwise stop them and start `captain brain` again).\n")
 	}
 	return b.String(), changed, nil
 }
