@@ -1219,7 +1219,7 @@ func (d *OpencodeDispatcher) ensureSession() error {
 	// Pin the session to the CALLER's project (?directory=), never the serve's
 	// own cwd: the serve is long-lived and keeps the cwd it was born with, so
 	// after a project switch new sessions would silently explore the PREVIOUS
-	// repo (live 2026-07-19: a Compliance question answered from Relay).
+	// repo (a question about one project was answered from the previous one).
 	dir := d.Dir
 	if dir == "" {
 		dir = DefaultWorkspace().Dir
