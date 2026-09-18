@@ -1,0 +1,7 @@
+/captain
+/cmd/captaincode/captaincode
+*.env
+.env.*
+*.keys
+.DS_Store
+.euclid/

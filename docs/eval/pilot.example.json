@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "pilot-12",
+  "repeats": 3,
+  "seed": 20260914,
+  "arms": [
+    {
+      "name": "fixed-frontier",
+      "kind": "frontier",
+      "run": ["captain", "with", "claude", "{prompt}"]
+    },
+    {
+      "name": "fixed-economical",
+      "kind": "economical",
+      "run": ["captain", "with", "glm", "{prompt}"]
+    },
+    {
+      "name": "captain-auto",
+      "kind": "auto",
+      "run": ["captain", "{prompt}"]
+    },
+    {
+      "name": "workflow",
+      "kind": "workflow",
+      "run": ["captain", "/workflow", "review-then-fix", "{prompt}"]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "edit-rename-flag",
+      "family": "edit",
+      "prompt": "Rename the --verbose flag to --debug everywhere, including its help text.",
+      "repo": "/absolute/path/to/a/frozen/checkout",
+      "revision": "0000000000000000000000000000000000000000",
+      "timeout_sec": 900,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "no-old-flag", "run": ["sh", "-c", "! grep -rq -- --verbose ."], "expect_exit": 0 }
+      ],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "test-repair-parser",
+      "family": "test-repair",
+      "prompt": "TestParseHeader fails after the header format changed. Make it pass without weakening the assertion.",
+      "repo": "/absolute/path/to/a/frozen/checkout",
+      "revision": "0000000000000000000000000000000000000000",
+      "checks": [{ "name": "unit", "run": ["go", "test", "./parser/..."] }],
+      "review": "blinded"
+    }
+  ]
+}
