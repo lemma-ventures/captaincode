@@ -151,7 +151,7 @@ func cmdEuclid(args []string) {
 		body, _ := json.Marshal(map[string]any{"apply": apply})
 		resp, err := (&http.Client{Timeout: 10 * time.Minute}).Post(brainURL()+"/v1/euclid/"+args[0], "application/json", bytes.NewReader(body))
 		if err != nil {
-			fatal(fmt.Errorf("the brain is not running (%v) - distillation needs a leg; start captain-code.sh first", err))
+			fatal(fmt.Errorf("the brain is not running (%v) - distillation needs a leg; start `captain brain` first", err))
 		}
 		defer resp.Body.Close()
 		var out struct {
@@ -206,9 +206,8 @@ func isDirPath(p string) bool {
 	return err == nil && st.IsDir()
 }
 
-// cmdEuclidEnsure is the launch-time step (captain-code.sh runs it after the
-// brain is up, in the background): every brain the folder reads exists and is
-// freshly indexed. A repo brain scaffolded here is bootstrapped from the
+// cmdEuclidEnsure is the launch-time step, run after the brain is up: every
+// brain the folder reads exists and is freshly indexed. A repo brain scaffolded here is bootstrapped from the
 // repo's docs through the brain, then indexed again so the dashboard shows
 // the filled registers. Nothing here blocks the TUI.
 func cmdEuclidEnsure() {

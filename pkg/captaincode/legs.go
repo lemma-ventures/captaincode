@@ -1123,7 +1123,7 @@ func (d *OpencodeDispatcher) EnsureServer() error {
 		// would host fails, so recycle it - the launcher does the same on
 		// restart - and spawn a real one (2026-09-18).
 		if !d.Spawn {
-			return fmt.Errorf("opencode serve at %s has no providers configured (started with the wrong HOME?) - restart captain-code.sh", d.BaseURL)
+			return fmt.Errorf("opencode serve at %s has no providers configured (started with the wrong HOME?) - stop it and start `captain brain` again", d.BaseURL)
 		}
 		port := d.BaseURL[strings.LastIndex(d.BaseURL, ":")+1:]
 		fmt.Fprintf(os.Stderr, "captain: opencode serve on %s has no providers - recycling it\n", d.BaseURL)
@@ -1132,7 +1132,7 @@ func (d *OpencodeDispatcher) EnsureServer() error {
 			time.Sleep(200 * time.Millisecond)
 		}
 		if d.portOpen() {
-			return fmt.Errorf("opencode serve at %s has no providers and would not stop - restart captain-code.sh", d.BaseURL)
+			return fmt.Errorf("opencode serve at %s has no providers and would not stop - stop it and start `captain brain` again", d.BaseURL)
 		}
 	}
 	if !d.Spawn {

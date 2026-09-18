@@ -3,6 +3,8 @@ package captaincode
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,6 +76,42 @@ func TestRepoRefsAHyphenatedNameByItsParts(t *testing.T) {
 	assert.Empty(t, RepoRefs("bump the block reward in lemma", cwd), "…without one it is the chain, not the folder")
 	assert.Empty(t, RepoRefs("the website needs ventures", cwd), "without the first part it is prose")
 	assert.Empty(t, RepoRefs("add the lemma bounty to the website footer", cwd), "the parts far apart are two words, not the name")
+}
+
+// GitHub's Ubuntu runners have no /usr/share/dict/words, and t.TempDir is
+// under /tmp. Both used to fail this package: a lowercase project name was
+// treated as prose, a capitalised sentence-start was treated as a repo, and
+// a /tmp path was not a path.
+func TestRepoRefsOnADictionarylessLinuxTempDir(t *testing.T) {
+	dictOnce = sync.Once{}
+	saved := dictFiles
+	dictFiles = []string{"/no/such/dict"}
+	dictWords = nil
+	t.Cleanup(func() {
+		dictOnce = sync.Once{}
+		dictFiles = saved
+		dictWords = nil
+	})
+
+	root, err := os.MkdirTemp("/tmp", "captain-refs-")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(root) })
+	require.True(t, strings.HasPrefix(root, "/tmp/"), "this test is about a /tmp path, got %s", root)
+	for _, r := range []string{"DLM", "arc", "lemma", "captaincode", "Relay"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
+	}
+	t.Setenv("CAPTAIN_WORKSPACE_ROOT", root)
+	t.Setenv("EUCLID_HOME", filepath.Join(root, ".euclid-main"))
+	ResetKnownReposForTest()
+	cwd := filepath.Join(root, "DLM")
+
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
+		RepoRefs("in captaincode, make /repeat finish gracefully", cwd))
+	assert.Empty(t, RepoRefs("Relay the message to the ledger", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "arc")},
+		RepoRefs("check "+root+"/arc too", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
+		RepoRefs("fix the launcher in "+root+"/captaincode/cmd/main.go", cwd))
 }
 
 func TestRepoRefsSeveralReposAreAllNamed(t *testing.T) {
