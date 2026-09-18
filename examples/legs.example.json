@@ -1,0 +1,29 @@
+{
+  "_comment": "Registry overlay - copy to ~/.captaincode/legs.json. Entries merge over the compiled defaults, so an override carries only the fields it changes. `captain legs add` writes this file for you.",
+  "legs": [
+    {
+      "id": "gemini",
+      "transport": "opencode",
+      "provider": "openrouter",
+      "model": "google/gemini-3.7-flash",
+      "price_in": 0.3,
+      "price_out": 2.5,
+      "ctx": 1048576,
+      "vision": true,
+      "prior": 7.8,
+      "display": "Gemini Flash",
+      "note": "fast and cheap; excellent summariser and compaction leg; weak on multi-step architecture"
+    },
+    {
+      "id": "local",
+      "transport": "opencode",
+      "provider": "selfhosted",
+      "model": "qwen3-coder",
+      "ctx": 32768,
+      "prior": 6.0,
+      "display": "Self-hosted Qwen",
+      "note": "runs on our own hardware; use for anything that must not leave the network"
+    }
+  ],
+  "disable": ["kimi"]
+}

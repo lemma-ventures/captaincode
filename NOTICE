@@ -1,0 +1,25 @@
+Captain Code
+Copyright (c) 2026 Lemma Ventures AG
+
+This product includes software developed at Lemma Ventures AG and is
+distributed under the MIT License (see LICENSE).
+
+Relationship to opencode
+------------------------
+Captain Code drives worker sessions through opencode (https://opencode.ai,
+sst/opencode, MIT) by spawning `opencode serve` and speaking to its HTTP API.
+No opencode source code is included in or derived from this repository; it is
+an external program this one talks to, the same way it talks to `claude`,
+`codex` and `cursor-agent`.
+
+The terminal-side integration that lets an opencode TUI route its prompts
+through Captain Code is maintained separately, as a patch series against
+upstream opencode, and carries opencode's own copyright and MIT license:
+
+  sst/opencode - Copyright (c) 2025 opencode, MIT License
+
+Third-party services
+--------------------
+Model providers reached through this software are governed by their own terms.
+Captain Code holds no credentials of its own: it uses the credentials present
+on the machine it runs on.

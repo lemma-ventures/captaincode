@@ -1,0 +1,23 @@
+name: Leg request
+description: Ask for a model or runtime to be supported
+labels: [leg]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Provider / model
+      placeholder: openrouter/some-model-v2
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How is it driven?
+      options: [opencode provider, its own CLI, something else]
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Have you invoked it?
+      description: A listed model is not a model that answers. Paste a successful call if you have one.

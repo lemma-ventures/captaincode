@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "name": "pilot-12",
+  "repeats": 3,
+  "seed": 20260914,
+  "arms": [
+    {
+      "name": "fixed-frontier",
+      "kind": "frontier",
+      "run": ["captain", "with", "claude", "{prompt}"]
+    },
+    {
+      "name": "fixed-economical",
+      "kind": "economical",
+      "run": ["captain", "with", "glm", "{prompt}"]
+    },
+    {
+      "name": "captain-auto",
+      "kind": "auto",
+      "run": ["captain", "{prompt}"]
+    },
+    {
+      "name": "workflow",
+      "kind": "workflow",
+      "run": ["captain", "/workflow", "review-then-fix", "{prompt}"]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "edit-rename-flag",
+      "family": "edit",
+      "prompt": "Rename the --verbose flag to --debug everywhere in the flag package, including the Options struct field, the Parse switch case, and the Usage help text. The --debug flag should work exactly as --verbose did.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "bf91e04b7ff884054b841eba359fdb97c1f1fff5",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "debug-exists", "run": ["sh", "-c", "grep -q -- '--debug' flag/flag.go && ! grep -rq -- '--verbose' flag/"] }
+      ],
+      "must_change": ["flag/flag.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "edit-add-doc",
+      "family": "edit",
+      "prompt": "Add a Go doc comment to the exported Filter function in filter/filter.go. The comment should start with '// Filter returns' and describe what the function does.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "7f4d2dabc18b8a1d5c455c884c7e00f1ebff3f67",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "doc-exists", "run": ["sh", "-c", "grep -q '^// Filter returns' filter/filter.go"] }
+      ],
+      "must_change": ["filter/filter.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "test-repair-header",
+      "family": "test-repair",
+      "prompt": "TestParseHeader in the parser package is failing because the header value is no longer trimmed of surrounding whitespace. Fix ParseHeader so that both the key and value are trimmed, and all parser tests pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "7d51452fd8c6fe0f0f3a69bb2e7acd75046a56c4",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "unit", "run": ["go", "test", "./parser/"] }
+      ],
+      "must_change": ["parser/parser.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "test-add-case",
+      "family": "test-repair",
+      "prompt": "The filter package is missing a test for FilterBySuffix. Add a test function called TestFilterBySuffix that verifies FilterBySuffix returns files ending in _test.go from a mixed list. All filter tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "a376a385cafe79e5e666dd5c5c4663c66a8339d2",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "unit", "run": ["go", "test", "./filter/"] },
+        { "name": "test-exists", "run": ["sh", "-c", "grep -q 'func TestFilterBySuffix' filter/filter_test.go"] }
+      ],
+      "must_change": ["filter/filter_test.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "debug-nil-pointer",
+      "family": "debug",
+      "prompt": "ServeHTTP in the handler package panics with a nil pointer dereference when the handler function is not set (h.handle is nil). Add a nil check so it returns HTTP 500 instead of panicking. All handler tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "93cbbe9a134f9fddbf7f13815fe198a9696f6f93",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "unit", "run": ["go", "test", "./handler/"] }
+      ],
+      "must_change": ["handler/handler.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "debug-off-by-one",
+      "family": "debug",
+      "prompt": "Counter.Next in the counter package returns the wrong value. The first call with step=1 should return 1 but returns 0. Fix the off-by-one error so all counter tests pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "f1d317a046f89051263e94de41f4601cc544c694",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "unit", "run": ["go", "test", "./counter/"] }
+      ],
+      "must_change": ["counter/counter.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "multi-file-rename",
+      "family": "multi-file",
+      "prompt": "Rename the Router.Routes method to Router.List across all files in the router package, including router.go and router_test.go. Update all call sites. The build and all tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "b98f482bc8c4f2613b5f99e06439bf4471a1702a",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "renamed", "run": ["sh", "-c", "! grep -rq 'func.*Routes' router/ && grep -q 'func.*List' router/router.go"] }
+      ],
+      "must_change": ["router/router.go", "router/router_test.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "multi-file-extract",
+      "family": "multi-file",
+      "prompt": "Extract the Entry type from cache/cache.go into a new file called types.go in the cache package. Move only the Entry type and its imports. The build and all tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "ee2a2e91d81706cbe6546d92134b6d4987271221",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "types-file", "run": ["test", "-f", "cache/types.go"] }
+      ],
+      "must_change": ["cache/cache.go", "cache/types.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "navigation-find-usages",
+      "family": "navigate",
+      "prompt": "Find all usages of the Capitalize function across the entire captainfix codebase. Document each usage location in a comment block at the top of util/util.go, starting with '// Usages of Capitalize:'. The build must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "f97aee4f5ea8f8820a4124206fb5517eeabe5f65",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "comment-exists", "run": ["sh", "-c", "grep -q 'Usages of Capitalize' util/util.go"] }
+      ],
+      "must_change": ["util/util.go"],
+      "must_not_change": ["go.mod"],
+      "review": "blinded"
+    },
+    {
+      "id": "refactor-simplify",
+      "family": "review",
+      "prompt": "Cache.Len in the cache package has a bug (it counts expired entries instead of non-expired ones) and unnecessary complexity (redundant assignments, else/continue pattern). Fix the bug and simplify the function. All cache tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "47b532bc171283176979a9c82fa4354925212dd0",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "unit", "run": ["go", "test", "./cache/"] }
+      ],
+      "must_change": ["cache/cache.go"],
+      "must_not_change": ["go.mod"],
+      "review": "blinded"
+    },
+    {
+      "id": "feature-add-config",
+      "family": "edit",
+      "prompt": "Add a MaxRetry field to the Config struct in config/config.go with JSON tag max_retry (int type). Set it to 3 in Default(). The build and all config tests must pass.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "d43b599f8bba4cd857641f2dc9cee09f551e9271",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "field-exists", "run": ["sh", "-c", "grep -q 'MaxRetry' config/config.go && grep -q 'max_retry' config/config.go"] },
+        { "name": "unit", "run": ["go", "test", "./config/"] }
+      ],
+      "must_change": ["config/config.go"],
+      "must_not_change": ["go.mod"]
+    },
+    {
+      "id": "format-fix-style",
+      "family": "edit",
+      "prompt": "Fix the formatting issues in the format package by running gofmt on all files. After fixing, the build must pass and gofmt must report no files needing formatting.",
+      "repo": "docs/eval/fixtures/captainfix",
+      "revision": "2b318cdb4fa86d47834b33f2cbc0f75b927ead3e",
+      "timeout_sec": 600,
+      "checks": [
+        { "name": "build", "run": ["go", "build", "./..."] },
+        { "name": "gofmt-clean", "run": ["sh", "-c", "test -z \"$(gofmt -l .)\""] }
+      ],
+      "must_change": ["format/format.go"],
+      "must_not_change": ["go.mod"]
+    }
+  ]
+}

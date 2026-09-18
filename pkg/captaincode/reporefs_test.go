@@ -1,0 +1,86 @@
+package captaincode
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// A fake ~/Gits: QMX, ash, axiom, captaincode, Compliance/lemma-ventures-website.
+func fakeWorkspaceRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Compliance/lemma-ventures-website", "notes", "Beacon", "euclid", "RepoG", "ledger-app"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
+	}
+	require.NoError(t, os.Remove(filepath.Join(root, "notes", ".git"))) // a plain folder, not a repo
+	t.Setenv("CAPTAIN_WORKSPACE_ROOT", root)
+	t.Setenv("EUCLID_HOME", filepath.Join(root, ".euclid-main"))
+	ResetKnownReposForTest()
+	return root
+}
+
+func TestKnownReposScansTwoLevelsOfTheWorkspaceRoot(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	repos := KnownRepos()
+	assert.Contains(t, repos, filepath.Join(root, "QMX"))
+	assert.Contains(t, repos, filepath.Join(root, "Compliance", "lemma-ventures-website"), "a repo inside a folder")
+	assert.NotContains(t, repos, filepath.Join(root, "notes"), "a folder without .git or .euclid is not a repo")
+}
+
+func TestRepoRefsFollowsAPathToItsRepository(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	cwd := filepath.Join(root, "QMX")
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
+		RepoRefs("fix the launcher in "+root+"/captaincode/cmd/captaincode/main.go", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")},
+		RepoRefs("look at "+root+"/captaincode/does/not/exist.go", cwd), "a path that does not exist yet still names its repo")
+	assert.Empty(t, RepoRefs("edit "+root+"/QMX/README.md", cwd), "the repo the TUI is in is not a reference")
+}
+
+func TestRepoRefsMatchesKnownNamesAsWholeWords(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	cwd := filepath.Join(root, "QMX")
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")}, RepoRefs("in captaincode, make /repeat finish gracefully", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")}, RepoRefs("Captaincode: rename the flag", cwd), "case-insensitive for a long name")
+	assert.Empty(t, RepoRefs("the ash of this refactor is long", cwd), "a short lowercase name in prose is a word, not a repo")
+	assert.Equal(t, []string{filepath.Join(root, "ash")}, RepoRefs("run the tests in the ash repo", cwd), "…unless a cue says repo")
+	assert.Equal(t, []string{filepath.Join(root, "ash")}, RepoRefs("check "+root+"/ash too", cwd), "a path form needs no cue")
+	assert.Empty(t, RepoRefs("write a qmx parser", cwd), "QMX is spelt QMX")
+	assert.Empty(t, RepoRefs("what about QMX?", cwd), "the current repo is never a reference")
+	assert.Empty(t, RepoRefs("captaincodex is not a repo", cwd), "whole words only")
+	// Folder names that are words (2026-09-15: "prove agentic compliance" moved a worker to ~/Gits/Compliance).
+	assert.Empty(t, RepoRefs("prove agentic compliance for the regulated agent", cwd))
+	assert.Empty(t, RepoRefs("add a relay between the gateway and the ledger", cwd))
+	assert.Empty(t, RepoRefs("Beacon the message to the ledger", cwd), "capitalised at a sentence start is still prose")
+	assert.Empty(t, RepoRefs("load the euclid memory first", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "euclid")}, RepoRefs("fix the search in the euclid repo", cwd), "a cue makes it a repo")
+	assert.Equal(t, []string{filepath.Join(root, "Beacon")}, RepoRefs("port this to the Beacon project", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "RepoG")}, RepoRefs("same fix in RepoG", cwd), "not a word, spelt as the folder")
+	assert.Empty(t, RepoRefs("the repog bot", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "ledger-app")}, RepoRefs("mirror it in ledger-app", cwd), "hyphenated names are never prose")
+}
+
+func TestRepoRefsAHyphenatedNameByItsParts(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	cwd := filepath.Join(root, "QMX")
+	site := filepath.Join(root, "Compliance", "lemma-ventures-website")
+	assert.Equal(t, []string{site}, RepoRefs("update the pricing page on the axiom website", cwd), "two of three parts, first included, outranks the bare axiom repo")
+	assert.Equal(t, []string{site}, RepoRefs("deploy lemma-ventures-website", cwd))
+	assert.Equal(t, []string{filepath.Join(root, "axiom")}, RepoRefs("bump the block reward in the axiom repo", cwd), "axiom is a word: the repo needs a cue")
+	assert.Empty(t, RepoRefs("bump the block reward in axiom", cwd), "…without one it is the chain, not the folder")
+	assert.Empty(t, RepoRefs("the website needs ventures", cwd), "without the first part it is prose")
+	assert.Empty(t, RepoRefs("add the axiom bounty to the website footer", cwd), "the parts far apart are two words, not the name")
+}
+
+func TestRepoRefsSeveralReposAreAllNamed(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	cwd := filepath.Join(root, "QMX")
+	refs := RepoRefs("compare the CI setup in captaincode and the axiom repo", cwd)
+	assert.ElementsMatch(t, []string{filepath.Join(root, "captaincode"), filepath.Join(root, "axiom")}, refs)
+	t.Setenv("CAPTAIN_REPO_REFS", "0")
+	assert.Empty(t, RepoRefs("in captaincode do x", cwd), "opt-out")
+}
