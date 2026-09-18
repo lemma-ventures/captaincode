@@ -114,7 +114,7 @@ var repoCueRe = `(?i)(?:repo(?:sitory)?|project|codebase|folder|website|site|app
 // RepoRefs returns the repositories the task names other than the one cwd
 // is in, most specific first. A path always counts (it is looked up to
 // its repository root). A bare name counts when it is a known repo's
-// folder name as a whole word AND is not also a word: Compliance, Relay,
+// folder name as a whole word AND is not also a word: Compliance,
 // brand, strategy, lemma, euclid, arc are folders here and words in any
 // DLM prompt ("prove agentic compliance" moved the worker to ~/Gits/
 // Compliance in the first cut, 2026-09-15) - those need a cue ("the
@@ -183,7 +183,7 @@ func RepoRefs(task, cwd string) []string {
 			case len(parts) > 1:
 				// buzz-finance, 22-arcana: nobody writes that in prose.
 			case isWord(name) || len(name) < 4:
-				continue // a word in prose (compliance, relay, brand, arc)
+				continue // a word in prose (compliance, signal, brand, arc)
 			case strings.IndexFunc(name, unicode.IsUpper) >= 0 && !strings.Contains(task, name):
 				continue // DLM, HerdG: as spelt, not as a lowercase token
 			}
@@ -262,7 +262,7 @@ var dictFiles = []string{"/usr/share/dict/words", "/usr/dict/words"}
 // isWord: the name is an ordinary word (lowercase match). The system
 // dictionary is used when the machine has one; otherwise the embedded
 // Webster list. Treating every lowercase name as a word when the file is
-// missing made "in captaincode" stay put, and "Relay the message" move.
+// missing made "in captaincode" stay put, and "Signal the message" move.
 func isWord(name string) bool {
 	dictOnce.Do(func() {
 		dictWords = readDictFiles(dictFiles)
