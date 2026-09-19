@@ -850,6 +850,77 @@ const tui: TuiPlugin = async (api) => {
   if (enabled.has("logo")) slots.home_logo = () => <Wordmark />
   if (enabled.has("tag")) slots.session_prompt_right = () => <DirectorTag api={api} />
   api.slots.register({ order: 150, slots })
+  registerPromptCommands(api)
+}
+
+// ── prompt commands ──────────────────────────────────────────────────────────
+//
+// Editing or deleting a prompt from the palette and a leader key. Two facts
+// shape this (2026-09-19). A prompt typed while a turn runs is QUEUED in the
+// TUI's own memory - opencode 1.18 keeps that queue client-side and only its
+// "Queued prompts" dialog can touch it (ctrl+e edits, ctrl+d removes) - so
+// "edit queued" and "delete queued" OPEN that dialog, from the palette or a
+// key, and say so. A prompt that already left the queue is a message on the
+// server, and the SDK's revert removes it: "delete last prompt" reverts the
+// session's last user message (and everything after it). The right-click
+// menu on a message is stock opencode's and takes no plugin items.
+function registerPromptCommands(api: TuiPluginApi) {
+  const sessionID = () => {
+    const cur = api.route.current as { name: string; params?: { sessionID?: string } }
+    return cur?.name === "session" ? cur.params?.sessionID : undefined
+  }
+  const openQueue = (why: string) => {
+    const sid = sessionID()
+    if (!sid) {
+      api.ui.toast({ title: "captain", message: "open a session first", variant: "warning", duration: 4000 })
+      return
+    }
+    // opencode's own dialog: the only place the client-side queue is editable.
+    api.keymap.dispatchCommand("session.queued_prompts")
+    api.ui.toast({ title: why, message: "queued prompts: ctrl+e edits one, ctrl+d (or delete) removes it", variant: "info", duration: 6000 })
+  }
+  const deleteLast = async () => {
+    const sid = sessionID()
+    if (!sid) {
+      api.ui.toast({ title: "captain", message: "open a session first", variant: "warning", duration: 4000 })
+      return
+    }
+    const msgs = api.state.session.messages(sid)
+    const last = [...msgs].reverse().find((m) => (m as any).role === "user")
+    if (!last) {
+      api.ui.toast({ title: "delete last prompt", message: "no prompt in this session", variant: "info", duration: 4000 })
+      return
+    }
+    const text = (api.state.part((last as any).id) ?? [])
+      .map((p: any) => (p.type === "text" ? String(p.text ?? "") : ""))
+      .join(" ")
+      .trim()
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogConfirm
+        title="Delete last prompt"
+        message={`Revert "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}" and everything after it? (ctrl+x u undoes)`}
+        onConfirm={async () => {
+          try {
+            await (api.client as any).session.revert({ path: { id: sid }, body: { messageID: (last as any).id } })
+            api.ui.toast({ title: "delete last prompt", message: "reverted - session.unrevert brings it back", variant: "success", duration: 5000 })
+          } catch (e) {
+            api.ui.toast({ title: "delete last prompt", message: String(e).slice(0, 200), variant: "error", duration: 6000 })
+          }
+        }}
+        onCancel={() => {}}
+      />
+    ))
+  }
+  api.keymap.registerLayer({
+    commands: [
+      { name: "captain.prompt.edit_queued", title: "Edit queued prompt", category: "Captain", namespace: "palette", run: () => openQueue("edit queued") },
+      { name: "captain.prompt.delete_queued", title: "Delete queued prompt", category: "Captain", namespace: "palette", run: () => openQueue("delete queued") },
+      { name: "captain.prompt.delete_last", title: "Delete last prompt (revert)", category: "Captain", namespace: "palette", run: () => void deleteLast() },
+    ],
+    bindings: [
+      ...api.tuiConfig.keybinds.gather("captain.prompt", ["captain.prompt.edit_queued", "captain.prompt.delete_queued", "captain.prompt.delete_last"]),
+    ],
+  })
 }
 
 const plugin: TuiPluginModule = {

@@ -97,8 +97,13 @@ var secretPatterns = []secretPattern{
 	{"pem", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[^\n]*(?:\n[A-Za-z0-9+/=]{16,}[^\n]*)*`), 0}, // a block cut before its END line
 	{"jwt", regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}`), 0},
 	{"bearer", regexp.MustCompile(`(?i)(authorization\s*[:=]\s*["']?(?:bearer|basic|token)\s+)([A-Za-z0-9._~+/=\-]{16,})`), 2},
-	{"url-credential", regexp.MustCompile(`(://[^\s/:@]+:)([^\s/@]{4,})(@)`), 2},
-	{"assignment", regexp.MustCompile(`(?i)((?:^|[\s"'{,(])[A-Za-z0-9_\-.]*(?:api[_\-]?key|apikey|secret|token|passw(?:or)?d|credential|private[_\-]?key|access[_\-]?key|client[_\-]?secret)[A-Za-z0-9_\-.]*["']?\s*[=:]\s*["']?)([^\s"',;]{8,})`), 2},
+	{"url-credential", regexp.MustCompile(`(://[^\s/:@]+:)([^\s/@\\]{4,})(@)`), 2},
+	// The value stops at a backslash: inside a JSON string the body carries
+	// escapes (\" \n \\), and a value that swallowed the backslash before a
+	// quote left that quote unescaped - the proxy then sent Anthropic a body
+	// that was not JSON ("unexpected character: line 1 column 175532",
+	// 2026-09-19, two claude turns lost).
+	{"assignment", regexp.MustCompile(`(?i)((?:^|[\s"'{,(])[A-Za-z0-9_\-.]*(?:api[_\-]?key|apikey|secret|token|passw(?:or)?d|credential|private[_\-]?key|access[_\-]?key|client[_\-]?secret)[A-Za-z0-9_\-.]*["']?\s*[=:]\s*["']?)([^\s"',;\\]{8,})`), 2},
 }
 
 // placeholderRe matches what Redact writes, for Restore and for the proxy's

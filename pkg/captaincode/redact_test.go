@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -105,4 +106,28 @@ func TestSecretFiles(t *testing.T) {
 	assert.True(t, deny, "strict refuses .env")
 	deny, _ = IsSecretFile("/x/.env.example")
 	assert.False(t, deny)
+}
+
+// A redacted body must still be JSON. Inside a JSON string the text carries
+// escapes (\" \n \\); a secret value that swallowed the backslash before a
+// quote left that quote unescaped, and the proxy sent Anthropic a body that
+// was not JSON ("unexpected character: line 1 column 175532", 2026-09-19).
+func TestRedactKeepsAJSONBodyValid(t *testing.T) {
+	bodies := []string{
+		`{"content":"set API_KEY=sk-live-abcdefghijklmnop\nthen run"}`,
+		`{"content":"password=hunter2hunter2\" and then \"more\""}`,
+		`{"content":"secret: abcdefghijklmnop\\path\\to"}`,
+		`{"content":"see https://user:p4ssw0rdp4ss\\n@host/x"}`,
+		`{"content":"token=\"abcdefghijklmnopq\"\nnext"}`,
+	}
+	for _, b := range bodies {
+		var v any
+		require.NoError(t, json.Unmarshal([]byte(b), &v), "fixture must be JSON: %s", b)
+		out, _ := Redact(b)
+		assert.NoError(t, json.Unmarshal([]byte(out), &v), "redacted body is not JSON: %s", out)
+	}
+	out, rep := Redact(`{"content":"password=hunter2hunter2\" and then \"more\""}`)
+	assert.Equal(t, 1, rep.Secrets)
+	assert.Contains(t, out, `[[secret:assignment:`)
+	assert.Contains(t, out, `\" and then \"more\"`, "the escape after the value is intact")
 }
