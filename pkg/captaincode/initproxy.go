@@ -37,11 +37,12 @@ import (
 // URL is what the block carried before; the proxy path is what it carries
 // while redaction is on.
 var proxyRoutes = map[string]struct{ direct, path string }{
-	"openrouter": {"https://openrouter.ai/api/v1", "/openrouter/v1"},
-	"nim":        {"https://integrate.api.nvidia.com/v1", "/nim/v1"},
-	"nvidia":     {"https://integrate.api.nvidia.com/v1", "/nvidia/v1"},
-	"opencode":   {"https://opencode.ai/zen/v1", "/opencode/v1"},
-	"xai":        {"https://api.x.ai/v1", "/xai/v1"},
+	"openrouter":  {"https://openrouter.ai/api/v1", "/openrouter/v1"},
+	"nim":         {"https://integrate.api.nvidia.com/v1", "/nim/v1"},
+	"nvidia":      {"https://integrate.api.nvidia.com/v1", "/nvidia/v1"},
+	"opencode":    {"https://opencode.ai/zen/v1", "/opencode/v1"},
+	"xai":         {"https://api.x.ai/v1", "/xai/v1"},
+	"huggingface": {"https://router.huggingface.co/v1", "/huggingface/v1"},
 }
 
 var proxyBaseURL atomic.Value // string: "http://127.0.0.1:14098" while the proxy listens, "" otherwise
