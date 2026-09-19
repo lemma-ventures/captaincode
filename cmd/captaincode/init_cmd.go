@@ -40,9 +40,25 @@ func cmdInit(args []string) {
 	// The router and the panels are plugins stock opencode loads; without these
 	// entries the TUI runs unrouted, which looks like captain is "not working".
 	if apply {
-		if changed, err := captaincode.EnsureCaptainPlugins(captaincode.OpencodeConfigPath(), captainSourceDir()); err != nil {
+		changed, missing, err := captaincode.EnsureCaptainPlugins(captaincode.OpencodeConfigPath(), captainSourceDir())
+		switch {
+		case err != nil:
 			fmt.Printf("captain init: plugins not registered: %v\n", err)
-		} else if changed {
+		case len(missing) > 0:
+			// `go install` brings the brain and no checkout, so there is no
+			// plugin/ to point opencode at. Silence here looked like a broken
+			// captain: the TUI came up unrouted, with no Models panel, and
+			// nothing said why.
+			fmt.Printf("\n! the opencode plugins were NOT registered - the terminal will run unrouted, with no panels.\n")
+			for _, m := range missing {
+				fmt.Printf("    not found: %s\n", m)
+			}
+			fmt.Printf("  These ship in the repository, not in the binary. Clone it and point captain at it:\n")
+			fmt.Printf("    git clone https://github.com/lemma-ventures/captaincode\n")
+			fmt.Printf("    export CAPTAIN_SRC=/path/to/captaincode   # currently %s\n", captainSourceDir())
+			fmt.Printf("    (cd \"$CAPTAIN_SRC/plugin/captain-ui\" && bun install) && captain init\n")
+			fmt.Printf("  The brain itself is fine without them: `captain \"…\"` and `captain brain` route as usual.\n\n")
+		case changed:
 			fmt.Println("registered the captain router + UI plugins (restart the TUI to load them)")
 		}
 		// The worker's live narration rides the reasoning channel; the TUI

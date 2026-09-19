@@ -51,9 +51,10 @@ func TestEnsurePluginsPutsEachHalfInTheConfigThatReadsIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.jsonc")
 	require.NoError(t, os.WriteFile(path, []byte(`{"$schema":"https://opencode.ai/config.json"}`), 0o644))
 
-	changed, err := EnsureCaptainPlugins(path, src)
+	changed, missing, err := EnsureCaptainPlugins(path, src)
 	require.NoError(t, err)
 	assert.True(t, changed)
+	assert.Empty(t, missing)
 
 	server := pluginList(t, path)
 	require.Len(t, server, 1, "opencode's config carries the router only")
@@ -76,7 +77,7 @@ func TestEnsurePluginsCreatesTheTuiConfigWhenAbsent(t *testing.T) {
 
 	// A machine that has never customised the TUI has no tui.json at all.
 	require.NoFileExists(t, TuiConfigPath())
-	_, err := EnsureCaptainPlugins(path, src)
+	_, _, err := EnsureCaptainPlugins(path, src)
 	require.NoError(t, err)
 	assert.FileExists(t, TuiConfigPath(), "init writes it rather than skipping the panels")
 }
@@ -87,9 +88,9 @@ func TestEnsurePluginsIsIdempotentAndKeepsForeignEntries(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode.jsonc")
 	require.NoError(t, os.WriteFile(path, []byte(`{"plugin":["some-other-plugin"]}`), 0o644))
 
-	_, err := EnsureCaptainPlugins(path, src)
+	_, _, err := EnsureCaptainPlugins(path, src)
 	require.NoError(t, err)
-	changed, err := EnsureCaptainPlugins(path, src)
+	changed, _, err := EnsureCaptainPlugins(path, src)
 	require.NoError(t, err)
 	assert.False(t, changed, "a second run must not rewrite the file")
 
@@ -98,15 +99,40 @@ func TestEnsurePluginsIsIdempotentAndKeepsForeignEntries(t *testing.T) {
 	assert.Len(t, got, 2, "the router joins it here; the panels live in the TUI config")
 }
 
-func TestEnsurePluginsSkipsWhatIsNotOnDisk(t *testing.T) {
+func TestEnsurePluginsReportsWhatIsNotOnDisk(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "opencode.jsonc")
 	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644))
 
-	// An install without the plugin sources (binary only) must not register
-	// paths that do not exist: opencode logs a load failure for each one.
-	changed, err := EnsureCaptainPlugins(path, filepath.Join(t.TempDir(), "nowhere"))
+	// An install without the plugin sources (`go install`, no checkout) must
+	// not register paths that do not exist: opencode logs a load failure for
+	// each one. It must not stay SILENT about it either - that install runs an
+	// unrouted TUI with no panels, and init saying nothing made it look like
+	// captain was broken rather than incomplete.
+	src := filepath.Join(t.TempDir(), "nowhere")
+	changed, missing, err := EnsureCaptainPlugins(path, src)
 	require.NoError(t, err)
 	assert.False(t, changed)
 	assert.Empty(t, pluginList(t, path))
+	require.Len(t, missing, 2, "both halves are reported, each by the path init looked at")
+	assert.Contains(t, missing[0], filepath.Join(src, "plugin", "captain.ts"))
+	assert.Contains(t, missing[1], filepath.Join(src, "plugin", "captain-ui", "index.tsx"))
+}
+
+func TestEnsurePluginsReportsOneHalfWhileRegisteringTheOther(t *testing.T) {
+	// A half-built checkout: the router is there, the panels were never
+	// installed. The router still gets registered, and the panels are named.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	src := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(src, "plugin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "plugin", "captain.ts"), []byte("export default {}"), 0o644))
+	path := filepath.Join(t.TempDir(), "opencode.jsonc")
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o644))
+
+	changed, missing, err := EnsureCaptainPlugins(path, src)
+	require.NoError(t, err)
+	assert.True(t, changed, "the half that is present is still wired")
+	require.Len(t, missing, 1)
+	assert.Contains(t, missing[0], filepath.Join("plugin", "captain-ui", "index.tsx"))
+	assert.Len(t, pluginList(t, path), 1)
 }

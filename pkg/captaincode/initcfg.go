@@ -836,24 +836,36 @@ func TuiConfigPath() string { return filepath.Join(configHome(), "opencode", "tu
 // neither a shell PATH nor a useful cwd, and a path that does not exist is
 // skipped rather than registered - opencode logs a load failure for each
 // missing entry, which looks like a broken install.
-func EnsureCaptainPlugins(path, src string) (bool, error) {
-	changed, err := ensurePluginEntry(path, filepath.Join(src, captainServerPlugin), captainServerPlugin)
-	if err != nil {
-		return false, err
+//
+// A skipped half is REPORTED, not swallowed. `go install` fetches the brain
+// without a checkout, so src holds no plugin/ at all: init then registers
+// nothing and the terminal runs unrouted with no panels, which reads as
+// "captain is broken" rather than "the terminal needs the sources". The
+// missing paths come back so the caller can say which, and say it loudly.
+func EnsureCaptainPlugins(path, src string) (changed bool, missing []string, err error) {
+	halves := []struct{ cfg, rel string }{
+		{path, captainServerPlugin},
+		{TuiConfigPath(), captainUIPlugin},
 	}
-	uiChanged, err := ensurePluginEntry(TuiConfigPath(), filepath.Join(src, captainUIPlugin), captainUIPlugin)
-	if err != nil {
-		return changed, err
+	for _, h := range halves {
+		abs := filepath.Join(src, h.rel)
+		if _, statErr := os.Stat(abs); statErr != nil {
+			missing = append(missing, abs)
+			continue
+		}
+		one, err := ensurePluginEntry(h.cfg, abs, h.rel)
+		if err != nil {
+			return changed, missing, err
+		}
+		changed = changed || one
 	}
-	return changed || uiChanged, nil
+	return changed, missing, nil
 }
 
 // ensurePluginEntry adds one plugin to one config file, creating the file when
-// it does not exist yet (the TUI config usually does not).
+// it does not exist yet (the TUI config usually does not). The caller has
+// already established that abs is on disk.
 func ensurePluginEntry(cfgPath, abs, rel string) (bool, error) {
-	if _, err := os.Stat(abs); err != nil {
-		return false, nil // not an install that carries the plugin sources
-	}
 	cfg := map[string]any{}
 	body, err := os.ReadFile(cfgPath)
 	switch {
