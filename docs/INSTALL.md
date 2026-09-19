@@ -75,8 +75,9 @@ The states reuse the adapter vocabulary, plus one:
 - `mismatch` - the `captain` on PATH is a different file from the one that
   produced the report. That blocks, for the same reason a foreign `codex`
   does: the next command runs a binary this report never probed.
-- `missing` on `terminal` is the brain-only install, which is a supported
-  shape rather than a fault.
+- `missing` on `terminal` is every install of this repository, brain-only and
+  full terminal alike, because the fork it probes for is retired. It is not a
+  fault.
 
 `captain upgrade --check` prints the same two rows through the same probe, so
 the two commands cannot disagree about which revision is installed.
