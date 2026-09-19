@@ -134,9 +134,19 @@ func boundariesOf(s string) []boundary {
 	// on "and /opt" - paths and prose must never become topology.
 	kept := out[:0]
 	for _, b := range out {
-		if legLikeAt(s[b.end:]) {
-			kept = append(kept, b)
+		if !legLikeAt(s[b.end:]) {
+			continue
 		}
+		// A WORD connector ("then", "and", a newline) before a name that no
+		// stage can run - a preference, a pseudo-model - is prose about
+		// captain, not topology ("then a /team then a /workflow … then
+		// /speed", a demo-script request refused as workflow syntax,
+		// 2026-09-19). A symbol connector (> + -> &) is deliberate syntax and
+		// is still reported when its target is not a leg.
+		if isWordConnector(s[b.start:b.end]) && !runnableLegAt(s[b.end:]) {
+			continue
+		}
+		kept = append(kept, b)
 	}
 	out = kept
 	sort.Slice(out, func(i, j int) bool { return out[i].start < out[j].start })
@@ -264,6 +274,22 @@ func legLikeAt(s string) bool {
 	}
 	wordEnd := m[3] // end of the legname capture
 	return wordEnd >= len(s) || s[wordEnd] != '/'
+}
+
+// runnableLegAt: s starts with a leg prefix a stage can run (or /frontier).
+func runnableLegAt(s string) bool {
+	m := legHeadRe.FindStringSubmatchIndex(s)
+	if m == nil {
+		return false
+	}
+	name := Leg(strings.ToLower(s[m[2]:m[3]]))
+	return IsFrontier(name) || (KnownLeg(name) && ServesTasks(name))
+}
+
+// isWordConnector: "then" / "and" / a newline, as opposed to > + -> &.
+func isWordConnector(c string) bool {
+	t := strings.TrimSpace(c)
+	return t == "" || strings.EqualFold(t, "then") || strings.EqualFold(t, "and")
 }
 
 func legNames() string {
