@@ -15,13 +15,31 @@ code and reported by `captain doctor` rather than assumed.
 | Shape | What runs | Who it is for |
 |---|---|---|
 | **Brain-only** | the Go binary (`captain brain`) plus at least one adapter CLI | routing, `captain why`, `captain stats`, HTTP/MCP callers, CI and evaluation runs |
-| **Full terminal** | brain-only, plus [opencode](https://opencode.ai) as the TUI (`captain init` writes the config it reads) | interactive day-to-day use |
+| **Full terminal** | brain-only, plus [opencode](https://opencode.ai) as the TUI, the two plugins in `plugin/`, and `captaincode.sh` | interactive day-to-day use |
 
-Brain-only is the supported shape for reproducing an evidence report, and it is
-what this repository installs: `go install` or `go build`, then `captain brain`.
-It has no terminal state, no saved session and no TUI version to pin. The full
-terminal is that install plus opencode. This repository does not ship a TUI
-launcher. Anything the terminal can do, the brain can be asked to do directly.
+Brain-only is the supported shape for reproducing an evidence report, because
+it has no terminal state, no saved session and no TUI version to pin. It is the
+only shape `go install` can produce.
+
+The full terminal needs a **checkout**, not just the binary. Routing, the
+sidebar, the wordmark and the director tag are two plugins that stock opencode
+loads from disk (`plugin/captain.ts` and `plugin/captain-ui/index.tsx`), and
+`captaincode.sh` is the launcher that supervises the brain beside the TUI.
+Neither is compiled into the binary, so a `go install` machine has nothing for
+`captain init` to register - it will say so rather than come up silently
+unrouted.
+
+```sh
+git clone https://github.com/lemma-ventures/captaincode && cd captaincode
+go build -o ~/.local/bin/captain ./cmd/captaincode
+(cd plugin/captain-ui && bun install)
+captain init && ./captaincode.sh
+```
+
+`captain init` registers the plugins by absolute path out of `$CAPTAIN_SRC`
+(default `~/Gits/captaincode`), so set that variable when the checkout lives
+anywhere else. Anything the terminal can do, the brain can be asked to do
+directly.
 
 ## Captain's own version
 
@@ -39,8 +57,14 @@ forget them. `captain doctor` reports three rows under `build`:
 | Row | What it names |
 |---|---|
 | `captain` | the running brain binary: its revision, and the path it ran from |
-| `terminal` | the opencode TUI fork's checkout: its HEAD, and whether it is clean |
-| `bun` | the fork's runtime, pinned by the fork's own `packageManager` field |
+| `terminal` | the vendored opencode fork's checkout: its HEAD, and whether it is clean |
+| `bun` | that fork's runtime, pinned by its own `packageManager` field |
+
+The fork is retired: the terminal is stock opencode plus the plugins in
+`plugin/`, and this repository carries no opencode source. So `terminal` and
+`bun` read `missing` on every install of it, full terminal included - they are
+kept because an evidence report produced against the old fork still has to be
+readable. The row that matters here is `captain`.
 
 The states reuse the adapter vocabulary, plus one:
 

@@ -1,0 +1,11 @@
+{
+  "name": "captain-tui",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "index.tsx",
+  "dependencies": {
+    "solid-js": "1.9.10",
+    "@opentui/core": "0.4.3",
+    "@opentui/solid": "0.4.3"
+  }
+}

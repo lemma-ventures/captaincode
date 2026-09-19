@@ -79,6 +79,8 @@ overlay and wires the model through, no rebuild. See
 
 ## Quickstart
 
+### The brain, on its own
+
 ```sh
 go install github.com/lemma-ventures/captaincode/cmd/captaincode@latest
 ```
@@ -102,6 +104,25 @@ captain "fix the failing test in pkg/foo"
 
 `captain doctor` is the real quickstart: it lists every leg as ready, blocked or
 skipped, and each blocked line carries the one command that unblocks it.
+
+### The full terminal
+
+The terminal is stock [opencode](https://opencode.ai) plus two plugins that live
+in `plugin/` - the router and the panels. They are **files in this repository,
+not code in the binary**, so `go install` alone cannot give you a terminal:
+clone it.
+
+```sh
+git clone https://github.com/lemma-ventures/captaincode && cd captaincode
+go build -o ~/.local/bin/captain ./cmd/captaincode
+(cd plugin/captain-ui && bun install)   # the panels' dependencies
+captain init                            # registers both plugins by absolute path
+./captaincode.sh                        # brain + TUI, in the folder you are in
+```
+
+`captain init` points opencode at the checkout it finds - `$CAPTAIN_SRC`, or
+`~/Gits/captaincode` - and says so loudly when there is nothing there to point
+at. See [plugin/README.md](plugin/README.md).
 
 Full settings reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 How the pieces fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
