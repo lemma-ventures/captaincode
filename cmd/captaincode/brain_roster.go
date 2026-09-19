@@ -200,7 +200,7 @@ func routeSuffix(provider string) string {
 
 // openWeightLegs: models whose weights are published - the sidebar marks
 // them so the operator sees which capable models are not tied to a vendor.
-var openWeightProviders = map[string]bool{"openrouter": true, "nim": true, "nvidia": true, "opencode": true}
+var openWeightProviders = map[string]bool{"openrouter": true, "nim": true, "nvidia": true, "opencode": true, "huggingface": true}
 
 func isOpenWeights(spec captaincode.LegSpec) bool {
 	if !openWeightProviders[spec.Provider] {

@@ -283,6 +283,8 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 			} else if s.Transport == captaincode.TransportOpencode && !providerConfigured(cfg, authed, s.Provider) {
 				mark, note = "✗", fmt.Sprintf("provider %q has no credential - `opencode auth login` or add it to %s",
 					s.Provider, o.opencodeConfig)
+			} else if s.Provider == "huggingface" && os.Getenv("HF_TOKEN") == "" && !authed["huggingface"] {
+				mark, note = "✗", fmt.Sprintf("HF_TOKEN not set - add it to %s (token: https://huggingface.co/settings/tokens)", envPath)
 			} else {
 				ready++
 			}

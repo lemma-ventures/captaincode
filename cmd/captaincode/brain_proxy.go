@@ -15,7 +15,7 @@ package main
 //
 // Who goes through it: the opencode workers whose provider blocks name it as
 // baseURL (captain init writes them: xai, openrouter, nim/nvidia, opencode
-// zen), claude -p via ANTHROPIC_BASE_URL, and codex exec via a custom
+// zen, huggingface), claude -p via ANTHROPIC_BASE_URL, and codex exec via a custom
 // provider on the chatgpt route (CodexProxyArgs). cursor-agent speaks
 // grpc-web+proto to its endpoint - it is the gap, covered only by what its
 // tool boundary refuses to read.
@@ -44,14 +44,15 @@ const proxyAddrDefault = "127.0.0.1:14098"
 // rest of the path is forwarded as-is, so "/openrouter/v1/chat/completions"
 // reaches "https://openrouter.ai/api/v1/chat/completions".
 var proxyUpstreams = map[string]string{
-	"anthropic":  "https://api.anthropic.com",
-	"openai":     "https://api.openai.com",
-	"chatgpt":    "https://chatgpt.com", // codex exec under the ChatGPT login: /backend-api/codex/responses
-	"xai":        "https://api.x.ai",
-	"openrouter": "https://openrouter.ai/api",
-	"nim":        "https://integrate.api.nvidia.com",
-	"nvidia":     "https://integrate.api.nvidia.com",
-	"opencode":   "https://opencode.ai/zen",
+	"anthropic":   "https://api.anthropic.com",
+	"openai":      "https://api.openai.com",
+	"chatgpt":     "https://chatgpt.com", // codex exec under the ChatGPT login: /backend-api/codex/responses
+	"xai":         "https://api.x.ai",
+	"openrouter":  "https://openrouter.ai/api",
+	"nim":         "https://integrate.api.nvidia.com",
+	"nvidia":      "https://integrate.api.nvidia.com",
+	"opencode":    "https://opencode.ai/zen",
+	"huggingface": "https://router.huggingface.co",
 }
 
 func proxyAddr() string {

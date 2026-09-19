@@ -13,15 +13,17 @@ import (
 
 func TestProxyRoutingIsReversibleAndLeavesGatewaysAlone(t *testing.T) {
 	cfg := map[string]any{"provider": map[string]any{
-		"openrouter": map[string]any{"options": map[string]any{"apiKey": "{env:K}", "baseURL": "https://openrouter.ai/api/v1"}},
-		"nim":        map[string]any{"options": map[string]any{"baseURL": "https://corp-gateway.example/nim/v1"}},
-		"captain":    map[string]any{"options": map[string]any{"baseURL": "http://127.0.0.1:14097/v1"}},
+		"openrouter":  map[string]any{"options": map[string]any{"apiKey": "{env:K}", "baseURL": "https://openrouter.ai/api/v1"}},
+		"huggingface": map[string]any{"options": map[string]any{"apiKey": "{env:HF_TOKEN}", "baseURL": "https://router.huggingface.co/v1"}},
+		"nim":         map[string]any{"options": map[string]any{"baseURL": "https://corp-gateway.example/nim/v1"}},
+		"captain":     map[string]any{"options": map[string]any{"baseURL": "http://127.0.0.1:14097/v1"}},
 	}}
 	changed, notes := applyProxyRouting(cfg, "http://127.0.0.1:14098", true)
 	require.True(t, changed)
-	assert.ElementsMatch(t, []string{"openrouter → proxy", "xai → proxy"}, notes)
+	assert.ElementsMatch(t, []string{"openrouter → proxy", "huggingface → proxy", "xai → proxy"}, notes)
 	p := cfg["provider"].(map[string]any)
 	assert.Equal(t, "http://127.0.0.1:14098/openrouter/v1", p["openrouter"].(map[string]any)["options"].(map[string]any)["baseURL"])
+	assert.Equal(t, "http://127.0.0.1:14098/huggingface/v1", p["huggingface"].(map[string]any)["options"].(map[string]any)["baseURL"])
 	assert.Equal(t, "http://127.0.0.1:14098/xai/v1", p["xai"].(map[string]any)["options"].(map[string]any)["baseURL"], "xai gets a block of its own")
 	assert.Equal(t, "https://corp-gateway.example/nim/v1", p["nim"].(map[string]any)["options"].(map[string]any)["baseURL"], "a custom gateway is not ours to touch")
 	assert.Equal(t, "http://127.0.0.1:14097/v1", p["captain"].(map[string]any)["options"].(map[string]any)["baseURL"], "the brain is not a provider to reroute")
@@ -30,8 +32,9 @@ func TestProxyRoutingIsReversibleAndLeavesGatewaysAlone(t *testing.T) {
 
 	changed, notes = applyProxyRouting(cfg, "http://127.0.0.1:14098", false)
 	require.True(t, changed)
-	assert.ElementsMatch(t, []string{"openrouter → direct", "xai → direct"}, notes)
+	assert.ElementsMatch(t, []string{"openrouter → direct", "huggingface → direct", "xai → direct"}, notes)
 	assert.Equal(t, "https://openrouter.ai/api/v1", p["openrouter"].(map[string]any)["options"].(map[string]any)["baseURL"])
+	assert.Equal(t, "https://router.huggingface.co/v1", p["huggingface"].(map[string]any)["options"].(map[string]any)["baseURL"])
 	_, hasXai := p["xai"]
 	assert.False(t, hasXai, "the block that existed only for the proxy is gone")
 }

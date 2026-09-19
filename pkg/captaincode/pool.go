@@ -64,7 +64,7 @@ func MidPromptPool(task string) Pool {
 // openWeightFamilies are model-id fragments that name open-weight families.
 // A registry entry's `open` flag overrides the guess either way.
 var openWeightFamilies = []string{
-	"llama", "qwen", "glm", "deepseek", "kimi", "moonshot", "minimax", "gpt-oss",
+	"llama", "qwen", "glm", "deepseek", "stepfun", "kimi", "moonshot", "minimax", "gpt-oss",
 	"mistral", "mixtral", "devstral", "magistral", "gemma", "phi-", "nemotron",
 	"olmo", "yi-", "internlm", "falcon", "dbrx", "jamba", "granite", "hunyuan",
 	"codestral", "starcoder", "seed-oss", "exaone", "smollm",
