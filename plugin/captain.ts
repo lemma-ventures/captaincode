@@ -364,6 +364,31 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     log(`routed → ${leg} in ${Date.now() - started}ms (was ${before?.providerID}/${before?.modelID})`)
   },
 
+  // ctrl+c (opencode's session abort) stops the worker: the TUI's request
+  // goes away, but the brain keeps a run whose client vanished on purpose -
+  // an answer produced for a dead connection is preserved for a resend
+  // ("I never got the answer", 2026-08-01). An abort is the user's choice,
+  // so it is forwarded as a stop: the folder's running workers end now,
+  // what they produced is kept (2026-09-19: a claude -p ran on 26 minutes
+  // after ctrl+c and a restart).
+  event: async ({ event }: { event: any }) => {
+    if (!ENABLED) return
+    const err = event?.type === "session.error" ? event.properties?.error : undefined
+    if (!err || err.name !== "MessageAbortedError") return
+    const cwd = process.env["CAPTAIN_CWD"] ?? input?.directory ?? ""
+    try {
+      const r = await fetch(`${BRAIN}/v1/interrupt?cwd=${encodeURIComponent(cwd)}`, {
+        method: "POST",
+        body: JSON.stringify({ reason: "ctrl+c in the TUI", stop: true }),
+        signal: AbortSignal.timeout(5_000),
+      })
+      const j = (await r.json()) as { result?: string }
+      log(`abort → brain: ${(j.result ?? r.status).toString().slice(0, 100)}`)
+    } catch (e) {
+      log(`abort → brain failed: ${String(e).slice(0, 80)}`)
+    }
+  },
+
   "tool.execute.before": async (input: { tool: string }, output: { args: any }) => {
     if (!REDACT || !output?.args) return
     const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
