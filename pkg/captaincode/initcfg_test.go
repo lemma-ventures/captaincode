@@ -68,6 +68,12 @@ func TestEnsureOpencodeConfig_CreatesFromScratch(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, cmd, "init", "TUI accepts /init only if the command entry exists")
 	assert.Contains(t, cmd, "quality")
+	// /rename must be a captain command, not opencode's built-in: a custom
+	// command with the same name overrides it, sending the template through the
+	// plugin, which sets the title from the repo and recent context.
+	ren, ok := cmd["rename"].(map[string]any)
+	require.True(t, ok, "the /rename control word is registered")
+	assert.Equal(t, "/rename $ARGUMENTS", ren["template"])
 
 	prov, ok := cfg["provider"].(map[string]any)
 	require.True(t, ok)

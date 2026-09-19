@@ -140,8 +140,93 @@ const BTW = /^\s*\/btw\b[\s:]*([\s\S]*)$/i
 // what they streamed. The queued copy prints the outcome.
 const INTERRUPT = /^\s*\/interrupt\b[\s:]*([\s\S]*)$/i
 
+// /rename [title]: rename this thread in the TUI. No argument derives a name
+// from the repository the TUI is open in and the thread's recent prompts;
+// an argument sets that title exactly. The name is written through the
+// opencode SDK (session.update), so it shows wherever the session title does;
+// the plugin refuses the turn itself (throw) so no copy is queued.
+const RENAME = /^\s*\/rename\b[\s:]*([\s\S]*)$/i
+
+// TITLE_MARKER is what opencode's own title agent says; the brain recognizes it
+// (isTitleTurn), routes the request to the cheapest leg, gives it a six-word
+// prompt, and never records it as work. Reusing it keeps naming off the router.
+const TITLE_MARKER = "You are a title generator"
+
+function repoName(dir: string): string {
+  const base = dir.replace(/\/+$/, "").split("/").filter(Boolean).pop() ?? ""
+  return base.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "captain"
+}
+
+// recentPrompts reads the session's last few user turns (text only) - the
+// thread's context, which is what a person would name it from - skipping the
+// control words themselves and synthetic/ignored parts.
+async function recentPrompts(client: any, sessionID: string, n = 4): Promise<string[]> {
+  try {
+    const res = await client?.session?.messages?.({ path: { id: sessionID }, query: { limit: 40 } })
+    const rows = (res?.data ?? res ?? []) as { info?: { role?: string }; parts?: { type?: string; text?: string; synthetic?: boolean; ignored?: boolean }[] }[]
+    const out: string[] = []
+    for (const m of rows) {
+      if (m?.info?.role !== "user") continue
+      const text = (m.parts ?? [])
+        .filter((p) => p.type === "text" && p.text && !p.synthetic && !p.ignored)
+        .map((p) => p.text)
+        .join(" ")
+        .trim()
+      if (!text || !text.startsWith("/")) {
+        if (text) out.push(text)
+        continue
+      }
+      // A forced leg (/grok …) still carries the task after the prefix.
+      const stripped = text.replace(/^\/[A-Za-z][\w-]*[\s:]+/, "").trim()
+      if (stripped && !RENAME.test(text)) out.push(stripped)
+    }
+    return out.slice(-n)
+  } catch {
+    return []
+  }
+}
+
+function tidyTitle(s: string): string {
+  return s.replace(/^["'“”\s]+|["'“”\s]+$/g, "").replace(/[ \t]+/g, " ").split("\n")[0].trim().slice(0, 64)
+}
+
+// askBrainTitle asks the brain's cheap title leg to name the thread from the
+// repo and its recent prompts. Best effort: an empty string means "use the
+// fallback", never an error.
+async function askBrainTitle(cwd: string, repo: string, prompts: string[]): Promise<string> {
+  const context = [`Repository: ${repo}`, "Recent requests:"]
+    .concat(prompts.map((p) => "- " + p.slice(0, 200)))
+    .join("\n")
+  try {
+    const r = await fetch(`${BRAIN}/v1/chat/completions?cwd=${encodeURIComponent(cwd)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "free",
+        stream: false,
+        messages: [
+          { role: "system", content: `${TITLE_MARKER}. Name this coding thread from its repository and most recent requests.` },
+          { role: "user", content: context },
+        ],
+      }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!r.ok) return ""
+    const j = (await r.json()) as { choices?: { message?: { content?: string } }[] }
+    return tidyTitle(j.choices?.[0]?.message?.content ?? "")
+  } catch {
+    return ""
+  }
+}
+
+// fallbackTitle is the instant, no-model name: <repo>: <the newest request>.
+function fallbackTitle(repo: string, prompts: string[]): string {
+  const last = tidyTitle(prompts[prompts.length - 1] ?? "")
+  return last ? `${repo}: ${last.slice(0, 52)}` : repo
+}
+
 export const server = async (input?: { client?: any; directory?: string }) => ({
-  "chat.message": async (_input: unknown, output: any) => {
+  "chat.message": async (_input: any, output: any) => {
     if (!ENABLED) return
     if (output?.message?.role !== "user") return
     const started = Date.now()
@@ -200,6 +285,62 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     if (intr) {
       const msg = await outOfBand("/interrupt", "/v1/interrupt", { reason: (intr[1] ?? "").trim() }, (j) => (j.asked?.length || j.stopped?.length || j.withdrawn) > 0)
       if (msg !== null) throw new Error(`captain: ${msg.slice(0, 240)} - nothing queued`)
+    }
+
+    // /rename: the session title belongs to the TUI, so this is the one control
+    // word that does its work here rather than through the brain. An explicit
+    // argument is used verbatim; no argument names the thread from the repo and
+    // the last prompts at once (instant, no model), then refines it in the
+    // background through the brain's cheap title leg. Either way the turn is
+    // refused so nothing is queued behind it.
+    const ren = text.match(RENAME)
+    if (ren) {
+      const sessionID = String(_input?.sessionID ?? "")
+      if (!sessionID) {
+        log("/rename with no session id - left as an ordinary turn")
+      } else {
+        const repo = repoName(cwd)
+        const explicit = tidyTitle(ren[1] ?? "")
+        const apply = async (t: string): Promise<boolean> => {
+          try {
+            await input?.client?.session?.update?.({ path: { id: sessionID }, body: { title: t } })
+            return true
+          } catch (e) {
+            log(`/rename session.update failed: ${String(e).slice(0, 100)}`)
+            return false
+          }
+        }
+        const toast = async (t: string, variant: "success" | "warning") => {
+          try {
+            await input?.client?.tui?.showToast?.({ body: { title: "/rename", message: `renamed this thread → ${t}`, variant, duration: 6000 } })
+          } catch {
+            /* a toast that cannot show is not worth failing the rename */
+          }
+        }
+
+        let title = explicit
+        let prompts: string[] = []
+        if (!title) {
+          prompts = await recentPrompts(input?.client, sessionID)
+          title = fallbackTitle(repo, prompts)
+        }
+        if (await apply(title)) {
+          log(`/rename → ${title}${explicit ? " (explicit)" : ""}`)
+          await toast(title, "success")
+          // Best effort, after the title is already visible: let the cheap leg
+          // turn the same repo + context into a tidier name.
+          if (!explicit && prompts.length) {
+            void askBrainTitle(cwd, repo, prompts).then(async (better) => {
+              if (better && better !== title) {
+                const named = better.toLowerCase().includes(repo.toLowerCase()) ? better : `${repo}: ${better}`
+                if (await apply(tidyTitle(named))) await toast(tidyTitle(named), "success")
+              }
+            })
+          }
+          throw new Error(`captain: renamed this thread to "${title}" - nothing queued`)
+        }
+        throw new Error(`captain: could not rename this thread (session.update failed) - nothing queued`)
+      }
     }
 
     const forced = text.match(legPattern())

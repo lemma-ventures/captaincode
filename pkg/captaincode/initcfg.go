@@ -106,6 +106,7 @@ func defaultCommands() map[string]any {
 		"interrupt":     map[string]any{"description": "stop the running worker without losing its work: it hands off (done / left / resume) and ends; codex and cursor are stopped with what they produced", "template": "/interrupt $ARGUMENTS"},
 		"btw":           map[string]any{"description": "a note for the worker already running: complements or amends the prompt it started with (claude and opencode legs take it mid-run; codex and cursor as the next turn)", "template": "/btw $ARGUMENTS"},
 		"repeat":        map[string]any{"description": "re-run a prompt after each finish: /repeat 10 <prompt>, /repeat <prompt> (open-ended); /repeat finish (or wrapup) ends it after the current round, /repeat abort now, /repeat status|show|watch", "template": "/repeat $ARGUMENTS"},
+		"rename":        map[string]any{"description": "rename this thread from the repository and its recent prompts; /rename <title> sets that title exactly", "template": "/rename $ARGUMENTS"},
 	}
 	for _, l := range AllLegs { // every worker leg gets a forcing command; hand-written ones above win
 		if !ServesTasks(l) {
