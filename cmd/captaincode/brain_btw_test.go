@@ -514,3 +514,50 @@ func TestInterruptWithdrawsATurnStillBeingPrepared(t *testing.T) {
 	assert.False(t, started, "the worker never started")
 	assert.Contains(t, turn.Body.String(), "withdrawn before it started")
 }
+
+// ctrl+c in the TUI (opencode's abort) is forwarded as a stop: every worker
+// of the folder's turns ends now, what it produced is kept, no handoff is
+// asked (2026-09-19: a claude -p ran on 26 minutes after ctrl+c).
+func TestAbortStopsTheFoldersWorkersAndKeepsTheirOutput(t *testing.T) {
+	t.Setenv("CAPTAIN_TRIAGE", "0")
+	b := teamBrain()
+	dir := t.TempDir()
+	stopped := make(chan struct{})
+	asked := false
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		b.steers.mu.Lock()
+		var s *captaincode.Steer
+		for k := range b.steers.live {
+			s = k
+		}
+		b.steers.mu.Unlock()
+		defer s.Attach(leg, func(string) error { asked = true; return nil })()
+		defer s.AttachStop(leg, func() { close(stopped) })()
+		<-stopped
+		return leg, captaincode.Result{Text: "half the answer", Partial: true, DurationMs: 90_000},
+			fmt.Errorf("claude -p stopped: %w", captaincode.ErrInterrupted)
+	}
+	turnDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, btwReq(dir, "claude", "write the report"))
+		turnDone <- rec
+	}()
+	require.Eventually(t, func() bool {
+		b.steers.mu.Lock()
+		defer b.steers.mu.Unlock()
+		for s := range b.steers.live {
+			if len(s.Attached()) > 0 {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond)
+	rec := httptest.NewRecorder()
+	b.interruptHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/interrupt?cwd="+url.QueryEscape(dir), bytes.NewReader([]byte(`{"reason":"ctrl+c in the TUI","stop":true}`))))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"stopped":["claude"]`)
+	turn := <-turnDone
+	assert.Contains(t, turn.Body.String(), "half the answer", "the partial is delivered")
+	assert.False(t, asked, "no handoff request on a ctrl+c: the user wants it stopped now")
+}

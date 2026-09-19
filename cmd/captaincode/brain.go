@@ -27,12 +27,14 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -206,6 +208,30 @@ func cmdBrain(args []string) {
 	// operator should hear it before the first prompt (filesystem only).
 	fmt.Print(captaincode.RenderBrainChecks(captaincode.CheckBrains(euclidCwd())))
 	fmt.Printf("captain brain: director=%s listening on http://%s\n", captaincode.Director, *addr)
+	// SIGTERM/SIGINT (the launcher's restart, a plain kill): end every worker
+	// run first. The CLI workers are this process's children; with no handler
+	// the brain died instantly and they were re-parented to init, still
+	// running, their answer going nowhere (a 26-minute claude -p in arc after
+	// an -rr, 2026-09-19). Each run's Steer holds its stop; StopAll on every
+	// live turn cancels the contexts and the transports kill their processes.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		b.steers.mu.Lock()
+		turns := make([]*captaincode.Steer, 0, len(b.steers.live))
+		for s := range b.steers.live {
+			turns = append(turns, s)
+		}
+		b.steers.mu.Unlock()
+		n := 0
+		for _, s := range turns {
+			n += len(s.StopAll())
+		}
+		fmt.Printf("captain brain: stopping - %d worker run(s) ended\n", n)
+		time.Sleep(1500 * time.Millisecond) // let the transports reap their children
+		os.Exit(0)
+	}()
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		fatal(err)
 	}

@@ -351,14 +351,55 @@ func (b *brain) interruptHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Reason string `json:"reason"`
+		Stop   bool   `json:"stop"` // ctrl+c: no handoff asked, every run ends now, output kept
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	dir, ok := workspaceFilter(r)
 	if !ok {
 		dir = defaultWorkspace().Dir
 	}
+	if req.Stop {
+		stopped, withdrawn, msg := b.stopDeliver(dir)
+		writeJSON(w, 200, map[string]any{"ok": true, "stopped": stopped, "withdrawn": withdrawn, "result": msg})
+		return
+	}
 	asked, stopped, withdrawn, msg := b.interruptDeliverN(dir, req.Reason, nil)
 	writeJSON(w, 200, map[string]any{"ok": true, "asked": asked, "stopped": stopped, "withdrawn": withdrawn, "result": msg})
+}
+
+// stopDeliver is the abort: every running worker of the folder's turns is
+// ended at once (no handoff), what it produced is kept as a partial; a turn
+// still being prepared is withdrawn.
+func (b *brain) stopDeliver(dir string) (stopped []captaincode.Leg, withdrawn int, msg string) {
+	dir = filepath.Clean(dir)
+	b.steers.mu.Lock()
+	var turns []*captaincode.Steer
+	for s := range b.steers.live {
+		if s.Dir == dir {
+			turns = append(turns, s)
+		}
+	}
+	b.steers.mu.Unlock()
+	for _, s := range turns {
+		if len(s.Running()) == 0 && len(s.Attached()) == 0 {
+			s.Abort() // still being prepared: marked, the worker never starts
+			withdrawn++
+			continue
+		}
+		stopped = append(stopped, s.Abort()...)
+	}
+	switch {
+	case len(stopped) == 0 && withdrawn == 0:
+		msg = "ctrl+c: nothing running in " + filepath.Base(dir)
+	default:
+		msg = fmt.Sprintf("ctrl+c: %s stopped, output kept", legList(stopped))
+		if withdrawn > 0 {
+			msg += fmt.Sprintf("; %d turn(s) withdrawn before a worker started", withdrawn)
+		}
+		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "interrupt", Model: legList(stopped), Text: msg})
+	}
+	fmt.Printf("captain brain: %s\n", msg)
+	return stopped, withdrawn, msg
 }
 
 var interruptWord = regexp.MustCompile(`(?is)^\s*/interrupt\b[\s:]*(.*)$`)

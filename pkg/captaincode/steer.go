@@ -208,6 +208,19 @@ func (s *Steer) Interrupt(reason string) (asked, stopped []Leg) {
 	return asked, stopped
 }
 
+// Abort marks the turn interrupted WITHOUT asking anyone to hand off, then
+// ends every running worker now: ctrl+c, where the user wants it stopped
+// this instant and the partial is enough.
+func (s *Steer) Abort() []Leg {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	s.interrupted = time.Now()
+	s.mu.Unlock()
+	return s.StopAll()
+}
+
 // StopAll ends every running worker of the turn now (the grace ran out).
 func (s *Steer) StopAll() []Leg {
 	if s == nil {

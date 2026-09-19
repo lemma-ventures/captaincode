@@ -127,7 +127,29 @@ confirm_stop() {
 # stop_brain takes the shared brain and its supervisor down - every open TUI
 # loses its workers, so only `captaincode.sh down` calls it, and only after
 # confirm_stop.
+# reap_workers ends the CLI workers a dying brain would orphan: claude -p,
+# codex exec and cursor-agent are direct children of the brain process, and
+# a brain that exits leaves them re-parented to init, still running, their
+# answer going nowhere (a 26-minute claude -p in arc after an -rr, 2026-09-19).
+# Only children of THIS brain are touched - a claude -p the user runs by hand
+# has another parent. Called before the brain itself is killed.
+reap_workers() {
+  local bpid child cmd
+  for bpid in $(pgrep -f "captain brain" 2>/dev/null); do
+    for child in $(pgrep -P "$bpid" 2>/dev/null); do
+      cmd=$(ps -o command= -p "$child" 2>/dev/null)
+      case "$cmd" in
+        "claude -p"*|*"/claude -p"*|"codex exec"*|*"/codex exec"*|*"cursor-agent"*)
+          echo "  ending worker $child left by the brain: ${cmd:0:60}"
+          kill "$child" 2>/dev/null; (sleep 3; kill -9 "$child" 2>/dev/null) &
+          ;;
+      esac
+    done
+  done
+}
+
 stop_brain() {
+  reap_workers
   if [ -f "$SUPERVISOR_PID_FILE" ]; then
     kill "$(cat "$SUPERVISOR_PID_FILE")" 2>/dev/null || true
     rm -f "$SUPERVISOR_PID_FILE"
