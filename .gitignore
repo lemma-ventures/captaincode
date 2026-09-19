@@ -5,3 +5,8 @@
 *.keys
 .DS_Store
 .euclid/
+
+# The panels' dependencies: `cd plugin/captain-ui && bun install` restores them
+# from bun.lock, which is committed so that install is reproducible.
+plugin/captain-ui/node_modules/
+plugin/*.log
