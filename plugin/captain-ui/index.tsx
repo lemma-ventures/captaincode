@@ -91,7 +91,7 @@ function View(props: { api: TuiPluginApi }) {
       // A 404 is a brain older than this sidebar (loaded from source): it
       // never had the endpoint. Say what to do, not "404".
       if (r.status === 404) {
-        setUpgradeNote(`✗ the running brain predates this control - captain-code.sh restart`)
+        setUpgradeNote(`✗ the running brain predates this control - captaincode.sh restart`)
       } else {
         const j = (await r.json()) as { result?: string; error?: string }
         setUpgradeNote(r.ok ? `✓ ${j.result ?? leg}` : `✗ ${j.error ?? r.status}`)
