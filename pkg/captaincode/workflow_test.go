@@ -243,3 +243,22 @@ func TestNewlineOnlyCountsBeforeALegPrefix(t *testing.T) {
 		assert.Len(t, wf.Stages[0].Legs, 1)
 	}
 }
+
+// Prose ABOUT captain's commands is not a workflow: "then a /team then a
+// /workflow … then /speed" names pseudo-models and preferences after the
+// connectors, and a connector only counts before a leg a stage can run
+// (2026-09-19: a demo-script request was refused as workflow syntax).
+func TestProseAboutCommandsIsNotAWorkflow(t *testing.T) {
+	prose := "/cursor https://captaincode.ai/demo/ is great but show case more for the important commands: start with a bare prompt, then go for a /frontier model, then go for a /team then a /workflow, then a /deterministic explaining how it pulls the leg from the ADI, then a /cheap then /speed. Make it progressive."
+	assert.False(t, LooksLikeWorkflow(prose), "no runnable leg follows any connector except /frontier")
+	// …except that "then go for a /frontier model" IS a connector to a runnable pseudo-leg;
+	// the expression must then still parse as the user's intent would read.
+	wf, err := ParseWorkflow(prose)
+	if err == nil {
+		assert.LessOrEqual(t, len(wf.Stages), 2)
+	}
+	assert.True(t, LooksLikeWorkflow("/grok draft it then /claude review it"), "a real pipeline still is one")
+	assert.False(t, LooksLikeWorkflow("/grok explain /quality and /speed to me"), "preferences after word connectors are prose")
+	assert.False(t, LooksLikeWorkflow("/grok compare /team and /workflow modes"), "pseudo-models after word connectors are prose")
+	assert.True(t, LooksLikeWorkflow("/grok a > /quality b"), "a symbol connector is deliberate syntax: still reported")
+}
