@@ -157,6 +157,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/workers", b.workers)
 	mux.HandleFunc("/v1/roster", b.rosterHTTP)
 	mux.HandleFunc("/v1/roster/upgrade", b.rosterUpgradeHTTP)
+	mux.HandleFunc("/v1/legs/reopen", b.legReopenHTTP)
 	mux.HandleFunc("/v1/proxy/stats", b.proxyStatsHTTP)
 	mux.HandleFunc("/v1/activity", b.activityFeed)
 	mux.HandleFunc("/v1/workflow/status", b.workflowStatus)

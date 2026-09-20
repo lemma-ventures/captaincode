@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -85,6 +86,26 @@ func cmdLegs(args []string) {
 		cmdLegsAdd(args[1:])
 	case "caps", "capabilities":
 		fmt.Print(captaincode.CapabilityTable())
+	case "reopen":
+		// Lift a leg's cooldown now (credits topped up, an outage over):
+		// the brain clears it, no restart.
+		if len(args) < 2 {
+			fatal(fmt.Errorf("usage: captain legs reopen <id>"))
+		}
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Post(brainURL()+"/v1/legs/reopen?leg="+url.QueryEscape(args[1]), "application/json", nil)
+		if err != nil {
+			fatal(fmt.Errorf("the brain is not running (%v)", err))
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Result string                   `json:"result"`
+			Error  struct{ Message string } `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		if resp.StatusCode != 200 {
+			fatal(fmt.Errorf("%s", out.Error.Message))
+		}
+		fmt.Println(out.Result)
 	case "remove", "rm":
 		if len(args) < 2 {
 			fatal(fmt.Errorf("usage: captain legs remove <id>"))

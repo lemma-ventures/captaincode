@@ -157,6 +157,28 @@ var ErrProviderDown = errors.New("provider temporarily unavailable")
 // minutes, and harnessFault keeps it off the model's reliability stats.
 var ErrProviderAuth = fmt.Errorf("%w: credentials rejected", ErrProviderDown)
 
+// ErrProviderBilling: the provider refuses for money, not for load - a
+// depleted plan, a 402, "purchase credits". A quota window reopens by itself
+// in minutes or hours; this reopens when someone pays, so the leg is benched
+// for the rest of the day and the reason names the fix (Hugging Face's
+// "depleted your monthly included credits" on ds4-flash, 2026-09-20). The
+// task reroutes like any provider fault.
+var ErrProviderBilling = fmt.Errorf("%w: billing", ErrProviderDown)
+
+// providerBillingError spots a refusal for money.
+func providerBillingError(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, p := range []string{
+		"402", "payment required", "depleted your monthly", "purchase pre-paid credits", "purchase credits",
+		"insufficient credits", "insufficient_quota", "billing", "add credits", "out of credits", "credit balance is too low",
+	} {
+		if strings.Contains(m, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // providerAuthError recognizes a credential rejection in a provider error.
 func providerAuthError(msg string) bool {
 	m := strings.ToLower(msg)
@@ -723,6 +745,12 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		// short outage cooldown.
 		if strings.Contains(e, "temporarily unavailable") || strings.Contains(e, "service unavailable") || strings.Contains(e, " 503") || strings.Contains(e, " 502") || strings.Contains(e, "bad gateway") || strings.Contains(e, "overloaded") || strings.Contains(e, "at capacity") || strings.Contains(e, "high demand") {
 			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w: %s", mm.Provider, mm.Model, ErrProviderDown, e)
+		}
+		// Money before quota: "depleted your monthly included credits" also
+		// says "monthly", and a plan that needs paying is not a window that
+		// reopens in 30 minutes.
+		if providerBillingError(string(msg.Info.Error)) {
+			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w: %s", mm.Provider, mm.Model, ErrProviderBilling, truncateStr(e, 200))
 		}
 		if strings.Contains(e, "rate") || strings.Contains(e, "429") || strings.Contains(e, "quota") || strings.Contains(e, "usage limit") {
 			return Result{Headers: hdrs}, ErrRateLimited
