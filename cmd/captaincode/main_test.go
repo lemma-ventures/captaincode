@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 	// port with this throwaway HOME was adopted by the running brain and
 	// broke every opencode leg (2026-09-18).
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
+	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

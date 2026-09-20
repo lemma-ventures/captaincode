@@ -11,5 +11,6 @@ import (
 // a serve builds an httptest one.
 func TestMain(m *testing.M) {
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
+	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
 	os.Exit(m.Run())
 }

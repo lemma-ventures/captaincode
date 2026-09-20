@@ -209,6 +209,7 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 	if err := captaincode.MarkDistilled(wb, time.Now()); err != nil {
 		return d, report, err
 	}
+	captaincode.ScheduleReindex(wb)
 	report += fmt.Sprintf("\napplied %d edits to %s (%s)\n", len(touched), wb.Label, wb.Root)
 	if wb.Kind == "developer" {
 		report += "your developer subtree is local (gitignored): edits stay on this machine.\n"

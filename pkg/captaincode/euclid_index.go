@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -273,4 +274,89 @@ func describeIndex(r IndexResult) string {
 		}
 	}
 	return "index rebuilt: " + strings.Join(parts, ", ")
+}
+
+// ---------------------------------------------------------- after each write
+
+// A brain that is written every turn but indexed only at launch shows last
+// night's dashboard all day ("why is euclid memory not updated???",
+// 2026-09-20, the kyoei dashboard a day behind its journal). The rebuild is
+// under a second, so every write to a brain schedules one: debounced, so a
+// team turn journaling six workers rebuilds once, and coalesced per root, so
+// a rebuild already running is followed by exactly one more.
+//
+// CAPTAIN_EUCLID_AUTOINDEX=0 turns it off (tests do: a background python run
+// against a temp brain is not what they measure).
+
+var autoIndexDelay = 3 * time.Second
+
+var autoIndex struct {
+	mu      sync.Mutex
+	pending map[string]*time.Timer
+	running map[string]bool
+	again   map[string]bool
+}
+
+func autoIndexEnabled() bool { return os.Getenv("CAPTAIN_EUCLID_AUTOINDEX") != "0" }
+
+// indexRootOf is the directory Reindex accepts for a brain: the main brain
+// or the repo's .euclid - a developer subtree is indexed with its repo brain,
+// which is where the dashboard lives.
+func indexRootOf(b EuclidBrain) string {
+	switch b.Kind {
+	case "developer":
+		return filepath.Dir(filepath.Dir(b.Root))
+	default:
+		return b.Root
+	}
+}
+
+// ScheduleReindex rebuilds b's index shortly, once per burst of writes.
+func ScheduleReindex(b EuclidBrain) {
+	if !autoIndexEnabled() {
+		return
+	}
+	root := indexRootOf(b)
+	if !IsBrainRoot(root) {
+		return
+	}
+	autoIndex.mu.Lock()
+	defer autoIndex.mu.Unlock()
+	if autoIndex.pending == nil {
+		autoIndex.pending = map[string]*time.Timer{}
+		autoIndex.running = map[string]bool{}
+		autoIndex.again = map[string]bool{}
+	}
+	if t, ok := autoIndex.pending[root]; ok {
+		t.Reset(autoIndexDelay)
+		return
+	}
+	autoIndex.pending[root] = time.AfterFunc(autoIndexDelay, func() { autoReindex(root) })
+}
+
+func autoReindex(root string) {
+	autoIndex.mu.Lock()
+	delete(autoIndex.pending, root)
+	if autoIndex.running[root] {
+		autoIndex.again[root] = true // one more after this one, whatever the count
+		autoIndex.mu.Unlock()
+		return
+	}
+	autoIndex.running[root] = true
+	autoIndex.mu.Unlock()
+
+	for {
+		res := Reindex(root, 2*time.Minute)
+		if !res.OK {
+			fmt.Fprintf(os.Stderr, "captain brain: euclid index of %s not rebuilt - %s\n", root, describeIndex(res))
+		}
+		autoIndex.mu.Lock()
+		if !autoIndex.again[root] {
+			autoIndex.running[root] = false
+			autoIndex.mu.Unlock()
+			return
+		}
+		autoIndex.again[root] = false
+		autoIndex.mu.Unlock()
+	}
 }
