@@ -10,6 +10,9 @@ package main
 //	captain jev shadow [--point p] [--target 0.9] [--min 20]
 //	                                 the shadow record read as a calibration: agreement with captain per decision point, by confidence,
 //	                                 labelled with the tasks' outcomes, and the bar each point could be gated at (pkg shadow.go)
+//	captain jev conform [--json]     does this backend answer captain's questions? a fixed suite whose answers are not in doubt,
+//	                                 per capability (triage, route, keep, gate, supervise) - the check an OPEN backend has to
+//	                                 pass before a shadow run against it is worth starting (pkg conform.go)
 //	captain jev ask --state <text|@file> --questions <json|@file> [--model id]
 //	                                 any state, any questions, in the API's own shape; answers as JSON
 
@@ -27,7 +30,7 @@ import (
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
-const jevUsage = "usage: captain jev | captain jev classify <task…> | captain jev shadow [--point p] [--target 0.9] [--min 20] | captain jev ask --state <text|@file> --questions <json|@file> [--model id]"
+const jevUsage = "usage: captain jev | captain jev classify <task…> | captain jev shadow [--point p] [--target 0.9] [--min 20] | captain jev conform [--json] | captain jev ask --state <text|@file> --questions <json|@file> [--model id]"
 
 func cmdJev(args []string) {
 	if len(args) > 0 && args[0] == "shadow" { // reads the ledger; needs no key
@@ -36,7 +39,8 @@ func cmdJev(args []string) {
 	}
 	c := captaincode.SystemOneFromEnv()
 	if c == nil {
-		fatal(fmt.Errorf("%s is not set - add it to %s, or the console's API_KEY=… line to ~/.config/captain/%s (keys: console.typesafe.ai/settings/keys)", captaincode.SystemOneKeyEnv, captaincode.CaptainEnvPath(), captaincode.SystemOneKeyFile))
+		fatal(fmt.Errorf("no decision leg: set %s (add it to %s, or the console's API_KEY=… line to ~/.config/captain/%s - keys: console.typesafe.ai/settings/keys), or point %s at a System One-shaped endpoint that needs no key. Captain runs without one: triage falls back to the heuristics and the free-leg classify, and nothing else changes",
+			captaincode.SystemOneKeyEnv, captaincode.CaptainEnvPath(), captaincode.SystemOneKeyFile, captaincode.SystemOneURLEnv))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -51,6 +55,8 @@ func cmdJev(args []string) {
 			fatal(errors.New(jevUsage))
 		}
 		jevClassify(ctx, c, task)
+	case "conform":
+		jevConform(ctx, c, args[1:])
 	case "ask":
 		jevAsk(ctx, c, args[1:])
 	default:
@@ -63,7 +69,11 @@ func jevProbe(ctx context.Context, c *captaincode.SystemOneClient) {
 	if err != nil {
 		fatal(err)
 	}
-	fmt.Printf("key from %s reaches %d model(s) at %s:\n", c.KeySource, len(models), c.BaseURL)
+	how := "key from " + c.KeySource
+	if c.Keyless() {
+		how = "keyless (" + c.KeySource + ")"
+	}
+	fmt.Printf("%s reaches %d model(s) at %s [backend %s]:\n", how, len(models), c.BaseURL, c.Backend())
 	for _, m := range models {
 		fmt.Printf("  %-12s %s (%s)\n", m.Name, m.Description, m.ReleaseDate)
 	}
@@ -119,13 +129,17 @@ func jevShadow(args []string) {
 	fs := flag.NewFlagSet("jev shadow", flag.ExitOnError)
 	target := fs.Float64("target", 0.9, "agreement a confidence floor must reach to be suggested as the bar")
 	minN := fs.Int("min", 20, "comparisons a floor needs before it can be suggested")
-	point := fs.String("point", "", "one decision point only: class, domain, shape, leg or note-route")
+	point := fs.String("point", "", "one decision point only: class, domain, shape, leg, note-route, a gate-* or a supervisor point")
 	_ = fs.Parse(args)
 	l, err := captaincode.LoadLedger()
 	if err != nil {
 		fatal(err)
 	}
-	cal := captaincode.ShadowCalibration(l.Decisions, l.Shadows, l.Outcomes)
+	// The gate screens in whichever process runs the tool, not in the brain,
+	// so its rows live in their own append-only log (gate.go). They are the
+	// same shape and belong in the same reading.
+	shadows := append(append([]captaincode.ShadowRecord(nil), l.Shadows...), captaincode.ReadGateLog()...)
+	cal := captaincode.ShadowCalibration(l.Decisions, shadows, l.Outcomes)
 	if *point != "" {
 		kept := cal[:0]
 		for _, p := range cal {
@@ -155,6 +169,27 @@ func probLine(p map[string]float64) string {
 		parts = append(parts, fmt.Sprintf("%s %.2f", k, p[k]))
 	}
 	return "(" + strings.Join(parts, " · ") + ")"
+}
+
+// jevConform runs the fixture suite against whatever backend is configured.
+// It exits non-zero when a capability is not usable, so it can gate a script
+// that is about to point captain at an open backend.
+func jevConform(ctx context.Context, c *captaincode.SystemOneClient, args []string) {
+	fs := flag.NewFlagSet("jev conform", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "the whole report as JSON")
+	_ = fs.Parse(args)
+	rep := captaincode.RunConform(ctx, c, captaincode.ConformSuite())
+	if *asJSON {
+		out, _ := json.MarshalIndent(rep, "", "  ")
+		fmt.Println(string(out))
+	} else {
+		fmt.Print(captaincode.FormatConformReport(rep))
+	}
+	for _, capability := range captaincode.ConformCaps {
+		if !rep.Usable(capability) {
+			os.Exit(1)
+		}
+	}
 }
 
 func jevAsk(ctx context.Context, c *captaincode.SystemOneClient, args []string) {

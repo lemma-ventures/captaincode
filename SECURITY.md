@@ -46,6 +46,39 @@ If that is not acceptable for your work:
 read tool on `.env` files. That is a guard rail against an accidental read, not
 a security boundary: a shell command can still read any file the user can.
 
+### Workers are processes, not sandboxes
+
+Be precise about what isolation exists. A worker is an ordinary subprocess of
+the brain (`exec.CommandContext`), with `cmd.Dir` set to the working directory
+and **the brain's entire environment inherited** - every credential in it. The
+only isolation is a git worktree, and
+[`pkg/captaincode/scope.go`](pkg/captaincode/scope.go) says so in its own
+first paragraph: *a worktree isolates Git changes, not processes, credentials
+or network access.* That file also carries the per-transport table of what
+each CLI can actually enforce; read it rather than assuming.
+
+The egress proxy is a closed set of provider origins, and
+`CAPTAIN_EGRESS_ALLOW` narrows it further. That bounds **captain's own model
+traffic**. It is not a network boundary for a worker: `curl` in a bash tool
+call does not pass through the proxy at all.
+
+### The action gate
+
+Because there is nobody to ask, captain screens actions with a classifier
+instead of a prompt: three calibrated nouls on the decision leg over the
+command a worker is about to run (irreversible destruction, out of scope,
+exfiltration). It runs as a Claude Code `PreToolUse` hook and from the
+opencode plugin's tool boundary. See
+[the configuration](docs/CONFIGURATION.md#the-action-gate).
+
+Its limits, stated so nobody over-trusts it:
+
+- It defaults to **shadow**: it records and allows. Enforcement is opt-in.
+- **A failed or slow call allows.** It is an availability-preserving gate.
+- **With no decision leg configured it does nothing at all.**
+- It is a classifier. It will be wrong in both directions, and it is not a
+  substitute for a container, a VM, or a machine without the credentials.
+
 ## What we do protect
 
 - **Credential values are never read.** Doctor checks *which* providers are

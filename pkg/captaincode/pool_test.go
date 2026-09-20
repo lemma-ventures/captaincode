@@ -32,6 +32,8 @@ func TestOpenWeightsByFamilyAndRegistryFlag(t *testing.T) {
 	assert.True(t, OpenWeights(LegDeepSeek))
 	assert.True(t, OpenWeights(LegKimi))
 	assert.True(t, OpenWeights(LegGPTOSS))
+	assert.True(t, OpenWeights(LegStep))
+	assert.True(t, OpenWeights(LegDS4Flash))
 	assert.False(t, OpenWeights(LegClaude))
 	assert.False(t, OpenWeights(LegGrok))
 	assert.False(t, OpenWeights(LegCodex))

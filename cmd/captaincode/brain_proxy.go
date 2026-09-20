@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,64 @@ var proxyUpstreams = map[string]string{
 	"nvidia":      "https://integrate.api.nvidia.com",
 	"opencode":    "https://opencode.ai/zen",
 	"huggingface": "https://router.huggingface.co",
+}
+
+// ── the gateway: an outbound allowlist ───────────────────────────────────────
+//
+// ax (google/ax) models an agent's network access as a Gateway with an
+// explicit allowlist, which is the right shape and the half of it captain can
+// have without a Kubernetes cluster: the proxy is already the only path the
+// model traffic takes, and proxyUpstreams is already a closed set - nine
+// origins, nothing else reachable. CAPTAIN_EGRESS_ALLOW narrows that set to
+// the providers a machine is actually meant to talk to, so a config or a
+// prompt that reaches for a provider nobody authorised is refused at the
+// socket instead of being billed.
+//
+// What this is NOT, and the reason it is documented rather than advertised:
+// it is not a network boundary for a WORKER. Workers are ordinary
+// subprocesses with the brain's environment (pkg/captaincode scope.go), and
+// `curl` in a bash tool call does not pass through here at all. This bounds
+// captain's own model traffic. A real boundary is a container, a VM, or a
+// machine without the credentials - which is exactly what an ax-transport leg
+// would buy, and why the roadmap carries it as a deployment target rather
+// than a laptop default.
+
+// EgressAllowEnv narrows the upstreams the proxy will reach.
+const EgressAllowEnv = "CAPTAIN_EGRESS_ALLOW"
+
+// egressAllowed is the allowlist, or nil when every known upstream is open.
+// Names are the proxy's own path segments ("openrouter", "anthropic"); an
+// unknown name is kept so a typo is a refused provider, not a silently wider
+// list.
+func egressAllowed() map[string]bool {
+	v := strings.TrimSpace(os.Getenv(EgressAllowEnv))
+	if v == "" {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, name := range strings.Split(v, ",") {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
+			out[name] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// egressNote describes the gateway for the startup line.
+func egressNote() string {
+	allow := egressAllowed()
+	if allow == nil {
+		return fmt.Sprintf("egress: %d provider origin(s), nothing else (%s narrows it)", len(proxyUpstreams), EgressAllowEnv)
+	}
+	names := make([]string, 0, len(allow))
+	for n := range allow {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return "egress: " + strings.Join(names, ", ") + " only"
 }
 
 func proxyAddr() string {
@@ -102,7 +161,8 @@ func (s *proxyStats) snapshot() map[string]any {
 	return map[string]any{
 		"requests": atomic.LoadInt64(&s.Requests), "secrets": atomic.LoadInt64(&s.Secrets),
 		"identity": atomic.LoadInt64(&s.Identity), "kinds": kinds, "mode": captaincode.RedactMode(),
-		"addr": proxyAddr(),
+		"addr":   proxyAddr(),
+		"egress": egressNote(),
 	}
 }
 
@@ -123,6 +183,7 @@ func startProxy() {
 	go func() { _ = srv.Serve(ln) }()
 	captaincode.SetProxyBase(proxyBase())
 	fmt.Printf("captain proxy: %s (mode %s) - secrets and identity redacted on the wire\n", proxyAddr(), captaincode.RedactMode())
+	fmt.Println("captain proxy: " + egressNote() + " - model traffic only; a worker's own `curl` does not pass through here")
 }
 
 // wireProxy points the transports at the proxy when it listens and back at
@@ -141,6 +202,17 @@ func wireProxy() {
 	} else if changed {
 		fmt.Println("captain proxy: " + note)
 	}
+	// The action gate's own PreToolUse hook (gate.go). Installed only when
+	// there is a decision leg for it to ask AND the gate is not off, and
+	// REMOVED otherwise: a captain with no decision leg must not spawn a
+	// process per tool call to be told there is nothing to screen, and a hook
+	// that is present but does nothing is a hook someone will one day believe in.
+	gateOn := captaincode.GateModeFromEnv() != captaincode.GateOff && captaincode.SystemOneFromEnv() != nil
+	if changed, note, err := captaincode.EnsureClaudeGateHook(gateOn); err != nil {
+		fmt.Printf("captain proxy: claude gate hook: %v\n", err)
+	} else if changed {
+		fmt.Println("captain proxy: " + note)
+	}
 }
 
 var proxyClient = &http.Client{
@@ -154,6 +226,13 @@ var proxyClient = &http.Client{
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	seg := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
 	upstream, ok := proxyUpstreams[seg[0]]
+	if ok {
+		if allow := egressAllowed(); allow != nil && !allow[seg[0]] {
+			fmt.Printf("captain proxy: %s refused - not in %s\n", seg[0], EgressAllowEnv)
+			http.Error(w, "captain proxy: "+seg[0]+" is not in "+EgressAllowEnv, 403)
+			return
+		}
+	}
 	if !ok {
 		if r.URL.Path == "/health" || r.URL.Path == "/" {
 			writeJSON(w, 200, proxyTotals.snapshot())
