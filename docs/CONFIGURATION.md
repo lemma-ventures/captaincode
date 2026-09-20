@@ -76,11 +76,15 @@ After edit: restart the brain so doctor and health report the new director. Use 
 | `CAPTAIN_TRIAGE_JEV_CONF` | `CAPTAIN_TRIAGE_CONF` (0.6) | The calibrated confidence (the weaker of the two answers) a jev classification must reach to be taken. |
 | `CAPTAIN_TRIAGE_JEV_BELOW` | `0.9` | With jev configured, the heuristic confidence below which it is asked on its own: over the free-leg bar (`CAPTAIN_TRIAGE_CONF`) and under this, a sure jev answer replaces the heuristic and a miss keeps it, with no free-leg call. `0` closes the band (jev only under `CAPTAIN_TRIAGE_CONF`); `1` asks it on every triaged task. |
 | `CAPTAIN_JEV_SHADOW` | on when `TYPESAFE_API_KEY` is set (`0` disables) | Asks jev the **shadow** questions - the shape of the turn, which leg should take it, which running worker a `/btw` note concerns - beside the decisions captain already makes, and records the answers next to what captain did. Nothing is acted on. Off, the tier-1 call asks only class and domain and no call is made beside the director or a note. See [Shadow decisions](#shadow-decisions-reading-jevs-calibration). |
+| `CAPTAIN_JEV_SUPERVISE` | on when a decision leg is configured (`0` disables) | Samples each **running** worker on a slow interval and asks the decision leg four nouls about its floor state - is it stuck, is it on the wrong thing, does it need the user, is it departing from the repository's `AGENTS.md`. Recorded beside what the run turned out to be; **acted on by nothing**. `CAPTAIN_SUPERVISE_EVERY` (default `90s`, minimum `10s`) moves the interval. See [Shadow decisions](#shadow-decisions-reading-jevs-calibration). |
+| `CAPTAIN_ACTION_GATE` | `shadow` | The action gate at the tool boundary: the decision leg screens what a worker is about to do, because a headless fleet has nobody to answer an approval prompt. `shadow` records every screening to `~/.captaincode/gate.log` and allows everything; `enforce` refuses an action whose risk reaches `CAPTAIN_GATE_BAR`; `off` screens nothing. An unrecognised value reads as `shadow`, so a typo cannot turn enforcement on. **With no decision leg configured nothing is screened, no call is made and no tool call waits on one.** See [The action gate](#the-action-gate). |
+| `CAPTAIN_GATE_BAR` | `0.9` | The risk at which `CAPTAIN_ACTION_GATE=enforce` refuses. Choose it from `captain gate --report`, not from taste. |
+| `CAPTAIN_EGRESS_ALLOW` | unset (all nine provider origins) | Narrows the egress proxy's upstreams to a comma-separated set of its own route names (`anthropic,openrouter,huggingface`, …). A provider outside the list is refused at the socket. This bounds **captain's own model traffic**; it is not a network boundary for a worker, whose `curl` in a bash tool call never crosses the proxy. |
 | `CAPTAIN_FAST_ROUTE` | off (`1` enables) | Skip the director entirely; pure ladder. |
 | `CAPTAIN_FALLBACK_LEG` | - | Leg the terminal degrades to when the brain does not answer in time. |
 | `CAPTAIN_REDACT` | `on` | Secrets on the wire (see [SECRETS.md](SECRETS.md)): credentials in tool output and request bodies become stable placeholders, the operator's home/name become stand-ins, private-key files are refused. `off`, `secrets` (no identity rewrite), `strict` (`.env` refused too). |
 | `CAPTAIN_PROXY_ADDR` | `127.0.0.1:14098` | The egress proxy the workers, claude -p and codex exec call providers through. `CAPTAIN_PROXY_CLAUDE=0` / `CAPTAIN_PROXY_CODEX=0` send that CLI direct. |
-| `TYPESAFE_API_KEY` | unset | TypeSafe key (console.typesafe.ai/settings/keys) - or, like `aa.env`, a `jev.env` file holding the console download's `API_KEY=…` line in `~/.config/captain/`, next to the captain source (`CAPTAIN_SRC`) or in the current directory; the variable wins over the file. With it the **jev** decision leg is ready (`captain doctor`), triage asks it first, and `captain jev` answers by hand. `CAPTAIN_JEV_MODEL` repins it (default `jev-latest`, the alias TypeSafe moves; pin `jev-1.13.0` to freeze a tuned confidence bar); `CAPTAIN_SYSTEMONE_URL` points the client at a mock or a proxy. See [Decision legs](#decision-legs-jev). |
+| `TYPESAFE_API_KEY` | unset | TypeSafe key (console.typesafe.ai/settings/keys) - or, like `aa.env`, a `jev.env` file holding the console download's `API_KEY=…` line in `~/.config/captain/`, next to the captain source (`CAPTAIN_SRC`) or in the current directory; the variable wins over the file. With it the **jev** decision leg is ready (`captain doctor`), triage asks it first, and `captain jev` answers by hand. `CAPTAIN_JEV_MODEL` repins it (default `jev-latest`, the alias TypeSafe moves; pin `jev-1.13.0` to freeze a tuned confidence bar); `CAPTAIN_SYSTEMONE_URL` points the client at another System One-shaped endpoint - **with or without a key**, so an open backend needs no `TYPESAFE_API_KEY` at all. See [Decision legs](#decision-legs-jev) and [Open backends](#open-decision-leg-backends). |
 | `CAPTAIN_AA_API_KEY` | unset | Artificial Analysis key (or `aa.env` in `~/.config/captain/`). With it the brain refreshes the perf ranking daily from the live feed (cached in `~/.captaincode/perf.json`); without it the ranking is the snapshot compiled into the binary. The ranking orders the sidebar's Frontier and Models sections, the `/frontier` failover chain, and the ⇡ "newer model in this family" flags. |
 | `CAPTAIN_ROUTE_TIMEOUT_MS` | `12000` (set `30000` with a frontier director) | How long the terminal waits for a routing decision. A director that plans slower than this is bypassed entirely. |
 
@@ -102,6 +106,83 @@ How often it is asked: the free-leg classify (~5s) only refines a heuristic unde
 
 A brain started before the key was set does not see it: stop it and start `captain brain` again, and the startup log names jev as tier 1.
 
+
+#### Open decision-leg backends
+
+`CAPTAIN_SYSTEMONE_URL` can be **keyless**. Any endpoint that speaks the
+System One shape - a local re-implementation, a model served behind a small
+adapter - serves the decision leg with no `TYPESAFE_API_KEY`, which makes the
+decision leg optional rather than a subscription. The three configurations
+are: no decision leg (triage falls back to the heuristics and the free-leg
+classify, and nothing else in captain changes), the vendor with a key, or any
+URL with or without one.
+
+What a keyless backend does **not** inherit is the vendor's calibration.
+Two things enforce that rather than hope for it:
+
+```sh
+captain jev conform          # a fixed suite whose answers are not in doubt
+captain jev conform --json   # the same, machine-readable; exits 1 on any unusable capability
+```
+
+`conform` reports usability **per capability** - `triage`, `route`, `keep`,
+`gate`, `supervise` - because a backend can be fine at one and useless at
+another: a lexical scorer handles keep/drop and cannot rank legs. It is a
+smoke test, and says so in its own output: a passing suite means a backend is
+not broken, never that captain should route on it.
+
+The numbers that decide that come from the shadow, and they are per backend.
+Every shadow row stamps which implementation and which versioned model
+answered, and `captain jev shadow` **declines to suggest a bar** when a
+point's rows came from more than one - `jev-latest` is an alias that moves
+under the record, and an open re-implementation is a different model
+entirely. Pin the model (`CAPTAIN_JEV_MODEL`) and the backend before reading
+a bar off a calibration.
+
+### The action gate
+
+Captain runs its workers at full permission, on purpose. `claude
+--dangerously-skip-permissions`, `codex
+--dangerously-bypass-approvals-and-sandbox`, `cursor-agent --trust --force`,
+and an opencode ruleset that allows bash and edits and **denies `question`** -
+because an ask wedges a headless worker until its cap. There is no human at
+the terminal to answer a prompt, so tightening a CLI's permissions does not
+buy prompts. It buys denials, and mostly silent ones.
+
+The action gate is the screening that replaces the prompt: three nouls on the
+decision leg, a few hundred milliseconds, asked about the action a worker is
+one instant from taking - would this destroy something unrecoverable, does it
+reach outside the work it was given, does it send this machine's contents
+somewhere else.
+
+```sh
+captain gate --status                 # the mode, the bar, whether a decision leg exists
+captain gate --check "rm -rf build"   # screen one command by hand
+captain gate --report                 # the screenings read as a calibration
+```
+
+It runs as a Claude Code `PreToolUse` hook (`captain gate --hook`, installed
+beside the redaction hook) and from the opencode plugin's
+`tool.execute.before` (`captain gate --tool <name>`), on the **restored**
+arguments - the command that will actually run is the one worth screening.
+Reads are allowed deterministically, without a call: a gate that priced
+`git status` is a gate nobody leaves on.
+
+Three properties worth stating plainly:
+
+- **The default is `shadow`.** Every screening is recorded; every action is
+  allowed. `enforce` is opt-in and should follow `captain gate --report`.
+- **A failed or slow call allows.** A gate that turns a provider outage into
+  a stopped fleet is worse than no gate.
+- **With no decision leg there is no gate.** No call, no latency, no
+  behaviour change. This is a tested property.
+
+`captain gate --report` currently says the honest thing about its own record:
+a gate noul is a *prediction* about an action, not a second opinion on a
+choice captain made beside it, so rows stay uncompared until something later
+settles them. Until then the readable parts of the report are the risk
+distribution and the latency - not an agreement rate, and not a bar.
+
 ### Shadow decisions: reading jev's calibration
 
 Triage is the one decision jev is trusted with today. Three more are closed-set questions it could answer - how the turn should be staffed (one worker or a fan-out), which leg should take it, and which running worker a mid-turn `/btw` note concerns - and a frontier director answers all three in prose, on the critical path, seconds per turn. Before any of them is handed over, captain has to know how often jev would have agreed, at what confidence, and how those turns ended. So the questions are asked **in the shadow**: answered beside the real decision, recorded next to it, and never acted on.
@@ -120,6 +201,14 @@ captain why                         # one turn's: what jev said beside what capt
 The report reads each point as a cumulative calibration - "if the bar were here, jev agreed this often" - joined to the outcome ledger (`captain outcome`), so agreement on turns that were **accepted** can be told from agreement on turns that were rejected. `bar:` is the lowest confidence floor that reaches the target over enough comparisons, or says the sample is still too small. Four rows are counted apart from the agreement rate, so it stays honest: calls that **failed**, points jev's own answer **decided** (tier-1 triage agrees with itself), points the turn never **reached**, and picks that were **not on the menu** jev was given - forcing `/grok` names a leg that serves tasks but is no rung, and jev was never allowed to answer it.
 
 Only when a point's bar holds up should it be gated for real - and then per point, not one bar for all of them.
+
+**Two more axes are in the shadow, and are read by the same report.**
+
+The **action gate** (`gate-destructive`, `gate-out-of-scope`, `gate-exfiltration`) screens what a worker is about to do; its rows live in `~/.captaincode/gate.log` and are folded into `captain jev shadow` automatically, or read on their own with `captain gate --report`. See [The action gate](#the-action-gate).
+
+The **supervisor** (`worker-stuck`, `work-off-track`, `needs-human`, `agents-md-drift`) asks about a worker that is still running - the floor, not the dispatch. One call every `CAPTAIN_SUPERVISE_EVERY` per running worker, off the status feed the worker already produces, charged to the turn like any other decision-leg call. Nothing acts on an answer.
+
+Both are **predictions**, not comparisons with a choice captain made at the same moment, so they are stamped from what captain later observed rather than at the moment they were asked: `worker-stuck` against whether the stall watchdog fired, `needs-human` against whether the user interrupted, `work-off-track` against the task's acceptance evidence (joined by task id, as every point is). `agents-md-drift` is left **uncompared** because nothing in captain observes it - the report showing a point with no comparisons is the honest record, not a gap to fill with a guess.
 
 ### Pools: `/oss` and `/deterministic`
 

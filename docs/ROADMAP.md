@@ -521,6 +521,7 @@ package is complete as an artifact; the numbers are pending.
 | M2.3 | Quota telemetry | Supported provider adapters returning source, account, observation time, reset time and remaining allowance when available; retain inferred/unknown states | Runtime |
 | M2.4 | Shared resource controller | One budget authority for root task, nested workflows, parallel workers, director/review calls and retries; reserve before dispatch and reconcile afterward | Routing |
 | M2.5 | Bounded escalation | Objective check failure or explicit rejection can trigger one repair and one escalation initially; configurable shared attempt/time limits and recorded stopping reasons | Both |
+| M2.6 | Open decision-leg backend | Any System One-shaped endpoint serves the decision leg, with or without a key; a conformance suite per capability, and a calibration that refuses to pool two backends | Routing |
 
 **M2.1 status (14 September 2026).** The decision record has landed:
 [`pkg/captaincode/decision.go`](../pkg/captaincode/decision.go) defines a
@@ -871,6 +872,36 @@ Euclid's context/token limits bound retrieved memory, not account spending. An o
 Atlas mandate is an additional action constraint; it does not replace Captain's resource
 controller or imply that a worker's unobserved tool calls were mandate-enforced.
 
+**M2.6 status (20 September 2026).** The decision leg stopped being one
+vendor.
+
+`CAPTAIN_SYSTEMONE_URL` can now be keyless: any System One-shaped endpoint
+serves the decision leg with or without a credential, so an open
+re-implementation on loopback, or a model served on a leg captain already
+has, answers the same typed questions for nothing. Captain still works with
+no decision leg at all - triage falls back to the heuristics and the free-leg
+classify - and works with a key exactly as before. The keyless URL is the
+third configuration, not a replacement for either.
+
+Two things follow, and both are now enforced rather than hoped for.
+
+`captain jev conform` asks a fixed suite whose answers are not in doubt - a
+one-word typo fix is trivial, `rm -rf` on an uncommitted directory is
+destructive, a worker eight minutes into one `cargo build` is not stuck - and
+reports usability PER CAPABILITY (triage, route, keep, gate, supervise),
+because a backend can be fine at one and useless at another; a lexical scorer
+handles keep/drop and cannot rank legs. It is a smoke test and says so: a
+passing suite means a backend is not broken, never that captain should route
+on it.
+
+The numbers that decide that come from the shadow, and they are now per
+backend. Every shadow row stamps which implementation and which versioned
+model answered, and `captain jev shadow` DECLINES to suggest a bar when a
+point's rows came from more than one - `jev-latest` is an alias that moves
+under the record, and an open re-implementation is a different model
+entirely. A pooled bar would be a number no single configuration ever
+produced.
+
 ## M3 — Make execution dependable
 
 **User outcome:** parallel work produces reviewable changes and interruptions preserve progress.
@@ -882,6 +913,9 @@ controller or imply that a worker's unobserved tool calls were mandate-enforced.
 | M3.3 | Durable lifecycle | Persist task/stage/attempt states, reservations, process/session identities, checkpoints and artifact references before acknowledging transitions | Both |
 | M3.4 | Cancellation and recovery | One cancellation tree for model calls, subprocesses, gates, review and nested work; startup reconciliation and explicit resume policy | Runtime |
 | M3.5 | Structured handoffs | Compact brief containing requirements, completed work, verified artifacts, failed checks, remaining actions and uncertain side effects | Routing |
+| M3.6 | Action gate | A calibrated classifier screens what a worker is about to do, because a headless fleet has nobody to answer an approval prompt; shadowed first, enforced only against its own record | Runtime |
+| M3.7 | Borrowed isolation | An `ax`-transport leg for deployments that have a cluster, and the portable half of its Gateway - an outbound allowlist on the egress proxy - for the ones that do not | Runtime |
+| M3.8 | `/btw` on codex | `codex app-server` (`thread/start` → `turn/steer`) instead of `codex exec`, so a mid-run note reaches a codex worker the way it reaches claude and opencode | Runtime |
 
 **M3.1 status (14 September 2026).** Worker isolation has landed in
 [`pkg/captaincode/worktree.go`](../pkg/captaincode/worktree.go): a git
@@ -1306,6 +1340,82 @@ caches; publish a cache optimization only when accepted-task measurements justif
 a bounded, source-linked lesson from a handoff; it is not the workflow state store.
 Verified inference replay and sealed evidence packages belong to Trace/Atlas. Keep any
 integration with them outside M3's ordinary recovery gate.
+
+
+**M3.6 status (20 September 2026).** The action gate has landed in
+[`pkg/captaincode/gate.go`](../pkg/captaincode/gate.go), in the shadow.
+
+Captain runs its workers at full permission, deliberately: `claude
+--dangerously-skip-permissions`, `codex
+--dangerously-bypass-approvals-and-sandbox`, `cursor-agent --trust --force`,
+and an opencode ruleset that allows bash and edits and DENIES `question`.
+That last denial is the whole argument. A headless fleet has nobody at the
+terminal, so tightening a CLI's own permissions does not buy prompts - it
+buys denials, and mostly silent ones: claude auto-denies a tool whose prompt
+cannot be shown, codex is pinned `approval_policy=never` and refuses rather
+than asks, cursor-agent exits 1 on the trust prompt, and an opencode
+`question` wedges a headless worker until its cap.
+
+So the screening has to be captain's own, and it has to answer in the time a
+tool call can afford. That is the decision leg's shape exactly. Three nouls
+over the action - would this destroy something unrecoverable, does it reach
+outside the work it was given, does it send this machine's contents somewhere
+else - and the highest of the three is the action's risk.
+
+Where it runs: `captain gate --hook` as a Claude Code PreToolUse hook
+(installed beside the redaction hook by the same pass), and `captain gate
+--tool <name>` from the opencode plugin's `tool.execute.before`, on the
+RESTORED arguments, because the command that will actually run is the one
+worth screening. A deterministic pre-filter keeps the cost honest: a read
+(`ls`, `git status`, a `read` tool) is allowed without a call, and anything
+carrying a shell operator that could hide a second command is not treated as
+a read.
+
+What it does NOT do yet, on purpose. `CAPTAIN_ACTION_GATE` defaults to
+`shadow`: every screening is recorded to `~/.captaincode/gate.log` and every
+action is allowed. `enforce` is opt-in, and `captain gate --report` exists to
+say whether a bar means anything yet - today it says the honest thing, which
+is that a gate noul is a PREDICTION about an action rather than a second
+opinion on a choice captain made beside it, so the rows stay uncompared until
+something later settles them. Reading a bar off them now would be reading one
+off nothing.
+
+With no decision leg configured there is no gate: no call, no added latency,
+no behaviour change. That is a tested property, not an intention.
+
+**M3.7 status (20 September 2026).** The portable half has landed; the
+cluster half is scoped.
+
+`scope.go` has always said the honest thing - a worktree isolates Git
+changes, not processes, credentials or network access - and `M3.1`'s promise
+of "isolated execution" has been outstanding ever since. [`google/ax`](https://github.com/google/ax)
+is that substrate, already built: `Task` (sandbox with CPU/memory caps),
+`Workspace` (pre-wired repos, MCP, skills), `Gateway` (an outbound host
+allowlist), plus `suspend`/`resume`, which maps onto captain's durable
+lifecycle. An `ax`-transport leg would satisfy M3.1's remaining line without
+captain writing a sandbox. Two caveats keep it a deployment target rather
+than a default: it is `v1alpha1` with breaking changes promised, and it wants
+a Kubernetes cluster.
+
+The `Gateway` idea is portable on its own, and the egress proxy is where it
+belongs: `CAPTAIN_EGRESS_ALLOW` narrows the proxy's upstream set to the
+providers a machine is meant to talk to, refused at the socket rather than
+billed. Stated plainly because the opposite would be worse than nothing: this
+bounds captain's OWN model traffic. It is not a network boundary for a
+worker, whose `curl` in a bash tool call never passes through the proxy at
+all. A real boundary is a container, a VM, or a machine without the
+credentials - which is what the `ax` leg would buy.
+
+**M3.8 status (20 September 2026).** Named, not built.
+
+`/btw` reaches a running claude worker (stream-json input) and a running
+opencode worker (a second POST into a busy session). It does not reach codex,
+because captain's codex transport is `codex exec`, which has no channel into
+a running turn - the note runs as the following turn, which is what the TUI
+queues anyway. `codex app-server` does have one (`thread/start` →
+`turn/steer`). Moving the transport is a contained change with a real payoff:
+it is the difference between `/btw` working on two of captain's three vendor
+CLIs and on all three.
 
 ## M4 — Make Captain portable
 
@@ -1786,6 +1896,33 @@ are explicit controls. A public leaderboard is not needed for useful personal ro
 can store attributed decisions and corrections, and independently tune retrieval using
 its own evaluation corpus. DLM validates receipt/mandate evidence under its contracts.
 Neither a retrieved lesson nor a valid receipt may silently become developer acceptance.
+
+
+**M5.4 status (20 September 2026), supervisor points.** The shadow gained a
+second axis.
+
+Captain's three routing shadow points - shape, leg, note route - are all
+DISPATCH: asked once, before or beside the work, over a choice captain makes
+at the same moment. Nothing in captain watched the floor. The stall watchdog
+sees silence and kills on a clock; it cannot tell `cargo test --release` from
+a loop. `/btw` and `/interrupt` both need the user to notice first.
+
+[`pkg/captaincode/supervise.go`](../pkg/captaincode/supervise.go) adds four
+nouls asked ABOUT A RUNNING WORKER, on a slow interval (90s), off the status
+feed the worker already produces: `worker-stuck`, `work-off-track`,
+`needs-human`, `agents-md-drift`. They are recorded and acted on by nothing,
+which is the entire point: nobody has shown a decision model is accurate at
+this, and captain already owns the apparatus for finding out.
+
+Three of the four are stamped from what captain itself later observes, so the
+record builds a calibration with nobody labelling rows by hand:
+`worker-stuck` against whether the stall watchdog fired, `needs-human`
+against whether the user interrupted, `work-off-track` against the task's
+acceptance evidence, which the calibration already joins by task id.
+`agents-md-drift` is asked because Euclid makes its state cheap, and left
+UNCOMPARED because nothing observes it - an honest missing label rather than
+an invented one.
+
 
 ## First ten working days
 

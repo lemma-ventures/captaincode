@@ -48,6 +48,51 @@ const ENABLED = process.env["CAPTAIN_ROUTE_PLUGIN"] === "1"
 const REDACT = (process.env["CAPTAIN_REDACT"] ?? "on").toLowerCase() !== "off"
 const CAPTAIN_BIN = process.env["CAPTAIN_BIN"] ?? "captain"
 
+// ── the action gate ──────────────────────────────────────────────────────────
+// Workers here run with bash and edits allowed and no way to ask a question:
+// the canonical ruleset denies `question` because an ask wedges a headless
+// worker forever. So what a permission prompt would have caught is caught by
+// a classifier instead - three nouls on captain's decision leg, ~300ms, on
+// the actions that can change the machine or reach off it (pkg gate.go).
+// `captain gate` exits 3 to refuse, the way `captain redact --check` does.
+//
+// Default is SHADOW: every screening is recorded and every action allowed.
+// CAPTAIN_ACTION_GATE=enforce opts in to refusals, and should follow
+// `captain gate --report`. CAPTAIN_ACTION_GATE=off skips the spawn entirely,
+// as does having no decision leg configured - in which case `captain gate`
+// returns without making a call.
+const GATE = (process.env["CAPTAIN_ACTION_GATE"] ?? "shadow").toLowerCase()
+const GATED_TOOLS = new Set(["bash", "write", "edit", "patch", "multiedit", "webfetch"])
+
+// A captain with no decision leg must not spawn a process per tool call to be
+// told there is nothing to screen. Probed once, lazily, and cached for the
+// life of the process.
+let gateLive: boolean | null = null
+function gateConfigured(): boolean {
+  if (gateLive !== null) return gateLive
+  try {
+    const r = spawnSync(CAPTAIN_BIN, ["gate", "--status"], { encoding: "utf8", timeout: 5_000 })
+    gateLive = r.status === 0 && !String(r.stdout).includes("decision leg: none")
+  } catch {
+    gateLive = false // no captain on PATH: the gate is absent, never a blocker
+  }
+  log(`gate ${gateLive ? "armed" : "inactive"} (mode ${GATE})`)
+  return gateLive
+}
+
+function gateRefusal(tool: string, args: any): string | null {
+  try {
+    const r = spawnSync(CAPTAIN_BIN, ["gate", "--tool", tool], {
+      input: JSON.stringify(args ?? {}),
+      encoding: "utf8",
+      timeout: 8_000,
+    })
+    return r.status === 3 ? String(r.stdout).trim() : null
+  } catch {
+    return null
+  }
+}
+
 function captainRedact(args: string[], input: string): string | null {
   try {
     const r = spawnSync(CAPTAIN_BIN, ["redact", ...args], { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 10_000 })
@@ -390,16 +435,26 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
   },
 
   "tool.execute.before": async (input: { tool: string }, output: { args: any }) => {
-    if (!REDACT || !output?.args) return
-    const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
-    if (path && (input.tool === "read" || input.tool === "grep" || input.tool === "glob")) {
-      const why = secretFileRefusal(path)
+    if (REDACT && output?.args) {
+      const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
+      if (path && (input.tool === "read" || input.tool === "grep" || input.tool === "glob")) {
+        const why = secretFileRefusal(path)
+        if (why) {
+          log(`refused ${input.tool} ${path}`)
+          throw new Error(why)
+        }
+      }
+      output.args = restoreArgs(output.args)
+    }
+    // The gate runs on the RESTORED arguments: the command that will actually
+    // run is the one worth screening, not the masked copy the model wrote.
+    if (GATE !== "off" && GATED_TOOLS.has(input.tool) && gateConfigured()) {
+      const why = gateRefusal(input.tool, output?.args)
       if (why) {
-        log(`refused ${input.tool} ${path}`)
+        log(`gate refused ${input.tool}`)
         throw new Error(why)
       }
     }
-    output.args = restoreArgs(output.args)
   },
 
   "tool.execute.after": async (input: { tool: string }, output: { output: string }) => {

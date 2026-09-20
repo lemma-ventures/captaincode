@@ -15,9 +15,11 @@ package captaincode
 //	                                | noul}}, usage{input_tokens, output_tokens}}
 //	GET  https://api.typesafe.ai/v1/models → {models: [{name, description, release_date}]}
 //
-// Errors: 401 bad key, 422 malformed question, 429 rate limit (250k tokens/s,
-// 1200 requests/min), 529 overloaded. The vendor asks for exponential backoff
-// on the last two; Ask retries them twice and gives up.
+// Errors: 400 max_tokens_exceeded (the state and questions together overran
+// the context - see SystemOneContextTokens), 401 bad key, 422 malformed
+// question, 429 rate limit (250k tokens/s, 1200 requests/min), 529
+// overloaded. The vendor asks for exponential backoff on the last two; Ask
+// retries them twice and gives up.
 
 import (
 	"bytes"
@@ -28,6 +30,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,8 +49,19 @@ const (
 	// SystemOneURLEnv points the client at a mock or a proxy.
 	SystemOneURLEnv = "CAPTAIN_SYSTEMONE_URL"
 	systemOneURL    = "https://api.typesafe.ai"
+	// SystemOneContextTokens is the model's input ceiling. The vendor documents
+	// no context window, but there is one: measured 2026-09-19 against
+	// jev-1.13.0, a 150k-character state (32,412 input tokens) answers and a
+	// 160k-character one comes back 400 max_tokens_exceeded. A caller that
+	// builds a state larger than a task head - scoring a whole session's
+	// blocks, say - sizes it against this number, and sends a manifest of what
+	// it is choosing between rather than the content itself once the content
+	// no longer fits.
+	SystemOneContextTokens = 32768
+
 	// systemOneStateMax bounds what a classification sends: a task's head is
-	// what carries its class, and the vendor states no context window.
+	// what carries its class, so a classification never comes near
+	// SystemOneContextTokens.
 	systemOneStateMax = 1500
 	systemOneRetries  = 2
 )
@@ -147,25 +161,79 @@ func SystemOneKey() (key, source string) {
 }
 
 // SystemOneFromEnv builds the client the brain and the CLI share, or nil when
-// no key is set (SystemOneKey: the variable or a jev.env file). The model is
-// the jev leg's registry pin, itself repinned by CAPTAIN_JEV_MODEL like any
-// leg's.
+// there is no decision leg to reach. The model is the jev leg's registry pin,
+// itself repinned by CAPTAIN_JEV_MODEL like any leg's.
+//
+// Two configurations reach one: the vendor with a key (SystemOneKey - the
+// variable or a jev.env file), or ANY System One-shaped endpoint named by
+// CAPTAIN_SYSTEMONE_URL, with or without one. The second is what makes the
+// decision leg optional rather than a subscription: an open re-implementation
+// on loopback, or a model served on a leg captain already has, answers the
+// same typed questions for nothing. What it does NOT do is inherit the
+// vendor's calibration - see Backend, and the per-backend bar in shadow.go.
 func SystemOneFromEnv() *SystemOneClient {
 	key, source := SystemOneKey()
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv(SystemOneURLEnv)), "/")
 	if key == "" {
-		return nil
+		// A System One URL with no key is an OPEN backend: a local server, a
+		// re-implementation, a model on a leg captain already has. The vendor
+		// endpoint needs a key and there is no point pretending otherwise, so
+		// keyless is only a client when a URL says where to go.
+		if base == "" {
+			return nil
+		}
+		return &SystemOneClient{BaseURL: base, KeySource: SystemOneURLEnv, Model: jevModelPin()}
 	}
 	c := &SystemOneClient{BaseURL: systemOneURL, APIKey: key, KeySource: source, Model: ModelID(LegJev)}
-	if s, ok := Spec(LegJev); ok {
-		if m := strings.TrimSpace(os.Getenv(s.EnvPrefix() + "_MODEL")); m != "" {
-			c.Model = m
-		}
-	}
-	if u := strings.TrimSpace(os.Getenv(SystemOneURLEnv)); u != "" {
-		c.BaseURL = strings.TrimRight(u, "/")
+	c.Model = jevModelPin()
+	if base != "" {
+		c.BaseURL = base
 	}
 	return c
 }
+
+// jevModelPin is the jev leg's registry model, repinned by CAPTAIN_JEV_MODEL
+// like any leg's. An open backend serves its own model names, so the pin is
+// what a conformance run and a calibration are read against.
+func jevModelPin() string {
+	m := ModelID(LegJev)
+	if s, ok := Spec(LegJev); ok {
+		if v := strings.TrimSpace(os.Getenv(s.EnvPrefix() + "_MODEL")); v != "" {
+			m = v
+		}
+	}
+	return m
+}
+
+// SystemOneVendor is the backend name of TypeSafe's own endpoint.
+const SystemOneVendor = "typesafe"
+
+// Backend names WHICH System One implementation this client talks to:
+// "typesafe" for the vendor, the host (and port) for anything else. It is
+// stamped on every shadow row, because a bar calibrated against one backend
+// is not a bar for another - and an open re-implementation is exactly the
+// case where that stops being a technicality.
+func (c *SystemOneClient) Backend() string {
+	if c == nil {
+		return ""
+	}
+	base := strings.TrimSpace(c.BaseURL)
+	if base == "" || base == systemOneURL {
+		return SystemOneVendor
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
+	}
+	if strings.EqualFold(u.Host, "api.typesafe.ai") {
+		return SystemOneVendor
+	}
+	return u.Host
+}
+
+// Keyless says the client reaches its backend without a credential - an open
+// decision leg. Doctor and `captain jev` say so rather than reporting a key.
+func (c *SystemOneClient) Keyless() bool { return c != nil && c.APIKey == "" }
 
 func (c *SystemOneClient) client() *http.Client {
 	if c.HTTP != nil {
@@ -244,7 +312,9 @@ func (c *SystemOneClient) do(ctx context.Context, method, path string, body []by
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey) // an open backend takes none
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -1792,6 +1792,11 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	// Max login is unaffected, the bearer rides through (verified live
 	// 2026-09-13) and every request body is redacted before the socket.
 	fenv = append(fenv, ClaudeProxyEnv()...)
+	// What the action gate reads inside the worker's own tool boundary: the
+	// leg, the assignment's head and the task identity, so a PreToolUse
+	// screening can judge an action against the work it was given rather than
+	// against the working directory alone (gate.go).
+	fenv = append(fenv, GateWorkerEnv(LegClaude, task, steer.Task())...)
 	if len(fenv) > 0 {
 		cmd.Env = append(os.Environ(), fenv...)
 	}

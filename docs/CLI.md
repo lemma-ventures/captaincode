@@ -13,6 +13,9 @@ TUI has a separate `/…` control surface; this page is the shell CLI.
 | `captain legs` / `legs caps` | Registry and declared capabilities |
 | `captain jev` / `jev classify <task>` / `jev ask --state … --questions …` | The jev decision leg (TypeSafe System One): probe, the triage questions with their probabilities, any typed question |
 | `captain jev shadow [--point p] [--target 0.9] [--min 20]` | The shadow record as a calibration: how often jev agreed with captain per decision point, by confidence, labelled with the tasks' outcomes, and the bar each point could be gated at |
+| `captain jev conform [--json]` | Does this backend answer captain's questions? A fixed suite whose answers are not in doubt, reported per capability (triage, route, keep, gate, supervise). Exits 1 on any unusable capability |
+| `captain gate --status` / `--check "<cmd>"` / `--report` | The action gate at the tool boundary: what it would do right now, one command screened by hand, and the screenings read as a calibration |
+| `captain gate --hook` / `--tool <name>` | The hook bodies: Claude Code `PreToolUse` (hook JSON in, hook JSON out) and the opencode plugin's call (tool arguments as JSON on stdin; exit 3 refuses) |
 | `captain director` / `director <leg>` / `director reset` | Show or switch the director ladder |
 | `captain why` | Last routing decision: candidates, exclusions, policy, charges |
 | `captain quota` | Observed/inferred quota per leg |
