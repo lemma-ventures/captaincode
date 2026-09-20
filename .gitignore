@@ -10,3 +10,6 @@
 # from bun.lock, which is committed so that install is reproducible.
 plugin/captain-ui/node_modules/
 plugin/*.log
+
+# screenshots and scratch the user drops in for a conversation, never product
+gitignore/
