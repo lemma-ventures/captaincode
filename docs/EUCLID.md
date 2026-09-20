@@ -78,6 +78,11 @@ command. `captain euclid reindex` does the same on demand, the sidebar's
 `memory:` links build on click, and the dashboard's own **Regenerate** button
 asks the brain (`POST /api/regenerate?root=<brain>`) - the brain answers the
 dashboard's local-engine contract for every brain on the machine.
+Between launches the index follows the brain: every journal write and every
+applied distillation schedules a rebuild of that brain's index a few seconds
+later (one per burst - a team turn journaling six workers rebuilds once), so a
+dashboard left open shows the turn that just finished after a reload, not the
+state at the last launch. `CAPTAIN_EUCLID_AUTOINDEX=0` turns that off.
 The entire `.euclid/` tree is gitignored (indexes and dashboard included).
 
 ## How captain uses it
