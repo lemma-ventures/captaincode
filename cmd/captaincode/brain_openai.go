@@ -914,6 +914,10 @@ func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
 			}
 			why = "rate-limited, window resets " + rl.ResetAt.Local().Format("15:04")
 		}
+	case errors.Is(err, captaincode.ErrProviderBilling):
+		// Reopens when someone pays, not on a clock: off the ladder for the
+		// day, and the reason says what to do.
+		d, why = 24*time.Hour, "provider credits depleted - top up or subscribe, then `captain legs reopen <leg>`"
 	case errors.Is(err, captaincode.ErrProviderAuth):
 		// A rejected key does not heal by itself: bench the leg for an hour
 		// (the next attempt is an instant 403 anyway) and say what to fix.

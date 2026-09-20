@@ -244,3 +244,21 @@ func TestHealthReportsInFlightRuns(t *testing.T) {
 	assert.Equal(t, int32(1), seenBusy, "busy while a worker runs")
 	assert.Equal(t, int32(0), b.inflightRuns.Load(), "idle after")
 }
+
+// A billing refusal benches the leg for the day with the fix in the reason;
+// `captain legs reopen` lifts it without a restart.
+func TestBillingRefusalBenchesForTheDayAndReopenLiftsIt(t *testing.T) {
+	b := teamBrain()
+	b.onWorkerError(captaincode.LegGLM, fmt.Errorf("openrouter/x: %w: depleted your monthly included credits", captaincode.ErrProviderBilling))
+	until := b.ledger.Cooldowns[captaincode.LegGLM]
+	assert.WithinDuration(t, time.Now().Add(24*time.Hour), until, 2*time.Minute)
+	rec := httptest.NewRecorder()
+	b.legReopenHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/legs/reopen?leg=glm", nil))
+	require.Equal(t, 200, rec.Code)
+	assert.Contains(t, rec.Body.String(), "glm reopened")
+	_, cooling := b.ledger.Cooldowns[captaincode.LegGLM]
+	assert.False(t, cooling)
+	rec = httptest.NewRecorder()
+	b.legReopenHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/legs/reopen?leg=nope", nil))
+	assert.Equal(t, 400, rec.Code)
+}

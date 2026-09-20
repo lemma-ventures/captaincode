@@ -895,3 +895,26 @@ func TestFirstEventStallIsNotMaskedByTheSavedUserMessage(t *testing.T) {
 	assert.Contains(t, err.Error(), "never started generating")
 	assert.Less(t, time.Since(start), 5*time.Second, "the first-event window (1s + poll), not the 8s stall window")
 }
+
+// A provider that refuses for money (402, "depleted your monthly included
+// credits") is a billing fault, not a quota window: it reopens when someone
+// pays, so the leg is benched for the day and the task reroutes (Hugging
+// Face on ds4-flash, 2026-09-20). It must not read as a 30-minute rate limit
+// because the message also says "monthly".
+func TestBillingRefusalIsNotARateLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/session/ses_1/message" {
+			w.Write([]byte(`{"info":{"error":{"name":"APIError","data":{"message":"Payment Required: You have depleted your monthly included credits. Purchase pre-paid credits to continue using Inference Providers.","statusCode":402,"isRetryable":false}},"tokens":{"total":0}},"parts":[]}`))
+			return
+		}
+		w.Write([]byte(`{"id":"ses_1"}`))
+	}))
+	defer srv.Close()
+	d := &OpencodeDispatcher{BaseURL: srv.URL, SessionID: "ses_1", Client: srv.Client(), Spawn: false}
+	_, err := d.Run(LegGLM, "task")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrProviderBilling)
+	assert.ErrorIs(t, err, ErrProviderDown, "a provider fault: the task reroutes")
+	assert.NotErrorIs(t, err, ErrRateLimited)
+	assert.Contains(t, err.Error(), "depleted")
+}
