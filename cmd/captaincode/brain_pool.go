@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -55,4 +56,34 @@ func (b *brain) startADIRefresh() {
 			time.Sleep(captaincode.ADIRefreshEvery)
 		}
 	}()
+}
+
+// legReopenHTTP lifts a leg's cooldown: POST /v1/legs/reopen?leg=<id>. The
+// bench a billing refusal earns lasts a day because only a payment reopens
+// the provider; once that is done, this is how the leg comes back without
+// a restart (`captain legs reopen <id>`).
+func (b *brain) legReopenHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST")
+		return
+	}
+	leg := captaincode.Leg(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("leg"))))
+	if !captaincode.KnownLeg(leg) {
+		writeErr(w, 400, "unknown leg "+string(leg))
+		return
+	}
+	b.mu.Lock()
+	until, had := b.ledger.Cooldowns[leg]
+	delete(b.ledger.Cooldowns, leg)
+	if b.ledger.Persistent() {
+		_ = b.ledger.Save()
+	}
+	b.mu.Unlock()
+	msg := string(leg) + " was not cooling"
+	if had && time.Now().Before(until) {
+		msg = fmt.Sprintf("%s reopened (was benched until %s)", leg, until.Local().Format("15:04"))
+	}
+	fmt.Printf("captain brain: %s\n", msg)
+	b.pushActivity(activity{Kind: "route", Leg: string(leg), Model: string(leg), Text: msg})
+	writeJSON(w, 200, map[string]any{"ok": true, "result": msg})
 }
