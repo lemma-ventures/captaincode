@@ -196,6 +196,9 @@ func main() {
 		case "director":
 			cmdDirector(args[1:])
 			return
+		case "skills": // the vetted shelf (skills_cmd.go, M3.9)
+			cmdSkills(args[1:])
+			return
 		case "outcomes":
 			cmdOutcomes(args[1:])
 			return

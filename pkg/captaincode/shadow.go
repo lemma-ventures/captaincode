@@ -681,6 +681,13 @@ func FormatShadowCalibration(cal []PointCalibration, target float64, minN int) s
 		}
 		fmt.Fprintf(&sb, "\n  outcomes: accepted %d (agree %d) · rejected %d (agree %d) · pending %d\n", p.Accepted, p.AcceptedAgree, p.Rejected, p.RejectedAgree, p.Pending)
 		switch bar, ok := p.SuggestedBar(target, minN); {
+		case ok && bar == 0:
+			// The lowest floor qualifying means the sample has no confidence
+			// band where jev disagrees - which is a fact about the sample, not
+			// a number to copy into a gate. Enforcing at zero gates on nothing.
+			fmt.Fprintf(&sb, "  bar: 0.00 - jev agreed ≥%.0f%% of the time at EVERY floor here, down to the lowest.\n", target*100)
+			fmt.Fprintf(&sb, "       Read that as \"this sample has no band where it disagrees\", not as a setting: a\n")
+			fmt.Fprintf(&sb, "       bar of zero draws no line. Widen the sample before gating on it.\n")
 		case ok:
 			fmt.Fprintf(&sb, "  bar: %.2f - jev agreed ≥%.0f%% of the time at or above it\n", bar, target*100)
 		case p.Mixed():

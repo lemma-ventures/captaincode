@@ -916,6 +916,7 @@ produced.
 | M3.6 | Action gate | A calibrated classifier screens what a worker is about to do, because a headless fleet has nobody to answer an approval prompt; shadowed first, enforced only against its own record | Runtime |
 | M3.7 | Borrowed isolation | An `ax`-transport leg for deployments that have a cluster, and the portable half of its Gateway - an outbound allowlist on the egress proxy - for the ones that do not | Runtime |
 | M3.8 | `/btw` on codex | `codex app-server` (`thread/start` → `turn/steer`) instead of `codex exec`, so a mid-run note reaches a codex worker the way it reaches claude and opencode | Runtime |
+| M3.9 | Vetted skills at bootstrap | A pinned, hashed set of Agent Skills staged from first-party catalogs and placed in the worker's worktree per task, so a worker starts holding the repeatable procedure instead of rediscovering it | Runtime |
 
 **M3.1 status (14 September 2026).** Worker isolation has landed in
 [`pkg/captaincode/worktree.go`](../pkg/captaincode/worktree.go): a git
@@ -1374,11 +1375,31 @@ a read.
 What it does NOT do yet, on purpose. `CAPTAIN_ACTION_GATE` defaults to
 `shadow`: every screening is recorded to `~/.captaincode/gate.log` and every
 action is allowed. `enforce` is opt-in, and `captain gate --report` exists to
-say whether a bar means anything yet - today it says the honest thing, which
-is that a gate noul is a PREDICTION about an action rather than a second
-opinion on a choice captain made beside it, so the rows stay uncompared until
-something later settles them. Reading a bar off them now would be reading one
-off nothing.
+say whether a bar means anything yet.
+
+What settles a gate row (20 September 2026). A gate noul is a PREDICTION
+about an action, so nothing captain decided beside it can settle it. The
+task's own acceptance can, in one direction: a task the user accepted with no
+correction and no regression contains no action that destroyed unrecoverable
+work, left the assignment, or shipped the machine's contents off it, so every
+screening on it settles as `false` ([`settle.go`](../pkg/captaincode/settle.go),
+applied at read time - the log is append-only and written by every process
+that runs a tool). The converse is refused: a rejected task says the work was
+bad, not which of its forty actions was dangerous, and attributing it to all
+of them would manufacture agreement out of nothing.
+
+So the sample is one-sided by construction, and the report labels it as such.
+The bar it yields bounds FALSE POSITIVES - how often a noul at or above a
+floor fired on an action that turned out fine - and says nothing about what
+the gate misses. That is the bar `enforce` needs, since the cost of enforcing
+too early is a refused worker rather than a missed threat, but it is not a
+detection rate. Screenings carrying no task identity stay uncompared for
+good: the opencode workers share one `opencode serve`, so `CAPTAIN_TASK_ID`
+is not in their environment.
+
+This is what the M5.1 acceptance-evidence defect was blocking: with every
+outcome pending, no task was ever cleanly accepted, so the join had nothing
+to settle against.
 
 With no decision leg configured there is no gate: no call, no added latency,
 no behaviour change. That is a tested property, not an intention.
@@ -1416,6 +1437,151 @@ queues anyway. `codex app-server` does have one (`thread/start` →
 `turn/steer`). Moving the transport is a contained change with a real payoff:
 it is the difference between `/btw` working on two of captain's three vendor
 CLIs and on all three.
+
+**M3.9 status (20 September 2026).** Built. The design below is what
+landed; the implementation notes follow it.
+
+A worker that rediscovers the same procedure every run is paying frontier
+tokens for something already written down. Agent Skills are that written-down
+form, and every runtime captain drives already reads them: a directory with a
+`SKILL.md`, two required frontmatter fields, `name` and `description`.
+
+The seam is cheaper than it looks, because **captain injects no prompt text at
+all**. Each runtime already does progressive disclosure - it loads every
+skill's name and description at startup and the body only once it decides to
+activate one. So captain's job is not to write a skill into the prompt. It is
+to decide which skills EXIST in the worktree for this task. Captain stocks the
+shelf; the worker's own runtime picks the book.
+
+One directory does nearly all of it:
+
+| Runtime | Reads |
+|---|---|
+| codex | `.agents/skills/` (repo), `~/.agents/skills` |
+| gemini | `.gemini/skills/`, with `.agents/skills/` as the documented alias |
+| opencode | `.opencode/skills/`, `.claude/skills/`, `.agents/skills/` |
+| cursor | `.cursor/skills/`, and `.agents/skills/` |
+| claude | `.claude/skills/` only - but a `<name>` entry there may be a symlink |
+
+So: one real tree at `.agents/skills/<name>`, and a `.claude/skills/<name>`
+symlink pointing into it. Two writes, five runtimes, no per-runtime copy to
+keep in step.
+
+**Source.** [`anthropics/skills`](https://github.com/anthropics/skills) is the
+primary: the standard's author publishing its own reference implementation,
+with a plugin marketplace manifest and most skills under Apache-2.0.
+[`openai/plugins`](https://github.com/openai/plugins) is the secondary -
+skills live inside plugins there, under a `.codex-plugin/plugin.json` manifest
+(`openai/skills` is deprecated and must not be pinned). The spec repository's
+`skills-ref validate` is the validator, not a supply.
+
+One licensing trap to respect: Anthropic's four document skills (`docx`,
+`pdf`, `pptx`, `xlsx`) are **source-available, not open source**. They may be
+fetched onto the user's machine at their own request; they may not be vendored
+into this repository or redistributed with it. The sync records each skill's
+license next to its hash so the distinction survives.
+
+**The pipeline.**
+
+1. `captain skills sync` fetches each source at a NAMED COMMIT. Never at spawn
+   time, never a network call on the hot path.
+2. Vetting at sync: `skills-ref validate`; frontmatter restricted to the spec's
+   fields; size caps. `allowed-tools` is ignored - the spec marks it
+   experimental and support varies, so trusting it would be trusting a field
+   nobody implements the same way.
+3. `scripts/` is QUARANTINED by default. That directory is arbitrary code, and
+   it is where a poisoned skill would keep its payload; it ships only when the
+   source and the individual skill are both allowlisted by name.
+4. `skills.lock` pins source repository, commit, per-file sha256 and license -
+   the same shape as `Toolchain()` pins and `APIContracts()`, so `captain
+   doctor` can report a skill set the way it already reports an adapter.
+5. Selection happens POST PROMPT, at spawn: the class and domain triage already
+   answered (by the jev leg, or the free-leg classify below its bar) matched
+   against each skill's `description`, which is the field the standard designs
+   for exactly this. Hard cap around eight.
+6. Placement into the M3.1 worktree, plus a `.git/info/exclude` line. The shelf
+   dies with the worktree; nothing appears in the user's repository, and two
+   workers on the same repo can hold different shelves.
+
+**The cap is not a nicety.** Every stocked skill costs its name and description
+in every worker's startup context, and codex truncates that list at roughly
+8,000 characters - past which it silently shortens descriptions, degrading the
+selection for every skill at once. An unfiltered catalog is worse than none.
+
+**What this is not.** It is not a marketplace and it does not read community
+catalogs: a 2026 audit found prompt injection in 36% of tested community
+skills, and the public directories index millions scraped from GitHub. That is
+not a supply captain can stand behind, and the standard offers no signing or
+attestation to lean on. Nor is it a sandbox - a skill script that does run is
+a tool call like any other, screened by the M3.6 gate, no more and no less.
+Opt-in by construction, like Euclid: with nothing synced there is no directory,
+no listing, and a run is byte-for-byte what it is today.
+
+**M3.9 implementation (20 September 2026).** The pipeline above is in
+[`pkg/captaincode/skills.go`](../pkg/captaincode/skills.go) (catalog, lock,
+vetting, selection, staging),
+[`skills_sync.go`](../pkg/captaincode/skills_sync.go) (the fetch at a named
+commit), [`skilluse.go`](../pkg/captaincode/skilluse.go) (what the shelf was
+worth) and [`cmd/captaincode/skills_cmd.go`](../cmd/captaincode/skills_cmd.go).
+
+`captain skills sync` clones a first-party source at a full 40-character sha
+(an abbreviated one is refused: a remote cannot resolve it, and git's own
+error reads like the commit does not exist), walks it for directories holding
+a `SKILL.md`, and vets each one. Vetting is REFUSAL, not repair: frontmatter
+outside the spec's set fails the skill rather than being ignored - including
+`allowed-tools`, which the spec marks experimental - and so do a name outside
+the standard's shape, a description too short to select anything, a `SKILL.md`
+over 64 KiB, a directory over 2 MiB or 64 files, and any symlink. Against
+`anthropics/skills` at `34040c9` that vets 18 skills and refuses 2 (one 86 KiB
+`SKILL.md`, one 2 MiB+ asset bundle), each with its reason on the screen.
+`scripts/` is dropped unless the skill is named in `--allow-scripts`, and the
+lock's hashes are recomputed FROM THE CATALOG afterwards, so what is attested
+is what is on disk rather than what was in the checkout.
+
+Selection scores each synced skill's own words against the task's: a name hit
+counts triple, a description hit once, and the triage's class and domain are a
+mild prior on top. One description word in common is not a match - live, "fix
+a typo in the readme" drew the spreadsheet skill because its description
+happens to contain "fix", so a skill now earns shelf space by its NAME
+appearing in the task or by at least two distinct words of its description
+doing so. Two budgets then bound the shelf and the tighter one wins: the
+eight-skill cap, and 6,000 bytes of name+description, under codex's ~8,000
+character truncation point.
+
+Staging is wired into all three dispatch paths, not only the isolated ones. A
+parallel team or workflow worker gets its shelf in its own M3.1 worktree,
+where it dies with the worktree. A SOLO worker runs in the user's own
+directory - the dominant path, so skipping it would have been a feature that
+never ran - and there the shelf is staged for the turn, kept out of `git
+status` by captain's own block in `.git/info/exclude`, and removed when the
+turn ends. `Remove` takes back exactly what it created: a skill directory the
+user already had at that name is never overwritten and never deleted, and a
+created directory is removed only when it is empty.
+
+**What the shelf was worth.** A stocked skill costs every worker its name and
+description at startup, and the only honest way to know whether that purchase
+was sound is to ask the judge already reading the output. So the director's
+assessment carries a second, smaller verdict: for each skill on the worker's
+shelf, does the answer show that procedure being followed, and was it worth
+its place on THIS task. No extra call and no extra quota - the question rides
+in the assessment that was already happening, and with no shelf staged the
+prompt is byte-for-byte what it was before.
+
+Three refusals keep the number honest. A grade for a skill captain never
+staged is dropped (a director naming a skill it invented is grading nothing).
+A usefulness score with `used: false` keeps the observation and discards the
+number - that is a grade of a book the director did not see opened. And every
+stocked skill gets a ledger row whether or not it was graded, because
+"stocked forty times, used twice" is the finding selection has to be able to
+make about itself; recording only the graded rows would report selection as
+perfect by construction.
+
+`captain skills report` and the captain dashboard's skills panel read that
+record: stocked, used, use rate, and the mean usefulness over the runs that
+carried a grade. Only the runs the director scores are graded
+(`CAPTAIN_ASSESS_MIN_SCORED`), so a skill can be stocked many times and carry
+no grade at all - the report says so rather than showing a mean of one.
+
 
 ## M4 — Make Captain portable
 
@@ -1732,7 +1898,37 @@ outcomes <task-id>` (detail), `captain outcome <task-id> review
 outcome <task-id> correction <minutes> [--reason ...]`, `captain outcome
 <task-id> regression <reason> [--source ...]`.
 
-Remaining for M5.1: the correction-time UI in the TUI (currently CLI-only).
+**M5.1 defect, fixed 20 September 2026: outcomes never left `pending`.** The
+brain opened a pending outcome for every completed task and nothing but
+`captain outcome <id> review` moved one off. On the author's machine that
+left 442 outcomes, all pending, 75 of them carrying checks nobody read and
+0 reviews - a column that is 100% one value, which is a constant rather than
+a signal. Everything downstream was reading it: the M5.2 shadow
+calibration's outcome labels, the M1 acceptance rate, and the M3.6 gate's
+settle, which needs a cleanly accepted task and could never find one.
+
+[`settle.go`](../pkg/captaincode/settle.go) derives the status from evidence
+the ledger already holds and records WHAT decided it (`DecidedBy`), so a
+check-settled acceptance is never read as a human one. A failed check rejects
+at once; an all-passed set accepts after `CAPTAIN_OUTCOME_SETTLE` (default
+24h) in which no correction, regression or verdict arrived; a task that never
+reached delivery (`failed`, `exhausted`) is rejected by lifecycle; a human
+verdict is authoritative and never overwritten. Two cases stay pending on
+purpose: a CANCELLED task is the user changing their mind about the question,
+not a verdict on the answer, and a task whose checks passed but that cost the
+user correction minutes is a statement about the checks that only a human can
+call.
+
+The brain sweeps on every turn it records; `captain outcomes --settle`
+(`POST /v1/outcome` action `settle`) applies a window that has just elapsed
+and prints the counts. Swept over the author's ledger this settles 57 of 442
+- 54 accepted, 3 rejected - and the 54 clean acceptances are the first rows
+the gate's calibration can be read against. The rest carry no check at all,
+which is a coverage problem, not a settlement one.
+
+Remaining for M5.1: the correction-time UI in the TUI (currently CLI-only),
+and check coverage - 367 of 442 outcomes carry no task-linked check, so
+nothing can settle them without a human.
 The evaluation harness's review history (the prior partial progress) is
 unchanged and remains the source for eval-run verdicts.
 

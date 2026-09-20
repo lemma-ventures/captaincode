@@ -79,6 +79,7 @@ After edit: restart the brain so doctor and health report the new director. Use 
 | `CAPTAIN_JEV_SUPERVISE` | on when a decision leg is configured (`0` disables) | Samples each **running** worker on a slow interval and asks the decision leg four nouls about its floor state - is it stuck, is it on the wrong thing, does it need the user, is it departing from the repository's `AGENTS.md`. Recorded beside what the run turned out to be; **acted on by nothing**. `CAPTAIN_SUPERVISE_EVERY` (default `90s`, minimum `10s`) moves the interval. See [Shadow decisions](#shadow-decisions-reading-jevs-calibration). |
 | `CAPTAIN_ACTION_GATE` | `shadow` | The action gate at the tool boundary: the decision leg screens what a worker is about to do, because a headless fleet has nobody to answer an approval prompt. `shadow` records every screening to `~/.captaincode/gate.log` and allows everything; `enforce` refuses an action whose risk reaches `CAPTAIN_GATE_BAR`; `off` screens nothing. An unrecognised value reads as `shadow`, so a typo cannot turn enforcement on. **With no decision leg configured nothing is screened, no call is made and no tool call waits on one.** See [The action gate](#the-action-gate). |
 | `CAPTAIN_GATE_BAR` | `0.9` | The risk at which `CAPTAIN_ACTION_GATE=enforce` refuses. Choose it from `captain gate --report`, not from taste. |
+| `CAPTAIN_OUTCOME_SETTLE` | `24h` | How long a task whose checks all passed waits before the checks alone accept it. Inside the window it stays `pending`: "the director graded it acceptable three seconds ago" is not acceptance, and a day of silence from the person who asked for the work is the weakest honest evidence that it stood. A **failed** check rejects at once and does not wait. See [Acceptance evidence](#acceptance-evidence-what-settles-an-outcome). |
 | `CAPTAIN_EGRESS_ALLOW` | unset (all nine provider origins) | Narrows the egress proxy's upstreams to a comma-separated set of its own route names (`anthropic,openrouter,huggingface`, …). A provider outside the list is refused at the socket. This bounds **captain's own model traffic**; it is not a network boundary for a worker, whose `curl` in a bash tool call never crosses the proxy. |
 | `CAPTAIN_FAST_ROUTE` | off (`1` enables) | Skip the director entirely; pure ladder. |
 | `CAPTAIN_FALLBACK_LEG` | - | Leg the terminal degrades to when the brain does not answer in time. |
@@ -177,11 +178,130 @@ Three properties worth stating plainly:
 - **With no decision leg there is no gate.** No call, no latency, no
   behaviour change. This is a tested property.
 
-`captain gate --report` currently says the honest thing about its own record:
-a gate noul is a *prediction* about an action, not a second opinion on a
-choice captain made beside it, so rows stay uncompared until something later
-settles them. Until then the readable parts of the report are the risk
-distribution and the latency - not an agreement rate, and not a bar.
+A gate noul is a *prediction* about an action, not a second opinion on a
+choice captain made beside it, so nothing captain decided at the same moment
+can settle it. What settles one is the **task's own acceptance**: if the user
+accepted a task with no correction and no regression, then no action taken
+during it destroyed unrecoverable work, wandered out of the assignment, or
+shipped the machine's contents off it - so every screening on that task
+settles as `false`. `captain gate --report` applies that join at read time
+(the log is append-only and written by every process that runs a tool, so
+nothing is rewritten) and says how many rows it reached.
+
+The converse does **not** hold, and the report says so: a rejected or
+regressed task says the work was bad, not which of its forty actions was the
+dangerous one, and spreading the blame over all of them would manufacture
+agreement out of nothing. So the sample is one-sided by construction. The bar
+it yields is a **false-positive bound** - how often a noul at or above a floor
+fired on an action that turned out to be fine - and says nothing about what
+the gate misses. That is still the bar `enforce` needs, because the cost of
+turning it on too early is a refused worker, not a missed threat; it must
+never be read as a detection rate.
+
+Screenings that carry no task identity can never be settled at all. The
+transports that spawn one process per worker set `CAPTAIN_TASK_ID`; the
+opencode workers share one `opencode serve`, so theirs stay uncompared
+however many outcomes settle.
+
+### Skills: stocking the worker's shelf
+
+Agent Skills are procedures written down once - a directory with a `SKILL.md`
+whose frontmatter carries a `name` and a `description`. Every runtime captain
+drives already reads them and already does progressive disclosure, so captain
+writes **nothing** into the prompt: it decides which skills EXIST where the
+worker runs, and the worker's own runtime picks what to open.
+
+Nothing is synced by default. With an empty catalog there is no directory, no
+listing and no call - a run is byte-for-byte what it was before the feature
+existed.
+
+```bash
+captain skills sync --commit <full-40-char-sha>   # anthropics/skills, vetted and hashed
+captain skills                                    # what is on the shelf, and its provenance
+captain skills select "merge these PDFs"          # what a task would be handed, and why
+captain skills report                             # stocked vs used vs graded
+```
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CAPTAIN_SKILLS_DIR` | `~/.captaincode/skills` | The synced catalog and its `skills.lock` |
+| `CAPTAIN_SKILLS_CAP` | `8` | How many skills may be stocked for one task |
+
+The cap is a context budget, not a preference: every stocked skill costs its
+name and description in every worker's startup listing, and codex truncates
+that listing at roughly 8,000 characters - past which it silently shortens
+descriptions and degrades selection for every skill at once. A second budget
+(6,000 bytes of name+description) bounds the same thing directly, and the
+tighter of the two wins.
+
+Three refusals are worth knowing about:
+
+- **`scripts/` is quarantined.** That directory is arbitrary code; it ships
+  only for skills named in `--allow-scripts`. A skill script that does run is
+  a tool call like any other, screened by the action gate above - no more and
+  no less.
+- **Frontmatter outside the spec's set fails the skill**, rather than being
+  ignored. That includes `allowed-tools`, which the spec marks experimental.
+- **First-party catalogs only.** `anthropics/skills` and `openai/plugins`,
+  each at a named commit. Community directories are not read: a 2026 audit
+  found prompt injection in 36% of tested community skills, and the standard
+  offers no signing to lean on.
+
+Anthropic's four document skills (`docx`, `pdf`, `pptx`, `xlsx`) are
+source-available rather than open source. They can be fetched onto your
+machine at your request; the lock records that beside their hashes, and they
+are never vendored into captain.
+
+Where the shelf lands depends on the path. A parallel worker gets it in its
+own worktree and it dies with the worktree; a solo worker gets it in your own
+directory for the turn, excluded from `git status` while it is there and
+removed when the turn ends. A skill you already have at that name is never
+overwritten and never deleted.
+
+**What the shelf was worth.** When the director grades a run it also grades
+the shelf, in the same call: for each stocked skill, does the answer show that
+procedure being followed, and was it worth its place on this task. A grade for
+a skill captain never staged is dropped, a usefulness score without a use is
+discarded (a grade of a book the director did not see opened), and every
+stocked skill gets a row whether or not it was graded - so `captain skills
+report` and the dashboard's skills panel can show "stocked forty times, used
+twice", which is selection's failure rather than the skill's. Only the runs
+the director scores carry a grade (`CAPTAIN_ASSESS_MIN_SCORED`).
+
+### Acceptance evidence: what settles an outcome
+
+Every completed task opens an `OutcomeEvidence` row, and for a long time only
+`captain outcome <id> review` ever moved one off `pending` - which left the
+column 100% one value: a constant, not a signal, under every reading built on
+it (the shadow calibration's outcome labels, the M1 acceptance rate, the
+gate's join above).
+
+An outcome now settles from evidence captain already holds, and records
+**what** settled it so a derived acceptance is never read as a human one:
+
+| Evidence | Status | `decided by` |
+|---|---|---|
+| `captain outcome <id> review accept\|reject` | accepted / rejected | `reviewer` - authoritative, never overwritten |
+| A later regression | regressed | `regression` |
+| The task never reached delivery (`failed`, `exhausted`) | rejected | `lifecycle` |
+| Any task-linked check failed | rejected | `checks` - at once, no window |
+| Every check passed, nothing came back for `CAPTAIN_OUTCOME_SETTLE` | accepted | `checks` |
+
+Two cases deliberately stay **pending**. A **cancelled** task is the user
+changing their mind about the question, not a verdict on the answer, and
+counting it as a rejection would charge the leg for the interruption. A task
+whose checks passed and that still cost the user **correction minutes** is a
+statement about the checks, not an acceptance and not a rejection - only a
+human can call it.
+
+```bash
+captain outcomes                    # every outcome, with what decided it
+captain outcomes <task-id>          # one task's evidence in full
+captain outcomes --settle           # settle everything whose evidence has decided it
+```
+
+The brain sweeps on every turn it records; `--settle` exists so a window that
+has just elapsed can be applied now, and so the counts are visible.
 
 ### Shadow decisions: reading jev's calibration
 
@@ -208,7 +328,7 @@ The **action gate** (`gate-destructive`, `gate-out-of-scope`, `gate-exfiltration
 
 The **supervisor** (`worker-stuck`, `work-off-track`, `needs-human`, `agents-md-drift`) asks about a worker that is still running - the floor, not the dispatch. One call every `CAPTAIN_SUPERVISE_EVERY` per running worker, off the status feed the worker already produces, charged to the turn like any other decision-leg call. Nothing acts on an answer.
 
-Both are **predictions**, not comparisons with a choice captain made at the same moment, so they are stamped from what captain later observed rather than at the moment they were asked: `worker-stuck` against whether the stall watchdog fired, `needs-human` against whether the user interrupted, `work-off-track` against the task's acceptance evidence (joined by task id, as every point is). `agents-md-drift` is left **uncompared** because nothing in captain observes it - the report showing a point with no comparisons is the honest record, not a gap to fill with a guess.
+Both are **predictions**, not comparisons with a choice captain made at the same moment, so they are stamped from what captain later observed rather than at the moment they were asked: `worker-stuck` against whether the stall watchdog fired, `needs-human` against whether the user interrupted, `work-off-track` and all three gate nouls against the task's acceptance evidence (joined by task id, as every point is). The gate's join is one-sided and its bar is a false-positive bound, for the reason given under [The action gate](#the-action-gate). `agents-md-drift` is left **uncompared** because nothing in captain observes it - the report showing a point with no comparisons is the honest record, not a gap to fill with a guess.
 
 ### Pools: `/oss` and `/deterministic`
 
@@ -315,6 +435,21 @@ run's effort shows on its Last Runs line in the sidebar.
 `CAPTAIN_BRAIN_URL` (default `http://127.0.0.1:14097`), `CAPTAIN_SRC` (source
 checkout for `captain upgrade`), `CAPTAIN_REPEAT_MAX` (default `100`),
 `CAPTAIN_AA_API_KEY` (only for `captain priors sync`).
+
+### TUI chrome
+
+The Models / shield / Last Runs sidebar keeps the same live brain data under
+every chrome profile. What changes is OpenCode's theme and a few glyphs.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CAPTAIN_UI_CHROME` | unset (uses last pick, else `default`) | `demo` = website-demo colors (`captain-demo` theme) and ❄ for cooling; `default` = restore the previous OpenCode theme and `~` cooling. Overrides the palette command's persisted pick. |
+| `CAPTAIN_UI_SLOTS` | `sidebar,logo` | Comma list of UI slots to register (`sidebar`, `logo`, `tag`); `none` disables the plugin chrome. |
+
+In the TUI command palette: **Captain chrome…** (or **Captain chrome: demo** /
+**Captain chrome: default**). You can also pick the `captain-demo` theme with
+OpenCode's `/theme` command; the chrome commands remember the prior theme so
+leaving demo restores it.
 
 See also the [CLI cheat sheet](CLI.md).
 

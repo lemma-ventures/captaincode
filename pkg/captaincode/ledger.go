@@ -29,6 +29,7 @@ type Ledger struct {
 	AttemptStates []AttemptState       `json:"attempt_states,omitempty"` // durable lifecycle per attempt (lifecycle.go, M3.3)
 	Handoffs      []HandoffBrief       `json:"handoffs,omitempty"`       // structured handoff briefs per task (handoff.go, M3.5)
 	Outcomes      []OutcomeEvidence    `json:"outcomes,omitempty"`       // task-wide acceptance evidence (outcome.go, M5.1)
+	SkillUses     []SkillUse           `json:"skill_uses,omitempty"`     // what each stocked skill was worth (skilluse.go, M3.9)
 	Snapshots     []PolicySnapshot     `json:"snapshots,omitempty"`      // versioned policy snapshots (policy.go, M5.4)
 	Canaries      []Canary             `json:"canaries,omitempty"`       // bounded opt-in canaries (policy.go, M5.4)
 	// DirectorMode is the standing director policy (director_pick.go):

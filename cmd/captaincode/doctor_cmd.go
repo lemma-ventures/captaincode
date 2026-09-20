@@ -191,6 +191,29 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 			selfMark(s), s.Component, found, truncate(s.Path, 34), s.Detail), " "))
 	}
 
+	// Skills. A shelf is a pinned, hashed supply like an adapter pin, so it
+	// is reported like one - including drift, because a skill set captain
+	// cannot attest to is worse than none (M3.9).
+	if cat := captaincode.Catalog(); len(cat) > 0 {
+		lock, _ := captaincode.ReadSkillLock()
+		pins := make([]string, 0, len(lock.Sources))
+		for _, src := range lock.Sources {
+			sha := src.Commit
+			if len(sha) > 7 {
+				sha = sha[:7]
+			}
+			pins = append(pins, src.Repo+"@"+sha)
+		}
+		drift := captaincode.VerifySkills()
+		mark := "✓"
+		detail := fmt.Sprintf("%d skill(s) from %s, cap %d per task", len(cat), strings.Join(pins, " + "), captaincode.SkillCap())
+		if len(drift) > 0 {
+			mark = "✗"
+			detail = fmt.Sprintf("%d file(s) no longer match the lock - re-run `captain skills sync`", len(drift))
+		}
+		fmt.Fprintf(w, "skills     %s %s\n", mark, detail)
+	}
+
 	probes := captaincode.ProbeToolchain(o.lookPath, o.runVersion)
 	blocked := 0
 	for _, s := range probes {
