@@ -139,6 +139,10 @@ func jevShadow(args []string) {
 	// so its rows live in their own append-only log (gate.go). They are the
 	// same shape and belong in the same reading.
 	shadows := append(append([]captaincode.ShadowRecord(nil), l.Shadows...), captaincode.ReadGateLog()...)
+	// A gate row is settled by the task's clean acceptance, not by anything
+	// captain decided beside it - derived here, never written back to the
+	// append-only log (settle.go).
+	captaincode.SettleGateRows(shadows, l.Outcomes)
 	cal := captaincode.ShadowCalibration(l.Decisions, shadows, l.Outcomes)
 	if *point != "" {
 		kept := cal[:0]

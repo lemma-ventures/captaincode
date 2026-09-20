@@ -22,6 +22,11 @@ TUI has a separate `/…` control surface; this page is the shell CLI.
 | `captain budget` | Per-task budgets (attempts, cost, mode, stopping reason) |
 | `captain stats` | Aggregate ledger stats |
 | `captain runs` / `show <id>` / `watch` | History and live follow |
+| `captain skills` | The vetted shelf: what is synced, from which commit, under which license |
+| `captain skills sync [--source r] [--commit sha] [--only a,b] [--allow-scripts a,b] [--dry-run]` | Fetch a first-party catalog at a named commit, vet it, hash it into `skills.lock` |
+| `captain skills select "<task>"` / `stage [--dir d] "<task>"` / `unstage [--dir d]` | What would be stocked for a task and why; stage or clear that shelf by hand |
+| `captain skills verify` | Recompute every locked hash against disk (exits 3 on drift) |
+| `captain skills report [--json] [--skill <name>]` | Most stocked, most used, best graded - and the director's notes on one skill |
 
 ## Evaluation & release (M1)
 

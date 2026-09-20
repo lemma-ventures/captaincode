@@ -738,13 +738,16 @@ func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, t
 // scoring call (and directorJSON's corrective retry, which is a second real
 // call) to that task as a "review" attempt - the learning loop is not free,
 // and a baseline report that hides its own overhead is not a baseline.
-func (b *brain) doAssess(taskID, task, output, objective string) (captaincode.Assessment, error) {
+// skills, when the worker held a shelf, adds the second question: of the
+// procedures captain staged, which does this answer show being used, and
+// were they worth their place (M3.9).
+func (b *brain) doAssess(taskID, task, output, objective string, skills []captaincode.SkillRef) (captaincode.Assessment, error) {
 	if b.assessFn != nil {
 		return b.assessFn(task, output, objective)
 	}
 	// Called from recordRun WITHOUT mu - snapshot the effective director.
 	b.mu.Lock()
-	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
+	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Skills: skills}
 	b.mu.Unlock()
 	mgr.CallLabel, mgr.OnCall = "review", b.chargeAux(taskID)
 	return mgr.Assess(task, output, objective)
@@ -1508,7 +1511,9 @@ func (b *brain) nudgeNarration(ws captaincode.Workspace, leg captaincode.Leg, pr
 // diffDir returns the directory where solo-turn diff files are saved (M3.5).
 func (b *brain) diffDir() string { return filepath.Join(captainHome(), "diffs") }
 
-func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Result, wsDir string) {
+// stocked, when the turn staged a shelf, is what the worker held: the
+// assessment grades it in the same call that grades the work (M3.9).
+func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Result, wsDir string, stocked ...captaincode.SkillRef) {
 	if strings.Contains(prompt, "You are a title generator") || captaincode.IsDistillRequest(prompt) {
 		return
 	}
@@ -1550,9 +1555,10 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 			b.mu.Unlock()
 		}
 	}
+	var grades []captaincode.SkillGrade
 	if len(res.Text) >= 200 && res.DurationMs >= 5000 && b.shouldAssess(leg) {
-		if a, err := b.doAssess(ev.TaskID, task, res.Text, "none"); err == nil {
-			ev.Quality, ev.Verdict = a.Quality, a.Verdict
+		if a, err := b.doAssess(ev.TaskID, task, res.Text, "none", stocked); err == nil {
+			ev.Quality, ev.Verdict, grades = a.Quality, a.Verdict, a.Skills
 			if wsDir != "" { // the grade and its reasoning go to memory too (brain_euclid.go)
 				b.mu.Lock()
 				reviewer := b.effectiveDirector()
@@ -1574,6 +1580,16 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 			b.mu.Unlock()
 		}
 	}
+	// M3.9: one row per stocked skill, graded or not. A run the director
+	// never scored still records the stocking, because "stocked often, used
+	// never" is the finding selection has to be able to make about itself.
+	if len(stocked) > 0 {
+		names := make([]string, 0, len(stocked))
+		for _, r := range stocked {
+			names = append(names, r.Name)
+		}
+		b.recordShelf(ev.TaskID, leg, ev.Class, captaincode.TriageTask(task).Domain, names, grades)
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ledger.Record(ev)
@@ -1588,6 +1604,10 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 			Status: captaincode.AcceptancePending,
 		})
 	}
+	// M5.1: and settle the ones whose evidence has since decided them. A
+	// pending column that only a human verdict ever emptied stayed 100%
+	// pending, which is a constant, not a signal (settle.go).
+	b.ledger.SettleOutcomes(time.Now())
 	if err := b.ledger.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save run record: %v\n", err)
 	}
@@ -2305,7 +2325,8 @@ func (b *brain) stats(w http.ResponseWriter, r *http.Request) {
 	if dir, ok := workspaceFilter(r); ok {
 		last = b.lastBy[dir] // the sidebar shows its own project's last route, not another TUI's
 	}
-	writeJSON(w, 200, map[string]any{"director": string(captaincode.Director), "legs": b.ledger.Stats(), "last": last})
+	writeJSON(w, 200, map[string]any{"director": string(captaincode.Director), "legs": b.ledger.Stats(),
+		"last": last, "skills": b.ledger.SkillStats()})
 }
 
 // lastRoute reads the most recent route under the lock (the value

@@ -35,6 +35,13 @@ type Manager struct {
 	// (ROADMAP M1.2). CallLabel names what the call was for.
 	OnCall    CallHook
 	CallLabel string
+	// Skills is the shelf that was staged for the worker being assessed
+	// (ROADMAP M3.9). When it is non-empty the assessor is asked a second,
+	// smaller question beside the quality one: of the procedures the worker
+	// was handed, which did the answer actually use, and were they worth the
+	// startup context they cost. Empty means no shelf, no question, and a
+	// prompt byte-for-byte what it was before skills existed.
+	Skills []SkillRef
 }
 
 // directorConstraint is prepended to every director prompt. Observed live:
@@ -105,6 +112,11 @@ type Assessment struct {
 	Quality float64 `json:"quality"` // 0-10
 	Verdict string  `json:"verdict"` // good | acceptable | poor
 	Notes   string  `json:"notes"`
+	// Skills grades the shelf the worker held, one line per stocked skill
+	// (M3.9). Empty when no skill was staged, or when the director declined
+	// to mention one - an unmentioned skill is recorded as stocked-and-unused,
+	// never as a bad skill.
+	Skills []SkillGrade `json:"skills,omitempty"`
 }
 
 // WorkerOutput is one fan-out worker's result, tagged with its leg for the
@@ -128,6 +140,11 @@ type MultiAssessment struct {
 		Verdict string  `json:"verdict"`
 		Notes   string  `json:"notes"`
 	} `json:"scores"`
+	// Skills grades the shelf every worker in this stage held (M3.9). It is
+	// one list, not one per worker: the stage stages one selection, and a
+	// per-worker split would ask the director to attribute a procedure to a
+	// tab title it barely saw.
+	Skills []SkillGrade `json:"skills,omitempty"`
 }
 
 const maxWorkers = 3
@@ -358,13 +375,87 @@ Task:
 
 Rubric per worker: correctness first, then completeness, then clarity. 8-10 fully solves its brief; 5-7 usable with gaps; 0-4 wrong or off-task. If a worker's brief covered only PART of the overall task, judge it only on its own brief - do not penalize it for another worker's scope.
 The synthesis is delivered to the user verbatim - format it for reading: markdown with \n newlines inside the JSON string, short paragraphs, bullet lists for enumerations, ### headers per worker/section when long. Never one large run-on paragraph.
-Reply with STRICT JSON only, using the exact worker id shown above (the quoted string after "worker"): {"synthesis":"<combined final answer for the user, covering every worker's part, markdown-formatted with \n newlines>","scores":[{"worker":"<id>","quality":<0-10>,"verdict":"good|acceptable|poor","notes":"<=100 chars"}]}`, objective)
+Reply with STRICT JSON only, using the exact worker id shown above (the quoted string after "worker"): {"synthesis":"<combined final answer for the user, covering every worker's part, markdown-formatted with \n newlines>","scores":[{"worker":"<id>","quality":<0-10>,"verdict":"good|acceptable|poor","notes":"<=100 chars"}]%s}`, objective, skillJSONField(m.Skills))
 
 	var ma MultiAssessment
-	if err := m.directorJSON(sb.String(), &ma); err != nil {
+	if err := m.directorJSON(skillBlock(m.Skills)+sb.String(), &ma); err != nil {
 		return MultiAssessment{}, err
 	}
+	ma.Skills = keepStockedGrades(ma.Skills, m.Skills)
 	return ma, nil
+}
+
+// ── grading the shelf (ROADMAP M3.9) ────────────────────────────────────────
+//
+// Captain stages procedures it believes fit the task, and each one costs
+// every worker its name and description in startup context. The director is
+// already reading the output closely enough to grade it; asking it, in the
+// same call, whether those procedures show up in the work is the cheapest
+// honest measurement available - no extra call, no extra quota.
+//
+// The question is deliberately narrow. The director is not asked whether a
+// skill is good in general, only whether THIS answer shows it being used and
+// whether it earned its place on THIS task. A skill it cannot see being used
+// is graded as unused, which is a fact about selection; inventing a quality
+// score for it would be a fact about nothing.
+
+// skillBlock is the shelf, shown to the assessor before the task.
+func skillBlock(refs []SkillRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("Captain staged these Agent Skills in the worker's working directory before it ran. The worker's runtime decides on its own whether to open one; nothing forced it to.\n")
+	for _, r := range refs {
+		fmt.Fprintf(&sb, "- %s: %s\n", r.Name, truncateStr(oneLine(r.Description), 200))
+	}
+	sb.WriteString(`For each skill above, also judge: does the result show that procedure actually being followed ("used"), and was having it on hand worth the context it cost on THIS task ("usefulness", 0-10)? Grade usefulness ONLY for a skill you can see was used; for one you cannot, set "used":false and "usefulness":0. Do not reward a skill for work the worker would plainly have done without it.
+
+`)
+	return sb.String()
+}
+
+// skillJSONField is the extra field the reply must carry when a shelf was
+// staged. It is spliced into the existing JSON shape rather than replacing
+// it, so a director that ignores the skills question still returns a
+// parseable assessment.
+func skillJSONField(refs []SkillRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	return `,"skills":[{"skill":"<name from the list>","used":<true|false>,"usefulness":<0-10>,"note":"<=100 chars"}]`
+}
+
+// keepStockedGrades drops grades for skills that were never on the shelf. A
+// director that invents a skill name is grading something captain did not
+// stage, and a usage record built from it would attribute work to a
+// procedure nobody had.
+func keepStockedGrades(grades []SkillGrade, refs []SkillRef) []SkillGrade {
+	if len(grades) == 0 || len(refs) == 0 {
+		return nil
+	}
+	known := map[string]string{}
+	for _, r := range refs {
+		known[strings.ToLower(r.Name)] = r.Name
+	}
+	seen := map[string]bool{}
+	out := make([]SkillGrade, 0, len(grades))
+	for _, g := range grades {
+		name, ok := known[strings.ToLower(strings.TrimSpace(g.Skill))]
+		if !ok || seen[name] {
+			continue
+		}
+		seen[name] = true
+		g.Skill = name
+		if g.Usefulness < 0 {
+			g.Usefulness = 0
+		}
+		if g.Usefulness > 10 {
+			g.Usefulness = 10
+		}
+		out = append(out, g)
+	}
+	return out
 }
 
 func legIn(l Leg, open []Leg) bool {
@@ -388,13 +479,14 @@ Worker result:
 Objective check: %s (objective evidence outranks your impression - a passing check caps how low you score, a failing one caps how high).
 
 Rubric: correctness first, then completeness, then clarity. 8-10 fully solves it; 5-7 usable with gaps; 0-4 wrong or off-task.
-Reply with STRICT JSON only: {"quality":<0-10>,"verdict":"good|acceptable|poor","notes":"<=140 chars"}`,
-		truncateStr(task, 2000), truncateStr(output, 6000), objective)
+Reply with STRICT JSON only: {"quality":<0-10>,"verdict":"good|acceptable|poor","notes":"<=140 chars"%s}`,
+		truncateStr(task, 2000), truncateStr(output, 6000), objective, skillJSONField(m.Skills))
 
 	var a Assessment
-	if err := m.directorJSON(prompt, &a); err != nil {
+	if err := m.directorJSON(skillBlock(m.Skills)+prompt, &a); err != nil {
 		return Assessment{}, err
 	}
+	a.Skills = keepStockedGrades(a.Skills, m.Skills)
 	if a.Quality < 0 || a.Quality > 10 {
 		return Assessment{}, fmt.Errorf("manager returned out-of-range quality %v", a.Quality)
 	}

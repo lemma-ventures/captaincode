@@ -97,7 +97,31 @@ type OutcomeEvidence struct {
 	AcceptedAt    time.Time          `json:"accepted_at,omitempty"`
 	RejectedAt    time.Time          `json:"rejected_at,omitempty"`
 	UpdatedAt     time.Time          `json:"updated_at"`
+
+	// DecidedBy names WHAT settled the status, because a status nobody can
+	// attribute is worse than a pending one: a reviewer's verdict and a
+	// derived one are different evidence and must not be read as the same
+	// acceptance. Empty while the outcome is pending. See settle.go.
+	DecidedBy OutcomeDecider `json:"decided_by,omitempty"`
+	SettledAt time.Time      `json:"settled_at,omitempty"`
 }
+
+// OutcomeDecider is what moved an outcome off pending.
+type OutcomeDecider string
+
+const (
+	// DecidedByReviewer: a human verdict on the task. Authoritative - nothing
+	// derived ever overwrites it.
+	DecidedByReviewer OutcomeDecider = "reviewer"
+	// DecidedByChecks: the task-linked checks settled it - a failed check
+	// rejects immediately, an all-passed set accepts once the settle window
+	// has passed without the user coming back to it.
+	DecidedByChecks OutcomeDecider = "checks"
+	// DecidedByLifecycle: the task never reached delivery (failed, exhausted).
+	DecidedByLifecycle OutcomeDecider = "lifecycle"
+	// DecidedByRegression: a later observation revoked an earlier acceptance.
+	DecidedByRegression OutcomeDecider = "regression"
+)
 
 // maxOutcomes caps the persisted outcome log.
 const maxOutcomes = 200
@@ -188,6 +212,7 @@ func (l *Ledger) RecordTaskReview(taskID, verdict, reviewer, note string, amend 
 		o.Status = AcceptanceRejected
 		o.RejectedAt = rev.At
 	}
+	o.DecidedBy, o.SettledAt = DecidedByReviewer, rev.At
 	o.UpdatedAt = time.Now()
 	return nil
 }
@@ -230,6 +255,7 @@ func (l *Ledger) RecordRegression(taskID, reason, source string) {
 	}
 	if o.Status == AcceptanceAccepted {
 		o.Status = AcceptanceRegressed
+		o.DecidedBy, o.SettledAt = DecidedByRegression, o.Regression.At
 	}
 	o.UpdatedAt = time.Now()
 }
@@ -286,7 +312,11 @@ func (l *Ledger) AcceptedOutcomes() []OutcomeEvidence {
 // FormatOutcomeEvidence renders one outcome for the CLI.
 func FormatOutcomeEvidence(o OutcomeEvidence) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "task %s — %s\n", o.TaskID, o.Status)
+	fmt.Fprintf(&sb, "task %s — %s", o.TaskID, o.Status)
+	if o.DecidedBy != "" {
+		fmt.Fprintf(&sb, " (decided by %s)", o.DecidedBy)
+	}
+	sb.WriteString("\n")
 	if o.Task != "" {
 		peek := o.Task
 		if len(peek) > 120 {
@@ -354,7 +384,7 @@ func FormatOutcomeSummary(outcomes []OutcomeEvidence) string {
 		return "no outcome evidence recorded\n"
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-20s %-12s %-8s %-8s %-8s\n", "TASK", "STATUS", "CHECKS", "REVIEW", "CORR")
+	fmt.Fprintf(&sb, "%-20s %-12s %-11s %-8s %-8s %-8s\n", "TASK", "STATUS", "DECIDED BY", "CHECKS", "REVIEW", "CORR")
 	for _, o := range outcomes {
 		checks := "-"
 		if len(o.Checks) > 0 {
@@ -378,7 +408,11 @@ func FormatOutcomeSummary(outcomes []OutcomeEvidence) string {
 		if len(task) > 18 {
 			task = task[:15] + "…"
 		}
-		fmt.Fprintf(&sb, "%-20s %-12s %-8s %-8s %-8s\n", task, o.Status, checks, review, corr)
+		by := "-"
+		if o.DecidedBy != "" {
+			by = string(o.DecidedBy)
+		}
+		fmt.Fprintf(&sb, "%-20s %-12s %-11s %-8s %-8s %-8s\n", task, o.Status, by, checks, review, corr)
 	}
 	return sb.String()
 }

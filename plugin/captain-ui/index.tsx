@@ -23,6 +23,22 @@ const brainURL = (path: string) => `${BRAIN}${path}${CWD ? (path.includes("?") ?
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+// Chrome profile: restyles the TUI to match the website demo without swapping
+// live brain data. "demo" installs/selects the captain-demo theme and uses the
+// demo cooling glyph; "default" restores the previous OpenCode theme.
+type Chrome = "default" | "demo"
+const DEMO_THEME = "captain-demo"
+const DEMO_THEME_PATH = "themes/captain-demo.json"
+const KV_CHROME = "captain.ui.chrome"
+const KV_THEME_BEFORE = "captain.ui.theme.before_demo"
+const envChrome = (): Chrome | undefined => {
+  const v = String((globalThis as any).process?.env?.CAPTAIN_UI_CHROME ?? "").trim().toLowerCase()
+  if (v === "demo" || v === "default") return v
+  return undefined
+}
+const [chrome, setChrome] = createSignal<Chrome>("default")
+const [chromeTick, setChromeTick] = createSignal(0)
+
 type LegStat = { N: number; Scored: number; AvgQuality: number; AvgDurationMs: number; AvgTokens: number }
 type TeamStat = { N: number; Scored: number; AvgQuality: number }
 type WorkerStatus = "idle" | "busy" | "cooling"
@@ -76,7 +92,10 @@ type Roster = { perf_source: string; perf_as_of: string; legs: RosterLeg[]; cli:
 type Shield = { mode: string; requests: number; secrets: number; identity: number; boundary?: { secrets: number; today: number } }
 
 function View(props: { api: TuiPluginApi }) {
-  const theme = () => props.api.theme.current
+  const theme = () => {
+    chromeTick()
+    return props.api.theme.current
+  }
   const [stats, setStats] = createSignal<Stats | null>(null)
   const [acts, setActs] = createSignal<Activity[]>([])
   const [workers, setWorkers] = createSignal<WorkerInfo[]>([])
@@ -245,7 +264,8 @@ function View(props: { api: TuiPluginApi }) {
     return theme().success
   }
 
-  const statusGlyph = (w: WorkerInfo) => (w.status === "busy" ? SPIN[frame()] : w.status === "cooling" ? "~" : "·")
+  const statusGlyph = (w: WorkerInfo) =>
+    w.status === "busy" ? SPIN[frame()] : w.status === "cooling" ? (chrome() === "demo" ? "❄" : "~") : "·"
 
   const statusLabel = (w: WorkerInfo) => {
     if (w.status === "busy") return `${SPIN[frame()]} busy`
@@ -830,6 +850,58 @@ function DirectorTag(props: { api: TuiPluginApi }) {
   )
 }
 
+async function applyChrome(api: TuiPluginApi, next: Chrome, opts?: { toast?: boolean }) {
+  if (next === "demo") {
+    if (api.theme.selected !== DEMO_THEME) api.kv.set(KV_THEME_BEFORE, api.theme.selected)
+    try {
+      if (!api.theme.has(DEMO_THEME)) await api.theme.install(DEMO_THEME_PATH)
+      api.theme.set(DEMO_THEME)
+    } catch (e) {
+      api.ui.toast({ title: "captain chrome", message: `demo theme failed: ${String(e).slice(0, 120)}`, variant: "error", duration: 6000 })
+      return
+    }
+  } else if (api.theme.selected === DEMO_THEME) {
+    const restore = String(api.kv.get(KV_THEME_BEFORE, "opencode") ?? "opencode")
+    if (restore !== DEMO_THEME && api.theme.has(restore)) api.theme.set(restore)
+    else if (api.theme.has("opencode")) api.theme.set("opencode")
+  }
+  setChrome(next)
+  setChromeTick((n) => n + 1)
+  api.kv.set(KV_CHROME, next)
+  if (opts?.toast === false) return
+  api.ui.toast({
+    title: "captain chrome",
+    message: next === "demo" ? "demo look · live brain data unchanged" : "default chrome restored",
+    variant: "info",
+    duration: 4000,
+  })
+}
+
+function registerChromeCommands(api: TuiPluginApi) {
+  const pick = () => {
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect<Chrome>
+        title="Captain chrome"
+        current={chrome()}
+        skipFilter
+        options={[
+          { title: "default", value: "default", description: "OpenCode theme · ~ cooling" },
+          { title: "demo", value: "demo", description: "Website demo colors · ❄ cooling · live data" },
+        ]}
+        onSelect={(opt) => void applyChrome(api, opt.value)}
+      />
+    ))
+  }
+  api.keymap.registerLayer({
+    commands: [
+      { name: "captain.chrome", title: "Captain chrome…", category: "Captain", namespace: "palette", run: pick },
+      { name: "captain.chrome.demo", title: "Captain chrome: demo", category: "Captain", namespace: "palette", run: () => void applyChrome(api, "demo") },
+      { name: "captain.chrome.default", title: "Captain chrome: default", category: "Captain", namespace: "palette", run: () => void applyChrome(api, "default") },
+    ],
+    bindings: [...api.tuiConfig.keybinds.gather("captain.chrome", ["captain.chrome", "captain.chrome.demo", "captain.chrome.default"])],
+  })
+}
+
 const tui: TuiPlugin = async (api) => {
   // CAPTAIN_UI_TEST_QUIT_MS: exercise the quit path from a pty test.
   const testQuit = Number((globalThis as any).process?.env?.CAPTAIN_UI_TEST_QUIT_MS ?? "0")
@@ -845,12 +917,17 @@ const tui: TuiPlugin = async (api) => {
     // already names the director.
     ((globalThis as any).process?.env?.CAPTAIN_UI_SLOTS ?? "sidebar,logo").split(",").map((s: string) => s.trim()),
   )
+  // CAPTAIN_UI_CHROME=demo|default overrides the persisted chrome profile.
+  const initial: Chrome = envChrome() ?? (api.kv.get(KV_CHROME, "default") === "demo" ? "demo" : "default")
+  setChrome(initial)
+  if (initial === "demo") void applyChrome(api, "demo", { toast: false })
   const slots: Record<string, () => any> = {}
   if (enabled.has("sidebar")) slots.sidebar_content = () => <View api={api} />
   if (enabled.has("logo")) slots.home_logo = () => <Wordmark />
   if (enabled.has("tag")) slots.session_prompt_right = () => <DirectorTag api={api} />
   api.slots.register({ order: 150, slots })
   registerPromptCommands(api)
+  registerChromeCommands(api)
 }
 
 // ── prompt commands ──────────────────────────────────────────────────────────

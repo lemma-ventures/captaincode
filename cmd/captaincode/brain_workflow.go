@@ -442,6 +442,17 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	// cascades to every stage, worker, gate and review beneath it.
 	workflowCtx, workflowCancel := b.cancelTree.Register(taskID, "workflow", "workflow:"+key, context.Background())
 	defer workflowCancel()
+	// M3.9: the skills staged for this workflow's workers. An isolated
+	// worker's shelf dies with its worktree; a serialized stage shares the
+	// user's directory, so its shelf is staged once per stage and taken back
+	// when the turn ends.
+	var wfShelves []*captaincode.Shelf
+	var shelfMu sync.Mutex
+	defer func() {
+		for _, sh := range wfShelves {
+			sh.Remove()
+		}
+	}()
 	var upstream []captaincode.WorkerOutput // previous stage's outputs
 	var terminal []slot                     // the outputs the review will judge
 	var events []captaincode.Event          // every worker event
@@ -484,6 +495,11 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			if isolated && li < len(wts) && wts[li] != nil {
 				wtDir = wts[li].Dir
 				ws = req.ws.At(wts[li].Dir)
+				if sh := b.stockShelf(ws.Dir, task); sh != nil {
+					shelfMu.Lock()
+					wfShelves = append(wfShelves, sh)
+					shelfMu.Unlock()
+				}
 			}
 			sp := b.workflowStagePrompt(ws, prompt, si+1, len(wf.Stages), upstream, wl.Prompt, wl.Leg)
 			ws.Steer.Describe(wl.Leg, wl.Prompt) // a /btw is routed by the stage prompts (brain_btw.go)
@@ -616,6 +632,9 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			}
 			wg.Wait()
 		} else {
+			if sh := b.stockShelf(req.ws.Dir, task); sh != nil {
+				wfShelves = append(wfShelves, sh)
+			}
 			for li, wl := range stage.Legs {
 				runSlot(li, wl)
 			}
@@ -746,7 +765,15 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	if aborted != "" {
 		objective += " NOTE: the workflow was cut short - " + aborted + ". Say so in the deliverable."
 	}
-	ma, rerr := b.reviewWorkflow(taskID, task, outputs, objective)
+	shelfMu.Lock()
+	stocked := teamShelfRefs(wfShelves)
+	shelfMu.Unlock()
+	ma, rerr := b.reviewWorkflow(taskID, task, outputs, objective, stocked...)
+	if len(stocked) > 0 {
+		// A workflow is not a leg either: the rows carry the task.
+		b.recordShelf(taskID, "", captaincode.Classify(task), captaincode.TriageTask(task).Domain,
+			skillRefNames(stocked), ma.Skills)
+	}
 	reviewDur := time.Since(reviewStart)
 	if rerr == nil && strings.TrimSpace(ma.Synthesis) != "" {
 		rf.review(ma.Synthesis, reviewDur)
@@ -888,7 +915,7 @@ func (b *brain) completeWorkflowTask(taskID string, state captaincode.LifecycleS
 
 // reviewWorkflow is the mandatory director review (test seam + the long-text
 // variant, since a workflow's terminal outputs ARE the deliverable).
-func (b *brain) reviewWorkflow(taskID, task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error) {
+func (b *brain) reviewWorkflow(taskID, task string, outputs map[string]captaincode.WorkerOutput, objective string, skills ...captaincode.SkillRef) (captaincode.MultiAssessment, error) {
 	if b.reviewFn != nil {
 		return b.reviewFn(task, outputs, objective)
 	}
@@ -896,7 +923,7 @@ func (b *brain) reviewWorkflow(taskID, task string, outputs map[string]captainco
 		return b.assessMultiFn(task, outputs, objective)
 	}
 	b.mu.Lock()
-	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
+	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Skills: skills}
 	b.mu.Unlock()
 	// The mandatory review is coordination overhead the baseline report must
 	// see, not a free service (M1.2).
