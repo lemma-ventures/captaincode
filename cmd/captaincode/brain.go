@@ -1285,7 +1285,15 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 				}
 			}
 		}
+		// The supervisor shadow (brain_supervise.go): the decision leg is
+		// asked, on a slow interval, whether this worker is stuck, off track,
+		// or has reached something only the user can settle. Recorded beside
+		// what the run turned out to be; acted on by nothing. Nil - and free -
+		// when no decision leg is configured.
+		sup := b.superviseStart(ws, l, prompt)
+		os_ = sup.wrap(os_)
 		ran, res, err := runOneRaw(l, od, os_)
+		sup.close(res, err)
 		if wl != nil {
 			res.Log = wl.close(res, err)
 		}

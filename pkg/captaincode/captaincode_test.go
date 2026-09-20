@@ -118,29 +118,29 @@ func TestStartRung(t *testing.T) {
 func TestDirectorExcludedFromWorkerLadder(t *testing.T) {
 	defer SetDirector(LegGrok) // restore default
 	SetDirector(LegGrok)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegGPTOSS, LegCodex, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
 	assert.NotContains(t, Rungs, LegGrok)
 	SetDirector(LegClaude)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegGPTOSS, LegGrok, LegCodex, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
 }
 
 func TestPickSkipsCooldownsAndFallsBack(t *testing.T) {
 	// Pin the director so the worker ladder is deterministic: claude director →
-	// Rungs = {free, qwen, gpt-oss, grok, codex, minimax, deepseek, gemini, kimi, cursor, glm, grok-max, codex-cli}.
+	// Rungs = {free, qwen, step, gpt-oss, grok, codex, ds4-flash, minimax, deepseek, gemini, kimi, cursor, glm, grok-max, codex-cli}.
 	defer SetDirector(LegGrok)
 	SetDirector(LegClaude)
 	now := time.Now()
 	cool := map[Leg]time.Time{LegCodex: now.Add(time.Hour)}
 
-	got := Pick(4, cool, now) // start at codex rung (index 4)
-	assert.Equal(t, []Leg{LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegQwen, LegFree}, got, "codex cooling: take minimax above, then fall back down the ladder")
+	got := Pick(5, cool, now) // start at codex rung (index 5)
+	assert.Equal(t, []Leg{LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegStep, LegQwen, LegFree}, got, "codex cooling: take ds4-flash above, then fall back down the ladder")
 
 	got = Pick(0, map[Leg]time.Time{}, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegGPTOSS, LegGrok, LegCodex, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got)
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got)
 
 	expired := map[Leg]time.Time{LegFree: now.Add(-time.Minute)}
 	got = Pick(0, expired, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegGPTOSS, LegGrok, LegCodex, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
 }
 
 func TestModelSpecQwenAndGLM(t *testing.T) {

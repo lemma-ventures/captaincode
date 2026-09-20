@@ -78,8 +78,14 @@ type ShadowAnswer struct {
 // versioned model that served it, its cost, the menu the leg question was
 // asked over, and the answers with their comparison.
 type Shadow struct {
-	Leg     Leg                     `json:"leg"`
-	Model   string                  `json:"model,omitempty"`
+	Leg   Leg    `json:"leg"`
+	Model string `json:"model,omitempty"`
+	// Backend is WHICH System One implementation answered - "typesafe" for the
+	// vendor, the host for anything else (systemone.go Backend). A bar
+	// calibrated against one backend says nothing about another, and `jev-latest`
+	// is an alias that moves, so a report that pooled two of them would be
+	// quoting a number no single configuration ever produced.
+	Backend string                  `json:"backend,omitempty"`
 	At      time.Time               `json:"at"`
 	Ms      int64                   `json:"ms,omitempty"`
 	Tokens  int                     `json:"tokens,omitempty"`
@@ -93,8 +99,12 @@ type Shadow struct {
 type ShadowRecord struct {
 	Version int    `json:"version"`
 	Point   string `json:"point"`
-	TaskID  string `json:"task_id,omitempty"`
-	Task    string `json:"task,omitempty"` // the note's head
+	// Points: the decision points this one call answered, when it answered
+	// more than the row's own (the action gate's three nouls, the supervisor's
+	// four). Empty means the row carries Point alone.
+	Points []string `json:"points,omitempty"`
+	TaskID string   `json:"task_id,omitempty"`
+	Task   string   `json:"task,omitempty"` // the note's head
 	Shadow
 }
 
@@ -124,11 +134,16 @@ func (sh *Shadow) Stamp(point, actual, by string) {
 	sh.Answers[point] = a
 }
 
+// menuPoint says a point is answered over a menu of options - the leg and the
+// note route. The menu is recorded once per call, so class, domain and shape
+// ride beside one without being asked over it.
+func menuPoint(point string) bool { return point == PointLeg || point == PointNoteRoute }
+
 // offMenu says none of what captain decided was on the menu jev was asked
 // over. Only the menu points have one; "all" is always open on a note route;
 // one offered part is enough, since jev could have named that part and agreed.
 func (sh *Shadow) offMenu(point, actual string) bool {
-	if len(sh.Menu) == 0 || (point != PointLeg && point != PointNoteRoute) {
+	if len(sh.Menu) == 0 || !menuPoint(point) {
 		return false
 	}
 	for _, part := range strings.Split(actual, "+") {
@@ -143,8 +158,11 @@ func (sh *Shadow) offMenu(point, actual string) bool {
 // latency and error so a report can count it, and carries no answers.
 func shadowFrom(c *SystemOneClient, resp S1Response, res Result, err error, menu []Leg) *Shadow {
 	sh := &Shadow{Leg: LegJev, Model: resp.Model, At: time.Now(), Ms: res.DurationMs, Tokens: res.Tokens, Menu: menu}
-	if sh.Model == "" && c != nil {
-		sh.Model = c.model()
+	if c != nil {
+		if sh.Model == "" {
+			sh.Model = c.model()
+		}
+		sh.Backend = c.Backend()
 	}
 	if err != nil {
 		sh.Err = err.Error()
@@ -356,8 +374,25 @@ type PointCalibration struct {
 	Failed   int    `json:"failed"` // calls that produced no answer
 	// NotOffered: rows where captain's pick was not on the menu jev was given.
 	// Kept out of Compared so a forced leg cannot drag the agreement rate down.
-	NotOffered int      `json:"not_offered"`
-	Bins       []CalBin `json:"bins"`
+	NotOffered int `json:"not_offered"`
+	// MenuMin/MenuMax: how many options jev was actually given at a menu point
+	// (leg, note route), across the compared rows. A two-option menu and a
+	// fourteen-option one are not the same question, and pooling them silently
+	// makes a low rate read as "jev is bad at picking legs" when it may only
+	// mean jev was shown two legs on a turn the director always settles the
+	// same way. Zero at a point that has no menu.
+	MenuMin int      `json:"menu_min,omitempty"`
+	MenuMax int      `json:"menu_max,omitempty"`
+	Bins    []CalBin `json:"bins"`
+
+	// Backends/Models: which System One implementation and which versioned
+	// model answered the compared rows, counted. A bar is a property of ONE
+	// backend at ONE version: `jev-latest` is an alias that moves under the
+	// record, and an open re-implementation is a different model entirely. When
+	// more than one appears here the rows are not one sample, and SuggestedBar
+	// declines rather than average them.
+	Backends map[string]int `json:"backends,omitempty"`
+	Models   map[string]int `json:"models,omitempty"`
 
 	Accepted      int `json:"accepted"` // compared rows whose task was accepted
 	AcceptedAgree int `json:"accepted_agree"`
@@ -374,12 +409,43 @@ func (p PointCalibration) Rate() float64 {
 	return float64(p.Agree) / float64(p.Compared)
 }
 
+// Mixed says the compared rows came from more than one backend or more than
+// one versioned model - so they are not one calibration sample.
+func (p PointCalibration) Mixed() bool { return len(p.Backends) > 1 || len(p.Models) > 1 }
+
+// sole names the only key of a counted set, or "" when there is not exactly one.
+func sole(m map[string]int) string {
+	if len(m) != 1 {
+		return ""
+	}
+	for k := range m {
+		return k
+	}
+	return ""
+}
+
+// Served names the backend and model the compared rows came from, or says
+// they were mixed.
+func (p PointCalibration) Served() string {
+	b, m := sole(p.Backends), sole(p.Models)
+	switch {
+	case b != "" && m != "":
+		return b + " " + m
+	case p.Mixed():
+		return fmt.Sprintf("%d backend(s), %d model(s) - mixed", len(p.Backends), len(p.Models))
+	}
+	return b + m
+}
+
 // SuggestedBar is the lowest confidence floor at which jev agreed with
 // captain at least target of the time, over at least minN comparisons, with
 // every higher floor meeting the target too - the bar a gate for this point
 // could be set at. False when no floor qualifies: the honest answer while the
 // sample is small.
 func (p PointCalibration) SuggestedBar(target float64, minN int) (float64, bool) {
+	if p.Mixed() {
+		return 0, false // rows from two backends or two model versions are two samples
+	}
 	bar, ok := 0.0, false
 	for _, b := range p.Bins {
 		if b.N < minN || float64(b.Agree)/float64(b.N) < target {
@@ -410,7 +476,7 @@ func ShadowCalibration(decisions []Decision, shadows []ShadowRecord, outcomes []
 		}
 		return p
 	}
-	add := func(point string, a ShadowAnswer, taskID string) {
+	add := func(point string, a ShadowAnswer, taskID string, menu int, sh Shadow) {
 		p := get(point)
 		if a.By == DecidedByJev {
 			p.Acted++
@@ -426,6 +492,26 @@ func ShadowCalibration(decisions []Decision, shadows []ShadowRecord, outcomes []
 		p.Compared++
 		if a.Agree {
 			p.Agree++
+		}
+		if sh.Backend != "" {
+			if p.Backends == nil {
+				p.Backends = map[string]int{}
+			}
+			p.Backends[sh.Backend]++
+		}
+		if sh.Model != "" {
+			if p.Models == nil {
+				p.Models = map[string]int{}
+			}
+			p.Models[sh.Model]++
+		}
+		if menu > 0 && menuPoint(point) {
+			if p.MenuMin == 0 || menu < p.MenuMin {
+				p.MenuMin = menu
+			}
+			if menu > p.MenuMax {
+				p.MenuMax = menu
+			}
 		}
 		for i := range p.Bins {
 			if a.Confidence >= p.Bins[i].Floor {
@@ -461,19 +547,25 @@ func ShadowCalibration(decisions []Decision, shadows []ShadowRecord, outcomes []
 			continue
 		}
 		for point, a := range d.Shadow.Answers {
-			add(point, a, d.TaskID)
+			add(point, a, d.TaskID, len(d.Shadow.Menu), *d.Shadow)
 		}
 	}
 	for _, r := range shadows {
 		if r.Err != "" {
-			get(r.Point).Failed++
+			for _, point := range r.points() {
+				get(point).Failed++
+			}
 			continue
 		}
-		if a, ok := r.Answers[r.Point]; ok {
-			add(r.Point, a, r.TaskID)
+		for _, point := range r.points() {
+			if a, ok := r.Answers[point]; ok {
+				add(point, a, r.TaskID, len(r.Menu), r.Shadow)
+			}
 		}
 	}
-	order := map[string]int{PointClass: 0, PointDomain: 1, PointShape: 2, PointLeg: 3, PointNoteRoute: 4}
+	order := map[string]int{PointClass: 0, PointDomain: 1, PointShape: 2, PointLeg: 3, PointNoteRoute: 4,
+		PointGateDestructive: 5, PointGateOutOfScope: 6, PointGateExfil: 7,
+		PointWorkerStuck: 8, PointWorkOffTrack: 9, PointNeedsHuman: 10, PointAgentsDrift: 11}
 	out := make([]PointCalibration, 0, len(points))
 	for _, p := range points {
 		out = append(out, *p)
@@ -492,6 +584,19 @@ func ShadowCalibration(decisions []Decision, shadows []ShadowRecord, outcomes []
 	return out
 }
 
+// formatPointOrder is the order a shadow's answers read on one line.
+var formatPointOrder = append(append([]string{PointClass, PointDomain, PointShape, PointLeg, PointNoteRoute},
+	GatePoints...), SupervisePoints...)
+
+// points is the decision points a row carries: Points when a single call
+// answered several, the row's own Point otherwise.
+func (r ShadowRecord) points() []string {
+	if len(r.Points) > 0 {
+		return r.Points
+	}
+	return []string{r.Point}
+}
+
 // FormatShadow renders one shadow on a line: the model and latency, then
 // each answer with its confidence and how it compared.
 func FormatShadow(sh Shadow) string {
@@ -506,7 +611,7 @@ func FormatShadow(sh Shadow) string {
 		return head + " · no answer: " + sh.Err
 	}
 	parts := []string{head}
-	for _, point := range []string{PointClass, PointDomain, PointShape, PointLeg, PointNoteRoute} {
+	for _, point := range formatPointOrder {
 		a, ok := sh.Answers[point]
 		if !ok {
 			continue
@@ -530,16 +635,29 @@ func FormatShadow(sh Shadow) string {
 }
 
 // FormatShadowCalibration renders the calibration the way it should be read:
-// agreement by confidence floor, the outcome labels, and the bar each point
-// could be gated at - or that the sample is still too small to say.
+// agreement by confidence floor, how wide a menu point's menu was, the
+// outcome labels, and the bar each point could be gated at - or that the
+// sample is still too small to say.
 func FormatShadowCalibration(cal []PointCalibration, target float64, minN int) string {
 	if len(cal) == 0 {
-		return "no shadow decisions yet - they are recorded once jev is configured (TYPESAFE_API_KEY) and turns route through triage or the director\n"
+		return "no shadow decisions yet - they are recorded once a decision leg is configured (TYPESAFE_API_KEY, or a keyless CAPTAIN_SYSTEMONE_URL) and turns route through triage or the director\n"
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "shadow decisions: jev beside captain's own choices, recorded and never acted on (bar target %.2f, at least %d comparisons)\n", target, minN)
 	for _, p := range cal {
-		fmt.Fprintf(&sb, "\n%-10s %d compared, agreement %.2f", p.Point, p.Compared, p.Rate())
+		if p.Compared == 0 {
+			// An agreement rate over nothing reads as total disagreement,
+			// which is the opposite of what an uncompared point means.
+			fmt.Fprintf(&sb, "\n%-10s 0 compared - nothing has settled these yet, so there is no agreement rate", p.Point)
+		} else {
+			fmt.Fprintf(&sb, "\n%-10s %d compared, agreement %.2f", p.Point, p.Compared, p.Rate())
+		}
+		switch {
+		case p.MenuMin == p.MenuMax && p.MenuMax > 0:
+			fmt.Fprintf(&sb, " over menus of %d", p.MenuMin)
+		case p.MenuMax > 0:
+			fmt.Fprintf(&sb, " over menus of %d-%d", p.MenuMin, p.MenuMax)
+		}
 		if p.Acted > 0 {
 			fmt.Fprintf(&sb, " (+%d where jev's own answer was taken)", p.Acted)
 		}
@@ -549,17 +667,25 @@ func FormatShadowCalibration(cal []PointCalibration, target float64, minN int) s
 		if p.NotOffered > 0 {
 			fmt.Fprintf(&sb, " (%d not on the menu jev was given)", p.NotOffered)
 		}
-		sb.WriteString("\n  by confidence:")
-		for _, b := range p.Bins {
-			if b.N == 0 {
-				continue
+		if served := p.Served(); served != "" {
+			fmt.Fprintf(&sb, "\n  served by: %s", served)
+		}
+		if p.Compared > 0 {
+			sb.WriteString("\n  by confidence:")
+			for _, b := range p.Bins {
+				if b.N == 0 {
+					continue
+				}
+				fmt.Fprintf(&sb, "  ≥%.2f %d/%d (%.2f)", b.Floor, b.Agree, b.N, float64(b.Agree)/float64(b.N))
 			}
-			fmt.Fprintf(&sb, "  ≥%.2f %d/%d (%.2f)", b.Floor, b.Agree, b.N, float64(b.Agree)/float64(b.N))
 		}
 		fmt.Fprintf(&sb, "\n  outcomes: accepted %d (agree %d) · rejected %d (agree %d) · pending %d\n", p.Accepted, p.AcceptedAgree, p.Rejected, p.RejectedAgree, p.Pending)
-		if bar, ok := p.SuggestedBar(target, minN); ok {
+		switch bar, ok := p.SuggestedBar(target, minN); {
+		case ok:
 			fmt.Fprintf(&sb, "  bar: %.2f - jev agreed ≥%.0f%% of the time at or above it\n", bar, target*100)
-		} else {
+		case p.Mixed():
+			fmt.Fprintf(&sb, "  bar: none - these rows came from more than one backend or model version, which is more than one sample. Re-run the shadow against one backend (CAPTAIN_SYSTEMONE_URL) and pin the model (CAPTAIN_JEV_MODEL) before reading a bar off them.\n")
+		default:
 			fmt.Fprintf(&sb, "  bar: none yet - no floor reaches %.0f%% agreement over %d comparisons\n", target*100, minN)
 		}
 	}

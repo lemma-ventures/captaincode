@@ -136,6 +136,9 @@ func main() {
 		case "redact":
 			cmdRedact(args[1:])
 			return
+		case "gate": // the action gate at the tool boundary (gate_cmd.go)
+			cmdGate(args[1:])
+			return
 		case "proxy": // standalone egress proxy (the brain runs one itself)
 			startProxy()
 			select {}

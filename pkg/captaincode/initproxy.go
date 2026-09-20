@@ -202,9 +202,30 @@ func isProxyURL(u string) bool {
 
 const redactHookCommand = "captain redact --hook"
 
+// gateHookCommand is the action gate at Claude Code's tool boundary
+// (gate.go). It is installed beside the redaction hook and not instead of
+// it: one restores placeholders and refuses secret FILES, the other screens
+// what the ACTION would do. With no decision leg configured the hook returns
+// without a call, so installing it costs a process spawn and nothing else.
+const gateHookCommand = "captain gate --hook"
+
 // EnsureClaudeRedactHook installs (on) or removes (off) the PreToolUse hook
 // in Claude Code's user settings. Idempotent; other hooks are kept.
 func EnsureClaudeRedactHook(on bool) (bool, string, error) {
+	return ensureClaudePreToolUseHook(on, redactHookCommand, "Read|Grep|Glob|Write|Edit|MultiEdit|Bash", 10,
+		"placeholders restored in tool input, secret files refused")
+}
+
+// EnsureClaudeGateHook installs (on) or removes (off) the action gate's
+// PreToolUse hook. Same settings file, same shape, its own entry.
+func EnsureClaudeGateHook(on bool) (bool, string, error) {
+	return ensureClaudePreToolUseHook(on, gateHookCommand, "Bash|Write|Edit|MultiEdit|NotebookEdit|WebFetch", 5,
+		"actions screened on the decision leg; no decision leg configured means no call and no delay")
+}
+
+// ensureClaudePreToolUseHook adds or removes one PreToolUse entry.
+// Idempotent; other hooks are kept.
+func ensureClaudePreToolUseHook(on bool, command, matcher string, timeout int, note string) (bool, string, error) {
 	path := ClaudeSettingsPath()
 	if path == "" {
 		return false, "", nil
@@ -223,7 +244,7 @@ func EnsureClaudeRedactHook(on bool) (bool, string, error) {
 	pre, _ := hooks["PreToolUse"].([]any)
 	has := -1
 	for i, e := range pre {
-		if entryRunsCommand(e, redactHookCommand) {
+		if entryRunsCommand(e, command) {
 			has = i
 			break
 		}
@@ -235,8 +256,8 @@ func EnsureClaudeRedactHook(on bool) (bool, string, error) {
 			cfg["hooks"] = hooks
 		}
 		pre = append(pre, map[string]any{
-			"matcher": "Read|Grep|Glob|Write|Edit|MultiEdit|Bash",
-			"hooks":   []any{map[string]any{"type": "command", "command": redactHookCommand, "timeout": 10}},
+			"matcher": matcher,
+			"hooks":   []any{map[string]any{"type": "command", "command": command, "timeout": timeout}},
 		})
 		hooks["PreToolUse"] = pre
 	case !on && has >= 0:
@@ -257,9 +278,9 @@ func EnsureClaudeRedactHook(on bool) (bool, string, error) {
 		return false, "", err
 	}
 	if on {
-		return true, "installed the captain redact PreToolUse hook in " + path + " (placeholders restored in tool input, secret files refused)", nil
+		return true, "installed `" + command + "` as a PreToolUse hook in " + path + " (" + note + ")", nil
 	}
-	return true, "removed the captain redact hook from " + path, nil
+	return true, "removed `" + command + "` from " + path, nil
 }
 
 func entryRunsCommand(e any, cmd string) bool {

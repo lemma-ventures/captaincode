@@ -3,6 +3,7 @@ package captaincode
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -180,8 +181,9 @@ func TestShadowFromAFailedCallKeepsTheErrorAndNoAnswers(t *testing.T) {
 }
 
 func shadowLeg(choice string, conf float64, actual string, agree bool) *Shadow {
-	return &Shadow{Leg: LegJev, Model: "jev-1.13.0", Answers: map[string]ShadowAnswer{
-		PointLeg: {Choice: choice, Confidence: conf, Actual: actual, By: PathDirector, Agree: agree}}}
+	return &Shadow{Leg: LegJev, Model: "jev-1.13.0", Menu: []Leg{LegCursor, LegCodex, LegGrok},
+		Answers: map[string]ShadowAnswer{
+			PointLeg: {Choice: choice, Confidence: conf, Actual: actual, By: PathDirector, Agree: agree}}}
 }
 
 func TestShadowCalibrationSkipsActedRowsBinsByConfidenceAndLabelsOutcomes(t *testing.T) {
@@ -244,7 +246,7 @@ func TestShadowCalibrationSkipsActedRowsBinsByConfidenceAndLabelsOutcomes(t *tes
 	assert.Equal(t, 1, note.Failed)
 
 	out := FormatShadowCalibration(cal, 0.9, 1)
-	assert.Contains(t, out, "leg        3 compared, agreement 0.67")
+	assert.Contains(t, out, "leg        3 compared, agreement 0.67 over menus of 3")
 	assert.Contains(t, out, "≥0.90 2/2 (1.00)")
 	assert.Contains(t, out, "bar: 0.90")
 	assert.Contains(t, out, "class      0 compared")
@@ -277,4 +279,34 @@ func TestLedgerShadowsAreCapped(t *testing.T) {
 	assert.Len(t, l.Shadows, maxShadows)
 	assert.Equal(t, ShadowVersion, l.Shadows[0].Version)
 	assert.WithinDuration(t, time.Now(), l.Shadows[0].At, time.Minute)
+}
+
+// A menu point's agreement rate means nothing without the width of the menu:
+// two options and fourteen are not the same question, and the report has to
+// say so on the line that carries the rate.
+func TestShadowCalibrationCarriesTheWidthOfTheMenuJevWasAsked(t *testing.T) {
+	narrow := shadowLeg("ds-flash", 0.8, "claude", false)
+	narrow.Menu = []Leg{LegClaude, Leg("ds-flash")}
+	wide := shadowLeg("cursor", 0.7, "cursor", true)
+	wide.Menu = Rungs
+
+	cal := ShadowCalibration([]Decision{{TaskID: "t1", Shadow: narrow}, {TaskID: "t2", Shadow: wide}}, nil, nil)
+	var leg PointCalibration
+	for _, p := range cal {
+		if p.Point == PointLeg {
+			leg = p
+		}
+	}
+	assert.Equal(t, 2, leg.Compared)
+	assert.Equal(t, 2, leg.MenuMin)
+	assert.Equal(t, len(Rungs), leg.MenuMax)
+	out := FormatShadowCalibration(cal, 0.9, 20)
+	assert.Contains(t, out, fmt.Sprintf("agreement 0.50 over menus of 2-%d", len(Rungs)))
+
+	// The menu is recorded once per call, beside every answer on it. Shape is
+	// not asked over it, so its line must not claim to have been.
+	shape := shadowLeg("cursor", 0.7, "cursor", true)
+	shape.Answers[PointShape] = ShadowAnswer{Choice: ShapeSolo, Confidence: 0.8, Actual: ShapeSolo, By: PathDirector, Agree: true}
+	out = FormatShadowCalibration(ShadowCalibration([]Decision{{TaskID: "t3", Shadow: shape}}, nil, nil), 0.9, 20)
+	assert.NotContains(t, strings.Split(out, "leg")[0], "over menus of", "only a menu point is asked over a menu")
 }

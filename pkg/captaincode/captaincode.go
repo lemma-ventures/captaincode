@@ -35,6 +35,10 @@ const (
 	LegDeepSeek Leg = "deepseek" // opencode serve -> DeepSeek V4 Pro via OpenRouter
 	LegGemini   Leg = "gemini"   // opencode serve -> Gemini 3.7 Flash via OpenRouter (vision)
 	LegKimi     Leg = "kimi"     // opencode serve -> Kimi K3 via NIM (flagship, FREE with the NVIDIA key)
+	// Hugging Face router (2026-09-20): open-weight legs on the HF Inference
+	// Providers router; join the /oss pool. Same credential (HF_TOKEN).
+	LegStep     Leg = "step"      // opencode serve -> Step 3.5 Flash via Hugging Face
+	LegDS4Flash Leg = "ds4-flash" // opencode serve -> DeepSeek V4 Flash via Hugging Face
 	// Frontier-class (2026-09-09): the Codex CLI driving gpt-6-astra at xhigh
 	// reasoning on the ChatGPT subscription - see codex-cli.go. NOT the codex leg.
 	LegCodexCLI Leg = "codex-cli" // codex exec headless (Codex CLI, ~/.codex/auth.json)

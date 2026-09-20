@@ -19,7 +19,7 @@ func TestRegistryDefaultsReproduceTheLadder(t *testing.T) {
 	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
 	_, err := LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
 	require.NoError(t, err)
-	assert.Equal(t, []Leg{LegJev, LegFree, LegQwen, LegGPTOSS, LegGrok, LegCodex, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
+	assert.Equal(t, []Leg{LegJev, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
 	assert.NotContains(t, Rungs, LegJev, "the decision leg is registered but never a worker rung")
 	assert.Equal(t, "openrouter", legModels[LegGLM].Provider)
 	assert.Equal(t, "z-ai/glm-5.3", legModels[LegGLM].Model)
