@@ -121,8 +121,8 @@ captain init                            # registers both plugins by absolute pat
 ```
 
 `captain init` points opencode at the checkout it finds - `$CAPTAIN_SRC`, or
-`~/Gits/captaincode` - and says so loudly when there is nothing there to point
-at. See [plugin/README.md](plugin/README.md).
+`$HOME/Gits/captaincode` when that path exists - and says so loudly when there
+is nothing there to point at. See [plugin/README.md](plugin/README.md).
 
 Full settings reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 How the pieces fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

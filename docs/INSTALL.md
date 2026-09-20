@@ -41,9 +41,9 @@ captain init && ./captaincode.sh
 ```
 
 `captain init` registers the plugins by absolute path out of `$CAPTAIN_SRC`
-(default `~/Gits/captaincode`), so set that variable when the checkout lives
-anywhere else. Anything the terminal can do, the brain can be asked to do
-directly.
+(default `$HOME/Gits/captaincode` when present), so set that variable when the
+checkout lives anywhere else. Anything the terminal can do, the brain can be
+asked to do directly.
 
 ## Captain's own version
 
