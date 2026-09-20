@@ -598,6 +598,18 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(leg), Model: string(leg), Effort: string(req.ws.Effort), Text: promptPeek(lastUserTurn(prompt))})
 	t0 := time.Now()
 
+	// M3.9: stock the worker's shelf for this task. A solo worker runs in the
+	// user's own directory, so the shelf is staged there, kept out of `git
+	// status` while it is there, and removed when the turn ends - a title
+	// request gets none of it. With nothing synced this is a nil shelf and no
+	// work at all.
+	var shelf *captaincode.Shelf
+	if !titleReq {
+		shelf = b.stockShelf(req.ws.Dir, lastUserTurn(prompt))
+		defer shelf.Remove()
+	}
+	stocked := shelf.Refs()
+
 	id := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	created := time.Now().Unix()
 	model := req.Model
@@ -644,7 +656,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("captain brain: %s wrapper done in %s (%d chars)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
 		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: string(leg), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
 		if !titleReq { // …and must not teach the router anything
-			go b.recordRun(leg, prompt, res, req.ws.Dir) // learning loop: off the response path
+			go b.recordRun(leg, prompt, res, req.ws.Dir, stocked...) // learning loop: off the response path
 		}
 		writeJSON(w, 200, map[string]any{
 			"id": id, "object": "chat.completion", "created": created, "model": model,
@@ -792,7 +804,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("captain brain: %s wrapper done in %s (%d chars, streamed)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: string(leg), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
 	if !titleReq { // …and must not teach the router anything
-		go b.recordRun(leg, prompt, res, req.ws.Dir) // learning loop: off the response path
+		go b.recordRun(leg, prompt, res, req.ws.Dir, stocked...) // learning loop: off the response path
 	}
 	if first { // worker produced no deltas - emit the whole reply once
 		chunk(map[string]any{"role": "assistant", "content": res.Text}, nil)

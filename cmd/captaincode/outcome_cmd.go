@@ -7,10 +7,11 @@ package main
 //	captain outcome <task-id> review <verdict> --reviewer <name> [--note <text>] [--amend]
 //	captain outcome <task-id> correction <minutes> [--reason <text>]
 //	captain outcome <task-id> regression <reason> [--source <name>]
+//	captain outcomes --settle            # settle every outcome its evidence decides
 //
 // The brain serves GET /v1/outcome (list or single) and POST /v1/outcome
-// (review, correction, regression) so the CLI and the TUI can record
-// acceptance evidence while the brain is running.
+// (review, correction, regression, settle) so the CLI and the TUI can
+// record acceptance evidence while the brain is running.
 
 import (
 	"encoding/json"
@@ -56,12 +57,23 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]any{"error": "invalid body: " + err.Error()})
 			return
 		}
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		// A sweep is task-wide: it settles every pending outcome whose own
+		// evidence has decided it (settle.go), so it carries no task id.
+		if req.Action == "settle" {
+			n := b.ledger.SettleOutcomes(time.Now())
+			if err := b.ledger.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "captain brain: save outcome sweep: %v\n", err)
+			}
+			total, byStatus, _ := b.ledger.OutcomeCoverage()
+			writeJSON(w, 200, map[string]any{"settled": n, "total": total, "by_status": byStatus})
+			return
+		}
 		if req.TaskID == "" {
 			writeJSON(w, 400, map[string]any{"error": "task_id required"})
 			return
 		}
-		b.mu.Lock()
-		defer b.mu.Unlock()
 		switch req.Action {
 		case "review":
 			if err := b.ledger.RecordTaskReview(req.TaskID, req.Verdict, req.Reviewer, req.Note, req.Amend); err != nil {
@@ -73,7 +85,7 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "regression":
 			b.ledger.RecordRegression(req.TaskID, req.Reason, req.Source)
 		default:
-			writeJSON(w, 400, map[string]any{"error": "unknown action: " + req.Action})
+			writeJSON(w, 400, map[string]any{"error": "unknown action: " + req.Action + " (review|correction|regression|settle)"})
 			return
 		}
 		if err := b.ledger.Save(); err != nil {
@@ -88,6 +100,10 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func cmdOutcomes(args []string) {
 	c := &http.Client{Timeout: 10 * time.Second}
+	if len(args) == 1 && (args[0] == "--settle" || args[0] == "-settle") {
+		outcomeSweep(c)
+		return
+	}
 	if len(args) == 0 {
 		resp, err := c.Get("http://127.0.0.1:14097/v1/outcome")
 		if err != nil {
@@ -122,7 +138,36 @@ func cmdOutcomes(args []string) {
 		fmt.Print(captaincode.FormatOutcomeEvidence(o))
 		return
 	}
-	fatal(fmt.Errorf("usage: captain outcomes [task-id]"))
+	fatal(fmt.Errorf("usage: captain outcomes [task-id|--settle]"))
+}
+
+// outcomeSweep asks the brain to settle every pending outcome its evidence
+// has decided. The brain does this on every turn it records; the command
+// exists so a settle window that has just elapsed can be applied now rather
+// than at the next turn, and so the counts are visible.
+func outcomeSweep(c *http.Client) {
+	resp, err := c.Post("http://127.0.0.1:14097/v1/outcome", "application/json",
+		strings.NewReader(`{"action":"settle"}`))
+	if err != nil {
+		fatal(fmt.Errorf("brain not reachable: %w", err))
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Settled  int            `json:"settled"`
+		Total    int            `json:"total"`
+		ByStatus map[string]int `json:"by_status"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	fmt.Printf("settled %d of %d outcome(s)\n", out.Settled, out.Total)
+	for _, st := range []string{"accepted", "rejected", "regressed", "pending"} {
+		if n := out.ByStatus[st]; n > 0 {
+			fmt.Printf("  %-10s %d\n", st, n)
+		}
+	}
+	if out.ByStatus["pending"] > 0 {
+		fmt.Printf("pending outcomes carry no check, or passed their checks less than %s ago,\n", captaincode.OutcomeSettleWindow())
+		fmt.Println("or cost the user correction minutes - which only a human verdict can call.")
+	}
 }
 
 func cmdOutcome(args []string) {

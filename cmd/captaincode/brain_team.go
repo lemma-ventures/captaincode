@@ -101,12 +101,15 @@ func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief s
 		deliverableContract
 }
 
-func (b *brain) doAssessMulti(taskID, task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error) {
+// skills, when the stage staged a shelf, adds M3.9's second question to the
+// same call: of the procedures captain staged, which do these answers show
+// being used, and were they worth their place.
+func (b *brain) doAssessMulti(taskID, task string, outputs map[string]captaincode.WorkerOutput, objective string, skills ...captaincode.SkillRef) (captaincode.MultiAssessment, error) {
 	if b.assessMultiFn != nil {
 		return b.assessMultiFn(task, outputs, objective)
 	}
 	b.mu.Lock()
-	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
+	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Skills: skills}
 	b.mu.Unlock()
 	// The synthesis is a real provider call on the team's behalf: bill it to
 	// the team's task rather than letting coordination overhead vanish (M1.2).
@@ -258,6 +261,8 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		fmt.Printf("captain brain: %s wrapper running (team single worker)…\n", wk.Leg)
 		feed := newProgressFeed(string(wk.Leg), status)
 		req.ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
+		shelf := b.stockShelf(req.ws.Dir, task) // M3.9: one worker, the user's own directory
+		defer shelf.Remove()
 		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg), nil, feed.note)
 		feed.close()
 		if r2, e2, note := b.salvagePartial(leg, res, err); note != "" {
@@ -275,7 +280,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		}
 		recordRunHistory(hist)
 		fmt.Printf("captain brain: team single worker %s done in %s (%d chars)\n", leg, time.Since(t0).Round(time.Millisecond), len(res.Text))
-		go b.recordRun(leg, prompt, res, req.ws.Dir)
+		go b.recordRun(leg, prompt, res, req.ws.Dir, shelf.Refs()...)
 		emit(res.Text)
 		finish()
 		return
@@ -326,11 +331,28 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		}
 	}
 	done := make(chan struct{})
+	// M3.9: one shelf per worker directory. An isolated worker's shelf dies
+	// with its worktree; a serialized stage shares the user's directory, so
+	// the same shelf is staged once and taken back when the stage ends.
+	var shelves []*captaincode.Shelf
+	defer func() {
+		for _, sh := range shelves {
+			sh.Remove()
+		}
+	}()
+	var shelfMu sync.Mutex
 	runTeamSlot := func(i int, wk captaincode.Worker, title string) {
 		t0 := time.Now()
 		ws := req.ws
 		if isolated && i < len(wts) && wts[i] != nil {
 			ws = req.ws.At(wts[i].Dir)
+		}
+		if isolated {
+			if sh := b.stockShelf(ws.Dir, task); sh != nil {
+				shelfMu.Lock()
+				shelves = append(shelves, sh)
+				shelfMu.Unlock()
+			}
 		}
 		// Per-worker tool activity, named - parallel workers interleave.
 		ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
@@ -382,6 +404,9 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 			}
 		}
 	} else {
+		if sh := b.stockShelf(req.ws.Dir, task); sh != nil {
+			shelves = append(shelves, sh)
+		}
 		for i, wk := range plan.Workers {
 			title := fmt.Sprintf("w%d-%s", i+1, wk.Leg)
 			runTeamSlot(i, wk, title)
@@ -417,7 +442,11 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	}
 
 	final := ""
-	if ma, err := b.doAssessMulti(taskID, task, outputs, "none"); err == nil && strings.TrimSpace(ma.Synthesis) != "" {
+	stocked := teamShelfRefs(shelves)
+	if ma, err := b.doAssessMulti(taskID, task, outputs, "none", stocked...); err == nil && strings.TrimSpace(ma.Synthesis) != "" {
+		// A team is not a leg (the same distinction Event.Team draws), so the
+		// rows carry the task and no leg rather than a leg that never ran.
+		b.recordShelf(taskID, "", plan.Class, captaincode.TriageTask(task).Domain, skillRefNames(stocked), ma.Skills)
 		final = ma.Synthesis
 		sum, n := 0.0, 0
 		b.mu.Lock()

@@ -66,8 +66,37 @@ func TestGateReportRefusesToReadUncomparedRowsAsABar(t *testing.T) {
 	})
 	out := captureStdout(t, func() { gateReport(0.9, 20) })
 	assert.Contains(t, out, "1 screening(s)")
-	assert.Contains(t, out, "is a PREDICTION about an action")
-	assert.Contains(t, out, "not an agreement rate, and not a bar")
+	assert.Contains(t, out, "settled: 0 of 1")
+	assert.Contains(t, out, "carry no task identity and can never be settled")
+	assert.Contains(t, out, "bar: none yet")
+}
+
+// The other half: a screening that DOES carry a task identity, on a task the
+// user accepted with no correction and no regression, is settled - as a
+// false positive when the noul fired, which is the only half a task's
+// acceptance can settle (settle.go).
+func TestGateReportSettlesRowsFromACleanlyAcceptedTask(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".captaincode"), 0o700))
+	l, err := captaincode.LoadLedger()
+	require.NoError(t, err)
+	l.RecordOutcome(captaincode.OutcomeEvidence{TaskID: "task-42", Status: captaincode.AcceptanceAccepted,
+		DecidedBy: captaincode.DecidedByChecks})
+	require.NoError(t, l.Save())
+	captaincode.AppendGateLog(captaincode.ShadowRecord{
+		Point: captaincode.PointGate, Points: captaincode.GatePoints, TaskID: "task-42", Task: "bash rm -rf x",
+		Shadow: captaincode.Shadow{Leg: captaincode.LegJev, Backend: "typesafe", Model: "jev-1.13.0",
+			Answers: map[string]captaincode.ShadowAnswer{
+				captaincode.PointGateDestructive: {Choice: "true", Confidence: 0.95,
+					Probabilities: map[string]float64{"true": 0.95, "false": 0.05}},
+			}},
+	})
+	out := captureStdout(t, func() { gateReport(0.9, 20) })
+	assert.Contains(t, out, "settled: 1 of 1")
+	assert.Contains(t, out, "1 compared")
+	assert.Contains(t, out, "FALSE-POSITIVE bound")
+	assert.NotContains(t, out, "carry no task identity")
 }
 
 func TestFirstStringPrefersTheFirstPresentKey(t *testing.T) {

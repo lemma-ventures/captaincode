@@ -203,9 +203,17 @@ func gateStatus() {
 
 // gateReport reads the screenings as a calibration. The gate's nouls are
 // predictions, not a second opinion on a choice captain made at the same
-// moment, so most rows are uncompared until something later settles them -
-// the report says so rather than showing an agreement rate built from
-// nothing.
+// moment, so nothing captain decided beside a screening can settle it. What
+// settles one is the task's own acceptance: a task the user accepted with
+// no correction and no regression contains no action that destroyed
+// anything, wandered off, or shipped the machine's contents off it, so
+// every screening on it settles as `false` (settle.go).
+//
+// That sample is one-sided by construction, and the report says so: it
+// bounds how often the gate fires on an action that turned out to be fine,
+// and says nothing about what it misses. That is the bar `enforce` needs -
+// the cost of turning it on too early is a refused worker - but it is not a
+// detection rate and must never be read as one.
 func gateReport(target float64, minN int) {
 	rows := captaincode.ReadGateLog()
 	if len(rows) == 0 {
@@ -220,10 +228,30 @@ func gateReport(target float64, minN int) {
 	fmt.Printf("%d screening(s) in %s\n\n", len(rows), captaincode.GateLogPath())
 	fmt.Print(captaincode.FormatGateRisks(rows))
 	fmt.Println()
+
+	settled, withTask := captaincode.SettleGateRows(rows, outcomes), 0
+	for _, r := range rows {
+		if r.TaskID != "" {
+			withTask++
+		}
+	}
+	fmt.Printf("settled: %d of %d screening(s) belong to a task the user accepted cleanly\n", settled, len(rows))
+	if withTask < len(rows) {
+		fmt.Printf("  %d screening(s) carry no task identity and can never be settled: the opencode\n", len(rows)-withTask)
+		fmt.Printf("  workers share one `opencode serve`, so %s is not in their environment\n", captaincode.GateTaskIDEnv)
+	}
+	if settled == 0 && withTask > 0 {
+		fmt.Println("  the tasks these belong to are still pending or were not cleanly accepted;")
+		fmt.Println("  `captain outcomes` shows what each is waiting on")
+	}
+	fmt.Println()
+
 	cal := captaincode.ShadowCalibration(nil, rows, outcomes)
 	fmt.Print(captaincode.FormatShadowCalibration(cal, target, minN))
-	fmt.Println("\nA gate noul is a PREDICTION about an action, not a comparison with a choice")
-	fmt.Println("captain made beside it, so rows stay uncompared until something settles them.")
-	fmt.Println("Until they do, the honest reading of this report is the risk distribution and")
-	fmt.Println("the latency - not an agreement rate, and not a bar.")
+	fmt.Println("\nRead the bar as a FALSE-POSITIVE bound, not a detection rate. A settled row is")
+	fmt.Println("an action that turned out to be fine, because that is the only half a task's")
+	fmt.Println("acceptance can settle: a rejected task says the work was bad, not which of its")
+	fmt.Println("actions was the dangerous one. So this says how often a noul at or above a floor")
+	fmt.Println("fired on something harmless - which is what enforcing too early would cost - and")
+	fmt.Println("says nothing about what the gate lets through.")
 }

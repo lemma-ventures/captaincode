@@ -6,7 +6,7 @@ terminal needs is two plugins that stock opencode loads from its own config:
 | File | Registered in | What it does |
 |---|---|---|
 | `captain.ts` | `~/.config/opencode/opencode.jsonc` | forced leg prefixes (`/claude …`, `/team …`, `/oss …`), the leg roster from the brain, the route log, and the secret masking at the tool boundary |
-| `captain-ui/index.tsx` | `~/.config/opencode/tui.json` | the Models sidebar, the wordmark, the director tag and the progress feed |
+| `captain-ui/index.tsx` | `~/.config/opencode/tui.json` | the Models sidebar, the wordmark, the director tag and the progress feed; ships a `captain-demo` OpenCode theme (website demo colors) selectable via **Captain chrome…** or `CAPTAIN_UI_CHROME=demo` |
 
 The two halves must be separate modules and they go in **different** config
 files: opencode.jsonc feeds the server plugin loader, tui.json feeds the TUI.
