@@ -345,19 +345,15 @@ func (b *brain) runWorkflowLeg(ws captaincode.Workspace, leg captaincode.Leg, pr
 	// Workflow worker text stays out of the answer, but a NIL OnDelta makes the
 	// opencode dispatcher live-print deltas to the brain's stdout - 45 minutes
 	// of worker narration flooded the log (2026-08-07). Discard explicitly.
+	// The frontier pseudo-leg takes the same road as every other leg:
+	// runWorkerRerouted runs claude at max effort, and when the tier is
+	// closed (spend limit, "your Fable limit") benches it and reruns the
+	// stage on claude at standard settings - as a solo /frontier turn does.
+	// A direct call to the frontier runner here skipped all of that, so a
+	// refused frontier stage was "every stage failed" while the solo path
+	// was rerouting the same prompt fine (2026-09-20).
 	discard := func(string) {}
-	if !captaincode.IsFrontier(leg) {
-		return b.runWorkerRerouted(ws, leg, prompt, discard, onStatus, taskID)
-	}
-	run := b.frontierFn
-	if run == nil {
-		run = ws.RunClaudeFrontierStream
-	}
-	// Reserve the frontier call against the shared budget too (M2.4).
-	b.reserveAttempt(taskID)
-	res, err := run(prompt, nil, onStatus)
-	b.reconcileAttempt(taskID, res.CostUSD)
-	return captaincode.LegClaude, res, err
+	return b.runWorkerRerouted(ws, leg, prompt, discard, onStatus, taskID)
 }
 
 // workflowChat executes a workflow and returns its single reviewed output.
