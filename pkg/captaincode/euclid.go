@@ -429,6 +429,7 @@ func JournalRun(cwd string, e JournalEntry) (string, error) {
 		return "", err
 	}
 	writeJournalEntryMarkdown(b, e)
+	ScheduleReindex(b)
 	return path, nil
 }
 
