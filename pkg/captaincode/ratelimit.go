@@ -185,6 +185,15 @@ const worthKeepingChars = 1200
 // problem, never a reason to bench the claude leg.
 var spendLimitRe = regexp.MustCompile(`(?i)\bspend limit\b`)
 
+// IsSpendLimit reports a monthly spend cap: the limit reopens when the cap
+// is raised or the month turns, not in half an hour. Benched at the flat 30m
+// the frontier leg came back on the ladder every half hour, refused instantly
+// and rerouted with a banner - 41 times in three days (2026-09-20).
+func IsSpendLimit(err error) bool {
+	var rl *RateLimitError
+	return errors.As(err, &rl) && rl.ResetAt.IsZero() && spendLimitRe.MatchString(rl.Msg)
+}
+
 // rateLimitedFrontier classifies a limit hit by a run at frontier settings:
 // a spend limit with no tier named is worn by the frontier tier.
 func rateLimitedFrontier(msg string) error {

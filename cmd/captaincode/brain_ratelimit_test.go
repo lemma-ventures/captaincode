@@ -262,3 +262,19 @@ func TestBillingRefusalBenchesForTheDayAndReopenLiftsIt(t *testing.T) {
 	b.legReopenHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/legs/reopen?leg=nope", nil))
 	assert.Equal(t, 400, rec.Code)
 }
+
+// A monthly spend cap is not a half-hour window: benched at 30m the frontier
+// leg was retried, refused and rerouted with a banner every half hour for
+// three days (2026-09-20). It sits out the day, and the reason names the
+// command that reopens it once the cap is raised.
+func TestSpendLimitBenchesForTheDayNotHalfAnHour(t *testing.T) {
+	b := teamBrain()
+	msg := "You've hit your monthly spend limit. Switch to another model, or manage usage credits at claude.ai/settings/usage?from=cc_cli_limit_message, to continue."
+	b.onWorkerError(captaincode.LegFrontier, captaincode.NewRateLimitError(captaincode.LegFrontier, msg, time.Time{}))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	assert.WithinDuration(t, time.Now().Add(24*time.Hour), b.ledger.Cooldowns[captaincode.LegFrontier], 5*time.Second)
+	require.True(t, captaincode.IsSpendLimit(captaincode.NewRateLimitError(captaincode.LegFrontier, msg, time.Time{})))
+	assert.False(t, captaincode.IsSpendLimit(captaincode.NewRateLimitError(captaincode.LegClaude, "You've hit your usage limit · resets 5pm", time.Now().Add(time.Hour))),
+		"a window with a reset time is benched until the reset, as before")
+}
