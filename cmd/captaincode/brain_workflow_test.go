@@ -632,3 +632,44 @@ func TestHandoffFormatJSON(t *testing.T) {
 	assert.Equal(t, "fix the bug", decoded.Requirements)
 	assert.Equal(t, captaincode.StateSucceeded, decoded.State)
 }
+
+// A frontier stage refused at the door (the monthly spend limit, 5s, no
+// output) reroutes to claude like a solo /frontier turn does, instead of
+// aborting the workflow with "every stage failed" (live 2026-09-20: a
+// two-stage frontier>cursor request died on stage 1 while the same prompt
+// solo was rerouted and answered).
+func TestWorkflowFrontierStageReroutesWhenTheTierIsClosed(t *testing.T) {
+	b := teamBrain()
+	var mu sync.Mutex
+	var legs []string
+	b.frontierFn = func(prompt string, onDelta, onStatus func(string)) (captaincode.Result, error) {
+		mu.Lock()
+		legs = append(legs, "frontier")
+		mu.Unlock()
+		return captaincode.Result{DurationMs: 5000}, &captaincode.RateLimitError{Leg: captaincode.LegFrontier, Tier: "frontier",
+			Msg: "You've hit your monthly spend limit. Switch to another model, or manage usage credits at claude.ai/settings/usage?from=cc_cli_limit_message, to continue."}
+	}
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		mu.Lock()
+		legs = append(legs, string(leg))
+		mu.Unlock()
+		return leg, captaincode.Result{Text: "stage out from " + string(leg), DurationMs: 10}, nil
+	}
+	b.assessMultiFn = func(task string, o map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "AGG"}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "/frontier design the explorer > /cursor test and deploy it"}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"frontier", "claude", "cursor"}, legs, "stage 1 reroutes to claude, stage 2 still runs")
+	assert.NotContains(t, rec.Body.String(), "every stage failed")
+	assert.Contains(t, rec.Body.String(), "AGG")
+	b.mu.Lock()
+	_, benched := b.ledger.Cooldowns[captaincode.LegFrontier]
+	b.mu.Unlock()
+	assert.True(t, benched, "the closed tier is benched so the next stage does not knock again")
+}
