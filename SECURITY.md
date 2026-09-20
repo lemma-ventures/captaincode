@@ -81,6 +81,11 @@ Its limits, stated so nobody over-trusts it:
 
 ## What we do protect
 
+- **Shield (secrets masking).** On by default (`CAPTAIN_REDACT`). Recognisable
+  credential shapes in tool output and provider request bodies are replaced
+  with stable placeholders before a model or remote API sees them; the sidebar
+  shield line counts what was masked. Identity paths and usernames can be
+  rewritten the same way. Details: [docs/SECRETS.md](docs/SECRETS.md).
 - **Credential values are never read.** Doctor checks *which* providers are
   authenticated by reading the keys of the auth store, never the values.
 - **Journals and shared digests are scrubbed** of `sk-`, `ghp_`, `xox`,
@@ -91,11 +96,19 @@ Its limits, stated so nobody over-trusts it:
   fetched content cannot forge a turn in another project's session.
 - **File permissions**: digests and state are written `0600`.
 
+**Do not even post credentials in prompts, even if Captain Code provides a
+shield.** The shield masks common key shapes at the tool boundary and on the
+wire; a bare passphrase, an unusual token, or a secret typed in prose still
+reaches the provider. Treat every prompt as leaving your machine.
+
 ## Known limitations
 
 - Prompts reach third-party providers. That is what the tool does; treat every
   leg as an external recipient of whatever you route to it, and choose legs
   accordingly for sensitive repositories.
+- Shield is pattern matching, not judgment: secrets without a recognisable
+  shape pass through, and cursor-agent traffic is outside the proxy (see
+  [docs/SECRETS.md](docs/SECRETS.md)).
 - A malicious repository can influence a worker through its own files
   (`AGENTS.md`, comments, test fixtures). Review what you point workers at.
 - Most brain routes on the loopback port have no authentication. Anything
