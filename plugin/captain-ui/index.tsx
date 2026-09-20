@@ -169,12 +169,21 @@ function View(props: { api: TuiPluginApi }) {
       for (const it of j.items ?? []) {
         if (!it?.text || inboxTaken.has(it.id)) continue
         inboxTaken.add(it.id)
-        const body: any = { parts: [{ type: "text", text: it.text }] }
+        // The TUI's client is the v2 SDK (flat arguments): the v1 shape
+        // {path, body} is silently dropped by its parameter builder and the
+        // request goes to a literal "/session/{sessionID}/prompt_async".
+        const body: any = { sessionID: cur.params.sessionID, parts: [{ type: "text", text: it.text }] }
         if (it.leg) body.model = { providerID: "captain", modelID: it.leg }
-        await (props.api.client as any).session.promptAsync({ path: { id: cur.params.sessionID }, body })
+        const r = await (props.api.client as any).session.promptAsync(body)
+        if (r?.error || (r?.response && !r.response.ok)) throw new Error(`inbox: ${r?.response?.status ?? ""}`)
         props.api.ui.toast({ title: "captain inbox", message: `${it.from ? it.from + ": " : ""}${it.text.slice(0, 120)}`, variant: "info", duration: 8000 } as any)
       }
-    } catch {}
+    } catch (e) {
+      // A brain that is down is silence; a prompt that failed to land is not.
+      if (!String(e).includes("abort") && !String(e).includes("fetch")) {
+        props.api.ui.toast({ title: "captain inbox", message: String(e).slice(0, 160), variant: "error", duration: 8000 } as any)
+      }
+    }
   }
   const inboxTimer = setInterval(() => void pollInbox(), 2000)
   // The roster changes daily (a feed refresh, a CLI update), not per turn.
@@ -932,70 +941,196 @@ const tui: TuiPlugin = async (api) => {
 
 // ── prompt commands ──────────────────────────────────────────────────────────
 //
-// Editing or deleting a prompt from the palette and a leader key. Two facts
-// shape this (2026-09-19). A prompt typed while a turn runs is QUEUED in the
-// TUI's own memory - opencode 1.18 keeps that queue client-side and only its
-// "Queued prompts" dialog can touch it (ctrl+e edits, ctrl+d removes) - so
-// "edit queued" and "delete queued" OPEN that dialog, from the palette or a
-// key, and say so. A prompt that already left the queue is a message on the
-// server, and the SDK's revert removes it: "delete last prompt" reverts the
-// session's last user message (and everything after it). The right-click
-// menu on a message is stock opencode's and takes no plugin items.
+// Editing or deleting a prompt - queued or already in the transcript - from
+// the palette and a leader key. Verified against opencode 1.18.31
+// (2026-09-20): the right-click "Message Actions" dialog is a fixed list
+// (revert / copy / fork) with no plugin hook; a prompt typed while a turn
+// runs is an ordinary user message on the server, shown with a QUEUED badge
+// because it sits after the unfinished assistant message; and the
+// `session.queued_prompts` keybind has no implementation in the TUI at all -
+// the first version of this dispatched it and did nothing visible. What the
+// server does offer is a per-message delete and a per-part update, so this
+// dialog lists the session's prompts and edits or deletes one in place. A
+// queued prompt edited here runs with the new text; a queued prompt deleted
+// here never runs; deleting an answered prompt leaves its answer in place
+// (stock revert is the one that also drops everything after it).
+type PromptRow = { id: string; partID?: string; text: string; queued: boolean; answered: boolean; when: string }
+
 function registerPromptCommands(api: TuiPluginApi) {
   const sessionID = () => {
     const cur = api.route.current as { name: string; params?: { sessionID?: string } }
     return cur?.name === "session" ? cur.params?.sessionID : undefined
   }
-  const openQueue = (why: string) => {
+  const needSession = () => {
     const sid = sessionID()
-    if (!sid) {
-      api.ui.toast({ title: "captain", message: "open a session first", variant: "warning", duration: 4000 })
-      return
-    }
-    // opencode's own dialog: the only place the client-side queue is editable.
-    api.keymap.dispatchCommand("session.queued_prompts")
-    api.ui.toast({ title: why, message: "queued prompts: ctrl+e edits one, ctrl+d (or delete) removes it", variant: "info", duration: 6000 })
+    if (!sid) api.ui.toast({ title: "captain", message: "open a session first", variant: "warning", duration: 4000 })
+    return sid
   }
-  const deleteLast = async () => {
-    const sid = sessionID()
-    if (!sid) {
-      api.ui.toast({ title: "captain", message: "open a session first", variant: "warning", duration: 4000 })
-      return
+  const fail = (title: string, e: unknown) =>
+    api.ui.toast({ title, message: String((e as any)?.message ?? e).slice(0, 200), variant: "error", duration: 7000 })
+  // The SDK answers {data, error, response}; an HTTP failure is an error here.
+  const unwrap = (what: string, r: any) => {
+    if (r?.error || (r?.response && !r.response.ok)) {
+      throw new Error(`${what}: ${r?.response?.status ?? ""} ${JSON.stringify(r?.error ?? "").slice(0, 120)}`)
     }
-    const msgs = api.state.session.messages(sid)
-    const last = [...msgs].reverse().find((m) => (m as any).role === "user")
-    if (!last) {
-      api.ui.toast({ title: "delete last prompt", message: "no prompt in this session", variant: "info", duration: 4000 })
-      return
-    }
-    const text = (api.state.part((last as any).id) ?? [])
-      .map((p: any) => (p.type === "text" ? String(p.text ?? "") : ""))
-      .join(" ")
-      .trim()
+    return r?.data
+  }
+  const rows = (sid: string): PromptRow[] => {
+    const msgs = api.state.session.messages(sid) as any[]
+    const lastDone = msgs.findLastIndex((m) => m.role === "assistant" && m.time?.completed)
+    const pending = msgs.findLastIndex((m, i) => i > lastDone && m.role === "assistant" && !m.time?.completed)
+    const out: PromptRow[] = []
+    msgs.forEach((m, i) => {
+      if (m.role !== "user") return
+      const parts = api.state.part(m.id) as any[]
+      const textPart = parts.find((p) => p.type === "text" && !p.synthetic)
+      const text = parts
+        .filter((p) => p.type === "text" && !p.synthetic)
+        .map((p) => String(p.text ?? ""))
+        .join("\n")
+        .trim()
+      const answered = msgs.slice(i + 1).some((x) => x.role === "assistant")
+      const t = m.time?.created ? new Date(m.time.created) : undefined
+      out.push({
+        id: m.id,
+        partID: textPart?.id,
+        text,
+        queued: pending !== -1 && i > pending,
+        answered,
+        when: t ? `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}` : "",
+      })
+    })
+    return out.reverse() // latest first: the queued ones, then the answered ones
+  }
+  const peek = (s: string, n = 72) => s.replace(/\s+/g, " ").slice(0, n) + (s.length > n ? "…" : "")
+  const client = api.client as any
+
+  const edit = (sid: string, row: PromptRow) => {
     api.ui.dialog.replace(() => (
-      <api.ui.DialogConfirm
-        title="Delete last prompt"
-        message={`Revert "${text.slice(0, 80)}${text.length > 80 ? "…" : ""}" and everything after it? (ctrl+x u undoes)`}
-        onConfirm={async () => {
+      <api.ui.DialogPrompt
+        title={row.queued ? "Edit queued prompt" : "Edit prompt"}
+        value={row.text}
+        placeholder="prompt text"
+        onConfirm={async (value) => {
+          const text = value.trim()
+          if (!text || text === row.text) return
           try {
-            await (api.client as any).session.revert({ path: { id: sid }, body: { messageID: (last as any).id } })
-            api.ui.toast({ title: "delete last prompt", message: "reverted - session.unrevert brings it back", variant: "success", duration: 5000 })
+            if (!row.partID) throw new Error("this prompt has no text part to edit")
+            const part = (api.state.part(row.id) as any[]).find((p) => p.id === row.partID)
+            unwrap("update part", await client.part.update({ sessionID: sid, messageID: row.id, partID: row.partID, part: { ...part, text } }))
+            api.ui.toast({
+              title: "prompt edited",
+              message: row.queued ? "it runs with the new text" : "text replaced in the transcript",
+              variant: "success",
+              duration: 5000,
+            })
           } catch (e) {
-            api.ui.toast({ title: "delete last prompt", message: String(e).slice(0, 200), variant: "error", duration: 6000 })
+            fail("edit prompt", e)
           }
         }}
         onCancel={() => {}}
       />
     ))
   }
+  const remove = (sid: string, row: PromptRow) => {
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogConfirm
+        title={row.queued ? "Delete queued prompt" : "Delete prompt"}
+        message={`Delete "${peek(row.text, 80)}"?${row.queued ? " It will not run." : row.answered ? " Its answer stays." : ""}`}
+        onConfirm={async () => {
+          try {
+            unwrap("delete message", await client.session.deleteMessage({ sessionID: sid, messageID: row.id }))
+            api.ui.toast({ title: "prompt deleted", message: peek(row.text, 60), variant: "success", duration: 5000 })
+          } catch (e) {
+            fail("delete prompt", e)
+          }
+        }}
+        onCancel={() => {}}
+      />
+    ))
+  }
+  const revert = (sid: string, row: PromptRow) => {
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogConfirm
+        title="Revert to this prompt"
+        message={`Remove "${peek(row.text, 60)}" and everything after it, undoing file changes? (session.unrevert brings it back)`}
+        onConfirm={async () => {
+          try {
+            unwrap("revert", await client.session.revert({ sessionID: sid, messageID: row.id }))
+            api.ui.toast({ title: "reverted", message: "session.unrevert brings it back", variant: "success", duration: 5000 })
+          } catch (e) {
+            fail("revert", e)
+          }
+        }}
+        onCancel={() => {}}
+      />
+    ))
+  }
+  const actions = (sid: string, row: PromptRow) => {
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect<string>
+        title={(row.queued ? "Queued prompt · " : "Prompt · ") + peek(row.text, 48)}
+        skipFilter
+        options={[
+          { title: "Edit", value: "edit", description: row.queued ? "change the text; it runs with the new text" : "replace the text in the transcript", onSelect: () => edit(sid, row) },
+          { title: "Delete", value: "delete", description: row.queued ? "remove it; it never runs" : "remove this prompt only; its answer stays", onSelect: () => remove(sid, row) },
+          { title: "Revert here", value: "revert", description: "stock revert: this prompt and everything after it, files included", onSelect: () => revert(sid, row) },
+        ]}
+      />
+    ))
+  }
+  const openPrompts = (onlyQueued: boolean, why: string) => {
+    const sid = needSession()
+    if (!sid) return
+    let list = rows(sid)
+    if (onlyQueued) {
+      const q = list.filter((r) => r.queued)
+      if (q.length === 0) {
+        api.ui.toast({ title: why, message: "nothing is queued - showing every prompt of the session", variant: "info", duration: 4000 })
+      } else list = q
+    }
+    if (list.length === 0) {
+      api.ui.toast({ title: why, message: "no prompt in this session", variant: "info", duration: 4000 })
+      return
+    }
+    api.ui.dialog.replace(() => (
+      <api.ui.DialogSelect<string>
+        title={onlyQueued && list.every((r) => r.queued) ? "Queued prompts" : "Prompts"}
+        placeholder="filter…"
+        options={list.map((r) => ({
+          title: (r.queued ? "QUEUED  " : r.answered ? "        " : "        ") + peek(r.text),
+          value: r.id,
+          description: r.when + (r.queued ? " · waits for the current turn" : r.answered ? " · answered" : " · unanswered"),
+          onSelect: () => actions(sid, r),
+        }))}
+      />
+    ))
+  }
+  const deleteLast = () => {
+    const sid = needSession()
+    if (!sid) return
+    const last = rows(sid)[0]
+    if (!last) {
+      api.ui.toast({ title: "delete last prompt", message: "no prompt in this session", variant: "info", duration: 4000 })
+      return
+    }
+    remove(sid, last)
+  }
   api.keymap.registerLayer({
     commands: [
-      { name: "captain.prompt.edit_queued", title: "Edit queued prompt", category: "Captain", namespace: "palette", run: () => openQueue("edit queued") },
-      { name: "captain.prompt.delete_queued", title: "Delete queued prompt", category: "Captain", namespace: "palette", run: () => openQueue("delete queued") },
-      { name: "captain.prompt.delete_last", title: "Delete last prompt (revert)", category: "Captain", namespace: "palette", run: () => void deleteLast() },
+      { name: "captain.prompt.manage", title: "Prompts: edit or delete…", category: "Captain", namespace: "palette", run: () => openPrompts(false, "prompts") },
+      { name: "captain.prompt.edit_queued", title: "Edit queued prompt", category: "Captain", namespace: "palette", run: () => openPrompts(true, "edit queued") },
+      { name: "captain.prompt.delete_queued", title: "Delete queued prompt", category: "Captain", namespace: "palette", run: () => openPrompts(true, "delete queued") },
+      { name: "captain.prompt.delete_last", title: "Delete last prompt", category: "Captain", namespace: "palette", run: deleteLast },
     ],
+    // Leader keys declared here, not in opencode.json: the config's keybinds
+    // table rejects names it does not know, so a plugin's commands can only
+    // be bound by the plugin. <leader>p and <leader>d are free in 1.18.31
+    // (stock takes a b c e g h l m n q r s t u x y and the digits).
     bindings: [
-      ...api.tuiConfig.keybinds.gather("captain.prompt", ["captain.prompt.edit_queued", "captain.prompt.delete_queued", "captain.prompt.delete_last"]),
+      { key: "<leader>p", cmd: "captain.prompt.manage", desc: "Prompts: edit or delete" },
+      { key: "<leader>d", cmd: "captain.prompt.delete_last", desc: "Delete last prompt" },
+      ...api.tuiConfig.keybinds.gather("captain.prompt", ["captain.prompt.manage", "captain.prompt.edit_queued", "captain.prompt.delete_queued", "captain.prompt.delete_last"]),
     ],
   })
 }
