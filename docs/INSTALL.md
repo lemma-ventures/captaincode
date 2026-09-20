@@ -1,5 +1,9 @@
 # Installation contract
 
+**Before installing, please read the [security disclaimers](../SECURITY.md).**
+Workers run with approvals disabled by default and can execute any command
+your user account can run.
+
 **ROADMAP M1.1.** What a machine must have for a Captain result to mean
 anything, and how to get it there, move it forward and put it back.
 
@@ -136,7 +140,19 @@ that name. A symlink is the other option:
 ln -sf "$(go env GOPATH)/bin/captaincode" ~/.local/bin/captain
 ```
 
-## First-run order (config → brain → doctor)
+## Credentials
+
+Captain holds no keys. Each leg uses a login or API key already on the machine.
+
+| Leg kind | How to authenticate |
+|---|---|
+| Local CLI (`claude`, `codex-cli`, `cursor`) | Vendor login once: Claude `/login`, `codex login`, `cursor-agent login` |
+| Remote (opencode providers) | `opencode auth login`, **or** API keys in `~/.config/captain/env` (`NVIDIA_API_KEY`, `OPENROUTER_API_KEY`, `HF_TOKEN`, …) |
+| Optional decision / ranking | `TYPESAFE_API_KEY` (jev), `CAPTAIN_AA_API_KEY` (live perf ranking) |
+
+`captain init` scaffolds `~/.config/captain/env` with those keys commented out. Never commit that file. After editing it, restart the brain so doctor and workers see the new values. Doctor reads auth-store **keys only**, never values; each blocked leg line names the one command that unblocks it.
+
+## First-run order (config → credentials → brain → doctor → TUI)
 
 Config is read at brain startup. `captain doctor` talks to the *running* brain (via /v1/health) and shows the director/config that brain loaded.
 
@@ -144,13 +160,15 @@ Canonical order:
 
 1. Install Go + at least one agent CLI (see table).
 2. `captain init`   ← writes opencode.jsonc + ~/.config/captain/env (derived director/fallback from PATH)
-3. `captain euclid init`   *(optional; project memory — needs a brain for the first model call)*
-4. Start the brain: `captain brain`
-5. `captain doctor`   ← verify; every ✗ line names the exact command
+3. Sign in / set keys (see [Credentials](#credentials) above).
+4. `captain euclid init`   *(optional; project memory — needs a brain for the first model call)*
+5. Start the brain: `captain brain` (or let `./captaincode.sh` start it)
+6. `captain doctor`   ← verify; every ✗ line names the exact command
+7. Full terminal: from the checkout, `./captaincode.sh` opens the TUI in the current folder
 
 **After any change to ~/.config/captain/env or opencode.jsonc: restart the brain.** Doctor (and health, and the director the workers see) reflect the running process, not the files on disk.
 
-Exception: `captain euclid init --repo` needs the brain already running (it makes a model call), so it comes after step 4.
+Exception: `captain euclid init --repo` needs the brain already running (it makes a model call), so it comes after step 5.
 
 ## Recipes (macOS and Linux)
 

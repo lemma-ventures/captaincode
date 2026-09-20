@@ -98,5 +98,8 @@ Its limits, stated so nobody over-trusts it:
   accordingly for sensitive repositories.
 - A malicious repository can influence a worker through its own files
   (`AGENTS.md`, comments, test fixtures). Review what you point workers at.
-- The brain's loopback port has no authentication. Anything running as your user
-  on the machine can drive it.
+- Most brain routes on the loopback port have no authentication. Anything
+  running as your user can drive chat/route. The versioned **task API**
+  (`/v1/task/*`) is loopback-only by default; set `CAPTAIN_TASK_TOKEN` and send
+  `Authorization: Bearer …` if you expose it beyond loopback. `captain task mcp`
+  talks to that same surface.
