@@ -46,7 +46,7 @@ they are not a roadmap for the memory engine or an evidence infrastructure platf
 | Task API and execution MCP; Pi, Jido and editor delegation | Captain Code, M4 | Own the task lifecycle and host adapters |
 | Acceptance signals, routing calibration and policy rollback | Captain Code, M1/M5 | Keep authoritative outcomes and learn which worker completes the task |
 | Registers, retrieval, provenance, generic memory lifecycle and memory MCP | Euclid, `docs/ROADMAP.md` E1–E5 in its repository | Consume pinned memory interfaces; supply prompt hooks and task-derived journal events |
-| Deterministic inference, signed execution receipts, mandate gates, standing and evidence retention | Dilemma Trace/Atlas, maintained in DLM | Optional client of those services; never infer their guarantees from Captain's logs |
+| Deterministic inference, signed execution receipts, mandate gates, standing and evidence retention | Optional Trace/Atlas-style evidence services (separate backlog) | Optional client of those services; never infer their guarantees from Captain's logs |
 
 Euclid owns retrieval-quality benchmarks. Captain owns cost/time per accepted coding task,
 including memory and distillation overhead. The Agentic Determinism Index has its own
@@ -65,7 +65,7 @@ memory summary cannot mark a task accepted, replenish a budget or authorize a to
 A checkpoint is not a deterministic replay guarantee, and a signed receipt is not proof
 that a coding change is correct.
 
-**Dependencies.** M1–M5 can ship without DLM. M1 freezes the existing Euclid version (or
+**Dependencies.** M1–M5 can ship without optional evidence services. M1 freezes the existing Euclid version (or
 disables memory for a stated evaluation arm); it does not wait for memory extraction.
 M3/M4 retain the existing memory adapter until Euclid E2/E4 pass compatibility gates.
 Pi/Jido/editor execution belongs here; their memory-only recipes belong to Euclid.
@@ -106,8 +106,7 @@ Allow additional contingency for upstream CLI changes and evaluation variance.
 | M5: outcome adaptation | Accepted outcomes, calibration and policy promotion | 4–5 weeks | M1 data, M2 controls, M3 execution | Held-out improvement at the quality target |
 
 Sequential planning envelope: **20–26 weeks** with that staffing, before contingency.
-This estimates Captain M1–M5 only. Euclid releases and DLM work require separate capacity;
-the same two engineers cannot deliver three parallel roadmaps on this calendar.
+This estimates Captain M1–M5 only. Euclid releases are a separate capacity track.
 Data collection starts in M1; API design starts during M2. M5 research can run before M4
 finishes, but changing default routing requires the evaluation and execution gates.
 One engineer should re-estimate the backlog rather than inherit the same calendar.
@@ -1846,8 +1845,8 @@ Additional harness workers follow demonstrated demand and interface validation.
 
 **Ownership:** implement execution MCP here. Euclid E4 owns portable memory MCP and the
 compatibility contract with Captain's existing wrapper; memory parity is not a substitute
-for this milestone's execution tests. Any future Trace/Atlas API or MCP surface is owned
-by DLM and consumed through an explicit optional adapter.
+for this milestone's execution tests. Any future Trace/Atlas API or MCP surface is
+consumed through an explicit optional adapter, never assumed present.
 
 ## M5 — Improve from accepted outcomes
 
@@ -2090,7 +2089,8 @@ are explicit controls. A public leaderboard is not needed for useful personal ro
 
 **Ownership:** Captain captures and interprets acceptance evidence for routing. Euclid
 can store attributed decisions and corrections, and independently tune retrieval using
-its own evaluation corpus. DLM validates receipt/mandate evidence under its contracts.
+its own evaluation corpus. Optional Trace/Atlas-style services validate receipt/mandate
+evidence under their own contracts.
 Neither a retrieved lesson nor a valid receipt may silently become developer acceptance.
 
 

@@ -2,10 +2,9 @@
 set -euo pipefail
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 # The PHYSICAL path: opencode records a session under the resolved folder,
-# so a TUI launched through a symlink (~/Gits/lemma-ventures-website →
-# ~/Gits/Compliance/lemma-ventures-website) found none of its 36 sessions
-# with -c and started fresh every time (2026-09-17). Every cwd-keyed thing
-# - sessions, the brain's workspace, the sidebar's feed - must agree.
+# so a TUI launched through a symlink to a nested checkout found none of its
+# sessions with -c and started fresh every time (2026-09-17). Every cwd-keyed
+# thing - sessions, the brain's workspace, the sidebar's feed - must agree.
 LAUNCH_DIR="$(pwd -P)"
 export CAPTAIN_CWD="$LAUNCH_DIR"
 # No exit trap: the brain is a daemon shared by every captain-code TUI on the
@@ -315,9 +314,9 @@ echo "  watch:  tail -f /tmp/captain-route.log   |   route timing in /tmp/captai
 # -s <id> a specific one, --fork branches off it (see opencode tui --help).
 # Each folder's TUI gets its own state directory (prompt history behind the
 # arrow keys, last model, preferences): stock opencode keeps one for the whole
-# machine, so the arrow keys in arc scrolled through DLM's prompts. Prepared on
-# first use, seeded from the machine-wide state and from this folder's own
-# past sessions (`captain state`). Plugin metadata stays machine-wide.
+# machine, so the arrow keys in one project scrolled through another's prompts.
+# Prepared on first use, seeded from the machine-wide state and from this
+# folder's own past sessions (`captain state`). Plugin metadata stays machine-wide.
 if state_home=$(captain state "$LAUNCH_DIR" 2>/dev/null) && [ -n "$state_home" ]; then
   export XDG_STATE_HOME="$state_home"
   export OPENCODE_PLUGIN_META_FILE="${OPENCODE_PLUGIN_META_FILE:-$HOME/.local/state/opencode/plugin-meta.json}"

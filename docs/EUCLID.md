@@ -46,13 +46,13 @@ the shared repository brain (read-only for other writers on this machine) →
 linked repositories → other developers' subtrees, search-only and down-weighted.
 
 **Which repository.** By default the one the terminal is open in. A prompt that
-names another - a path (`~/Gits/captaincode/cmd/…`), a known folder name as a
+names another - a path (`~/src/captaincode/cmd/…`), a known folder name as a
 whole word (`captaincode`; a short lowercase one like `arc` only next to a cue:
-"the arc repo"), or the parts of a hyphenated name ("the lemma website" is
-`lemma-ventures-website`) - is about that repository: the worker runs there and
-its brain is the one read and written, so a journal page about captaincode never
-lands in DLM's brain. Several named: the worker stays where the terminal is and
-the named brains are read alongside (orientation, director memory; the MCP tools
+"the arc repo"), or the parts of a hyphenated name ("the site app" matching
+`site-app`) - is about that repository: the worker runs there and its brain is
+the one read and written, so a journal page about one repo never lands in
+another's brain. Several named: the worker stays where the terminal is and the
+named brains are read alongside (orientation, director memory; the MCP tools
 stay on the terminal's own set). The move is announced on the sidebar's Last
 Runs line. Known repositories are the git repos one or two levels under
 `CAPTAIN_WORKSPACE_ROOT` (default `~/Gits`) plus `~/.euclid/links.yml` repos;

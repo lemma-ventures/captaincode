@@ -1,10 +1,10 @@
 package captaincode
 
-// Which repository a prompt is about. A TUI open in DLM that is asked to
-// "fix the launcher in captaincode" or "update the lemma website" is not
-// talking about DLM: the worker should run in the repository it names and
-// that repository's brain should be the one read and written - a journal
-// page about captaincode in DLM's brain is noise there and lost here
+// Which repository a prompt is about. A TUI open in one checkout that is asked to
+// "fix the launcher in captaincode" or "update the site app" is not talking about
+// the open folder: the worker should run in the repository it names and that
+// repository's brain should be the one read and written - a journal page about
+// captaincode in another project's brain is noise there and lost here
 // (2026-09-13). Default: the folder the TUI is open in. One other repo
 // named: the workspace moves there. Several: the workspace stays, the
 // named brains are read alongside it.
@@ -41,9 +41,9 @@ var knownReposCache struct {
 
 // KnownRepos lists the repositories a prompt may name: every git repo or
 // brain-bearing folder one or two levels under the workspace root
-// (Compliance/lemma-ventures-website is a repo inside a folder), plus the
-// main brain's links.yml repos. Cached a minute; the set changes when a
-// repo is cloned, not per turn.
+// (a nested checkout like org/site-app counts), plus the main brain's
+// links.yml repos. Cached a minute; the set changes when a repo is cloned,
+// not per turn.
 func KnownRepos() []string {
 	root := workspaceRoot()
 	knownReposCache.mu.Lock()
@@ -114,14 +114,13 @@ var repoCueRe = `(?i)(?:repo(?:sitory)?|project|codebase|folder|website|site|app
 // RepoRefs returns the repositories the task names other than the one cwd
 // is in, most specific first. A path always counts (it is looked up to
 // its repository root). A bare name counts when it is a known repo's
-// folder name as a whole word AND is not also a word: Compliance,
-// brand, strategy, lemma, euclid, arc are folders here and words in any
-// DLM prompt ("prove agentic compliance" moved the worker to ~/Gits/
-// Compliance in the first cut, 2026-09-15) - those need a cue ("the
-// euclid repo", ~/Gits/euclid); captaincode, DLM, HerdG, buzz-finance do
-// not. A hyphenated name also matches by its parts in order ("lemma
-// website" is lemma-ventures-website, which then outranks the bare
-// "lemma" repo).
+// folder name as a whole word AND is not also a word: compliance,
+// brand, strategy, lemma, euclid, arc are folders here and words in ordinary
+// prompts ("prove agentic compliance" once moved a worker to a folder named
+// Compliance) - those need a cue ("the euclid repo", ~/Gits/euclid);
+// captaincode and hyphenated names do not. A hyphenated name also matches by
+// its parts in order ("site app" is site-app, which then outranks a bare
+// "site" repo).
 func RepoRefs(task, cwd string) []string {
 	if os.Getenv("CAPTAIN_REPO_REFS") == "0" || strings.TrimSpace(task) == "" {
 		return nil
@@ -175,7 +174,7 @@ func RepoRefs(task, cwd string) []string {
 		if len(parts) == 0 {
 			continue
 		}
-		// Whole name as a phrase ("lemma ventures website", "lemma-ventures-website").
+		// Whole name as a phrase ("site app", "site-app").
 		if strings.Contains(lower, " "+strings.Join(parts, " ")+" ") {
 			switch {
 			case nearCue(task, name):
@@ -185,13 +184,13 @@ func RepoRefs(task, cwd string) []string {
 			case isWord(name) || len(name) < 4:
 				continue // a word in prose (compliance, signal, brand, arc)
 			case strings.IndexFunc(name, unicode.IsUpper) >= 0 && !strings.Contains(task, name):
-				continue // DLM, HerdG: as spelt, not as a lowercase token
+				continue // AcmeTool: as spelt, not as a lowercase token
 			}
 			add(root, len(parts))
 			continue
 		}
 		// Its parts in order, the first present, at most one word skipped
-		// between two ("lemma website" is lemma-ventures-website).
+		// between two ("site app" is site-app).
 		if len(parts) >= 3 && partsInOrder(lower, parts) {
 			add(root, len(parts)-1)
 		}
