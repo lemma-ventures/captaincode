@@ -899,6 +899,10 @@ func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
 	var d time.Duration
 	var why string
 	switch {
+	case captaincode.IsSpendLimit(err):
+		// A monthly cap, not a window: off the ladder for the day, and the
+		// reason says what reopens it.
+		d, why = 24*time.Hour, "monthly spend limit reached - raise the cap at claude.ai/settings/usage, then `captain legs reopen "+string(leg)+"`"
 	case errors.Is(err, captaincode.ErrRateLimited):
 		d, why = 30*time.Minute, "rate-limited"
 		// The provider said when its window reopens: bench until then (+1m
