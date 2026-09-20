@@ -6,6 +6,9 @@
 .DS_Store
 .euclid/
 
+# Local opencode install / plugin cache under the checkout (not product source).
+.opencode/
+
 # The panels' dependencies: `cd plugin/captain-ui && bun install` restores them
 # from bun.lock, which is committed so that install is reproducible.
 plugin/captain-ui/node_modules/
