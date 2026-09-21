@@ -262,3 +262,33 @@ func TestProseAboutCommandsIsNotAWorkflow(t *testing.T) {
 	assert.False(t, LooksLikeWorkflow("/grok compare /team and /workflow modes"), "pseudo-models after word connectors are prose")
 	assert.True(t, LooksLikeWorkflow("/grok a > /quality b"), "a symbol connector is deliberate syntax: still reported")
 }
+
+// A connector inside pasted content is not topology: the stage text before it
+// spans a paragraph break, which a one-line workflow never does (live
+// 2026-09-21: "/cursor move these sections…" followed by two paragraphs of
+// website copy quoting a workflow example ran as cursor+grok>claude+codex).
+func TestConnectorsAfterAParagraphBreakArePastedContent(t *testing.T) {
+	pasted := "/cursor move these sections somewhere useful in /features subpage: ARCHITECTURE · HOW CAPTAIN WORKS\n\n" +
+		"Four layers.\nLocal orchestration above all your models. MATCH THE INTELLIGENCE TO THE JOB\n\n" +
+		"Write a patch, run its tests, get two reviews\n" +
+		"/grok fix the retry bug gate: go test ./... > /claude review for duplicate charges + /codex review for lost payments\n" +
+		"> next stage receives the outputs\n+ reviewers work in parallel\n\n" +
+		"Replace these 3 sections with one summarizing with 3 tiles."
+	assert.False(t, IsWorkflowExpr(pasted), "pasted copy is a solo /cursor prompt")
+	assert.False(t, LooksLikeWorkflow(pasted), "…and not a workflow attempt to report")
+	assert.Empty(t, boundariesOf(pasted))
+
+	// One-line topology, and one-task-per-line topology, are untouched.
+	for _, ok := range []string{
+		"/grok fix the retry bug gate: go test ./... > /claude review for duplicate charges + /codex review for lost payments",
+		"/grok do X\n\n/claude do Y",
+		"/grok list:\n- a\n- b\n> /claude review the list",
+		"/grok a\n/claude b\n/codex c",
+	} {
+		assert.True(t, IsWorkflowExpr(ok), ok)
+	}
+	wf, err := ParseWorkflow("/grok do X\n\n/claude do Y")
+	require.NoError(t, err)
+	require.Len(t, wf.Stages, 1)
+	assert.Len(t, wf.Stages[0].Legs, 2, "the newline connector survives its own blank line")
+}
