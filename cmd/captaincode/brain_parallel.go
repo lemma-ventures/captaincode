@@ -334,8 +334,11 @@ type captureWriter struct {
 	// (2026-09-12: "/repeat show" was queued behind the streaming turn while
 	// the user only wanted to see the worker work).
 	onStatus func(string)
-	tail     string // partial SSE line carried across writes
-	prose    string // answer text of the current paragraph, for narration
+	// onContent, when set, receives each answer-text delta as it arrives:
+	// the queue runner streams a prompt's answer through while it runs.
+	onContent func(string)
+	tail      string // partial SSE line carried across writes
+	prose     string // answer text of the current paragraph, for narration
 }
 
 func (c *captureWriter) Header() http.Header {
@@ -369,6 +372,9 @@ func (c *captureWriter) Write(p []byte) (int, error) {
 			// The answer text itself is what a round mostly produces: each
 			// finished paragraph is one line of narration for the watcher.
 			if d := sseContent(line); d != "" {
+				if c.onContent != nil {
+					c.onContent(d)
+				}
 				c.prose += d
 				for {
 					j := strings.Index(c.prose, "\n\n")
