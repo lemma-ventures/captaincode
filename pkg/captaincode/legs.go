@@ -286,23 +286,25 @@ func applyLegModelEnv() {
 }
 
 // directorModels overrides legModels when a leg acts as DIRECTOR (planner/
-// judge) rather than worker. Two reasons a worker model can't judge:
+// judge) rather than worker, and when a worker runs at EffortMax (/frontier
+// as a modifier): the ceiling asks for the most performant model on that
+// leg, which is the same override the director already needed. Two reasons
+// a worker model can't judge (or serve the ceiling):
 //   - agentic tuning: coding-agent models keep narrating tool calls as prose
 //     ("invoke Glob with pattern...") instead of returning plain JSON even
 //     with tools disabled (observed live with xAI's grok-build-0.1) -
-//     grok-4.6 is xAI's plain reasoning model and complies reliably. It's
-//     also the default director on merit: 4th on the AA Intelligence Index,
-//     Terminal-Bench within a point of GPT-5.5/Fable, at a fraction of the
-//     per-task cost (July 2026; 4.6 replaced 4.5 on 2026-08-12, same price).
+//     grok-4.7 is xAI's plain reasoning model and complies reliably. It's
+//     also the default director on merit (4.7 replaced 4.6 on 2026-09-21).
 //   - capability: gpt-5.3-codex-spark is the latency-optimized variant
 //     (~56% SWE-Pro vs standard Codex's ~72%) - too weak to plan/assess, so
 //     a codex director runs the standard model instead.
 //
 // Legs absent here use legModels. The claude leg needs no entry: as director
 // it runs Claude Fable via claude -p - the strongest judge available, at the
-// price of ~2 Max-quota calls per managed task.
+// price of ~2 Max-quota calls per managed task. Cursor is not opencode-
+// served; its /frontier model is cursorFrontierModel().
 var directorModels = map[Leg]struct{ Provider, Model string }{
-	LegGrok: {"xai", "grok-4.6"},
+	LegGrok: {"xai", "grok-4.7"},
 	// gpt-5.5, the full-effort twin of the worker's gpt-5.5-fast: the ChatGPT
 	// route dropped gpt-5.3-codex on 2026-09-15 ("Model not found").
 	LegCodex: {"openai", "gpt-5.5"},
@@ -317,13 +319,40 @@ func ModelSpec(leg Leg) (provider, model string, ok bool) {
 }
 
 func modelFor(leg Leg, asDirector bool) (struct{ Provider, Model string }, bool) {
-	if asDirector {
+	return modelForEffort(leg, asDirector, "")
+}
+
+// modelForEffort is modelFor with the request's effort: EffortMax (/frontier
+// as a modifier) picks the director override when one exists, so "/frontier
+// /grok" runs grok-4.7 rather than the grok-build burner.
+func modelForEffort(leg Leg, asDirector bool, effort Effort) (struct{ Provider, Model string }, bool) {
+	if asDirector || effort == EffortMax {
 		if mm, ok := directorModels[leg]; ok {
 			return mm, true
 		}
 	}
 	mm, ok := legModels[leg]
 	return mm, ok
+}
+
+// cursorFrontierModel is the cursor-agent --model for /frontier (EffortMax):
+// Grok 4.7 at Extra High. Cursor encodes effort in the model id (no
+// separate --effort). CAPTAIN_CURSOR_FRONTIER_MODEL pins it.
+func cursorFrontierModel() string {
+	if m := strings.TrimSpace(os.Getenv("CAPTAIN_CURSOR_FRONTIER_MODEL")); m != "" {
+		return m
+	}
+	return "grok-4.7-xhigh"
+}
+
+// cursorModel picks the cursor-agent --model for this request. Empty means
+// leave the CLI default (today "auto"). Only /frontier pins a model unless
+// CAPTAIN_CURSOR_MODEL is set.
+func cursorModel(effort Effort) string {
+	if effort == EffortMax {
+		return cursorFrontierModel()
+	}
+	return strings.TrimSpace(os.Getenv("CAPTAIN_CURSOR_MODEL"))
 }
 
 // OpencodeDispatcher drives a local `opencode serve` (spawning it on demand
@@ -377,11 +406,18 @@ func NewDispatcher(port int) *OpencodeDispatcher {
 }
 
 // ModelID returns the model identifier a leg runs, for worker tab names.
-func ModelID(l Leg) string {
+func ModelID(l Leg) string { return ModelIDAt(l, "") }
+
+// ModelIDAt is ModelID with the request's effort, so a /frontier cursor or
+// grok run names the model it actually dispatched (grok-4.7-xhigh / grok-4.7).
+func ModelIDAt(l Leg, effort Effort) string {
 	if l == LegFrontier {
 		return "claude-fable-frontier"
 	}
-	if mm, ok := legModels[l]; ok {
+	if l == LegCursor && effort == EffortMax {
+		return cursorFrontierModel()
+	}
+	if mm, ok := modelForEffort(l, false, effort); ok {
 		return mm.Model
 	}
 	if s, ok := specs[l]; ok {
@@ -415,10 +451,10 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		return res, err
 	}
 	if leg == LegCursor {
-		text, err := runCursor(d.Dir, task)
+		text, err := runCursorModel(d.Dir, task, cursorModel(d.Effort))
 		return Result{Text: text}, err
 	}
-	mm, ok := modelFor(leg, d.AsDirector)
+	mm, ok := modelForEffort(leg, d.AsDirector, d.Effort)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown leg %q", leg)
 	}
@@ -452,7 +488,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		"parts": []map[string]string{{"type": "text", "text": task}},
 	}
 	// The request's effort, as the reasoning variant this model offers
-	// (glm: low/high/max, grok-4.6: low…xhigh; none for grok-build, kimi).
+	// (glm: low/high/max, grok-4.7: low…xhigh; none for grok-build, kimi).
 	if d.Effort != "" {
 		if v := d.Effort.Variant(opencodeVariants(d.BaseURL, mm.Provider, mm.Model)); v != "" {
 			payload["variant"] = v
@@ -1501,8 +1537,10 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		// workflow stage under /frontier run exactly what /frontier runs.
 		res, err := runClaudeStreamOpts(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort == EffortMax, ws.Effort, ws.Steer)
 		return emptyIsFailure(leg, res, err)
-	case TransportCursorCLI: // cursor-agent has no effort knob
-		res, err := runCursorStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer)
+	case TransportCursorCLI:
+		// Effort lives in the model id on cursor-agent (grok-4.7-xhigh etc.);
+		// /frontier pins grok-4.7 at Extra High via --model.
+		res, err := runCursorStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer, cursorModel(ws.Effort))
 		return emptyIsFailure(leg, res, err)
 	case TransportCodexCLI:
 		res, err := runCodexCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
@@ -2008,12 +2046,20 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 // runCursor runs a prompt through captain's Cursor wrapper (cursor-agent -p on
 // the Cursor subscription). Text output; ~10-min cap for long jobs.
 func runCursor(dir, task string) (string, error) {
+	return runCursorModel(dir, task, "")
+}
+
+func runCursorModel(dir, task, model string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	// --trust clears cursor-agent's workspace-trust prompt (headless -p can't
 	// answer it), which otherwise fails with exit 1 in any untrusted dir. It
 	// trusts the cwd without --force/--yolo's blanket command auto-run.
-	cmd := exec.CommandContext(ctx, "cursor-agent", append([]string{"-p", "--output-format", "text"}, cursorPermissionArgs()...)...)
+	args := []string{"-p", "--output-format", "text"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, cursorPermissionArgs()...)...)
 	cmd.Stdin = strings.NewReader(task)
 	cmd.Dir = dir
 	var stderr strings.Builder
@@ -2049,7 +2095,7 @@ func cursorUsageLimit(msg string) bool {
 // off the answer stream). The terminal "result" event is authoritative and lets
 // us map a rate-limited Cursor subscription to ErrRateLimited so the leg cools
 // down instead of being retried forever.
-func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), steer *Steer) (Result, error) {
+func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), steer *Steer, model string) (Result, error) {
 	start := time.Now() // DurationMs gates the grading loop - a zero duration silently exempted cursor from ALL scoring (13 unscored runs, 2026-07-25)
 	ctx := context.Background()
 	prog := &progress{}
@@ -2061,7 +2107,11 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 	}
 	ctx, stopped, detachStop := interruptible(ctx, steer, LegCursor) // /interrupt keeps what streamed
 	defer detachStop()
-	cmd := exec.CommandContext(ctx, "cursor-agent", append([]string{"-p", "--output-format", "stream-json"}, cursorPermissionArgs()...)...)
+	args := []string{"-p", "--output-format", "stream-json"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, cursorPermissionArgs()...)...)
 	cmd.Stdin = strings.NewReader(task)
 	cmd.Dir = dir
 	var stderr strings.Builder

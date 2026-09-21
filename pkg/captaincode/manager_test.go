@@ -10,7 +10,7 @@ import (
 func TestModelForDirectorOverride(t *testing.T) {
 	// grok-build-0.1 (the LegGrok worker model) is xAI's agentic coding
 	// model: observed live to keep narrating tool calls as prose even with
-	// tools disabled, breaking JSON-only director prompts. grok-4.6 is a
+	// tools disabled, breaking JSON-only director prompts. grok-4.7 is a
 	// plain reasoning model that complies. The director path must use the
 	// override, and worker dispatch (ModelID, non-director Run) must not.
 	worker, ok := modelFor(LegGrok, false)
@@ -19,8 +19,17 @@ func TestModelForDirectorOverride(t *testing.T) {
 
 	director, ok := modelFor(LegGrok, true)
 	require.True(t, ok)
-	assert.Equal(t, "grok-4.6", director.Model, "director path must use the non-agentic override")
+	assert.Equal(t, "grok-4.7", director.Model, "director path must use the non-agentic override")
 	assert.NotEqual(t, worker.Model, director.Model)
+
+	frontier, ok := modelForEffort(LegGrok, false, EffortMax)
+	require.True(t, ok)
+	assert.Equal(t, "grok-4.7", frontier.Model, "/frontier /grok upgrades the burner to the flagship")
+
+	assert.Equal(t, "grok-4.7-xhigh", cursorModel(EffortMax), "/frontier /cursor pins Grok 4.7 Extra High")
+	assert.Empty(t, cursorModel(""), "bare cursor leaves the CLI default")
+	assert.Equal(t, "grok-4.7-xhigh", ModelIDAt(LegCursor, EffortMax))
+	assert.Equal(t, "composer-2.5", ModelID(LegCursor), "routine cursor stays Composer in the registry")
 
 	// Codex as director must use the full-effort model, never the fast lane:
 	// the latency-optimized variant is too weak to plan/assess (see
@@ -30,6 +39,8 @@ func TestModelForDirectorOverride(t *testing.T) {
 	codexDirector, _ := modelFor(LegCodex, true)
 	assert.Equal(t, "gpt-5.5-fast", codexWorker.Model, "worker leg keeps the fast variant")
 	assert.Equal(t, "gpt-5.5", codexDirector.Model, "director path must use the full-effort model")
+	codexFrontier, _ := modelForEffort(LegCodex, false, EffortMax)
+	assert.Equal(t, "gpt-5.5", codexFrontier.Model, "/frontier /codex also takes the full-effort twin")
 
 	// A leg with no director override (free) falls back to its regular
 	// worker model either way.

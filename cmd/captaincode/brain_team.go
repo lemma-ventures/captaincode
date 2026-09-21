@@ -377,8 +377,8 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	}
 	for i, wk := range plan.Workers {
 		title := fmt.Sprintf("w%d-%s", i+1, wk.Leg)
-		emit(fmt.Sprintf("[captain/team] → %s (%s): %s\n", wk.Leg, captaincode.ModelID(wk.Leg), promptPeek(wk.Brief)))
-		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(wk.Leg), Model: captaincode.ModelID(wk.Leg), Effort: string(req.ws.Effort), Text: "team worker: " + promptPeek(wk.Brief)})
+		emit(fmt.Sprintf("[captain/team] → %s (%s): %s\n", wk.Leg, captaincode.ModelIDAt(wk.Leg, req.ws.Effort), promptPeek(wk.Brief)))
+		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(wk.Leg), Model: captaincode.ModelIDAt(wk.Leg, req.ws.Effort), Effort: string(req.ws.Effort), Text: "team worker: " + promptPeek(wk.Brief)})
 		_ = title
 	}
 	if isolated {

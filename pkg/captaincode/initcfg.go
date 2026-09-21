@@ -93,7 +93,7 @@ func defaultCommands() map[string]any {
 		"codex":         map[string]any{"description": "force the codex leg (ChatGPT sub)", "template": "/codex $ARGUMENTS"},
 		"cursor":        map[string]any{"description": "force the cursor leg (cursor-agent)", "template": "/cursor $ARGUMENTS"},
 		"glm":           map[string]any{"description": "force GLM-5.3 (OpenRouter, best open weights)", "template": "/glm $ARGUMENTS"},
-		"grok-max":      map[string]any{"description": "force grok-4.6, xAI's flagship (frontier-class, SuperGrok)", "template": "/grok-max $ARGUMENTS"},
+		"grok-max":      map[string]any{"description": "force grok-4.7, xAI's flagship (frontier-class, SuperGrok)", "template": "/grok-max $ARGUMENTS"},
 		"minimax":       map[string]any{"description": "force MiniMax M3 (OpenRouter)", "template": "/minimax $ARGUMENTS"},
 		"free":          map[string]any{"description": "force the free leg (zero cost)", "template": "/free $ARGUMENTS"},
 		"team":          map[string]any{"description": "force an ensemble: director plans parallel workers", "template": "/team $ARGUMENTS"},
