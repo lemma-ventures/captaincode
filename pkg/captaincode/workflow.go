@@ -160,8 +160,28 @@ func boundariesOf(s string) []boundary {
 			last = b.end
 		}
 	}
-	return filtered
+	// CWL is a one-line language: a stage's assignment never spans a
+	// paragraph break. A connector whose preceding stage text holds a blank
+	// line is inside pasted content - a "/cursor rework these sections…"
+	// instruction followed by two paragraphs of website copy that quoted a
+	// workflow example ran as cursor+grok>claude+codex (2026-09-21). The
+	// blank line must lie entirely before the connector: "/grok do X\n\n/claude
+	// do Y" keeps its newline connector, whose own newline is the second of
+	// that pair.
+	kept = filtered[:0]
+	segStart := 0
+	for _, b := range filtered {
+		if loc := blankLineRe.FindStringIndex(s[segStart:b.start]); loc != nil && segStart+loc[1] <= b.start {
+			continue
+		}
+		kept = append(kept, b)
+		segStart = b.end
+	}
+	return kept
 }
+
+// blankLineRe: a paragraph break - two newlines with nothing but blanks between.
+var blankLineRe = regexp.MustCompile(`\n[ \t]*\n`)
 
 // ParseWorkflow parses a CWL expression. A single-leg expression is a valid
 // one-stage workflow (useful for validation); use IsWorkflowExpr to decide

@@ -90,6 +90,13 @@ unconditionally: *"summarize this and explain why"*, *"retry then fail"*, *"if n
 rule, `and /cursor` is an operator and `and` alone is text - so the feature is invisible until it
 is invoked deliberately, and no existing prompt changes meaning.
 
+Two refinements keep pasted content out of the topology. A **word** connector (`and`, `then`, a
+newline) counts only before a leg a stage can run - `then /speed` is prose about captain. And a
+stage's assignment never spans a **paragraph break**: a connector whose preceding stage text holds a
+blank line is inside pasted content, so `/cursor rework these sections…` followed by paragraphs of
+copy that quote a workflow example stays a solo `/cursor` prompt. `/grok do X` + blank line +
+`/claude do Y` is still two legs - that blank line *is* the connector.
+
 A workflow expression must **begin** with a leg prefix at position 0 (after optional whitespace).
 Anything else is not a workflow and is routed as it is today.
 
