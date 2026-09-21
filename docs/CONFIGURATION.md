@@ -346,6 +346,18 @@ Both are **predictions**, not comparisons with a choice captain made at the same
 
 A prompt that is **queued** (typed while a turn runs, shown with a `QUEUED` badge) is an ordinary user message waiting its turn; opencode's right-click menu on a message only offers copy / revert / fork, and its "Manage queued prompts" key does nothing in 1.18. Captain's sidebar plugin adds the missing pieces: **Prompts: edit or delete…** in the command palette (`ctrl+p`) or `ctrl+x p` lists the session's prompts, queued ones first, and each one can be **edited** in place (a queued prompt then runs with the new text), **deleted** on its own (a queued prompt never runs; an answered prompt loses only itself, its answer stays), or **reverted to** (stock revert: that prompt and everything after it, file changes included, `session.unrevert` brings it back). **Delete last prompt** is `ctrl+x d`. The palette entries *Edit queued prompt* and *Delete queued prompt* open the same list narrowed to what is queued.
 
+### Prompts typed while a turn runs
+
+A prompt typed while a worker is busy waits (opencode shows it `QUEUED`).
+opencode starts one next turn for everything that waited, so several
+queued prompts reach captain together; captain runs them **one after the
+other**, in the order typed, each as its own turn - its own head
+(`/codex-cli …`, `/cursor …`, a bare prompt routed as usual), its own
+worker - and each seeing the answers before it. The answers stream into the
+one assistant message, each under a `[captain] queued k/n` line naming the
+prompt it answers. To reorder or drop what is waiting, use the prompts
+dialog (`ctrl+x p`) before the running turn ends.
+
 ### Steering a running worker: `/btw`
 
 `/btw <note>` hands a note to the worker that is **already running** - a constraint you forgot, a mistake you spotted in its progress feed - so it complements or amends the prompt it started with instead of arriving as the next turn, after the wrong thing is done. Two transports take a note mid-run: **claude** (`claude -p` reads it on stdin and folds it into the running turn at its next tool boundary) and every **opencode-served leg** (glm, grok, kimi, gemini, codex, free… the note is merged into the busy session's turn). **codex-cli** and **cursor-agent** have no such channel: the note runs as the turn that follows, which is what the TUI would have done anyway. The plugin sends the note the moment it is typed (`POST /v1/btw?cwd=`) and, once the brain has taken it, refuses the message so the TUI does not queue a copy behind the running turn - the toast is the receipt. A note typed while the turn is still being prepared (compaction, routing) is held and is the worker's first input. Only a note nobody could take goes through as an ordinary turn. The turn shows the note where it landed: `> /btw → grok: …` in the streamed answer, with the reason when several workers were running - a team, a workflow - and the note went to the one it concerns: the worker you addressed (`/btw @grok …`, `/btw claude: …`), else the director's pick from the workers' briefs (one short judge call), else all of them. The progress feed shows `btw from the user taken: …` when the worker has it. There is nothing to configure.

@@ -311,6 +311,15 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ws = workspaceOf(r)
+	// Several prompts queued behind the previous turn arrive as one request
+	// with several trailing user messages: each is its own turn, in order
+	// (brain_queue.go). A round the brain issued itself never splits.
+	if r.Context().Value(noDedupeKey{}) == nil && r.Context().Value(queuedKey{}) == nil && !isTitleTurn(req.Messages) {
+		if pending := queuedPrompts(req.Messages); pending != nil {
+			b.runQueued(w, r, req, pending)
+			return
+		}
+	}
 	// Modifiers compose with control words in either order: "/oss /repeat 5
 	// <task>" is "/repeat 5 /oss <task>" (hoist.go). Canonicalize the last
 	// user turn before anything reads its head, and force the model the
