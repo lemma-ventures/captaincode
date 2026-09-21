@@ -267,7 +267,8 @@ func FormatConformReport(r ConformReport) string {
 	}
 	sb.WriteString("\nA passing suite means this backend is not broken. It does NOT mean captain\n")
 	fmt.Fprintf(&sb, "should route on it: %d cases with obvious answers measure nothing about\n", total)
-	sb.WriteString("real turns. Run the shadow against this backend and read `captain jev shadow`,\n")
-	sb.WriteString("which now declines to suggest a bar when rows from two backends are pooled.\n")
+	sb.WriteString("real turns. Run the shadow against this backend and read it alone -\n")
+	fmt.Fprintf(&sb, "`captain jev shadow --backend %s` - because a bar belongs to one backend\n", r.Backend)
+	sb.WriteString("and the report will not pool two of them into a number neither produced.\n")
 	return sb.String()
 }
