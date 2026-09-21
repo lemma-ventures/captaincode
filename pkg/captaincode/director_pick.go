@@ -53,7 +53,7 @@ func ParseDirectorMode(word string) (DirectorMode, bool) {
 // DirectorCandidate is one leg that can direct, with the number it is ranked by.
 type DirectorCandidate struct {
 	Leg   Leg
-	Perf  float64 // the perf index of the model the leg DIRECTS with (grok directs as grok-4.6)
+	Perf  float64 // the perf index of the model the leg DIRECTS with (grok directs as grok-4.7)
 	Model string
 }
 
@@ -71,7 +71,7 @@ func DirectorCapable(l Leg) bool {
 }
 
 // directorPerf ranks a leg by the model it directs with: legs with a director
-// override (grok → grok-4.6, codex → gpt-5.5) are scored on that model, found
+// override (grok → grok-4.7, codex → gpt-5.5) are scored on that model, found
 // through whichever registry leg pins it, else by the override's name in the
 // feed; a leg without an override is scored as itself.
 func directorPerf(l Leg) (float64, string) {
@@ -95,7 +95,7 @@ func directorPerf(l Leg) (float64, string) {
 
 // DirectorCandidates lists every leg that can direct, best ranked first. Two
 // legs that direct with the same model on the same provider (grok and
-// grok-max both direct as grok-4.6 on the SuperGrok credential) are one
+// grok-max both direct as grok-4.7 on the SuperGrok credential) are one
 // candidate - the first in ladder order - or auto would rotate between two
 // names for one quota.
 func DirectorCandidates() []DirectorCandidate {
@@ -174,7 +174,7 @@ type DirectorUsage map[Leg]time.Duration
 
 // directorAutoFloor: a leg is "capable" for auto when its director index is
 // at least this fraction of the best candidate's. CAPTAIN_DIRECTOR_AUTO_FLOOR,
-// default 0.80 - today that is claude, glm, grok (as grok-4.6) and kimi.
+// default 0.80 - today that is claude, glm, grok (as grok-4.7) and kimi.
 func directorAutoFloor() float64 {
 	if v := os.Getenv("CAPTAIN_DIRECTOR_AUTO_FLOOR"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {

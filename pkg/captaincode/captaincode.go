@@ -42,11 +42,12 @@ const (
 	// Frontier-class (2026-09-09): the Codex CLI driving gpt-6-astra at xhigh
 	// reasoning on the ChatGPT subscription - see codex-cli.go. NOT the codex leg.
 	LegCodexCLI Leg = "codex-cli" // codex exec headless (Codex CLI, ~/.codex/auth.json)
-	// grok-max (2026-09-13): xAI's flagship grok-4.6 as a WORKER, frontier-class
+	// grok-max (2026-09-13): xAI's flagship grok-4.7 as a WORKER, frontier-class
 	// (2× budget, never auto-assigned to routine work, third in the /frontier
 	// failover after claude and codex-cli). The grok leg keeps grok-build-0.1,
 	// the fast daily-reset burner; the two share the SuperGrok credential.
-	LegGrokMax Leg = "grok-max" // opencode serve -> xai/grok-4.6 (SuperGrok)
+	// /frontier /grok upgrades the burner to grok-4.7 via directorModels.
+	LegGrokMax Leg = "grok-max" // opencode serve -> xai/grok-4.7 (SuperGrok)
 	// jev (2026-09-17): TypeSafe's System One model, a DECISION leg. It answers
 	// typed questions (choice/score/noul) with calibrated probabilities in
 	// ~100-500ms and never generates text or runs a tool, so it is in the

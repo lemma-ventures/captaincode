@@ -21,7 +21,7 @@ func TestPerfFamilyStripsVersionsAndEffort(t *testing.T) {
 
 func TestFrontierLegsAreRankedByPerf(t *testing.T) {
 	fl := FrontierLegs()
-	require.Equal(t, []Leg{LegClaude, LegCodexCLI, LegGrokMax}, fl, "fable, astra, grok-4.6 - the index order")
+	require.Equal(t, []Leg{LegClaude, LegCodexCLI, LegGrokMax}, fl, "fable, astra, grok-4.7 - the index order")
 	chain := FrontierChain(LegFrontier)
 	assert.Equal(t, fl, chain[:3], "the chain opens with the frontier legs")
 	assert.NotContains(t, chain, LegFrontier)
