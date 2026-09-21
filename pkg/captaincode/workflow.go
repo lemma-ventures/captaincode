@@ -226,6 +226,16 @@ func ParseWorkflow(s string) (Workflow, error) {
 			return Workflow{}, fmt.Errorf("/%s is a decision leg - it answers questions, not stages; name a worker leg", name)
 		}
 		wl := WorkflowLeg{Leg: leg, Prompt: strings.TrimSpace(text[len(head[0]):])}
+		// Modifiers hoisted behind the leg ("/claude /frontier X") are the
+		// turn's, read from the whole expression; the stage's text starts
+		// after them.
+		for {
+			m := modifierWordRe.FindString(wl.Prompt)
+			if m == "" {
+				break
+			}
+			wl.Prompt = strings.TrimSpace(wl.Prompt[len(m):])
+		}
 		// Trailing "gate: <command>" - the LAST marker wins so prose may
 		// mention the word; everything after it is the command.
 		if i := strings.LastIndex(wl.Prompt, "gate:"); i >= 0 {

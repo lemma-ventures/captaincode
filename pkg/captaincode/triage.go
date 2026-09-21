@@ -306,7 +306,24 @@ Task:
 // The short alias /q stays leading-only - mid-prompt it collides with too much
 // real text. The fork parses prefixes at position 0 only, so a user who writes
 // "…called OPSIS. /quality review…" was silently ignored (2026-08-01).
-var midPrefer = regexp.MustCompile(`(?i)(?:^|\s)/(quality|best|speed|fast|save|cheap)\b`)
+var midPrefer = regexp.MustCompile(`(?i)(?:^|\s)/(quality|best|speed|fast|save|cheap|frontier)\b`)
+
+// MidPromptFrontier reports a /frontier stated anywhere in the turn but its
+// head (the head is the pseudo-leg, read by the dispatch): the request's
+// effort is the ceiling on whichever leg runs - "/claude /frontier X" after
+// hoisting, or a workflow whose stages each carry it.
+func MidPromptFrontier(task string) bool {
+	head := len(task) - len(strings.TrimLeft(task, " \t"))
+	for _, m := range midPrefer.FindAllStringSubmatchIndex(task, -1) {
+		if m[2] == head+1 || (m[3] < len(task) && task[m[3]] == '/') {
+			continue // the head, or a path segment ("/frontier/notes.md")
+		}
+		if strings.EqualFold(task[m[2]:m[3]], "frontier") {
+			return true
+		}
+	}
+	return false
+}
 
 // MidPromptPrefer returns the routing preference stated anywhere in the task,
 // or "" when none. Leading prefixes keep working via the fork; this catches

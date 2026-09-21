@@ -673,3 +673,74 @@ func TestWorkflowFrontierStageReroutesWhenTheTierIsClosed(t *testing.T) {
 	b.mu.Unlock()
 	assert.True(t, benched, "the closed tier is benched so the next stage does not knock again")
 }
+
+// "/frontier /claude X > /grok > /codex-cli" - the plugin reads the head as
+// model=frontier - runs claude, grok and codex-cli, each at max effort; it
+// does not run the frontier pseudo-leg with "/claude X" as its text (live
+// 2026-09-21).
+func TestFrontierBeforeLegsRunsEachLegAtMaxEffort(t *testing.T) {
+	b := teamBrain()
+	var mu sync.Mutex
+	var seen []string
+	frontierCalls := 0
+	b.frontierFn = func(prompt string, onDelta, onStatus func(string)) (captaincode.Result, error) {
+		frontierCalls++
+		return captaincode.Result{Text: "should not run"}, nil
+	}
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		eff := b.active.snapshot()[leg].effort
+		mu.Lock()
+		seen = append(seen, string(leg)+"@"+string(eff))
+		mu.Unlock()
+		assert.NotContains(t, lastUserTurn(prompt), "/frontier", "the modifier never reaches the worker")
+		return leg, captaincode.Result{Text: "opinion from " + string(leg), DurationMs: 10}, nil
+	}
+	b.assessMultiFn = func(task string, o map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "AGG"}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "/frontier /claude what's your opinion about route A B and C > /grok > /codex-cli"}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"claude@max", "grok@max", "codex-cli@max"}, seen)
+	assert.Equal(t, 0, frontierCalls, "no pseudo-leg run: claude at max effort IS the frontier configuration")
+	assert.Contains(t, rec.Body.String(), "AGG")
+}
+
+// Claude at max effort refused by the frontier tier's own limit benches the
+// tier, not claude, and reruns claude at standard settings in the same turn.
+func TestClaudeAtMaxEffortFallsToStandardWhenTheTierIsClosed(t *testing.T) {
+	b := teamBrain()
+	var mu sync.Mutex
+	var seen []string
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		eff := b.active.snapshot()[leg].effort
+		mu.Lock()
+		seen = append(seen, string(leg)+"@"+string(eff))
+		n := len(seen)
+		mu.Unlock()
+		if n == 1 {
+			return leg, captaincode.Result{DurationMs: 5000}, &captaincode.RateLimitError{Leg: leg, Tier: "frontier",
+				Msg: "You've hit your monthly spend limit. Switch to another model, or manage usage credits at claude.ai/settings/usage?from=cc_cli_limit_message, to continue."}
+		}
+		return leg, captaincode.Result{Text: "standard answer", DurationMs: 10}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "/frontier /claude what's your opinion about route A B and C"}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	mu.Lock()
+	assert.Equal(t, []string{"claude@max", "claude@high"}, seen)
+	mu.Unlock()
+	assert.Contains(t, rec.Body.String(), "standard answer")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, frontierBenched := b.ledger.Cooldowns[captaincode.LegFrontier]
+	_, claudeBenched := b.ledger.Cooldowns[captaincode.LegClaude]
+	assert.True(t, frontierBenched, "the tier wears its own limit")
+	assert.False(t, claudeBenched, "claude at standard settings stays open")
+}

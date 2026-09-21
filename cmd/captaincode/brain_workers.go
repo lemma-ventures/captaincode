@@ -20,7 +20,8 @@ import (
 type activeRun struct {
 	started time.Time
 	task    string
-	dir     string // the workspace the run is for
+	dir     string             // the workspace the run is for
+	effort  captaincode.Effort // how hard it was asked to think ("" = the transport's default)
 }
 
 // activeRuns is the live per-leg view. Keyed by leg because that is what the
@@ -38,7 +39,7 @@ func (a *activeRuns) begin(ws captaincode.Workspace, l captaincode.Leg, task str
 		a.runs = map[captaincode.Leg]activeRun{}
 	}
 	if _, busy := a.runs[l]; !busy {
-		a.runs[l] = activeRun{started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir}
+		a.runs[l] = activeRun{started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir, effort: ws.Effort}
 	}
 }
 
@@ -63,6 +64,7 @@ type workerRow struct {
 	Status       string `json:"status"` // busy | cooling | idle
 	Title        string `json:"title"`
 	Task         string `json:"task,omitempty"`
+	Effort       string `json:"effort,omitempty"` // the running request's effort (max = the ceiling)
 	Runs         int    `json:"runs"`
 	ElapsedMs    int64  `json:"elapsed_ms,omitempty"`
 	CoolingUntil int64  `json:"coolingUntil,omitempty"`
@@ -102,6 +104,7 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 		if run, ok := live[l]; ok {
 			row.Status = "busy"
 			row.Task = run.task
+			row.Effort = string(run.effort)
 			row.ElapsedMs = now.Sub(run.started).Milliseconds()
 			row.CoolingUntil = 0
 		}
