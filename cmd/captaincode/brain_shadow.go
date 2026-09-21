@@ -134,6 +134,15 @@ func stampShadow(d *captaincode.Decision, sh *captaincode.Shadow, classBy string
 	if sh == nil {
 		return
 	}
+	stampRoutePoints(*d, sh, classBy)
+	d.Shadow = sh
+}
+
+// stampRoutePoints is the stamping alone, so a second backend's answers can
+// be compared against the same decision without going onto it: a Decision
+// carries the shadow of the backend captain acted on, and an open sidecar's
+// row has to be readable apart from it or the two would pool.
+func stampRoutePoints(d captaincode.Decision, sh *captaincode.Shadow, classBy string) {
 	sh.Stamp(captaincode.PointClass, string(d.Class), classBy)
 	sh.Stamp(captaincode.PointDomain, string(d.Domain), classBy)
 	sh.Stamp(captaincode.PointShape, d.Shape, d.Path)
@@ -142,7 +151,6 @@ func stampShadow(d *captaincode.Decision, sh *captaincode.Shadow, classBy string
 		actual = joinLegs(d.Workers, "+")
 	}
 	sh.Stamp(captaincode.PointLeg, actual, d.Path)
-	d.Shadow = sh
 }
 
 // noteShadowBeside asks the decision leg which worker a mid-turn note
@@ -206,4 +214,103 @@ func planLegs(p captaincode.Plan) []captaincode.Leg {
 		out = append(out, w.Leg)
 	}
 	return out
+}
+
+// ---- the open sidecar, beside whichever backend decided ------------------------
+
+// jevDecidesTriage says some backend may act on a triage answer for this
+// task. It is not "a client exists": a sidecar that has not been promoted
+// answers only in the shadow, so with no primary configured there is nothing
+// to consult and the heuristic stands.
+func (b *brain) jevDecidesTriage(task string) bool {
+	c, _, _ := b.triageDecider(task)
+	return c != nil
+}
+
+// triageDecider names the backend that may act on a triage answer for this
+// task and the bar it must clear. The pool decides whether the sidecar has
+// earned this one; everything else is b.jev, which is the primary handle the
+// brain actually holds - the same client the pool named, except in tests,
+// where it is a fake server that has to keep deciding.
+func (b *brain) triageDecider(task string) (*captaincode.SystemOneClient, float64, string) {
+	c, bar, why := b.jevBackends.Decider(captaincode.CapTriage, task)
+	if c != nil && c == b.jevBackends.Open {
+		return c, bar, why
+	}
+	return b.jev, 0, why
+}
+
+// openBeside asks the open sidecar the same questions the tier-1 call asks -
+// class and domain, with shape and leg riding along - while captain settles
+// them some other way. This is the only place a sidecar's rows come from, and
+// they are what `captain jev shadow --backend <host>` reads to produce the
+// bar that would promote it. Nil when there is no sidecar, when the sidecar
+// is already the backend deciding this call (its answer is on the decision's
+// own shadow then), or when this state would not fit it: an answer read off a
+// truncated state is not a datum, and a hundred of them would promote a
+// backend on the strength of questions it never saw.
+//
+// WHICH turns are worth asking about is the caller's call, and both places
+// this is called from are turns captain was going to think about anyway - the
+// band under CAPTAIN_TRIAGE_JEV_BELOW, and the director's plan. A sample
+// drawn from the turns the heuristic settled by itself would say more about
+// the heuristic than about the backend.
+//
+// Not charged: it is a local process reading weights off this disk. Caller
+// holds b.mu; the goroutine touches nothing of b.
+func (b *brain) openBeside(task string, d captaincode.Domain, menu []captaincode.Leg) <-chan shadowReply {
+	c := b.jevBackends.Shadowing(captaincode.CapTriage, task)
+	if c == nil || !jevShadowEnabled() {
+		return nil
+	}
+	opts := b.jevOptions(d, menu)
+	opts.Shadow = true // the routing points are the ones worth its rows
+	ch := make(chan shadowReply, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), jevAskTimeout(c))
+		defer cancel()
+		_, sh, res, err := captaincode.TriageWithJev(ctx, c, task, opts)
+		ch <- shadowReply{sh: sh, res: res, err: err}
+	}()
+	return ch
+}
+
+// recordOpenShadow puts the sidecar's answers on the ledger as a row of their
+// own, stamped with what captain actually decided - never on the decision,
+// which belongs to the backend captain acted on.
+//
+// It does not wait. The shadow beside the director can afford to, because the
+// director takes seconds and the answer is already there; this call is joined
+// on the fast path too, where the route is finished in a millisecond and
+// blocking on a wedged sidecar would put its whole timeout on every turn. A
+// row nobody is waiting for is worth exactly what it costs to collect later.
+// Caller holds b.mu; the goroutine takes it again once the caller is done.
+func (b *brain) recordOpenShadow(task string, d captaincode.Decision, ch <-chan shadowReply, classBy string) {
+	if ch == nil || b.ledger == nil {
+		return
+	}
+	// The turn's identity now, while it is still this turn's: it is consumed
+	// when a worker adopts the route, and a row that joins no outcome still
+	// carries its comparison.
+	taskID := b.routeTurnID(task)
+	go func() {
+		r := <-ch // bounded by the sidecar client's own timeout
+		if r.sh == nil {
+			return
+		}
+		stampRoutePoints(d, r.sh, classBy)
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.ledger.RecordShadow(captaincode.ShadowRecord{
+			Point:  captaincode.PointClass,
+			Points: []string{captaincode.PointClass, captaincode.PointDomain, captaincode.PointShape, captaincode.PointLeg},
+			TaskID: taskID, Task: truncate(task, 120), Shadow: *r.sh,
+		})
+		if err := b.ledger.Save(); err != nil {
+			fmt.Printf("captain brain: open shadow row not saved: %v\n", err)
+		}
+		if r.err != nil {
+			fmt.Printf("captain brain: open sidecar beside triage: %v\n", r.err)
+		}
+	}()
 }

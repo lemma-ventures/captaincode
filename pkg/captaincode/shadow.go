@@ -698,3 +698,71 @@ func FormatShadowCalibration(cal []PointCalibration, target float64, minN int) s
 	}
 	return sb.String()
 }
+
+// ---- reading one backend at a time ----------------------------------------------
+
+// ShadowUnstamped is what a row written before a backend was recorded is
+// counted and filtered as. It is a name rather than a blank because the
+// report offers every name it prints to --backend, and a listing that cannot
+// be read back is a listing that sends an operator to an empty report.
+const ShadowUnstamped = "unstamped"
+
+// ShadowBackends counts which backend answered, over every row a calibration
+// would read. It is what tells a report that there is more than one to read.
+func ShadowBackends(decisions []Decision, shadows []ShadowRecord) map[string]int {
+	out := map[string]int{}
+	count := func(sh *Shadow) {
+		if sh == nil {
+			return
+		}
+		out[shadowBackendName(sh.Backend)]++
+	}
+	for i := range decisions {
+		count(decisions[i].Shadow)
+	}
+	for i := range shadows {
+		count(&shadows[i].Shadow)
+	}
+	return out
+}
+
+// DecisionsFromBackend and ShadowsFromBackend keep the rows one backend
+// answered and drop the rest.
+//
+// Mixed() already stops a report quoting a bar no single configuration ever
+// produced, and while a backend was something you swapped by editing an
+// environment variable that was the whole job: the pooling was a mistake and
+// refusing to read it was the fix. Once a sidecar runs BESIDE the primary on
+// purpose (systemone_open.go), every point is mixed for good, and a report
+// that can only say so is a report that never suggests a bar again - which is
+// also the number an operator needs before promoting anything. So the rows
+// have to be separable, not only detectable: read one backend, get that
+// backend's bar, promote on it.
+func DecisionsFromBackend(ds []Decision, backend string) []Decision {
+	out := make([]Decision, 0, len(ds))
+	for _, d := range ds {
+		if d.Shadow != nil && shadowBackendName(d.Shadow.Backend) == backend {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// ShadowsFromBackend is DecisionsFromBackend for the standalone rows.
+func ShadowsFromBackend(rows []ShadowRecord, backend string) []ShadowRecord {
+	out := make([]ShadowRecord, 0, len(rows))
+	for _, r := range rows {
+		if shadowBackendName(r.Backend) == backend {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// shadowBackendName is the one name a row is both counted and filtered under.
+func shadowBackendName(backend string) string {
+	if backend == "" {
+		return ShadowUnstamped
+	}
+	return backend
+}
