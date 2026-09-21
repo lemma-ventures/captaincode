@@ -41,7 +41,7 @@ var legAAPatterns = map[Leg][]string{
 	// silently drop a leg's prior.
 	LegCodex:    {"gpt-5-5", "gpt-5.5"}, // the fast lane shares gpt-5.5's score; spark left the ChatGPT route 2026-09-15
 	LegGrok:     {"grok-build", "grok build"},
-	LegGrokMax:  {"grok-4-6"},
+	LegGrokMax:  {"grok-4-7", "grok-4-6"},
 	LegClaude:   {"claude-fable"},
 	LegCodexCLI: {"gpt-6-astra"},
 	LegGemini:   {"gemini-3-7-flash"},

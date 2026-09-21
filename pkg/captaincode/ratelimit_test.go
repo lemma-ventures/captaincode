@@ -99,7 +99,7 @@ cat <<'EOF2'
 {"type":"result","is_error":true,"result":"usage limit reached, resets 1:49pm"}
 EOF2
 `)
-	res, err := runCursorStream("", "task", 30*time.Second, 0, nil, nil, nil)
+	res, err := runCursorStream("", "task", 30*time.Second, 0, nil, nil, nil, "")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRateLimited))
 	assert.Contains(t, res.Text, "Refactored")

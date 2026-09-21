@@ -109,7 +109,7 @@ EOF
 	var answer strings.Builder
 	res, err := runCursorStream("", "task", 30*time.Second, 0,
 		func(d string) { answer.WriteString(d) },
-		func(s string) { statuses = append(statuses, s) }, nil)
+		func(s string) { statuses = append(statuses, s) }, nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ok", res.Text)
 	assert.Equal(t, []string{"⚙ shell Print ok"}, statuses, "only tool STARTS are reported, once each")

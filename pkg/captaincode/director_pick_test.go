@@ -28,9 +28,9 @@ func TestOnlyJudgesCanDirect(t *testing.T) {
 	}
 }
 
-func TestGrokDirectsAsGrok46NotGrokBuild(t *testing.T) {
+func TestGrokDirectsAsGrok47NotGrokBuild(t *testing.T) {
 	p, model := directorPerf(LegGrok)
-	assert.Equal(t, "grok-4.6", model, "the director override, not the worker pin")
+	assert.Equal(t, "grok-4.7", model, "the director override, not the worker pin")
 	pw, _ := directorPerf(LegGrokMax)
 	assert.Equal(t, pw, p, "scored on the same model grok-max pins")
 	pb, _ := PerfFor(LegGrok)
@@ -103,7 +103,7 @@ func TestOneCredentialIsOneCandidate(t *testing.T) {
 		legs[c.Leg] = true
 	}
 	assert.True(t, legs[LegGrok])
-	assert.False(t, legs[LegGrokMax], "grok-max directs as the same grok-4.6 on the same credential as grok")
+	assert.False(t, legs[LegGrokMax], "grok-max directs as the same grok-4.7 on the same credential as grok")
 }
 
 func TestDirectorWindowParses(t *testing.T) {

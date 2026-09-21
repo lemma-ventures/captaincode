@@ -39,7 +39,7 @@ is sent anywhere; all of it lives under your home directory.
 |---|---|
 | `<leg>` (`claude`, `grok`, `glm`, `kimi`, `gemini`, `codex`, …) | That leg, pinned. Only **judges** qualify: claude (`claude -p`) and opencode-served pins run with tools off; `codex-cli` and `cursor` are agents and are refused. |
 | `frontier` | The best-ranked judge by the performance index (today claude). |
-| `quality` | The best of **tier 2**: the strongest judge below the top band (today glm; grok directs as grok-4.6 and ranks next). |
+| `quality` | The best of **tier 2**: the strongest judge below the top band (today glm; grok directs as grok-4.7 and ranks next). |
 | `auto` | The least-used capable judge over `CAPTAIN_DIRECTOR_WINDOW` — usage is wall-clock seconds from the run history plus the ledger's director/review calls; a judge in a rate-limit cooldown is skipped; the standing pick keeps the helm unless another has used under 60% of its time. |
 | `director` | Show the helm, the reason, the ladder, and each judge's recent usage. |
 | `reset` | Back to `CAPTAIN_DIRECTOR` / the default. |
@@ -401,7 +401,10 @@ you survive a provider retiring a model: repoint the leg, keep its scorecard.
 
 Frontier legs additionally take `CAPTAIN_FRONTIER_MODEL` (default
 `claude-fable-5`), `CAPTAIN_CODEX_CLI_MODEL` (default `gpt-6-astra`) and
-`CAPTAIN_CODEX_CLI_SANDBOX`.
+`CAPTAIN_CODEX_CLI_SANDBOX`. Cursor under `/frontier` takes
+`CAPTAIN_CURSOR_FRONTIER_MODEL` (default `grok-4.7-xhigh`); the grok
+worker under `/frontier` uses the director pin (`grok-4.7`, shared with
+`/grok-max`).
 
 ### Effort
 
@@ -411,20 +414,24 @@ task's difficulty rating (high → high, medium → medium, trivial → low). Th
 model is picked separately, by the balanced ranking. Every transport with a
 knob gets it: claude -p `--effort`, codex exec `model_reasoning_effort`
 (max is codex's xhigh), an opencode worker's message `variant` fitted to
-what the model offers (glm: low/high/max; grok-build, kimi: none). The
-run's effort shows on its Last Runs line in the sidebar.
+what the model offers (glm: low/high/max; grok-4.7: low…xhigh; none for
+grok-build, kimi). The run's effort shows on its Last Runs line in the
+sidebar.
 
 `/frontier` alone is the pseudo-leg: claude at the ceiling. In front of a
 leg or a workflow it is a modifier - `/frontier /claude X > /grok >
 /codex-cli` runs claude, grok and codex-cli, each at its most performant
-settings, and claude at max effort *is* the frontier configuration (the
-strongest alias, `--effort max`). When the frontier tier's own limit
-refuses such a run (the monthly spend cap, "your Fable limit"), the tier is
-benched, not claude, and the same turn reruns claude at standard settings.
+settings (claude at max effort; grok upgrades from grok-build to grok-4.7;
+cursor pins `grok-4.7-xhigh`), and claude at max effort *is* the frontier
+configuration (the strongest alias, `--effort max`). When the frontier
+tier's own limit refuses such a run (the monthly spend cap, "your Fable
+limit"), the tier is benched, not claude, and the same turn reruns claude
+at standard settings.
 
 | Variable | Default | Effect |
 |---|---|---|
 | `CAPTAIN_FRONTIER_EFFORT` | unset | Pin claude's `/frontier` effort (`xhigh` to get the pre-2026-09-13 second-to-best) |
+| `CAPTAIN_CURSOR_FRONTIER_MODEL` | `grok-4.7-xhigh` | cursor-agent `--model` when the request is `/frontier` |
 | `CAPTAIN_CODEX_CLI_EFFORT` | unset | Pin codex exec's effort whatever the request |
 | `CAPTAIN_EFFORT_VARIANTS` | `1` | `0` sends opencode workers no variant (the model's default reasoning) |
 
