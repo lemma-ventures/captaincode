@@ -319,7 +319,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if raw0 := messageText(req.Messages[i].Content); raw0 != "" {
 			if hoisted := captaincode.HoistLeading(raw0); hoisted != raw0 {
 				req.Messages[i].Content, _ = json.Marshal(hoisted)
-				if (req.Model == "" || req.Model == "auto") && !isTitleTurn(req.Messages) {
+				// model=frontier is the plugin's reading of the same head; once
+				// /frontier is hoisted past a leg, that leg is what runs.
+				if (req.Model == "" || req.Model == "auto" || req.Model == "frontier") && !isTitleTurn(req.Messages) {
 					if f := captaincode.LeadingForced(hoisted); f != "" {
 						fmt.Printf("captain brain: modifiers hoisted → %s forced by the turn's head\n", f)
 						req.Model = f
@@ -367,7 +369,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		// invisible here and to the route (only a mid-prompt one survived,
 		// found 2026-09-17).
 		prefer := captaincode.MidPromptPrefer(lastUserRaw(req.Messages))
-		if req.Model == "frontier" {
+		if req.Model == "frontier" || captaincode.MidPromptFrontier(lastUserRaw(req.Messages)) {
 			prefer = "frontier"
 		}
 		req.ws.Effort = captaincode.EffortFor(prefer, captaincode.TriageTask(lastUserTurn(prompt)).Class)

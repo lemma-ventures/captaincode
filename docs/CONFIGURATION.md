@@ -402,6 +402,14 @@ knob gets it: claude -p `--effort`, codex exec `model_reasoning_effort`
 what the model offers (glm: low/high/max; grok-build, kimi: none). The
 run's effort shows on its Last Runs line in the sidebar.
 
+`/frontier` alone is the pseudo-leg: claude at the ceiling. In front of a
+leg or a workflow it is a modifier - `/frontier /claude X > /grok >
+/codex-cli` runs claude, grok and codex-cli, each at its most performant
+settings, and claude at max effort *is* the frontier configuration (the
+strongest alias, `--effort max`). When the frontier tier's own limit
+refuses such a run (the monthly spend cap, "your Fable limit"), the tier is
+benched, not claude, and the same turn reruns claude at standard settings.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `CAPTAIN_FRONTIER_EFFORT` | unset | Pin claude's `/frontier` effort (`xhigh` to get the pre-2026-09-13 second-to-best) |
