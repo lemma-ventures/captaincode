@@ -1496,7 +1496,10 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		// the backstop for the one that is not.
 		return Result{}, fmt.Errorf("/%s is a %w - `captain jev classify <task>` asks it a question", leg, ErrDecisionLeg)
 	case TransportClaudeCLI:
-		res, err := runClaudeStreamOpts(ws.Dir, task, base, ceil, onDelta, onStatus, false, ws.Effort, ws.Steer)
+		// Max effort on the claude leg IS the frontier configuration (the
+		// strongest alias, --effort max): "/claude /frontier X" and a
+		// workflow stage under /frontier run exactly what /frontier runs.
+		res, err := runClaudeStreamOpts(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort == EffortMax, ws.Effort, ws.Steer)
 		return emptyIsFailure(leg, res, err)
 	case TransportCursorCLI: // cursor-agent has no effort knob
 		res, err := runCursorStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer)

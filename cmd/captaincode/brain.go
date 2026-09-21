@@ -1340,18 +1340,23 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 		return l, res, err
 	}
 	cur := leg
-	// The frontier tier's window is closed: do not knock again for thirty
-	// minutes, run claude at standard settings straight away.
-	if leg == captaincode.LegFrontier {
+	// The frontier tier's window is closed: do not knock again, run claude
+	// at standard settings straight away. The same for the claude leg at max
+	// effort, which is the frontier configuration under claude's name.
+	frontierClosed := func() (time.Time, bool) {
 		b.mu.Lock()
 		until, cooling := b.ledger.Cooldowns[captaincode.LegFrontier]
 		b.mu.Unlock()
-		if cooling && time.Now().Before(until) {
+		return until, cooling && time.Now().Before(until)
+	}
+	if leg == captaincode.LegFrontier || (leg == captaincode.LegClaude && ws.Effort == captaincode.EffortMax) {
+		if until, closed := frontierClosed(); closed {
 			fmt.Printf("captain brain: frontier tier window closed until %s - running claude at standard settings\n", until.Format("15:04"))
 			if onStatus != nil {
 				onStatus(fmt.Sprintf("frontier tier limited until %s → claude", until.Format("15:04")))
 			}
 			cur = captaincode.LegClaude
+			ws.Effort = captaincode.EffortHigh
 		}
 	}
 	tried := []captaincode.Leg{leg, cur}
@@ -1375,6 +1380,24 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 	ranLeg, res, err := runOne(cur, onDelta, onStatus)
 	b.reconcileAttempt(taskID, res.CostUSD)
 	b.recordQuotaFromHeaders(ranLeg, res)
+	// The claude leg at max effort refused by the frontier tier's own limit
+	// (spend cap, "your Fable limit"): that is the tier's to wear, and claude
+	// at standard settings is the first fallback - the same turn, one rung
+	// down, not another leg.
+	if ranLeg == captaincode.LegClaude && ws.Effort == captaincode.EffortMax && !titleRun && !captaincode.WorthKeeping(res, err) {
+		var rl *captaincode.RateLimitError
+		if errors.As(err, &rl) && rl.Tier == "frontier" && b.reserveAttempt(taskID) {
+			b.onWorkerError(captaincode.LegFrontier, err)
+			fmt.Printf("captain brain: frontier tier limited on claude at max effort → claude at standard settings\n")
+			if onStatus != nil {
+				onStatus("frontier tier limited → claude at standard settings")
+			}
+			ws.Effort = captaincode.EffortHigh
+			ranLeg, res, err = runOne(captaincode.LegClaude, onDelta, onStatus)
+			b.reconcileAttempt(taskID, res.CostUSD)
+			b.recordQuotaFromHeaders(ranLeg, res)
+		}
+	}
 	// Up to TWO reroute hops - but never a NEW hop once the chain has already
 	// consumed a full worker budget: stacked 15m caps made one stage crawl 45
 	// minutes (2026-08-07). Better a clear failure than a zombie chain.
@@ -1909,7 +1932,7 @@ func (b *brain) decideRoute(req routeReq) (routeResp, *routeFail) {
 	if prefer == "" {
 		prefer = captaincode.MidPromptPrefer(req.Task)
 	}
-	if resp.Model == "frontier" {
+	if resp.Model == "frontier" || captaincode.MidPromptFrontier(req.Task) {
 		prefer = "frontier"
 	}
 	resp.Effort = string(captaincode.EffortFor(prefer, captaincode.Class(resp.Class)))

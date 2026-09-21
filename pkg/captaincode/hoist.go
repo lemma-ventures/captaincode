@@ -14,7 +14,12 @@ import (
 )
 
 var (
-	modifierWordRe = regexp.MustCompile(`(?i)^/(quality|q|best|speed|fast|save|cheap|oss|open|deterministic|det|adi)\b[\s:]*`)
+	// /frontier is both: alone it is the pseudo-leg (claude at the ceiling);
+	// in front of a leg or a control word it is a modifier - "/frontier
+	// /claude X > /grok > /codex-cli" asks each leg for its most performant
+	// settings, it does not ask claude to answer with "/claude X" as its
+	// text (live 2026-09-21).
+	modifierWordRe = regexp.MustCompile(`(?i)^/(quality|q|best|speed|fast|save|cheap|oss|open|deterministic|det|adi|frontier)\b[\s:]*`)
 	controlHeadRe  = regexp.MustCompile(`(?i)^/(repeat|parallel|team|frontier|wf|run)\b[\s:]*`)
 	countRe        = regexp.MustCompile(`^\d+\s*`)
 )
@@ -31,7 +36,14 @@ func HoistLeading(raw string) string {
 		if m == "" {
 			break
 		}
-		mods = append(mods, "/"+strings.ToLower(strings.TrimSpace(strings.Trim(m, "/ \t:"))))
+		word := strings.ToLower(strings.TrimSpace(strings.Trim(m, "/ \t:")))
+		// /frontier is a modifier only when a leg or a control word follows
+		// the modifiers; otherwise it is the head itself ("/oss /frontier
+		// prove it" hoists /oss past it).
+		if word == "frontier" && !headFollows(rest[len(m):]) {
+			break
+		}
+		mods = append(mods, "/"+word)
 		rest = rest[len(m):]
 	}
 	if len(mods) == 0 {
@@ -97,4 +109,20 @@ func LeadingForced(raw string) string {
 		return strings.ToLower(strings.TrimRight(strings.TrimPrefix(leg, "/"), " \t:"))
 	}
 	return ""
+}
+
+// headFollows reports whether a control word or a leg comes after any
+// further modifiers at the start of rest.
+func headFollows(rest string) bool {
+	for {
+		m := modifierWordRe.FindString(rest)
+		if m == "" {
+			break
+		}
+		if strings.EqualFold(strings.TrimSpace(strings.Trim(m, "/ \t:")), "frontier") {
+			break
+		}
+		rest = rest[len(m):]
+	}
+	return controlHeadRe.MatchString(rest) || leadingLeg(rest) != ""
 }
