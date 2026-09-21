@@ -294,6 +294,17 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 				decision++
 				note = fmt.Sprintf("decision leg (key from %s): triage classify and `captain jev` - never a worker", source)
 			}
+			// A sidecar is a second backend, not a second leg, so it rides on
+			// this line rather than getting one of its own - and it says which
+			// of the two states it is in, because "configured" and "deciding
+			// anything" are not the same thing for an open backend.
+			if open := captaincode.SystemOneOpen(); open != nil {
+				if bar, ok := captaincode.SystemOneBackendsFromEnv().Promoted(captaincode.CapTriage); ok {
+					note += fmt.Sprintf(" · sidecar %s decides triage at its own bar %.2f", open.Backend(), bar)
+				} else {
+					note += fmt.Sprintf(" · sidecar %s: shadow only until `captain jev shadow --backend %s` gives it a bar", open.Backend(), open.Backend())
+				}
+			}
 		case allow != nil && !allow[string(s.ID)]:
 			mark, note = "·", fmt.Sprintf("not in CAPTAIN_LEGS (runs only when forced: /%s)", s.ID)
 		default:

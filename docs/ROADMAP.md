@@ -901,6 +901,47 @@ under the record, and an open re-implementation is a different model
 entirely. A pooled bar would be a number no single configuration ever
 produced.
 
+**M2.6, second pass (21 September 2026): a backend beside the first, not
+instead of it.**
+
+`CAPTAIN_SYSTEMONE_URL` replaces the decision leg, which is the right shape
+when there is no key and the wrong one for what turned up. laya-mlx is an
+Apache-2.0 MLX port of the Laya typed-decision models that answers in the same
+wire shape - the same three question types, the same `{model, answers, usage}`
+envelope - in 7-14ms on Apple silicon, free after the download, holding 512
+tokens (1,024 on two of its checkpoints). jev is slower, costs $0.042/M input,
+holds 32k, and runs wherever there is a key. Neither is the other's
+replacement, so `CAPTAIN_SYSTEMONE_OPEN_URL` names a sidecar that runs BESIDE
+the primary client, and `sidecars/laya/serve.py` is one in about 200 lines.
+
+jev stays the default: it keeps the action gate, the supervisor and
+compaction, it answers wherever there is no Apple silicon, and it takes every
+call whose state the sidecar cannot read whole.
+
+Two rules carry the design, and neither is advice.
+
+A bar is not transferable. jev's bar was read off jev's rows, so a sidecar
+decides NOTHING when it is configured: it answers the triage and routing
+questions beside every turn captain was already unsure about, lands them on
+rows of its own stamped with its host, costs nobody anything, and is compared
+against what captain actually did. `captain jev shadow --backend <host>` reads
+those rows alone - the pooling check was right to refuse a mixed sample, but
+once two backends answer on purpose every point is mixed for good, so the rows
+had to become separable and not only detectable. The bar that report prints is
+what promotes the backend, and `CAPTAIN_SYSTEMONE_OPEN_FOR=triage=0.85` is the
+only way to promote one: there is no flag that skips naming the number.
+Underneath its own bar a promoted sidecar is dropped exactly as jev is.
+
+A truncated state is not a small state. laya's sequence builder CUTS a state
+that overruns `max_len` and answers anyway, so a 512-token backend handed the
+action gate's state would return a confident reading of two thirds of a
+command - worse than no answer, and invisible. The sidecar therefore counts
+tokens and refuses with `400 max_tokens_exceeded`, the status the vendor
+already uses; captain estimates the size before dispatching and sends
+oversized calls to the backend that holds them; and `gate`, `supervise` and
+`keep` are not promotable at all, because the first two send the largest
+states captain produces and the third decides what compaction drops.
+
 ## M3 — Make execution dependable
 
 **User outcome:** parallel work produces reviewable changes and interruptions preserve progress.

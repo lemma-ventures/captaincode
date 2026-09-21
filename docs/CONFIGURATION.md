@@ -77,6 +77,11 @@ After edit: restart the brain so doctor and health report the new director. Use 
 | `CAPTAIN_TRIAGE_JEV_BELOW` | `0.9` | With jev configured, the heuristic confidence below which it is asked on its own: over the free-leg bar (`CAPTAIN_TRIAGE_CONF`) and under this, a sure jev answer replaces the heuristic and a miss keeps it, with no free-leg call. `0` closes the band (jev only under `CAPTAIN_TRIAGE_CONF`); `1` asks it on every triaged task. |
 | `CAPTAIN_JEV_SHADOW` | on when `TYPESAFE_API_KEY` is set (`0` disables) | Asks jev the **shadow** questions - the shape of the turn, which leg should take it, which running worker a `/btw` note concerns - beside the decisions captain already makes, and records the answers next to what captain did. Nothing is acted on. Off, the tier-1 call asks only class and domain and no call is made beside the director or a note. See [Shadow decisions](#shadow-decisions-reading-jevs-calibration). |
 | `CAPTAIN_JEV_SUPERVISE` | on when a decision leg is configured (`0` disables) | Samples each **running** worker on a slow interval and asks the decision leg four nouls about its floor state - is it stuck, is it on the wrong thing, does it need the user, is it departing from the repository's `AGENTS.md`. Recorded beside what the run turned out to be; **acted on by nothing**. `CAPTAIN_SUPERVISE_EVERY` (default `90s`, minimum `10s`) moves the interval. See [Shadow decisions](#shadow-decisions-reading-jevs-calibration). |
+| `CAPTAIN_SYSTEMONE_OPEN_URL` | unset | A System One-shaped endpoint that runs **beside** the primary backend rather than replacing it - a local sidecar (`sidecars/laya`). Not `CAPTAIN_SYSTEMONE_URL`, which swaps the decision leg out. Keyless: it is loopback. Unset, nothing about captain changes. See [A sidecar beside jev](#a-sidecar-beside-jev). |
+| `CAPTAIN_SYSTEMONE_OPEN_FOR` | unset (shadow only) | Promotes the sidecar, one capability at a time, each with the bar read off **its own** rows: `triage=0.85,route=0.9`. Unset, the sidecar answers beside captain's choices and decides nothing. Only `triage` and `route` are promotable; `gate`, `supervise` and `keep` stay on the primary and an entry naming them is refused out loud at startup. Nothing acts on a System One answer to the route points yet, so promoting `route` names the backend that would answer them and changes no behaviour today. |
+| `CAPTAIN_SYSTEMONE_OPEN_CONTEXT` | `512` | What the sidecar reads in one call - instructions, options and state together. laya's default checkpoint holds 512 and its multilingual and typed-decisions checkpoints hold 1,024. A call whose state overruns this goes to the primary instead, because laya truncates an oversized state and answers anyway. |
+| `CAPTAIN_SYSTEMONE_OPEN_MODEL` | `laya-mlx` | The model id the sidecar is asked for. It answers with what actually served, which is the figure the shadow row carries. |
+| `CAPTAIN_SYSTEMONE_OPEN_TIMEOUT` | `2s` | Bounds one sidecar call. A local answer is ~13ms; two seconds is not a budget, it is the point past which the thing is wedged and triage stops waiting. |
 | `CAPTAIN_ACTION_GATE` | `shadow` | The action gate at the tool boundary: the decision leg screens what a worker is about to do, because a headless fleet has nobody to answer an approval prompt. `shadow` records every screening to `~/.captaincode/gate.log` and allows everything; `enforce` refuses an action whose risk reaches `CAPTAIN_GATE_BAR`; `off` screens nothing. An unrecognised value reads as `shadow`, so a typo cannot turn enforcement on. **With no decision leg configured nothing is screened, no call is made and no tool call waits on one.** See [The action gate](#the-action-gate). |
 | `CAPTAIN_GATE_BAR` | `0.9` | The risk at which `CAPTAIN_ACTION_GATE=enforce` refuses. Choose it from `captain gate --report`, not from taste. |
 | `CAPTAIN_OUTCOME_SETTLE` | `24h` | How long a task whose checks all passed waits before the checks alone accept it. Inside the window it stays `pending`: "the director graded it acceptable three seconds ago" is not acceptance, and a day of silence from the person who asked for the work is the weakest honest evidence that it stood. A **failed** check rejects at once and does not wait. See [Acceptance evidence](#acceptance-evidence-what-settles-an-outcome). |
@@ -139,6 +144,64 @@ point's rows came from more than one - `jev-latest` is an alias that moves
 under the record, and an open re-implementation is a different model
 entirely. Pin the model (`CAPTAIN_JEV_MODEL`) and the backend before reading
 a bar off a calibration.
+
+#### A sidecar beside jev
+
+`CAPTAIN_SYSTEMONE_URL` replaces the decision leg. That is the right shape
+when there is no key and the wrong one for the case that turned up:
+[laya-mlx](https://github.com/mizorewww/laya-mlx) is an open MLX port of the
+Laya typed-decision models that answers a short question in **7-14ms on Apple
+silicon for nothing**, in the same wire shape, and holds **512 tokens** (1,024
+on two of its checkpoints). jev is slower, costs $0.042/M input, holds 32k and
+runs wherever there is a key. Neither replaces the other.
+
+So `CAPTAIN_SYSTEMONE_OPEN_URL` names a backend that runs *beside* the primary
+one. `sidecars/laya/serve.py` is one, in about 200 lines:
+
+```bash
+pip install laya-mlx                          # Apple silicon, macOS 14+, not a captain dependency
+python3 sidecars/laya/serve.py --port 8181
+
+# ~/.config/captain/env
+CAPTAIN_SYSTEMONE_OPEN_URL=http://127.0.0.1:8181
+```
+
+jev stays the default. It keeps the action gate, the supervisor and
+compaction, it keeps every call whose state the sidecar cannot hold, and it is
+what runs where there is no Apple silicon.
+
+**The sidecar decides nothing until you say what it earned.** Configured, it
+answers the triage and routing questions beside every turn captain was already
+unsure about - the band under `CAPTAIN_TRIAGE_JEV_BELOW`, where a decision was
+going to be made either way - and its answers land on rows of their own,
+stamped with its host, compared against what captain actually did, charged to
+nobody. Read them alone:
+
+```bash
+captain jev conform --open                        # is it broken? (exit code speaks for triage and route)
+captain jev shadow --backend 127.0.0.1:8181       # its agreement, by confidence, and its own bar
+captain jev shadow                                # names every backend that answered, and declines to pool them
+```
+
+When that report prints a bar for a point, promote it with that number:
+
+```bash
+CAPTAIN_SYSTEMONE_OPEN_FOR=triage=0.85
+```
+
+The number is the promotion. There is no way to promote a backend without
+stating the bar you read off its own calibration, jev's bar is never available
+to it, and a promoted sidecar that answers under its own bar is dropped
+exactly as jev would be - the heuristic stands and nothing else is called.
+
+Two things are enforced rather than advised. `gate`, `supervise` and `keep`
+are not promotable: the first two send the largest states captain produces and
+being wrong there means a destructive command screened on part of its text,
+and the third decides what compaction drops. And because laya's sequence
+builder **cuts** an oversized state and answers anyway, the sidecar counts
+tokens and refuses with `400 max_tokens_exceeded` rather than answering about
+two thirds of a command, while captain checks the size first and routes
+oversized calls to the backend that holds them.
 
 ### The action gate
 

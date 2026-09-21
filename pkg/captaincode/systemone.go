@@ -123,6 +123,14 @@ type SystemOneClient struct {
 	KeySource string       // where the key came from - the variable's name or a file path, never the key
 	Model     string       // alias or versioned id; "" → jev-latest
 	HTTP      *http.Client // nil → a 20s-timeout client
+	// ContextTokens is what this backend reads in one call - instructions,
+	// options and state together - or 0 when nothing is known to bound it.
+	// It exists because an open backend may silently TRUNCATE an oversized
+	// state and answer anyway, where the vendor refuses with 400
+	// max_tokens_exceeded; a confident answer about two thirds of a command
+	// is worse than no answer, so a call is routed to a backend that can read
+	// the whole of it (Holds, systemone_open.go).
+	ContextTokens int
 }
 
 // SystemOneKey finds the jev key the way aaKey finds the Artificial Analysis
@@ -184,7 +192,7 @@ func SystemOneFromEnv() *SystemOneClient {
 		}
 		return &SystemOneClient{BaseURL: base, KeySource: SystemOneURLEnv, Model: jevModelPin()}
 	}
-	c := &SystemOneClient{BaseURL: systemOneURL, APIKey: key, KeySource: source, Model: ModelID(LegJev)}
+	c := &SystemOneClient{BaseURL: systemOneURL, APIKey: key, KeySource: source, Model: ModelID(LegJev), ContextTokens: SystemOneContextTokens}
 	c.Model = jevModelPin()
 	if base != "" {
 		c.BaseURL = base

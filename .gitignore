@@ -16,3 +16,6 @@ plugin/*.log
 
 # screenshots and scratch the user drops in for a conversation, never product
 gitignore/
+
+# The sidecar is Python; running it in the checkout leaves bytecode behind.
+__pycache__/

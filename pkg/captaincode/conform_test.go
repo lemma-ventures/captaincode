@@ -106,8 +106,8 @@ func TestConformSuiteCoversEveryCapabilityCaptainAsksAbout(t *testing.T) {
 }
 
 // A backend that answers everything right is usable; one that misses a single
-// case is reported as not usable for that capability, because sixteen obvious
-// questions do not support a percentage.
+// case is reported as not usable for that capability, because a short suite of
+// obvious questions does not support a percentage.
 func TestConformReportsUsabilityPerCapability(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

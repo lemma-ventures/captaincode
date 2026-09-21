@@ -310,3 +310,25 @@ func TestShadowCalibrationCarriesTheWidthOfTheMenuJevWasAsked(t *testing.T) {
 	out = FormatShadowCalibration(ShadowCalibration([]Decision{{TaskID: "t3", Shadow: shape}}, nil, nil), 0.9, 20)
 	assert.NotContains(t, strings.Split(out, "leg")[0], "over menus of", "only a menu point is asked over a menu")
 }
+
+// Two backends answering on purpose is the normal state once a sidecar runs
+// beside the primary, so the rows have to be separable by the very name the
+// report prints - including the name given to rows written before a backend
+// was recorded, which an operator will otherwise type and read as "nothing
+// was ever recorded".
+func TestShadowRowsSplitByTheBackendNameTheReportPrints(t *testing.T) {
+	vendor := shadowLeg("cursor", 0.95, "cursor", true)
+	vendor.Backend = "typesafe"
+	sidecar := shadowLeg("grok", 0.8, "cursor", false)
+	sidecar.Backend = "127.0.0.1:8181"
+	decisions := []Decision{{TaskID: "t1", Shadow: vendor}, {TaskID: "t2", Shadow: shadowLeg("glm", 0.7, "glm", true)}}
+	rows := []ShadowRecord{{Point: PointClass, TaskID: "t1", Shadow: *sidecar}}
+
+	counts := ShadowBackends(decisions, rows)
+	assert.Equal(t, map[string]int{"typesafe": 1, "127.0.0.1:8181": 1, ShadowUnstamped: 1}, counts)
+
+	assert.Len(t, DecisionsFromBackend(decisions, "typesafe"), 1)
+	assert.Empty(t, ShadowsFromBackend(rows, "typesafe"), "the vendor's name never collects a sidecar's row")
+	assert.Len(t, ShadowsFromBackend(rows, "127.0.0.1:8181"), 1)
+	assert.Len(t, DecisionsFromBackend(decisions, ShadowUnstamped), 1, "every name the report offers reads back")
+}

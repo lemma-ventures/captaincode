@@ -66,8 +66,14 @@ func cmdBrain(args []string) {
 		}
 	}
 	if jevTriageEnabled() {
-		if b.jev = captaincode.SystemOneFromEnv(); b.jev != nil {
+		b.jevBackends = captaincode.SystemOneBackendsFromEnv()
+		if b.jev = b.jevBackends.Primary; b.jev != nil {
 			fmt.Printf("captain brain: triage tier 1 asks jev (%s) first, the free-leg classify is the fallback (CAPTAIN_TRIAGE_JEV=0 turns it off)\n", b.jev.Model)
+		}
+		if b.jevBackends.Open != nil {
+			for _, line := range b.jevBackends.Describe() {
+				fmt.Println("captain brain: " + line)
+			}
 		}
 	}
 	var err error
@@ -284,6 +290,11 @@ type brain struct {
 	// jev is triage tier 1 on the decision leg (TypeSafe System One) when
 	// TYPESAFE_API_KEY is set and CAPTAIN_TRIAGE_JEV is not 0; nil otherwise.
 	jev *captaincode.SystemOneClient
+	// jevBackends is jev beside any open sidecar, with what the sidecar has
+	// been promoted to decide (pkg systemone_open.go). b.jev is its primary:
+	// the gate and the supervisor build their own clients from the same
+	// environment and so never reach the sidecar at all.
+	jevBackends captaincode.SystemOneBackends
 	// compileFn stubs the workflow compile (director skill call) in tests.
 	compileFn func(intent, convo string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats) (captaincode.CompiledWorkflow, error)
 	// reviewFn stubs the workflow review call in tests; nil → doAssessMulti.
@@ -1069,6 +1080,19 @@ func (b *brain) mintRouteTurn(task string) string {
 	b.routeTurns[key] = routeTurn{id: id, at: time.Now()}
 	b.ledger.RecordCharge(captaincode.Charge{ID: id, TaskID: id, Kind: captaincode.KindTask, Label: key})
 	return id
+}
+
+// routeTurnID is this turn's identity if something already minted one, and ""
+// otherwise. A free call joins the turn when there is a turn to join and
+// leaves no row behind when there is not - minting one here would put an
+// empty task on the ledger for a turn that asked nothing that cost anything.
+func (b *brain) routeTurnID(task string) string {
+	b.rtmu.Lock()
+	defer b.rtmu.Unlock()
+	if t, ok := b.routeTurns[truncate(task, 120)]; ok && time.Since(t.at) <= routeTurnTTL {
+		return t.id
+	}
+	return ""
 }
 
 // adoptRouteTurn consumes the identity routing minted for this task. It is
@@ -2027,6 +2051,10 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	// What the decision leg answered at the same points, when it was asked,
 	// and who actually settled the class (brain_shadow.go).
 	var shadow *captaincode.Shadow
+	// openCh: the open sidecar answering the same questions beside captain's
+	// own choice, on a row of its own (brain_shadow.go). Started where triage
+	// is settled, joined at whichever exit the route takes.
+	var openCh <-chan shadowReply
 	classBy := byHeuristic
 
 	// ---- Triage gate (usage analysis I1/I3, 2026-08-01) -------------------
@@ -2040,6 +2068,10 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	if triageEnabled() && req.Forced == "" && req.Prefer == "" &&
 		len(captaincode.NamedAssignees(req.Task)) == 0 && !captaincode.TaskNeedsVision(req.Task) {
 		tr := captaincode.TriageTask(req.Task)
+		// The heuristic's own confidence, before any tier-1 answer replaces
+		// it: what decides whether this turn was in the band at all, and so
+		// whether it is a turn worth asking a shadow backend about.
+		heuristicConf := tr.Confidence
 		if !tr.NeedsDirector() {
 			switch {
 			case tr.Confidence < triageConfidence():
@@ -2052,7 +2084,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				if err == nil {
 					tr, classBy = refineTriage(tr, r), by
 				}
-			case b.jev != nil && tr.Confidence < jevConsultBelow():
+			case b.jevDecidesTriage(req.Task) && tr.Confidence < jevConsultBelow():
 				// The band: sure enough to keep the ~5s free-leg classify out,
 				// not so sure a ~300ms calibrated answer is not worth asking
 				// for. A miss keeps the heuristic; nothing else is called.
@@ -2063,6 +2095,12 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				} else {
 					fmt.Printf("captain brain: %v - heuristic stands\n", err)
 				}
+			}
+			if heuristicConf < jevConsultBelow() {
+				// The band, read off the heuristic rather than off whatever
+				// replaced it: a turn captain was going to think about anyway
+				// is a turn worth asking a shadow backend about.
+				openCh = b.openBeside(req.Task, tr.Domain, nil)
 			}
 		}
 		if !tr.NeedsDirector() {
@@ -2088,6 +2126,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				}
 				dec := b.valueDecision(tr, leg, rows, totalMs, rationale)
 				stampShadow(&dec, shadow, classBy)
+				b.recordOpenShadow(req.Task, dec, openCh, classBy)
 				b.recordDecision(req.Task, dec)
 				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: string(leg), Model: captaincode.ModelID(leg), Rationale: rationale, At: time.Now().Format("15:04:05")}
 				fmt.Printf("captain brain: routed %q → class=%s leg=%s in %dms [triage %s]\n", b.last.Task, tr.Class, leg, totalMs, tr.Why)
@@ -2196,6 +2235,12 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			// The decision leg answers the same questions while the director
 			// plans (brain_shadow.go): the comparison costs no latency.
 			shadowCh := b.shadowBeside(req.Task, managerOrder, shadow)
+			// And the sidecar, over the same menu. These are the rows that
+			// say whether it could rank legs: the director is about to answer
+			// the same question in prose, over options it was really given.
+			if openCh == nil {
+				openCh = b.openBeside(req.Task, captaincode.TriageTask(req.Task).Domain, managerOrder)
+			}
 			p, err := b.plan(req.ws, req.Task, "", req.Prefer, managerOrder, b.ledger.Stats(), b.ledger.TeamStats(), fanOut)
 			b.planHints = nil
 			directorMs = time.Since(td).Milliseconds()
@@ -2216,6 +2261,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, "", managerOrder, totalMs, rationale)
 				dec.Shape, dec.Workers = captaincode.ShapeTeam, planLegs(rr.Plan)
 				stampShadow(&dec, shadow, classBy)
+				b.recordOpenShadow(req.Task, dec, openCh, classBy)
 				b.recordDecision(req.Task, dec)
 				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: "team", Model: "team",
 					Rationale: rationale, At: time.Now().Format("15:04:05")}
@@ -2279,6 +2325,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	// reached the menu and why.
 	dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, leg, decMenu, totalMs, rationale)
 	stampShadow(&dec, shadow, classBy)
+	b.recordOpenShadow(req.Task, dec, openCh, classBy)
 	b.recordDecision(req.Task, dec)
 	fmt.Printf("captain brain: routed %q → class=%s leg=%s (%s) in %dms [director %dms] - %s\n",
 		b.last.Task, class, leg, model, totalMs, directorMs, rationale)
@@ -2490,19 +2537,57 @@ var errJevUnsure = errors.New("jev unsure")
 // comes back in every case, so an unsure or failed call is on the record.
 // Charged either way. Caller holds b.mu (the charge hook expects it).
 func (b *brain) classifyJev(task string, d captaincode.Domain, onCall captaincode.CallHook) (captaincode.TriageResult, *captaincode.Shadow, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), jevTimeout)
-	tr, sh, res, err := captaincode.TriageWithJev(ctx, b.jev, task, b.jevOptions(d, nil))
+	// Which backend may decide this one, and at what bar. Normally the
+	// primary at its tuned bar; a promoted sidecar at the bar IT earned, on
+	// the states it can hold whole. The bar travels with the backend because
+	// it was never a property of the question.
+	c, bar, why := b.triageDecider(task)
+	if c == nil {
+		return captaincode.TriageResult{}, nil, fmt.Errorf("%w (no backend may decide triage)", errJevUnsure)
+	}
+	if bar == 0 {
+		bar = jevConfidence()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), jevAskTimeout(c))
+	tr, sh, res, err := captaincode.TriageWithJev(ctx, c, task, b.jevOptions(d, nil))
 	cancel()
-	if onCall != nil {
+	if onCall != nil && !b.jevFree(c) {
 		onCall(captaincode.LegJev, "classify", res, err)
 	}
 	if err != nil {
-		return captaincode.TriageResult{}, sh, fmt.Errorf("jev classify failed (%w)", err)
+		return captaincode.TriageResult{}, sh, fmt.Errorf("jev classify failed on %s (%w)", c.Backend(), err)
 	}
-	if tr.Confidence < jevConfidence() {
-		return tr, sh, fmt.Errorf("%w (%s)", errJevUnsure, tr.Why)
+	if tr.Confidence < bar {
+		return tr, sh, fmt.Errorf("%w (%s, bar %.2f%s)", errJevUnsure, tr.Why, bar, whySuffix(why))
 	}
 	return tr, sh, nil
+}
+
+// whySuffix appends a decider's rationale to a message when it had one.
+func whySuffix(why string) string {
+	if why == "" {
+		return ""
+	}
+	return " - " + why
+}
+
+// jevAskTimeout is how long one call may take. The primary crosses the
+// internet and gets jevTimeout; a sidecar on loopback answers in about 13ms
+// and carries its own, because two seconds there is not a budget, it is the
+// point past which the thing is wedged.
+func jevAskTimeout(c *captaincode.SystemOneClient) time.Duration {
+	if c != nil && c.HTTP != nil && c.HTTP.Timeout > 0 {
+		return c.HTTP.Timeout
+	}
+	return jevTimeout
+}
+
+// jevFree says a call cost nothing, so no charge row is written for it. The
+// sidecar is a local process answering from weights already on the disk;
+// pricing it at the registry's per-token rate would put money on the ledger
+// that nobody was billed, which is the one thing the ledger is for.
+func (b *brain) jevFree(c *captaincode.SystemOneClient) bool {
+	return c != nil && c == b.jevBackends.Open
 }
 
 // refineTriage folds a tier-1 answer into the heuristic result: class and
