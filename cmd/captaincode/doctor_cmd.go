@@ -31,6 +31,10 @@ type doctorOpts struct {
 	runVersion     func(string, ...string) ([]byte, error) // stubbed in tests
 	runHelp        func(string, ...string) ([]byte, error) // stubbed in tests (capability probes)
 	self           captaincode.SelfProbe                   // captain's own build identity (ROADMAP M1.1)
+	// serve is what a running opencode would report. nil = probe the live
+	// serve; non-nil = use as-is (tests pass &ServeRoster{} so a local brain
+	// cannot flip a leg to ready).
+	serve *captaincode.ServeRoster
 }
 
 // legTool maps a transport to the binary that drives it and how to get it.
@@ -147,6 +151,12 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 
 	// Config files. Their absence is a fixable state, not an error.
 	cfg, cfgErr := os.ReadFile(o.opencodeConfig)
+	serve := captaincode.ServeRoster{}
+	if o.serve != nil {
+		serve = *o.serve
+	} else {
+		serve = captaincode.FetchServeRoster(captaincode.OpencodeBaseURL())
+	}
 	// One readiness verdict per leg, shared with the router and the director
 	// picker (pkg/captaincode/readiness.go): doctor reports what a dispatch
 	// would actually find, including what a running serve says it can run.
@@ -154,7 +164,7 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		LookPath: o.lookPath,
 		Config:   cfg,
 		Authed:   captaincode.AuthedProviders(o.opencodeAuth),
-		Serve:    captaincode.FetchServeRoster(captaincode.OpencodeBaseURL()),
+		Serve:    serve,
 		Login:    captaincode.CLILoginState,
 	}
 	fmt.Fprintf(w, "config     opencode %s\n", presence(o.opencodeConfig, cfgErr == nil, "run `captain init`"))
