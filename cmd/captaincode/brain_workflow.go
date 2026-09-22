@@ -336,6 +336,7 @@ func (b *brain) workflowStagePrompt(ws captaincode.Workspace, conversation strin
 	sb.WriteString("The conversation is authoritative for the user's intent, wording and style. Stay inside your assignment's scope; another worker covers the rest.")
 	sb.WriteString(workerContext(ws))
 	sb.WriteString(deliverableContract)
+	sb.WriteString(callbackContract(ws, leg))
 	return sb.String()
 }
 

@@ -98,7 +98,8 @@ func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief s
 		"\nYour assignment: " + brief +
 		"\nThe conversation above is authoritative: the user's own words, files, and style take precedence over any paraphrase in the assignment. Stay inside your assignment's scope; another worker covers the rest." +
 		workerContext(ws) +
-		deliverableContract
+		deliverableContract +
+		callbackContract(ws, leg)
 }
 
 // skills, when the stage staged a shelf, adds M3.9's second question to the

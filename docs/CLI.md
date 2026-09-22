@@ -68,6 +68,12 @@ TUI has a separate `/…` control surface; this page is the shell CLI.
 | `captain euclid status` | Which brains are read/written |
 | `captain legs reopen <id>` | Lift a leg's cooldown now (credits topped up, an outage over) - no restart |
 | `captain send [--cwd <dir>] [--leg <leg>] [--from <who>] "<prompt>"` | Hand a prompt to the TUI open in a folder: its sidebar submits it into the session as if typed (a watcher, a cron, a script can drive a TUI) |
+
+Every worker prompt names this command: a worker is one turn, so anything it
+leaves running (a watcher, a test gate, a long benchmark) cannot report by
+itself. The contract tells it to make that job's last step
+`captain send --cwd <dir> --from <leg> "<what landed>"` rather than promise to
+report later. `CAPTAIN_WORKER_CALLBACK=0` drops the line.
 | `captain euclid share [--apply]` | Make the repo brain shareable: developer brains local, `notes/`, the fold workflow |
 | `captain euclid fold [--dry-run]` | Fold promoted notes into the shared brain (what CI runs on main) |
 
