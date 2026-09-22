@@ -52,6 +52,7 @@ func TestDoctorReportsBothBrains(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		captainEnv:     filepath.Join(t.TempDir(), "env"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 	})
 	out := sb.String()
 	assert.Contains(t, out, "memory  main", "doctor checks the main brain")

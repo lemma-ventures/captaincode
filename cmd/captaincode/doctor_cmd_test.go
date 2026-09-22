@@ -22,6 +22,26 @@ func fakeBin(t *testing.T, dir, name string) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755))
 }
 
+// noServe keeps doctor from probing a local opencode brain. Without it, a
+// running serve on the developer's machine flips openrouter/nim/hf legs to
+// ready and the "blocked without credential" assertions fail.
+func noServe() *captaincode.ServeRoster {
+	return &captaincode.ServeRoster{}
+}
+
+// clearProviderKeys drops every key readiness would treat as a credential, so
+// a developer's shell cannot make a leg ready that the test config left out.
+func clearProviderKeys(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"XAI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+		"OPENROUTER_API_KEY", "HF_TOKEN", "NVIDIA_API_KEY", "GEMINI_API_KEY",
+		"TYPESAFE_API_KEY",
+	} {
+		t.Setenv(k, "")
+	}
+}
+
 // opencodeConfigWith writes a minimal opencode config declaring the given
 // providers WITH a key each, which is what makes an opencode leg runnable.
 // A block alone is not enough and must not be: `captain init` writes an xai
@@ -69,12 +89,13 @@ func TestDoctorRefusesToCallAKeylessProviderReady(t *testing.T) {
 	fakeBin(t, dir, "opencode")
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "")
-	t.Setenv("XAI_API_KEY", "")
+	clearProviderKeys(t)
 
 	var sb strings.Builder
 	runDoctor(&sb, doctorOpts{
 		opencodeConfig: opencodeConfigWithBareBlocks(t, "xai"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 	})
 	out := sb.String()
 
@@ -87,12 +108,14 @@ func TestDoctorAcceptsAKeyFromTheEnvironment(t *testing.T) {
 	fakeBin(t, dir, "opencode")
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
 	t.Setenv("XAI_API_KEY", "xai-live-key")
 
 	var sb strings.Builder
 	runDoctor(&sb, doctorOpts{
 		opencodeConfig: opencodeConfigWithBareBlocks(t, "xai"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 	})
 
 	assert.Regexp(t, `(?m)^\s*✓\s+grok\b`, sb.String(), "the key opencode would interpolate counts as one")
@@ -105,12 +128,14 @@ func TestDoctorSeparatesReadyLegsFromBlockedOnes(t *testing.T) {
 	// no `codex`, no `cursor-agent` on this machine
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
 
 	var sb strings.Builder
 	ready := runDoctor(&sb, doctorOpts{
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		captainEnv:     filepath.Join(t.TempDir(), "env"), // absent
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 	})
 	out := sb.String()
 
@@ -132,11 +157,13 @@ func TestDoctorMarksLegsExcludedByCaptainLegs(t *testing.T) {
 	fakeBin(t, dir, "claude")
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "grok,claude")
+	clearProviderKeys(t)
 
 	var sb strings.Builder
 	runDoctor(&sb, doctorOpts{
 		opencodeConfig: opencodeConfigWith(t, "xai", "nim", "openrouter"),
 		brain:          func() (string, error) { return "ok · idle", nil },
+		serve:          noServe(),
 	})
 	out := sb.String()
 
@@ -150,11 +177,13 @@ func TestDoctorReportsAHealthyBrain(t *testing.T) {
 	fakeBin(t, dir, "opencode")
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
 
 	var sb strings.Builder
 	runDoctor(&sb, doctorOpts{
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		brain:          func() (string, error) { return "ok · director claude · idle", nil },
+		serve:          noServe(),
 	})
 
 	assert.Contains(t, sb.String(), "director claude", "the live brain's own summary is shown verbatim")
@@ -163,11 +192,13 @@ func TestDoctorReportsAHealthyBrain(t *testing.T) {
 func TestDoctorCountsNothingReadyOnABareMachine(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no agent CLI at all
 	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
 
 	var sb strings.Builder
 	ready := runDoctor(&sb, doctorOpts{
 		opencodeConfig: filepath.Join(t.TempDir(), "missing.jsonc"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 	})
 
 	assert.Zero(t, ready, "nothing is runnable, and doctor says so rather than pretending")
@@ -179,6 +210,7 @@ func TestDoctorAcceptsProvidersFromTheOpencodeAuthStore(t *testing.T) {
 	fakeBin(t, dir, "opencode")
 	t.Setenv("PATH", dir)
 	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
 
 	// xai/openai legs authenticate through `opencode auth login`, which writes
 	// the auth store - they never appear in opencode.jsonc. Reporting them as
@@ -191,6 +223,7 @@ func TestDoctorAcceptsProvidersFromTheOpencodeAuthStore(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t), // no providers declared
 		opencodeAuth:   auth,
 		brain:          func() (string, error) { return "ok · idle", nil },
+		serve:          noServe(),
 	})
 	out := sb.String()
 
@@ -223,6 +256,7 @@ func TestDoctorReportsThePinnedAdapterVersions(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		captainEnv:     filepath.Join(t.TempDir(), "env"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 		runVersion: func(path string, _ ...string) ([]byte, error) {
 			return []byte(versions[filepath.Base(path)]), nil
 		},
@@ -261,6 +295,7 @@ func TestDoctorNamesItsOwnBuildAndTheTerminalFork(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		captainEnv:     filepath.Join(t.TempDir(), "env"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 		runVersion:     func(string, ...string) ([]byte, error) { return []byte("1.3.14"), nil },
 		self: captaincode.SelfProbe{
 			SourceDir:  src,
@@ -302,6 +337,7 @@ func TestDoctorReportsCapabilityProbes(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t, "xai"),
 		captainEnv:     filepath.Join(t.TempDir(), "env"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 		runVersion:     func(string, ...string) ([]byte, error) { return []byte("1.0.0"), nil },
 		runHelp: func(path string, _ ...string) ([]byte, error) {
 			switch filepath.Base(path) {
@@ -342,6 +378,7 @@ func TestDoctorReportsMissingCapabilityFlag(t *testing.T) {
 		opencodeConfig: opencodeConfigWith(t),
 		captainEnv:     filepath.Join(t.TempDir(), "env"),
 		brain:          func() (string, error) { return "", errors.New("connection refused") },
+		serve:          noServe(),
 		runVersion:     func(string, ...string) ([]byte, error) { return []byte("2.1.270"), nil },
 		runHelp: func(_ string, _ ...string) ([]byte, error) {
 			return []byte("--print"), nil // no --permission-mode
@@ -366,14 +403,14 @@ func TestDoctorReportsTheDecisionLegByItsKey(t *testing.T) {
 	t.Setenv(captaincode.SystemOneKeyEnv, "")
 	var sb strings.Builder
 	runDoctor(&sb, doctorOpts{opencodeConfig: opencodeConfigWith(t, "openrouter"), captainEnv: envPath,
-		brain: func() (string, error) { return "ok · idle", nil }})
+		brain: func() (string, error) { return "ok · idle", nil }, serve: noServe()})
 	assert.Regexp(t, `(?m)^\s*✗\s+jev\b.*TYPESAFE_API_KEY not set`, sb.String())
 	assert.Contains(t, sb.String(), envPath, "…and where to put it")
 
 	t.Setenv(captaincode.SystemOneKeyEnv, "k")
 	sb.Reset()
 	runDoctor(&sb, doctorOpts{opencodeConfig: opencodeConfigWith(t, "openrouter"), captainEnv: envPath,
-		brain: func() (string, error) { return "ok · idle", nil }})
+		brain: func() (string, error) { return "ok · idle", nil }, serve: noServe()})
 	assert.Regexp(t, `(?m)^\s*✓\s+jev\s+system-one\s+typesafe/jev-latest.*decision leg`, sb.String(),
 		"ready by its key, outside the worker allowlist, and named for what it is")
 }
