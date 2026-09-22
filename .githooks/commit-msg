@@ -1,0 +1,32 @@
+#!/bin/sh
+# Strip agent co-author trailers before the commit is written.
+#
+# Cursor's agent and Claude Code add `Co-authored-by: Cursor
+# <cursoragent@cursor.com>` / `Co-Authored-By: Claude Opus 5
+# <noreply@anthropic.com>` to commits they make. GitHub maps those addresses
+# to real accounts and lists them in the repository's Contributors panel,
+# where they outnumbered the humans who maintain the project (2026-09-22:
+# @cursoragent and @claude beside the two people). The work is the author's;
+# the tool used to write it is not a contributor.
+#
+# Dropped: a trailer whose ADDRESS is an agent's, or whose NAME is exactly
+# the tool ("Cursor", "Cursor Agent", "Claude", "Claude Code", "Claude
+# <model>"). A human co-author and every other trailer are untouched.
+#
+# Install once per clone: git config core.hooksPath .githooks
+[ -n "$1" ] || exit 0
+
+agent='^[[:space:]]*co-authored-by:[[:space:]]*([^<]*<[[:space:]]*(cursoragent@cursor\.com|cursor@cursor\.com|noreply@anthropic\.com)[[:space:]]*>|(cursor([[:space:]]+agent)?|claude([[:space:]]+(code|opus|sonnet|haiku|fable)[^<]*)?)[[:space:]]*<)'
+
+tmp="$1.captain"
+if grep -viE "$agent" "$1" > "$tmp"; then
+	if cmp -s "$1" "$tmp"; then
+		rm -f "$tmp"
+	else
+		mv "$tmp" "$1"
+		echo "captain: dropped an agent co-author trailer (.githooks/commit-msg)" >&2
+	fi
+else
+	rm -f "$tmp" # grep found nothing to keep, or failed: leave the message alone
+fi
+exit 0

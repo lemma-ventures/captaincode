@@ -26,7 +26,12 @@ requires Captain Code to hold credentials of its own.
 3. `go test ./...` must be green. `gofmt` your code.
 4. Sign off your commits: `git commit -s` adds the `Signed-off-by` line that
    certifies the [DCO](https://developercertificate.org/). We do not use a CLA.
-5. Explain *why* in the commit message. The history here is the design record;
+5. Run `git config core.hooksPath .githooks` once per clone. The `commit-msg`
+   hook drops the co-author trailers coding agents add to their own commits
+   (`Co-authored-by: Cursor …`, `Co-Authored-By: Claude …`): GitHub maps those
+   addresses to accounts and lists them among the repository's contributors,
+   and a tool is not a contributor. Human co-authors are untouched.
+6. Explain *why* in the commit message. The history here is the design record;
    a message that only restates the diff is a missed opportunity.
 
 ## Style
