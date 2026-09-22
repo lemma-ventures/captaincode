@@ -357,10 +357,15 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 
 	for iter := 1; iter <= iters; iter++ {
 		rung := captaincode.StartRung(class, prefer)
-		order := captaincode.Pick(rung, ledger.Cooldowns, time.Now())
-		managerOrder := captaincode.Pick(len(captaincode.Rungs)-1, ledger.Cooldowns, time.Now())
+		// Readiness before the try-order, not after a failed dispatch: a leg
+		// with no binary, no login or no credential costs a full round trip
+		// to rule out, and thirteen of them cost ninety seconds (2026-09-22).
+		// A FORCED leg is exempt - an explicit request outranks the verdict,
+		// as it does a cooldown.
+		order := runnableOnly(captaincode.Pick(rung, ledger.Cooldowns, time.Now()), iter == 1)
+		managerOrder := runnableOnly(captaincode.Pick(len(captaincode.Rungs)-1, ledger.Cooldowns, time.Now()), false)
 		if len(order) == 0 {
-			fatal(errors.New("all legs cooling down - see `captain quota`"))
+			fatal(errors.New("no leg can run here: every one is cooling down or unconfigured - `captain doctor` says which, and why"))
 		}
 		reason := fmt.Sprintf("class=%s prefer=%s rung=%d iter=%d ladder", class, orDash(prefer), rung, iter)
 
@@ -868,6 +873,28 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return captaincode.CutHead(s, n) + "…"
+}
+
+// runnableOnly drops the legs that cannot run on this machine and, when
+// announce is set, says so once by name. The verdicts are the ones `captain
+// doctor` prints (pkg/captaincode/readiness.go), so a leg is never silently
+// skipped here and reported ready there. An empty result is the caller's to
+// report: it means the reasons, not this list, are the answer.
+func runnableOnly(order []captaincode.Leg, announce bool) []captaincode.Leg {
+	var out []captaincode.Leg
+	var skipped []string
+	for _, l := range order {
+		if r := captaincode.LegReady(l); !r.OK {
+			skipped = append(skipped, string(l))
+			continue
+		}
+		out = append(out, l)
+	}
+	if announce && len(skipped) > 0 && len(out) > 0 {
+		fmt.Printf("captain: skipping %d leg(s) that cannot run here: %s (`captain doctor` says why)\n",
+			len(skipped), strings.Join(skipped, ", "))
+	}
+	return out
 }
 
 // legFailure is one leg's refusal, kept so the ladder can report every cause

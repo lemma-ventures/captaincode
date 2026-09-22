@@ -126,7 +126,7 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		o.opencodeConfig = captaincode.OpencodeConfigPath()
 	}
 	if o.opencodeAuth == "" {
-		o.opencodeAuth = opencodeAuthPath()
+		o.opencodeAuth = captaincode.OpencodeAuthPath()
 	}
 	if o.captainEnv == "" {
 		o.captainEnv = captaincode.CaptainEnvPath()
@@ -147,7 +147,16 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 
 	// Config files. Their absence is a fixable state, not an error.
 	cfg, cfgErr := os.ReadFile(o.opencodeConfig)
-	authed := authedProviders(o.opencodeAuth)
+	// One readiness verdict per leg, shared with the router and the director
+	// picker (pkg/captaincode/readiness.go): doctor reports what a dispatch
+	// would actually find, including what a running serve says it can run.
+	readiness := captaincode.ReadinessInputs{
+		LookPath: o.lookPath,
+		Config:   cfg,
+		Authed:   captaincode.AuthedProviders(o.opencodeAuth),
+		Serve:    captaincode.FetchServeRoster(captaincode.OpencodeBaseURL()),
+		Login:    captaincode.CLILoginState,
+	}
 	fmt.Fprintf(w, "config     opencode %s\n", presence(o.opencodeConfig, cfgErr == nil, "run `captain init`"))
 	_, envErr := os.Stat(o.captainEnv)
 	fmt.Fprintf(w, "           captain  %s\n", presence(o.captainEnv, envErr == nil, "run `captain init`"))
@@ -314,11 +323,11 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 				mark, note = "✗", fmt.Sprintf("%s %s %s - %s", bin, st.Version, st.State, st.Detail)
 			} else if _, err := o.lookPath(bin); err != nil {
 				mark, note = "✗", fmt.Sprintf("%s not found - %s", bin, install)
-			} else if s.Transport == captaincode.TransportOpencode && !providerConfigured(cfg, authed, s.Provider) {
-				mark, note = "✗", fmt.Sprintf("provider %q has no credential - `opencode auth login` or add it to %s",
-					s.Provider, o.opencodeConfig)
-			} else if s.Provider == "huggingface" && os.Getenv("HF_TOKEN") == "" && !authed["huggingface"] {
-				mark, note = "✗", fmt.Sprintf("HF_TOKEN not set - add it to %s (token: https://huggingface.co/settings/tokens)", envPath)
+			} else if r := readiness.For(s.ID); !r.OK {
+				// The SAME verdict the router and the director act on: doctor
+				// printing its own opinion is what let it call nine legs ready
+				// that no dispatch could reach (2026-09-22).
+				mark, note = "✗", r.Reason
 			} else {
 				ready++
 			}
@@ -357,10 +366,8 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 			if st, ok := probed[bin]; ok && st.Blocked() {
 				break
 			}
-			if _, err := o.lookPath(bin); err == nil {
-				if s.Transport != captaincode.TransportOpencode || providerConfigured(cfg, authed, s.Provider) {
-					dirReady = true
-				}
+			if _, err := o.lookPath(bin); err == nil && readiness.For(s.ID).OK {
+				dirReady = true
 			}
 			break
 		}
@@ -377,54 +384,6 @@ func presence(path string, ok bool, fix string) string {
 		return path + " ✓"
 	}
 	return fmt.Sprintf("%s ✗ (%s)", path, fix)
-}
-
-// providerConfigured reports whether a leg's opencode provider can actually
-// authenticate: named in the config file, present in opencode's auth store
-// (`opencode auth login` writes there, and xai/openai OAuth legs appear ONLY
-// there), or built into opencode itself. Config parsing is deliberately loose -
-// the file is hand-edited JSONC and a doctor that dies on a stray comma helps
-// nobody.
-func providerConfigured(cfg []byte, authed map[string]bool, provider string) bool {
-	switch {
-	case provider == "": // CLI transports carry no opencode provider
-		return true
-	case provider == "opencode": // opencode's own hosted roster needs no credential block
-		return true
-	case authed[provider]:
-		return true
-	}
-	return strings.Contains(string(cfg), `"`+provider+`"`)
-}
-
-// opencodeAuthPath is where opencode stores provider credentials.
-func opencodeAuthPath() string {
-	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		return filepath.Join(d, "opencode", "auth.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".local", "share", "opencode", "auth.json")
-}
-
-// authedProviders lists the provider ids in opencode's auth store. Only the
-// KEYS are read - the credentials themselves are never loaded or logged.
-func authedProviders(path string) map[string]bool {
-	out := map[string]bool{}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return out
-	}
-	var store map[string]json.RawMessage
-	if json.Unmarshal(body, &store) != nil {
-		return out
-	}
-	for k := range store {
-		out[k] = true
-	}
-	return out
 }
 
 func cmdDoctor(args []string) {
