@@ -100,7 +100,16 @@ func (b *brain) switchDirector(word string) (captaincode.DirectorPick, string, e
 			return captaincode.DirectorPick{}, "", fmt.Errorf("%q is neither a leg (%s) nor a mode (frontier|quality|auto|reset)", word, strings.Join(captaincode.LegIDs(), ", "))
 		}
 		if !captaincode.DirectorCapable(leg) {
-			return captaincode.DirectorPick{}, "", fmt.Errorf("%s cannot direct: it runs as an agent with tools (codex exec / cursor-agent), and the director is a judge without them", leg)
+			// Say what the helm still is and what the nearest judge would
+			// be: a bare refusal left the user unsure whether anything had
+			// changed ("it doesn't say codex-cli is now used as director",
+			// 2026-09-22).
+			msg := fmt.Sprintf("%s cannot direct: it runs as an agent with tools (codex exec / cursor-agent), and the director is a judge without them.\nThe helm is unchanged: %s (%s).",
+				leg, b.effectiveDirector(), b.directorModeName())
+			if twin, ok := captaincode.JudgeTwin(leg); ok {
+				msg += fmt.Sprintf("\nNearest judge on the same credential: `/captain %s` - it directs as %s.", twin, captaincode.DirectorModelOf(twin))
+			}
+			return captaincode.DirectorPick{}, "", fmt.Errorf("%s", msg)
 		}
 		pick, _ := b.setDirectorMode(captaincode.DirectorFixed, leg)
 		fmt.Printf("captain brain: director switched to %s\n", leg)

@@ -122,6 +122,30 @@ func DirectorCandidates() []DirectorCandidate {
 	return out
 }
 
+// judgeTwins names, for each agent leg, the judge that runs the same
+// vendor's models on the same credential: codex exec is gpt-6-astra on the
+// ChatGPT subscription, and the codex leg directs as gpt-5.5 on that same
+// subscription with tools off. Cursor's Composer is served nowhere else, so
+// it has no twin. Used to answer "/captain codex-cli" with the nearest thing
+// that CAN direct instead of a flat refusal (2026-09-22).
+var judgeTwins = map[Leg]Leg{LegCodexCLI: LegCodex}
+
+// JudgeTwin returns the director-capable sibling of an agent leg.
+func JudgeTwin(l Leg) (Leg, bool) {
+	twin, ok := judgeTwins[l]
+	if !ok || !DirectorCapable(twin) {
+		return "", false
+	}
+	return twin, true
+}
+
+// DirectorModelOf is the model a leg would direct with, for messages that
+// name it ("codex directs as gpt-5.5").
+func DirectorModelOf(l Leg) string {
+	_, m := directorPerf(l)
+	return m
+}
+
 // directorTierBand is how far below the best a leg can rank and still be
 // tier 1 (the frontier band); tier 2 starts below it. CAPTAIN_DIRECTOR_TIER_BAND
 // as a fraction, default 0.10.
