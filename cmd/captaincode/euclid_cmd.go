@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -154,16 +155,14 @@ func cmdEuclid(args []string) {
 			fatal(fmt.Errorf("the brain is not running (%v) - distillation needs a leg; start `captain brain` first", err))
 		}
 		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			fatal(fmt.Errorf("%s", brainErrorText(resp.StatusCode, raw)))
+		}
 		var out struct {
 			Report string `json:"report"`
-			Error  struct {
-				Message string `json:"message"`
-			} `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&out)
-		if resp.StatusCode != 200 {
-			fatal(fmt.Errorf("%s", out.Error.Message))
-		}
+		_ = json.Unmarshal(raw, &out)
 		fmt.Print(out.Report)
 	case "link":
 		if len(args) < 2 {
@@ -281,6 +280,35 @@ func brainURL() string {
 	return "http://127.0.0.1:14097"
 }
 
+// brainErrorText reads the reason out of a non-200 brain response. TWO error
+// shapes coexist on the brain: the flat {"error":"…"} that writeErr emits and
+// the nested {"error":{"message":"…"}} of the OpenAI-compatible endpoints.
+// Decoding the flat one into the nested struct fails silently and leaves the
+// message empty, which is how `• bootstrap failed:` came to print nothing at
+// all while the real reason ("no repo brain at … - run `captain euclid init
+// --repo`") was right there in the body (2026-09-22). Accept both, and fall
+// back to the raw body so an unparseable response still says something.
+func brainErrorText(status int, body []byte) string {
+	var flat struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &flat) == nil && flat.Error != "" {
+		return flat.Error
+	}
+	var nested struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &nested) == nil && nested.Error.Message != "" {
+		return nested.Error.Message
+	}
+	if s := strings.TrimSpace(string(body)); s != "" {
+		return s
+	}
+	return fmt.Sprintf("HTTP %d with an empty body", status)
+}
+
 func brainEuclidStatus() (euclidStatus, bool) {
 	resp, err := (&http.Client{Timeout: 3 * time.Second}).Get(brainURL() + "/v1/euclid/status")
 	if err != nil || resp.StatusCode != 200 {
@@ -372,17 +400,15 @@ func bootstrapNow(repo string) {
 		return
 	}
 	defer resp.Body.Close()
-	var out struct {
-		Report string `json:"report"`
-		Error  struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
+	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		fmt.Printf("  • bootstrap failed: %s\n", out.Error.Message)
+		fmt.Printf("  • bootstrap failed: %s\n", brainErrorText(resp.StatusCode, raw))
 		return
 	}
+	var out struct {
+		Report string `json:"report"`
+	}
+	_ = json.Unmarshal(raw, &out)
 	fmt.Print("  • bootstrapped from the repo's docs:\n")
 	for _, l := range strings.Split(strings.TrimSpace(out.Report), "\n") {
 		fmt.Println("    " + l)

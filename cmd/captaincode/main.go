@@ -396,6 +396,7 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 		var leg captaincode.Leg
 		var runErr error
 		var ev captaincode.Event
+		var failures []legFailure // every leg that refused this task, for one summary at the end
 		disp.Live = true
 		for _, leg = range order {
 			if leg != lastLeg {
@@ -425,13 +426,25 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 				ev.Error = runErr.Error()
 				ledger.Record(ev)
 				ledger.Cooldown(leg, defaultCooldown)
+				failures = append(failures, legFailure{leg, runErr})
 				fmt.Printf("captain: %s rate-limited - cooling down %s, trying next leg\n", leg, defaultCooldown)
 				continue
 			case runErr != nil:
 				ev.Outcome = "fail"
 				ev.Error = runErr.Error()
 				ledger.Record(ev)
-				fmt.Printf("captain: %s failed (%v), trying next leg\n", leg, runErr)
+				failures = append(failures, legFailure{leg, runErr})
+				// Bench it on the same policy the brain uses: a missing
+				// credential or a dead login is not a fault that heals
+				// between two turns, and Pick() skips a cooling leg.
+				if d, why := benchPolicy(leg, runErr); d > 0 {
+					ledger.Cooldown(leg, d)
+					fmt.Printf("captain: %s benched %s (%s)\n", leg, d.Round(time.Second), why)
+				}
+				// One line per leg: a provider error blob is hundreds of
+				// characters of JSON, and thirteen of them buried the one
+				// sentence that mattered (2026-09-22).
+				fmt.Printf("captain: %s failed (%s), trying next leg\n", leg, legReason(runErr))
 				continue
 			default:
 				ev.Outcome = "ok"
@@ -440,7 +453,7 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 		}
 		if runErr != nil {
 			saveLedger(ledger)
-			fatal(fmt.Errorf("all legs failed; last error: %w", runErr))
+			fatal(ladderExhausted(failures, runErr))
 		}
 
 		if !res.Streamed {
@@ -855,6 +868,38 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return captaincode.CutHead(s, n) + "…"
+}
+
+// legFailure is one leg's refusal, kept so the ladder can report every cause
+// at the end instead of only the last one.
+type legFailure struct {
+	leg captaincode.Leg
+	err error
+}
+
+// legReason renders an error as one short line: provider errors arrive as
+// multi-line JSON blobs, and printing them whole per leg is what turned a
+// thirteen-leg ladder into a screen of noise (2026-09-22).
+func legReason(err error) string {
+	return truncate(strings.Join(strings.Fields(err.Error()), " "), 160)
+}
+
+// ladderExhausted reports a ladder that ran out of legs. The old message named
+// the LAST error, but the ladder ends at the free tier, so the reason the user
+// read was reliably the least informative one of the run - the credential and
+// login faults that actually explained the failure had scrolled past. Name
+// every leg, once, with its own cause.
+func ladderExhausted(failures []legFailure, last error) error {
+	if len(failures) <= 1 {
+		return fmt.Errorf("all legs failed; last error: %w", last)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "all %d legs failed:", len(failures))
+	for _, f := range failures {
+		fmt.Fprintf(&b, "\n  %-10s %s", f.leg, legReason(f.err))
+	}
+	b.WriteString("\n\n`captain doctor` says which of these are missing a credential or a login.")
+	return errors.New(b.String())
 }
 
 func saveLedger(l *captaincode.Ledger) {
