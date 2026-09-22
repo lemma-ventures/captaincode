@@ -10,8 +10,6 @@ package main
 // directorAvailability before any policy resolves a primary.
 
 import (
-	"os"
-	"os/exec"
 	"sort"
 	"strings"
 
@@ -24,23 +22,17 @@ import (
 // opencode's auth store or a provider block in opencode.jsonc). Computed once
 // at brain start: PATH and credentials do not change under a running brain.
 func directorAvailability() map[captaincode.Leg]bool {
-	cfg, _ := os.ReadFile(captaincode.OpencodeConfigPath())
-	authed := authedProviders(opencodeAuthPath())
+	// The shared verdict (pkg/captaincode/readiness.go). This used to be a
+	// second copy of doctor's rules, so it inherited doctor's bugs: it called
+	// a logged-out claude and an unkeyed xai available, and the brain elected
+	// a director that could not answer (2026-09-22).
+	ready := captaincode.LegReadiness()
 	out := map[captaincode.Leg]bool{}
 	for _, s := range captaincode.Registry() {
 		if !captaincode.DirectorCapable(s.ID) {
 			continue
 		}
-		bin, _ := legTool(s.Transport)
-		if _, err := exec.LookPath(bin); err != nil {
-			out[s.ID] = false
-			continue
-		}
-		if s.Transport == captaincode.TransportOpencode {
-			out[s.ID] = providerConfigured(cfg, authed, s.Provider)
-			continue
-		}
-		out[s.ID] = true
+		out[s.ID] = ready[s.ID].OK
 	}
 	return out
 }

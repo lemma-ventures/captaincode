@@ -162,6 +162,26 @@ func (b *brain) refreshCLI() {
 	b.roster.mu.Lock()
 	b.roster.cli, b.roster.seen = out, time.Now()
 	b.roster.mu.Unlock()
+	// The same pass answers "can this leg run?": a login that came back or a
+	// key that was just added should reopen the leg without a brain restart.
+	captaincode.RefreshReadiness()
+	ready := captaincode.LegReadiness()
+	b.mu.Lock()
+	b.legReady = ready
+	b.mu.Unlock()
+}
+
+// unreadyLegs names the legs that cannot run, with their reasons, for the one
+// startup line that explains why the ladder is shorter than the registry.
+func unreadyLegs(ready map[captaincode.Leg]captaincode.Readiness) string {
+	var out []string
+	for _, s := range captaincode.Registry() {
+		if r, ok := ready[s.ID]; ok && !r.OK {
+			out = append(out, string(s.ID)+" ("+r.Reason+")")
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
 }
 
 // rosterLabel names a leg the way the sidebar prints it: model × route.

@@ -23,7 +23,11 @@ func fakeBin(t *testing.T, dir, name string) {
 }
 
 // opencodeConfigWith writes a minimal opencode config declaring the given
-// providers, which is how doctor decides an opencode leg can actually run.
+// providers WITH a key each, which is what makes an opencode leg runnable.
+// A block alone is not enough and must not be: `captain init` writes an xai
+// block carrying only a baseURL, and doctor called grok ready on a machine
+// with no xAI credential at all (2026-09-22) - see
+// opencodeConfigWithBareBlocks for that case.
 func opencodeConfigWith(t *testing.T, providers ...string) string {
 	t.Helper()
 	body := `{"provider":{`
@@ -31,12 +35,67 @@ func opencodeConfigWith(t *testing.T, providers ...string) string {
 		if i > 0 {
 			body += ","
 		}
-		body += `"` + p + `":{"models":{}}`
+		body += `"` + p + `":{"options":{"apiKey":"sk-test"},"models":{}}`
 	}
 	body += `}}`
 	p := filepath.Join(t.TempDir(), "opencode.jsonc")
 	require.NoError(t, os.WriteFile(p, []byte(body), 0o644))
 	return p
+}
+
+// opencodeConfigWithBareBlocks writes provider blocks that carry no key -
+// the shape `captain init` leaves behind when it routes a provider through
+// the redaction proxy.
+func opencodeConfigWithBareBlocks(t *testing.T, providers ...string) string {
+	t.Helper()
+	body := `{"provider":{`
+	for i, p := range providers {
+		if i > 0 {
+			body += ","
+		}
+		body += `"` + p + `":{"options":{"baseURL":"http://127.0.0.1:14098/` + p + `/v1"}}`
+	}
+	body += `}}`
+	p := filepath.Join(t.TempDir(), "opencode.jsonc")
+	require.NoError(t, os.WriteFile(p, []byte(body), 0o644))
+	return p
+}
+
+func TestDoctorRefusesToCallAKeylessProviderReady(t *testing.T) {
+	// The regression that cost ninety seconds a run: a provider NAMED in the
+	// config is not a provider that can authenticate. doctor said grok was
+	// ready; the dispatch said "xAI API key API key is missing".
+	dir := t.TempDir()
+	fakeBin(t, dir, "opencode")
+	t.Setenv("PATH", dir)
+	t.Setenv("CAPTAIN_LEGS", "")
+	t.Setenv("XAI_API_KEY", "")
+
+	var sb strings.Builder
+	runDoctor(&sb, doctorOpts{
+		opencodeConfig: opencodeConfigWithBareBlocks(t, "xai"),
+		brain:          func() (string, error) { return "", errors.New("connection refused") },
+	})
+	out := sb.String()
+
+	assert.Regexp(t, `(?m)^\s*✗\s+grok\b.*no credential`, out, "a block with no key is not a credential")
+	assert.Contains(t, out, "XAI_API_KEY", "and the line names the variable that would fix it")
+}
+
+func TestDoctorAcceptsAKeyFromTheEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	fakeBin(t, dir, "opencode")
+	t.Setenv("PATH", dir)
+	t.Setenv("CAPTAIN_LEGS", "")
+	t.Setenv("XAI_API_KEY", "xai-live-key")
+
+	var sb strings.Builder
+	runDoctor(&sb, doctorOpts{
+		opencodeConfig: opencodeConfigWithBareBlocks(t, "xai"),
+		brain:          func() (string, error) { return "", errors.New("connection refused") },
+	})
+
+	assert.Regexp(t, `(?m)^\s*✓\s+grok\b`, sb.String(), "the key opencode would interpolate counts as one")
 }
 
 func TestDoctorSeparatesReadyLegsFromBlockedOnes(t *testing.T) {
