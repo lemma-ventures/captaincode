@@ -36,6 +36,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -76,6 +77,13 @@ type CheckEvidence struct {
 	ExitCode int      `json:"exit_code"`
 	Passed   bool     `json:"passed"`
 	Output   string   `json:"output,omitempty"`
+	// TimedOut: the deadline killed the command, so it returned no verdict.
+	// A suite that did not finish has NOT failed, and must not be treated as
+	// a failure (2026-09-21: `cargo test` in a large workspace ran 22 minutes
+	// past a 5-minute deadline, was called a failure, and bought a repair
+	// attempt on a cheap leg for work nobody had judged).
+	TimedOut bool          `json:"timed_out,omitempty"`
+	Duration time.Duration `json:"duration,omitempty"`
 }
 
 // IntegrationStatus classifies what an IntegrationCandidate contains.
@@ -191,19 +199,37 @@ func CaptureTestEvidence(ctx context.Context, dir string) (*CheckEvidence, error
 	if !ok {
 		return nil, nil
 	}
-	c, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	budget := TestEvidenceTimeout()
+	c, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	start := time.Now()
 	execCmd := exec.CommandContext(c, "sh", "-c", cmd)
 	execCmd.Dir = dir
 	execCmd.Env = append(os.Environ(), testEvidenceDepthEnv+"=1")
+	// The deadline has to kill the whole PROCESS GROUP, not the shell alone:
+	// `sh -c "cargo test"` leaves cargo and every rustc holding the output
+	// pipe, so CombinedOutput keeps reading long after the shell is dead - a
+	// 5-minute budget took 22 minutes to return (live 2026-09-21, lemma).
+	// WaitDelay is the second backstop: if something still holds the pipe,
+	// Wait returns anyway.
+	execCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	execCmd.Cancel = func() error {
+		if execCmd.Process == nil {
+			return nil
+		}
+		if err := syscall.Kill(-execCmd.Process.Pid, syscall.SIGKILL); err != nil {
+			return execCmd.Process.Kill() // no group (already reaped): the shell alone
+		}
+		return nil
+	}
+	execCmd.WaitDelay = 10 * time.Second
 	out, err := execCmd.CombinedOutput()
-	elapsed := time.Since(start)
 	ce := &CheckEvidence{
 		Command:  []string{"sh", "-c", cmd},
 		ExitCode: 0,
 		Passed:   err == nil,
 		Output:   tail(string(out)),
+		Duration: time.Since(start),
 	}
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -213,8 +239,25 @@ func CaptureTestEvidence(ctx context.Context, dir string) (*CheckEvidence, error
 			ce.Output = fmt.Sprintf("%s\n(error: %v)", ce.Output, err)
 		}
 	}
-	_ = elapsed
+	// A killed command reports no verdict at all: the caller must not read
+	// "did not finish in time" as "the tests fail".
+	if c.Err() != nil && !ce.Passed {
+		ce.TimedOut = true
+		ce.Output = fmt.Sprintf("%s\n(captain: no verdict - `%s` did not finish within %s and was killed)",
+			ce.Output, cmd, budget)
+	}
 	return ce, nil
+}
+
+// TestEvidenceTimeout bounds one verification run.
+// CAPTAIN_VERIFY_TIMEOUT (Go duration), default 5m.
+func TestEvidenceTimeout() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_VERIFY_TIMEOUT")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 5 * time.Minute
 }
 
 // detectTestCommand inspects the project directory for manifest files and
