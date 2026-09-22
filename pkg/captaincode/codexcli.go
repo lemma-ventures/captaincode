@@ -249,6 +249,11 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		return Result{}, fmt.Errorf("codex exec pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			// Name the fix and stay reroutable: an uninstalled CLI is not a
+			// dead end for the task, the next leg takes it (2026-09-22).
+			return Result{}, fmt.Errorf("codex exec: %w: the Codex CLI is not installed - `npm i -g @openai/codex`", ErrProviderDown)
+		}
 		return Result{}, fmt.Errorf("codex exec start: %w", err)
 	}
 	scanDone := make(chan struct{})

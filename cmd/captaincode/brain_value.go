@@ -161,6 +161,13 @@ func (b *brain) valueCandidates(needVision bool) ([]captaincode.Leg, []captainco
 			reject(l, lacks)
 		case strictCost != "" && captaincode.CostEnforceable(l) != "":
 			reject(l, captaincode.CostEnforceable(l))
+		// A leg with no binary, no login or no credential cannot take the
+		// task, and finding that out by dispatching costs a round trip each
+		// time: nine of them ran in sequence before a free leg answered
+		// (2026-09-22). Same verdict `captain doctor` prints. A nil map (no
+		// probe: tests, and callers that never snapshot) filters nothing.
+		case b.legReady != nil && !b.legReady[l].OK:
+			reject(l, b.legReady[l].Reason)
 		case now.Before(b.ledger.Cooldowns[l]):
 			reject(l, "cooling down until "+b.ledger.Cooldowns[l].Format("15:04"))
 		case b.quotaExhausted(l, now):

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+# ~/.opencode/bin belongs here too: opencode's installer adds it to ~/.zshrc
+# only, so a launch that does not come from an interactive zsh (a desktop
+# entry, a script, a CI shell) saw NO opencode binary - and every opencode leg
+# reported itself missing while the install was fine (2026-09-22).
+export PATH="$HOME/.opencode/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 # The PHYSICAL path: opencode records a session under the resolved folder,
 # so a TUI launched through a symlink to a nested checkout found none of its
 # sessions with -c and started fresh every time (2026-09-17). Every cwd-keyed
