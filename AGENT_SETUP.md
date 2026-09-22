@@ -5,7 +5,7 @@ has asked you to install Captain Code on their machine. Follow these steps in
 order. Every step says how to check it worked; do not move on until it has.
 
 Humans: you do not need to read this. Paste the prompt from the
-[README](README.md#let-your-agent-set-it-up) into your agent instead.
+[README](README.md#quickstart) into your agent instead.
 
 ## Rules for the whole run
 
@@ -115,9 +115,28 @@ Hand over, for each leg they want, the one command or key:
 | `codex-cli` | `codex login` |
 | `cursor` | `cursor-agent login` |
 | remote models | `opencode auth login`, **or** put a key (`OPENROUTER_API_KEY`, `NVIDIA_API_KEY`, `HF_TOKEN`, …) in `~/.config/captain/env` |
-| `jev` (optional) | `TYPESAFE_API_KEY` in `~/.config/captain/env` |
+| `jev` (optional, recommended) | `TYPESAFE_API_KEY=…` in `~/.config/captain/env` (key from https://console.typesafe.ai/settings/keys) |
 
 Wait for them to confirm. Do not read the key values back.
+
+### About `jev` — ask the person, do not skip it silently
+
+`jev` is not a worker leg: it never writes code and tasks are never sent to
+it. It is Captain Code's **decision leg** (TypeSafe's System One model), a
+fast model that answers typed questions with a calibrated probability. Explain
+it to the person in one or two sentences and let them choose:
+
+- **With a key:** triage (deciding what kind of task each prompt is) takes
+  ~0.1–0.8s instead of a ~5s free-model call. It also turns on the action gate,
+  which screens worker tool calls, and worker supervision. Both only record by
+  default and block nothing. Cost is a fraction of a cent per call, and each
+  call is shown in `captain why`.
+- **Without a key:** everything still works. Triage falls back to built-in
+  rules and a free model, and the gate and supervision stay off.
+- **No TypeSafe account wanted:** `CAPTAIN_SYSTEMONE_URL` can point at any
+  compatible endpoint, with or without a key. This is advanced; send them to
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md#open-decision-leg-backends)
+  instead of setting it up yourself.
 
 ## 6. Start the brain and verify
 
@@ -141,6 +160,11 @@ Read the doctor output:
   person; restart the brain; run doctor again.
 - `~` lines (newer / unknown version) and `✗ terminal … brain-only install`
   under `build` do **not** block anything. Mention them, do not chase them.
+- `✗ jev … TYPESAFE_API_KEY not set` is **not** a failure. `jev` is a decision
+  leg, not a worker, so it does not count toward `N ready`. If the person chose
+  to skip it in step 5, leave it. If they added the key and the line is still
+  `✗`, the brain was started before the key: restart it.
+  `✓ jev … decision leg` means it is wired.
 - A `✗ captain … mismatch` under `build` means a different `captain` is first
   on PATH — fix PATH (step 3).
 
@@ -153,11 +177,22 @@ captain "reply with the single word: ready"
 An answer means routing works end to end. If it fails, `captain why` and
 `/tmp/captain-brain.log` say which leg was tried and why it stopped.
 
+If the person set up `jev`, also check it:
+
+```sh
+captain jev                                     # key, reachable models, one test question, latency
+captain jev classify "fix the typo in README"   # how triage would classify a task
+```
+
+The first command should end with `ready: triage tier 1 asks jev first`.
+
 ## 8. Hand over
 
 Tell the person, in a few lines:
 
 - which legs are ready and which are blocked (with the unblock command),
+- whether `jev` is on. If it is off, say in one line what it would add and
+  that it needs only `TYPESAFE_API_KEY`,
 - how to open the terminal: `cd` into any project and run `captaincode.sh`
   from the checkout (suggest an alias with the real path, e.g.
   `alias captain-code="$HOME/Gits/captaincode/captaincode.sh"`); `-c` resumes
