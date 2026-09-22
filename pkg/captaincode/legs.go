@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -179,6 +180,27 @@ func providerBillingError(msg string) bool {
 	return false
 }
 
+// ErrProviderNotConfigured is opencode serving no such model for the leg:
+// "ProviderModelNotFoundError: Model not found: openrouter/qwen/…". In
+// practice the provider was never authenticated, so its models never entered
+// the registry - nine legs failed this way in one run while doctor called
+// them ready (2026-09-22). It wraps ErrProviderAuth: the task reroutes, the
+// policy layer benches the leg like a bad key (this heals when someone runs
+// `opencode auth login`, not in ten minutes), and harnessFault keeps it off
+// the model's reliability stats - the model never ran.
+var ErrProviderNotConfigured = fmt.Errorf("%w: provider not configured", ErrProviderAuth)
+
+// providerNotConfigured spots a model the serve cannot resolve. Narrow on
+// purpose: only opencode's own resolution failure, never a provider's 404 for
+// some other resource.
+func providerNotConfigured(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "providermodelnotfounderror") ||
+		strings.Contains(m, "providerinitfailederror") ||
+		strings.Contains(m, "model not found") ||
+		strings.Contains(m, "provider not found")
+}
+
 // providerAuthError recognizes a credential rejection in a provider error.
 func providerAuthError(msg string) bool {
 	m := strings.ToLower(msg)
@@ -186,6 +208,12 @@ func providerAuthError(msg string) bool {
 		"authorization failed", "unauthorized", "forbidden", "invalid api key",
 		"invalid_api_key", "incorrect api key", "authentication", "statuscode\":401",
 		"statuscode\":403", "status\":401", "status\":403",
+		// The error NAME carries the class when the message does not: xAI's
+		// "API key is missing" matched nothing here and surfaced as a raw
+		// blob, so grok was retried every turn instead of benched (2026-09-22).
+		"providerautherror",
+		"api key is missing", "missing api key", "no api key", "api key not found",
+		"api key is not set",
 	} {
 		if strings.Contains(m, p) {
 			return true
@@ -430,7 +458,14 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 	if d.Dir == "" {
 		d.Dir = DefaultWorkspace().Dir
 	}
-	if leg == LegClaude {
+	// Route by TRANSPORT, not by leg id. A leg-id switch knew claude and
+	// cursor and sent every other CLI leg into modelForEffort, which is
+	// populated for TransportOpencode specs only - so codex-cli died here with
+	// `unknown leg "codex-cli"` (2026-09-22: the CLI ladder and fan-out call
+	// this path) while the streaming path, which already switched on the
+	// transport, ran it fine. A CLI transport added later routes here too.
+	switch specs[leg].Transport {
+	case TransportClaudeCLI:
 		// Mirror the claude -p exchange into a titled opencode session so the
 		// Claude worker gets a tab like everyone else (best-effort).
 		if err := d.EnsureServer(); err == nil && d.ensureSession() == nil {
@@ -449,14 +484,25 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			}
 		}
 		return res, err
-	}
-	if leg == LegCursor {
+	case TransportCursorCLI:
 		text, err := runCursorModel(d.Dir, task, cursorModel(d.Effort))
 		return Result{Text: text}, err
+	case TransportCodexCLI:
+		// Same wrapper the streaming path uses: it classifies its own
+		// failures (classifyCodexCLIFailure), so a dead `codex login` arrives
+		// as a typed provider fault instead of an opaque dead end.
+		return runCodexCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
+	case TransportSystemOne:
+		// A decision leg cannot take a task. Every dispatch path is guarded
+		// before this point; this is the backstop for the one that is not.
+		return Result{}, fmt.Errorf("/%s is a %w - `captain jev classify <task>` asks it a question", leg, ErrDecisionLeg)
 	}
 	mm, ok := modelForEffort(leg, d.AsDirector, d.Effort)
 	if !ok {
-		return Result{}, fmt.Errorf("unknown leg %q", leg)
+		if _, known := specs[leg]; !known {
+			return Result{}, fmt.Errorf("unknown leg %q - `captain legs` lists the ones this build knows", leg)
+		}
+		return Result{}, fmt.Errorf("leg %q has no model for effort %q - check its registry entry (`captain legs`)", leg, d.Effort)
 	}
 	if err := d.EnsureServer(); err != nil {
 		return Result{}, err
@@ -755,7 +801,26 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			}
 			return Result{}, fmt.Errorf("%s/%s: %w - %s for %s", mm.Provider, mm.Model, ErrWorkerStalled, what, window)
 		}
-		return Result{}, fmt.Errorf("opencode HTTP %d: %s", resp.StatusCode, string(body))
+		// A non-200 used to skip the classifier entirely: it matched no
+		// sentinel, so the leg was never benched and the next turn tried it
+		// again - nine unconfigured legs, every run (2026-09-22). The body
+		// itself says only "UnknownError", so resolve its ref against the
+		// serve's log first and classify on what that says.
+		raw := json.RawMessage(body)
+		detail := opencodeLogDetail(opencodeErrorRef(raw))
+		if err := classifyOpencodeError(mm.Provider, mm.Model, raw, detail); err != nil {
+			return Result{}, err
+		}
+		if detail != "" {
+			return Result{}, fmt.Errorf("%s/%s: opencode HTTP %d: %s", mm.Provider, mm.Model, resp.StatusCode, detail)
+		}
+		// The serve kept the cause to itself and had not flushed it yet. Say
+		// where it lands rather than handing back a ref that means nothing.
+		if ref := opencodeErrorRef(raw); ref != "" {
+			return Result{}, fmt.Errorf("%s/%s: opencode HTTP %d - the serve logged the cause under %s in %s",
+				mm.Provider, mm.Model, resp.StatusCode, ref, opencodeLogPath())
+		}
+		return Result{}, fmt.Errorf("%s/%s: opencode HTTP %d: %s", mm.Provider, mm.Model, resp.StatusCode, string(body))
 	}
 	var msg struct {
 		Info struct {
@@ -773,29 +838,9 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		return Result{}, fmt.Errorf("decode opencode response: %w", err)
 	}
 	if len(msg.Info.Error) > 0 && string(msg.Info.Error) != "null" {
-		e := opencodeErrorText(msg.Info.Error)
 		hdrs := extractResponseHeaders(msg.Info.Error)
-		// Provider-down BEFORE rate-limit: xAI's capacity errors ("currently at
-		// capacity due to high demand") ship with HTTP 429, and matching "429"
-		// first would bench the leg for the 30m quota window instead of the
-		// short outage cooldown.
-		if strings.Contains(e, "temporarily unavailable") || strings.Contains(e, "service unavailable") || strings.Contains(e, " 503") || strings.Contains(e, " 502") || strings.Contains(e, "bad gateway") || strings.Contains(e, "overloaded") || strings.Contains(e, "at capacity") || strings.Contains(e, "high demand") {
-			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w: %s", mm.Provider, mm.Model, ErrProviderDown, e)
-		}
-		// Money before quota: "depleted your monthly included credits" also
-		// says "monthly", and a plan that needs paying is not a window that
-		// reopens in 30 minutes.
-		if providerBillingError(string(msg.Info.Error)) {
-			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w: %s", mm.Provider, mm.Model, ErrProviderBilling, truncateStr(e, 200))
-		}
-		if strings.Contains(e, "rate") || strings.Contains(e, "429") || strings.Contains(e, "quota") || strings.Contains(e, "usage limit") {
-			return Result{Headers: hdrs}, ErrRateLimited
-		}
-		if providerAuthError(string(msg.Info.Error)) {
-			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w (check the provider key): %s", mm.Provider, mm.Model, ErrProviderAuth, e)
-		}
-		if strings.Contains(e, "contextoverflow") || strings.Contains(e, "too large to compact") || strings.Contains(e, "context exceeds") {
-			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w: %s", mm.Provider, mm.Model, ErrContextOverflow, string(msg.Info.Error))
+		if err := classifyOpencodeError(mm.Provider, mm.Model, msg.Info.Error, ""); err != nil {
+			return Result{Headers: hdrs}, err
 		}
 		if stalled.Load() {
 			// The error is the watchdog's own abort finalizing the wedged turn
@@ -1114,6 +1159,199 @@ func opencodeErrorText(raw json.RawMessage) string {
 		return strings.ToLower(fmt.Sprintf("%s %s %d", e.Name, e.Data.Message, e.Data.StatusCode))
 	}
 	return strings.ToLower(string(raw))
+}
+
+// classifyOpencodeError maps an opencode error blob to a leg error class, so
+// the reroute net and the bench policy see a typed fault instead of a string.
+// `detail` is the serve log's line for this error when one was resolved (the
+// HTTP-500 path); it is classified alongside the blob because a 500 body says
+// only "UnknownError: Unexpected server error".
+//
+// Returns nil when nothing matches: an unclassified error is the caller's to
+// describe, and inventing a class for it is how an NVIDIA 404 once became a
+// 30-minute rate-limit cooldown (2026-07-18).
+func classifyOpencodeError(provider, model string, raw json.RawMessage, detail string) error {
+	e := opencodeErrorText(raw)
+	// When the serve's log answered, IT is the cause: the blob it returned
+	// says only "UnknownError: Unexpected server error", which explains
+	// nothing and would just pad the message.
+	cause := detail
+	if cause == "" {
+		cause = opencodeErrorMessage(raw)
+	}
+	if detail != "" {
+		e += " " + strings.ToLower(detail)
+	}
+	// Match the money/auth classes against the full blob (and the detail),
+	// the rest against the classify-safe text.
+	full := string(raw) + " " + detail
+	switch {
+	// Provider-down BEFORE rate-limit: xAI's capacity errors ("currently at
+	// capacity due to high demand") ship with HTTP 429, and matching "429"
+	// first would bench the leg for the 30m quota window instead of the
+	// short outage cooldown.
+	case strings.Contains(e, "temporarily unavailable"), strings.Contains(e, "service unavailable"),
+		strings.Contains(e, " 503"), strings.Contains(e, " 502"), strings.Contains(e, "bad gateway"),
+		strings.Contains(e, "overloaded"), strings.Contains(e, "at capacity"), strings.Contains(e, "high demand"):
+		return fmt.Errorf("%s/%s: %w: %s", provider, model, ErrProviderDown, e)
+	// Money before quota: "depleted your monthly included credits" also says
+	// "monthly", and a plan that needs paying is not a window that reopens in
+	// 30 minutes.
+	case providerBillingError(full):
+		return fmt.Errorf("%s/%s: %w: %s", provider, model, ErrProviderBilling, truncateStr(e, 200))
+	case strings.Contains(e, "rate"), strings.Contains(e, "429"), strings.Contains(e, "quota"), strings.Contains(e, "usage limit"):
+		return ErrRateLimited
+	case providerAuthError(full):
+		return fmt.Errorf("%s/%s: %w (check the provider key): %s", provider, model, ErrProviderAuth, cause)
+	// After auth: a missing key is an auth fault even when the serve reports
+	// it as an unresolvable model.
+	case providerNotConfigured(full):
+		return fmt.Errorf("%s/%s: %w - `opencode auth login` for %q, or add it to opencode.jsonc: %s",
+			provider, model, ErrProviderNotConfigured, provider, cause)
+	case strings.Contains(e, "contextoverflow"), strings.Contains(e, "too large to compact"), strings.Contains(e, "context exceeds"):
+		return fmt.Errorf("%s/%s: %w: %s", provider, model, ErrContextOverflow, string(raw))
+	}
+	return nil
+}
+
+// opencodeErrorMessage renders an opencode error blob for a HUMAN: the
+// provider's own sentence, in its own casing. opencodeErrorText exists to be
+// matched against and lowercases everything (and appends a statusCode), which
+// is why a rejected key used to read "…the 'apikey' parameter or the
+// xai_api_key environment variable. 0" (2026-09-22).
+func opencodeErrorMessage(raw json.RawMessage) string {
+	var e struct {
+		Name string `json:"name"`
+		Data struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &e) == nil && (e.Name != "" || e.Data.Message != "") {
+		switch {
+		case e.Data.Message == "":
+			return e.Name
+		case e.Name == "":
+			return truncateStr(e.Data.Message, 200)
+		}
+		return truncateStr(e.Name+": "+e.Data.Message, 200)
+	}
+	return truncateStr(strings.Join(strings.Fields(string(raw)), " "), 200)
+}
+
+// opencodeErrorRef pulls the `ref` an opencode error carries ("err_beac7f17").
+// The serve logs the real cause under that ref and returns only the ref to the
+// client, so it is the one thread from an opaque 500 back to a real message.
+func opencodeErrorRef(raw json.RawMessage) string {
+	var e struct {
+		Data struct {
+			Ref string `json:"ref"`
+		} `json:"data"`
+		Ref string `json:"ref"`
+	}
+	if json.Unmarshal(raw, &e) != nil {
+		return ""
+	}
+	ref := e.Data.Ref
+	if ref == "" {
+		ref = e.Ref
+	}
+	if !refPattern.MatchString(ref) {
+		return "" // never let a response steer the log scan
+	}
+	return ref
+}
+
+var refPattern = regexp.MustCompile(`^err_[0-9a-f]{4,32}$`)
+var logErrorPattern = regexp.MustCompile(`error="((?:[^"\\]|\\.)*)"`)
+
+// opencodeLogDetail resolves an error ref against the serve's own log and
+// returns the message it recorded. opencode answers a failed prompt with
+// `{"name":"UnknownError","message":"Unexpected server error. Check server
+// logs for details.","ref":"err_…"}` and keeps the cause to itself - so a leg
+// whose provider was never authenticated failed with a blob that named
+// neither the leg, the model, nor the fix, and nothing benched it
+// (2026-09-22). Best effort: no log, no match, no detail.
+func opencodeLogDetail(ref string) string {
+	if ref == "" {
+		return ""
+	}
+	// The serve answers the request before its logger flushes the line, so
+	// the first read usually misses by milliseconds (live 2026-09-22: the
+	// detail was in the file seconds later). Retry briefly - this is an error
+	// path, and half a second buys the one sentence that explains the failure.
+	for i, wait := range logDetailBackoff {
+		if d := opencodeLogDetailOnce(ref); d != "" {
+			return d
+		}
+		if i < len(logDetailBackoff) {
+			time.Sleep(wait)
+		}
+	}
+	return opencodeLogDetailOnce(ref)
+}
+
+// logDetailBackoff totals ~1.2s: measured, the serve's line lands about a
+// second after the client's 500 (2026-09-22). A var so tests do not pay the
+// waits. The cost is bounded in practice because the classified fault benches
+// the leg, so the next turn does not dispatch it at all.
+var logDetailBackoff = []time.Duration{150 * time.Millisecond, 350 * time.Millisecond, 700 * time.Millisecond}
+
+// opencodeLogPath is where the serve writes the causes it does not return.
+func opencodeLogPath() string {
+	dir := os.Getenv("XDG_DATA_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(dir, "opencode", "log", "opencode.log")
+}
+
+func opencodeLogDetailOnce(ref string) string {
+	path := opencodeLogPath()
+	if path == "" {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	// The line is written moments before the client sees the ref, so only the
+	// tail can hold it; a log left running for days must not be read whole.
+	const tail = 256 << 10
+	info, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	if info.Size() > tail {
+		if _, err := f.Seek(-tail, io.SeekEnd); err != nil {
+			return ""
+		}
+	}
+	buf, err := io.ReadAll(io.LimitReader(f, tail))
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(buf), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if !strings.Contains(lines[i], "ref="+ref) {
+			continue
+		}
+		if m := logErrorPattern.FindStringSubmatch(lines[i]); len(m) == 2 {
+			// The log escapes the message; the first line of it is the cause,
+			// the rest is a JS stack trace of no use to anyone here.
+			msg, err := strconv.Unquote(`"` + m[1] + `"`)
+			if err != nil {
+				msg = m[1]
+			}
+			return truncateStr(strings.TrimSpace(strings.SplitN(msg, "\n", 2)[0]), 300)
+		}
+		return ""
+	}
+	return ""
 }
 
 // extractResponseHeaders pulls the upstream responseHeaders map from an
@@ -2016,10 +2254,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 			return partialResult(acc.String(), final.Result, start, onDelta), rateLimited(LegClaude, final.Result)
 		}
 		if final.IsError {
-			if transientProviderError(final.Result) {
-				return Result{}, fmt.Errorf("claude: %w: %s", ErrProviderDown, truncateStr(final.Result, 160))
-			}
-			return Result{}, fmt.Errorf("claude error: %s", final.Result)
+			return Result{}, classifyClaudeFailure(final.Result)
 		}
 		text := final.Result
 		if text == "" {
@@ -2072,6 +2307,15 @@ func runCursorModel(dir, task, model string) (string, error) {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			if cursorUsageLimit(msg) {
 				return "", rateLimited(LegCursor, msg)
+			}
+			if cursorAuthError(msg) {
+				// The streaming path has classified this since 2026-09-13;
+				// this one had not, so a logged-out cursor was dispatched
+				// again on every CLI turn instead of being benched.
+				return "", fmt.Errorf("cursor-agent -p: %w: not logged in - run `cursor-agent login`: %s", ErrProviderDown, truncateStr(msg, 160))
+			}
+			if transientProviderError(msg) {
+				return "", fmt.Errorf("cursor-agent -p: %w: %s", ErrProviderDown, truncateStr(msg, 160))
 			}
 			return "", fmt.Errorf("cursor-agent -p: %w: %s", err, truncateStr(msg, 300))
 		}
@@ -2254,6 +2498,35 @@ func cursorAuthError(msg string) bool {
 		strings.Contains(m, "cursor_api_key") || strings.Contains(m, "not logged in")
 }
 
+// claudeAuthError recognizes a dead Claude login. Like codex and cursor, the
+// Claude CLI keeps its own credential store, so a working claude BINARY (and
+// a passing `claude --version`) proves nothing about it.
+func claudeAuthError(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "not logged in") || strings.Contains(m, "please run /login") ||
+		strings.Contains(m, "invalid api key") || strings.Contains(m, "oauth token has expired") ||
+		strings.Contains(m, "authentication_error")
+}
+
+// classifyClaudeFailure maps a claude -p failure to the classes the reroute
+// net understands. Claude was the last agent CLI without one: a logged-out
+// binary produced a bare "claude error: Not logged in · Please run /login"
+// that matched no sentinel, so the director silently degraded to the
+// heuristic ladder, the run went unscored, and the leg was never benched -
+// every turn paid the same failure again (2026-09-22).
+func classifyClaudeFailure(msg string) error {
+	if claudeAuthError(msg) {
+		// Provider-down so the task reroutes and the user still gets an
+		// answer; harnessFault() keeps it off the model's reliability stats.
+		return fmt.Errorf("claude: %w: not logged in - run `claude /login` (the Claude CLI keeps its own credential store): %s",
+			ErrProviderDown, truncateStr(msg, 160))
+	}
+	if transientProviderError(msg) {
+		return fmt.Errorf("claude: %w: %s", ErrProviderDown, truncateStr(msg, 160))
+	}
+	return fmt.Errorf("claude error: %s", msg)
+}
+
 // runClaudeTimeout bounds a claude -p call; timeout 0 means unbounded
 // (workers doing long jobs). Director calls always pass a deadline so
 // routing can never hang the CLI.
@@ -2314,7 +2587,7 @@ func runClaudeTimeout(dir, task string, timeout time.Duration) (Result, error) {
 		return Result{}, ErrRateLimited
 	}
 	if r.IsError {
-		return Result{}, fmt.Errorf("claude error: %s", r.Result)
+		return Result{}, classifyClaudeFailure(r.Result)
 	}
 	tokens := r.Usage.InputTokens + r.Usage.OutputTokens + r.Usage.CacheCreationInputTokens + r.Usage.CacheReadInputTokens
 	return Result{Text: r.Result, Tokens: tokens, CostUSD: r.TotalCostUSD, DurationMs: time.Since(start).Milliseconds()}, nil

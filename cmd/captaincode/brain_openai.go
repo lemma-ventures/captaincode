@@ -914,11 +914,12 @@ func writeWorkerError(w http.ResponseWriter, leg captaincode.Leg, err error) {
 	writeJSON(w, code, map[string]any{"error": map[string]any{"message": msg, "type": etype, "code": etype}})
 }
 
-// onWorkerError cools a leg down in the brain's ledger so subsequent
-// /v1/route calls skip it: 30m for a rate limit (subscription window), a
-// short window for a provider outage (transient - live 2026-07-19: xAI 503
-// bursts; 30m would bench a healthy leg long after recovery).
-func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
+// benchPolicy says how long a failure keeps a leg off the ladder, and why.
+// The brain and the CLI both answer to it: the CLI benched rate limits only,
+// so a logged-out or unconfigured leg was dispatched again on the very next
+// turn, every turn (2026-09-22). A zero duration means "record it, don't
+// bench it" - an unclassified error is not evidence about the leg.
+func benchPolicy(leg captaincode.Leg, err error) (time.Duration, string) {
 	var d time.Duration
 	var why string
 	switch {
@@ -945,6 +946,10 @@ func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
 		// Reopens when someone pays, not on a clock: off the ladder for the
 		// day, and the reason says what to do.
 		d, why = 24*time.Hour, "provider credits depleted - top up or subscribe, then `captain legs reopen <leg>`"
+	case errors.Is(err, captaincode.ErrProviderNotConfigured):
+		// Not a rejected key but an absent one: the serve resolves no model
+		// for this leg. Same hour-long bench, a reason that names the fix.
+		d, why = time.Hour, "provider not configured - `opencode auth login`, then `captain legs reopen "+string(leg)+"`"
 	case errors.Is(err, captaincode.ErrProviderAuth):
 		// A rejected key does not heal by itself: bench the leg for an hour
 		// (the next attempt is an instant 403 anyway) and say what to fix.
@@ -956,6 +961,15 @@ func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
 		// that stalls twice has a sick provider stream - bench it briefly.
 		d, why = 10*time.Minute, "stalling"
 	}
+	return d, why
+}
+
+// onWorkerError cools a leg down in the brain's ledger so subsequent
+// /v1/route calls skip it: 30m for a rate limit (subscription window), a
+// short window for a provider outage (transient - live 2026-07-19: xAI 503
+// bursts; 30m would bench a healthy leg long after recovery).
+func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
+	d, why := benchPolicy(leg, err)
 	b.mu.Lock()
 	// Reliability is a routing signal: every handled failure lands on the
 	// ledger (glm stalled all morning with a spotless q9.0 - the director
