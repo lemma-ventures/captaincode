@@ -19,9 +19,10 @@ import (
 // a test gate and a k24 pair, promised to report when they landed, and the
 // user waited for a report no worker could ever send).
 func TestWorkerPromptArmsTheCallbackInsteadOfPromisingToReport(t *testing.T) {
-	ws := captaincode.Workspace{Dir: "/Users/rpellerin/Gits/arc"}
+	dir := t.TempDir()
+	ws := captaincode.Workspace{Dir: dir}
 	c := callbackContract(ws, captaincode.LegClaude)
-	assert.Contains(t, c, "captain send --cwd /Users/rpellerin/Gits/arc --from claude")
+	assert.Contains(t, c, "captain send --cwd "+dir+" --from claude")
 	assert.Contains(t, c, "Never end a turn promising to report later")
 
 	t.Setenv("CAPTAIN_WORKER_CALLBACK", "0")
@@ -30,7 +31,11 @@ func TestWorkerPromptArmsTheCallbackInsteadOfPromisingToReport(t *testing.T) {
 
 // …on every path that dispatches a worker: solo, team and workflow.
 func TestEveryWorkerPathCarriesTheCallback(t *testing.T) {
-	dir := "/Users/rpellerin/Gits/arc"
+	// A real directory: workspaceOf only honours the header when the path
+	// exists, so a hardcoded one falls back to the process cwd (the CI
+	// failure of run 35752579510 - the path is this machine's, not the
+	// runner's).
+	dir := t.TempDir()
 	ws := captaincode.Workspace{Dir: dir}
 	b := teamBrain()
 	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nship it", "review the patch", captaincode.LegGrok),
