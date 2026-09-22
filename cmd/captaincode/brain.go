@@ -1506,6 +1506,29 @@ func workerContext(ws captaincode.Workspace) string {
 		dir) + captaincode.OrientationWith(dir, ws.Brains) // Euclid memory, when the project has a brain (MM38); the named repos' too
 }
 
+// callbackContract closes the "I'll report when it lands" hole. A worker is
+// ONE turn: work it backgrounds (nohup, a watcher, a chained benchmark)
+// outlives the turn, and nothing routes a log file back into the TUI - so a
+// frontier turn that armed a test gate and a k24 pair ended with "I'll
+// report when they land" and the user waited for a report that could never
+// come (live 2026-09-22, arc). captain already has the callback: `captain
+// send` queues a prompt for the TUI open in a folder and the sidebar submits
+// it as if the user had typed it. The line tells the worker to arm it
+// instead of promising. CAPTAIN_WORKER_CALLBACK=0 drops it.
+func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
+	if os.Getenv("CAPTAIN_WORKER_CALLBACK") == "0" {
+		return ""
+	}
+	dir := ws.Dir
+	if dir == "" {
+		dir = "."
+	}
+	return fmt.Sprintf("\n\n[captain] Work that outlives this turn: you are one turn, so nothing you leave running can report to the user by itself."+
+		" If you background anything (a watcher, a test gate, a long benchmark), make its LAST step deliver the result:"+
+		" `captain send --cwd %s --from %s \"<what landed, and what it means>\"` - that queues it into the user's session as if they had typed it."+
+		" Never end a turn promising to report later; either finish the work inside this turn or arm that callback and say you armed it.", dir, leg)
+}
+
 const deliverableContract = "\n\n[captain] End-of-turn contract: your FINAL message must contain the complete deliverable itself - the answer, plan, code, or verdict in full. Never end your turn describing what you are about to do. Format the deliverable for scanning: markdown with short paragraphs (≤4 lines each), bullet or numbered lists for enumerations, ### section headers when the answer runs long, and fenced code blocks for code/commands - never one large paragraph."
 
 // narrationOnly detects an intention-only output: short, opens with an

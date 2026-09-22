@@ -570,7 +570,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		prompt = titlePrompt(lastUserTurn(prompt))
 	} else {
 		prompt = b.fitPrompt(req.ws, leg, prompt, budget)
-		prompt += workerContext(req.ws) + deliverableContract
+		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg)
 	}
 	// One execution per (leg, task): the fork re-issues a turn's request, and a
 	// retry of an 8-minute run used to start a SECOND 8-minute run while the
