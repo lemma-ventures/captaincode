@@ -145,6 +145,10 @@ func cmdBrain(args []string) {
 	// resolves: the compiled default (grok) is not installed on every machine,
 	// and a director that cannot run fails every plan (live 2026-09-16).
 	b.dirAvailable = directorAvailability()
+	b.legReady = captaincode.LegReadiness()
+	if skipped := unreadyLegs(b.legReady); skipped != "" {
+		fmt.Printf("captain brain: legs that cannot run here - %s\n", skipped)
+	}
 	b.restoreDirectorMode() // after the roster: a mode resolves against the ranking
 	// A brain with no persisted helm picks the first runnable preference now, so
 	// health, /v1/director and the worker ladder agree from the first prompt
@@ -389,6 +393,13 @@ type brain struct {
 	// compiled default (grok) cannot hold the helm on a machine with no xAI
 	// credential and fail every plan (live 2026-09-16).
 	dirAvailable map[captaincode.Leg]bool
+	// legReady is the same question asked of every WORKER leg
+	// (pkg/captaincode/readiness.go), snapshotted at startup and refreshed
+	// with the roster. nil means "do not filter", which is what unit tests
+	// and callers without a probe want. A leg that cannot run is rejected
+	// before ranking, with its reason, instead of costing a round trip per
+	// turn to discover (2026-09-22).
+	legReady map[captaincode.Leg]captaincode.Readiness
 	// The director policy (pkg director_pick.go): a mode re-resolves its
 	// pick against the live ranking, usage and cooldowns; a memo keeps that
 	// off the hot path (directorPickTTL).

@@ -249,3 +249,32 @@ func TestChargeAuxBillsReviewToTheSameTask(t *testing.T) {
 	assert.Equal(t, 1300, totals.Tokens)
 	assert.Nil(t, b.chargeAux(""), "no task identity → nothing to bill it to")
 }
+
+// A leg that cannot run on this machine is rejected BEFORE ranking, with the
+// reason `captain doctor` would print. Without this the brain ranked a leg it
+// could not dispatch, and the run paid a round trip to find out
+// (2026-09-22). A nil map is "no probe ran" and must filter nothing, which is
+// what every other test in this file relies on.
+func TestValueCandidatesRejectALegThatCannotRunHere(t *testing.T) {
+	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
+
+	open, _ := b.valueCandidates(false)
+	assert.Contains(t, open, captaincode.LegGemini, "no probe: nothing is filtered")
+
+	b.legReady = map[captaincode.Leg]captaincode.Readiness{
+		captaincode.LegGemini: {Leg: captaincode.LegGemini, Reason: "provider openrouter has no credential - `opencode auth login`"},
+		captaincode.LegGLM:    {Leg: captaincode.LegGLM, OK: true},
+	}
+	open, excluded := b.valueCandidates(false)
+	assert.NotContains(t, open, captaincode.LegGemini, "an unrunnable leg never reaches the ranking")
+	assert.Contains(t, open, captaincode.LegGLM)
+
+	var why string
+	for _, e := range excluded {
+		if e.Leg == captaincode.LegGemini {
+			why = e.Excluded
+		}
+	}
+	assert.Contains(t, why, "no credential", "`captain why` gets the reason, not just the absence")
+}
