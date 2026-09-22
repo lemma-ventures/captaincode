@@ -79,6 +79,21 @@ overlay and wires the model through, no rebuild. See
 
 ## Quickstart
 
+### Let your agent set it up
+
+Paste this into Claude Code, Codex, Cursor or any other coding agent:
+
+```text
+Set up Captain Code on this machine by following
+https://github.com/lemma-ventures/captaincode/blob/main/AGENT_SETUP.md
+step by step. Ask me before installing anything, and hand me any login or
+API key instead of doing it yourself.
+```
+
+It checks what you have, installs what you approve, builds the brain, wires
+the terminal, and finishes on a green `captain doctor`. The same file is
+[AGENT_SETUP.md](AGENT_SETUP.md) if you would rather read it.
+
 ### The brain, on its own
 
 ```sh
