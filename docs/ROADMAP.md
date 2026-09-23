@@ -1095,6 +1095,19 @@ can read what each worker changed and whether they conflicted. Gate check
 evidence (command, exit code, passed, output) is attached to each manifest
 via `RecordCheck`.
 
+**Director's call on conflicts (23 September 2026).** A conflicted
+candidate no longer stops at a report. `Manager.Arbitrate` shows the
+director each contending worker's report, changed files and gate/test
+evidence, and it names one winner. `IntegrationCandidate.Resolve` keeps the
+winner's manifest and every manifest that touched nothing contested, drops
+the other contenders whole, and marks the candidate `resolved`;
+`ApplyIntegrationCandidate` applies `clean` and `resolved` candidates only.
+A ruling that names a non-contender is refused, so no ruling means nothing
+applied. `/team` now captures and applies isolated workers' changes the
+same way. Before this, an isolated team's file changes were deleted with
+its worktrees. The synthesis and the workflow review are told what
+landed, so the answer does not describe a set-aside change as done.
+
 **M3.2 test evidence capture (14 September 2026).**
 [`pkg/captaincode/artifact.go`](../pkg/captaincode/artifact.go) adds
 `CaptureTestEvidence`, which auto-detects the project's test suite from

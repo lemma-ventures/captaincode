@@ -97,6 +97,18 @@ member, a synthesis step. Members named explicitly are binding: they head the
 menu even when a filter would have dropped them, and a plan naming an
 unavailable leg is repaired rather than rejected.
 
+Parallel workers never share a checkout: each runs in its own git worktree.
+When they finish, changes to different files land together in your directory.
+Changes to the same file are a disagreement, and the director owns the call:
+it reads each worker's report, the files it changed and its gate or test
+result, and picks one worker. That worker's changes land whole; the others'
+are set aside, with their diffs kept under `~/.captaincode/runs/diffs`.
+Nothing is spliced. With no ruling (the director is unreachable, or names a
+worker that was not in the running) nothing lands, and the feed says so. The
+written answer follows the same rule: parts that cover different ground are
+combined, and where two workers answer the same question differently the
+director picks one and says whose it was and why.
+
 Workflows are scripted multi-stage runs in a small
 [language](WORKFLOW_LANGUAGE.md) whose spec the compiler is tested against, so
 the documentation cannot drift from the parser.

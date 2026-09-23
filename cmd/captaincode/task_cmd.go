@@ -211,6 +211,12 @@ func cmdTaskArtifacts(args []string) {
 				fmt.Printf("  · %s (%s)\n", c.File, strings.Join(c.Workers, ", "))
 			}
 		}
+		if arts.Integration.Winner != "" {
+			fmt.Printf("director's call: %s's changes land - %s\n", arts.Integration.Winner, arts.Integration.Ruling)
+			if len(arts.Integration.Dropped) > 0 {
+				fmt.Printf("set aside: %s\n", strings.Join(arts.Integration.Dropped, ", "))
+			}
+		}
 	})
 }
 

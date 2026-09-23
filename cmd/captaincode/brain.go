@@ -355,6 +355,9 @@ type brain struct {
 	runWorkerFn func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error)
 	// assessMultiFn stubs Manager.AssessMulti in tests; nil → real director call.
 	assessMultiFn func(task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error)
+	// arbitrateFn stubs the director's ruling on conflicting worker changes
+	// in tests (brain_arbitrate.go); nil → real director call.
+	arbitrateFn func(task string, contenders map[string]captaincode.Contender) (captaincode.Ruling, error)
 	// summarizeFn stubs compaction's summarizer in tests; nil → free leg.
 	summarizeFn func(span, prev string) (string, error)
 	cmu         sync.Mutex
