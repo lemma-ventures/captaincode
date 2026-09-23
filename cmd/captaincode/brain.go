@@ -25,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -244,10 +245,97 @@ func cmdBrain(args []string) {
 		time.Sleep(1500 * time.Millisecond) // let the transports reap their children
 		os.Exit(0)
 	}()
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	if err := brainServer(*addr, withWriteDeadline(mux)).ListenAndServe(); err != nil {
 		fatal(err)
 	}
 }
+
+// brainServer is the HTTP server the brain listens with. It exists because
+// `http.ListenAndServe` has NO timeouts: a connection whose client vanished
+// without a FIN - every TUI ended with kill -9, every crashed sidebar - kept
+// its goroutine and its file descriptor for the life of the process. They
+// accumulate: 18,566 inbound sockets in CLOSED state on a brain that had run
+// ten hours, at which point it answered nothing at all and looked hung
+// (2026-09-23; `lsof -p <brain>` showed 18,824 IPv4 descriptors).
+//
+//   - IdleTimeout reaps a kept-alive connection between requests. This is the
+//     leak: the sidebar polls three endpoints a second per TUI, so a dead
+//     client leaves thousands of them.
+//   - ReadHeaderTimeout bounds a client that opens a connection and never
+//     finishes a request line.
+//   - WriteTimeout stays ZERO on purpose: a turn's SSE stream is one write
+//     that lasts as long as the worker does - hours, on a /frontier run.
+//
+// CAPTAIN_HTTP_IDLE_TIMEOUT overrides the idle window.
+func brainServer(addr string, mux http.Handler) *http.Server {
+	idle := 90 * time.Second
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_HTTP_IDLE_TIMEOUT")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			idle = d
+		}
+	}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		IdleTimeout:       idle,
+		ReadHeaderTimeout: 20 * time.Second,
+		WriteTimeout:      0, // never: SSE turns outlive any deadline
+	}
+	// Open connections are worth seeing before they become a wedge: the
+	// count rides on /v1/stats and crossing the mark says so once.
+	srv.ConnState = func(_ net.Conn, st http.ConnState) {
+		switch st {
+		case http.StateNew:
+			n := httpConns.Add(1)
+			if n == httpConnWarn {
+				fmt.Printf("captain brain: %d open HTTP connections - a client is not closing them (idle timeout %s)\n", n, idle)
+			}
+		case http.StateHijacked, http.StateClosed:
+			httpConns.Add(-1)
+		}
+	}
+	return srv
+}
+
+// streamingPath reports the endpoints whose response is a live stream: a
+// turn's SSE, and the watch feeds. Their writes last as long as the work
+// does and must carry no deadline.
+func streamingPath(p string) bool {
+	switch {
+	case strings.HasPrefix(p, "/v1/chat/completions"), strings.HasPrefix(p, "/v1/watch"),
+		strings.HasPrefix(p, "/v1/events"), strings.HasPrefix(p, "/v1/repeat/watch"):
+		return true
+	}
+	return false
+}
+
+// withWriteDeadline gives every ORDINARY response a write deadline. Without
+// one, a handler writing to a client that has gone away blocks until the
+// socket buffer drains - forever, for a killed TUI - and any lock it holds
+// is held for that long too. Streaming endpoints are exempt (their whole
+// purpose is a write that lasts hours). CAPTAIN_HTTP_WRITE_DEADLINE
+// overrides; 0 turns it off.
+func withWriteDeadline(next http.Handler) http.Handler {
+	d := 60 * time.Second
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_HTTP_WRITE_DEADLINE")); v != "" {
+		if parsed, err := time.ParseDuration(v); err == nil && parsed >= 0 {
+			d = parsed
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if d > 0 && !streamingPath(r.URL.Path) {
+			if rc := http.NewResponseController(w); rc != nil {
+				_ = rc.SetWriteDeadline(time.Now().Add(d))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// httpConns counts the brain's open inbound connections (see brainServer).
+var httpConns atomic.Int64
+
+const httpConnWarn = 512
 
 type brain struct {
 	mu      sync.Mutex // serialize ledger reads/writes and director calls
@@ -2715,9 +2803,6 @@ func (b *brain) assess(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "task and leg required")
 		return
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	obj := req.Objective
 	if obj == "" {
 		obj = "none"
@@ -2727,13 +2812,22 @@ func (b *brain) assess(w http.ResponseWriter, r *http.Request) {
 		Leg: captaincode.Leg(req.Leg), Reason: "frontend", Outcome: "ok",
 		Tokens: req.Tokens, CostUSD: req.CostUSD, Duration: req.DurationMs,
 	}
+	// The grade is a PROVIDER CALL: minutes, sometimes. It used to run under
+	// b.mu, so every sidebar poll on the machine - three a second per TUI -
+	// queued behind it, and with no server timeouts those handlers piled up
+	// as goroutines holding their sockets (2026-09-23: 18,566 inbound
+	// connections in CLOSED state, brain answering nothing). Nothing that
+	// talks to a provider, a disk or a socket may hold the global lock.
 	var out assessResp
 	if a, err := b.mgr.Assess(req.Task, req.Output, obj); err == nil {
 		ev.Quality, ev.Verdict = a.Quality, a.Verdict
 		out = assessResp{Quality: a.Quality, Verdict: a.Verdict, Notes: a.Notes}
 	}
+	b.mu.Lock()
 	b.ledger.Record(ev)
-	if err := b.ledger.Save(); err != nil {
+	err := b.ledger.Save()
+	b.mu.Unlock()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save ledger: %v\n", err)
 	}
 	writeJSON(w, 200, out)
@@ -2741,14 +2835,18 @@ func (b *brain) assess(w http.ResponseWriter, r *http.Request) {
 
 // stats: live per-leg scorecards (what the director routes on).
 func (b *brain) stats(w http.ResponseWriter, r *http.Request) {
+	// Built under the lock, written outside it: a write to a client that has
+	// gone away blocks until its socket buffer drains, and holding b.mu
+	// through that stops every other handler (see assess).
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	last := b.last
 	if dir, ok := workspaceFilter(r); ok {
 		last = b.lastBy[dir] // the sidebar shows its own project's last route, not another TUI's
 	}
-	writeJSON(w, 200, map[string]any{"director": string(captaincode.Director), "legs": b.ledger.Stats(),
-		"last": last, "skills": b.ledger.SkillStats()})
+	body := map[string]any{"director": string(captaincode.Director), "legs": b.ledger.Stats(),
+		"last": last, "skills": b.ledger.SkillStats(), "http_conns": httpConns.Load()}
+	b.mu.Unlock()
+	writeJSON(w, 200, body)
 }
 
 // lastRoute reads the most recent route under the lock (the value
