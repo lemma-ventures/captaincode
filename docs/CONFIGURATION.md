@@ -18,6 +18,10 @@ is sent anywhere; all of it lives under your home directory.
 | `~/.captaincode/state.json` | Durable ledger: charges, decisions, quotas, budgets, task/attempt lifecycle, outcomes, handoffs, cooldowns. Saves merge append-only collections so concurrent CLI/brain writers cannot clobber each other. | the brain / CLIs that touch the ledger |
 | `<repo>/.euclid/`, `~/.euclid/` | Local Euclid brains (gitignored; opt-in) - see [EUCLID.md](EUCLID.md). | `captain euclid init [--repo]` |
 
+For what the run records hold and how to read them back (which agent got a
+task, what it ran, files changed, the last error, the handoff), see
+[RUN_RECORDS.md](RUN_RECORDS.md).
+
 `XDG_CONFIG_HOME` is honoured for the config paths.
 
 ## Environment

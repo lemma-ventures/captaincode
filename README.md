@@ -235,6 +235,7 @@ captain jev classify "fix the typo in README"   # see how it would triage a task
 | 💬 [TUI cheat sheet](docs/TUI.md) | Every `/…` word in a session |
 | ⚙️ [Configuration](docs/CONFIGURATION.md) | All settings |
 | 🏗️ [Architecture](docs/ARCHITECTURE.md) | How the pieces fit together |
+| 🧾 [Run records](docs/RUN_RECORDS.md) | What each run leaves in `~/.captaincode/`: which agent, what it ran, files changed, errors, handoffs |
 | ➕ [Adding a leg](docs/ADDING_A_LEG.md) | Connect a new model |
 | 🔀 [Workflow language](docs/WORKFLOW_LANGUAGE.md) | Script multi-step work |
 | 🧠 [Euclid](docs/EUCLID.md) | Per-repository project memory |
