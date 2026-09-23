@@ -515,6 +515,7 @@ Task:
 	fmt.Fprintf(&sb, `Objective check: %s (objective evidence outranks impression).
 
 Rubric per worker: correctness first, then completeness, then clarity. 8-10 fully solves its brief; 5-7 usable with gaps; 0-4 wrong or off-task. If a worker's brief covered only PART of the overall task, judge it only on its own brief - do not penalize it for another worker's scope.
+Combine workers' answers only where they cover DIFFERENT parts of the task. Where two workers answer the SAME question differently (a different fix, plan, recommendation or conclusion), do not blend them into a compromise: pick one, deliver it, and say in one line which worker it came from and why. You make that call; the user should not have to.
 The synthesis is delivered to the user verbatim - format it for reading: markdown with \n newlines inside the JSON string, short paragraphs, bullet lists for enumerations, ### headers per worker/section when long. Never one large run-on paragraph.
 Reply with STRICT JSON only, using the exact worker id shown above (the quoted string after "worker"): {"synthesis":"<combined final answer for the user, covering every worker's part, markdown-formatted with \n newlines>","scores":[{"worker":"<id>","quality":<0-10>,"verdict":"good|acceptable|poor","notes":"<=100 chars"}]%s}`, objective, skillJSONField(m.Skills))
 
@@ -524,6 +525,79 @@ Reply with STRICT JSON only, using the exact worker id shown above (the quoted s
 	}
 	ma.Skills = keepStockedGrades(ma.Skills, m.Skills)
 	return ma, nil
+}
+
+// Contender is one worker whose file changes overlap another's: what it
+// said, which files it changed, and the objective evidence its worktree
+// produced.
+type Contender struct {
+	Leg      Leg
+	Text     string
+	Files    []string
+	Evidence string // "gate passed", "tests failed", … empty when nothing ran
+}
+
+// Ruling is the director's call on a conflict: whose changes land.
+type Ruling struct {
+	Winner string `json:"winner"`
+	Reason string `json:"reason"`
+}
+
+// Arbitrate asks the director which one of several conflicting workers'
+// changes should land. Workers that edited the same files are not merged -
+// two plausible patches spliced together are often neither - so the director
+// picks exactly one, and the caller applies that worker's changes whole. A
+// reply naming a worker that is not a contender is an error, never a guess.
+func (m Manager) Arbitrate(task string, contenders map[string]Contender) (Ruling, error) {
+	if len(contenders) < 2 {
+		return Ruling{}, fmt.Errorf("arbitrate: need two or more contenders, got %d", len(contenders))
+	}
+	var r Ruling
+	if err := m.directorJSON(arbitrationPrompt(task, contenders), &r); err != nil {
+		return Ruling{}, err
+	}
+	return checkRuling(r, contenders)
+}
+
+// arbitrationPrompt lays the contenders out in a stable order.
+func arbitrationPrompt(task string, contenders map[string]Contender) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `You are Captain Code's director. Parallel workers changed the SAME files for this task, and only one worker's changes can land: their edits are not merged. Decide whose changes land.
+
+Task:
+%s
+
+`, truncateStr(task, 2000))
+	for _, id := range contenderIDs(contenders) {
+		c := contenders[id]
+		fmt.Fprintf(&sb, "--- worker %q (leg=%s) ---\nchanged: %s\n", id, c.Leg, truncateStr(strings.Join(c.Files, ", "), 600))
+		if c.Evidence != "" {
+			fmt.Fprintf(&sb, "evidence: %s\n", c.Evidence)
+		}
+		fmt.Fprintf(&sb, "report:\n%s\n\n", truncateStr(c.Text, 3000))
+	}
+	sb.WriteString(`Judge on correctness first, then how completely the changes do what the task asks, then how little they touch beyond it. Objective evidence (a passing gate or test suite) outranks a confident report. Judge the work, not which model did it.
+Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>"}`)
+	return sb.String()
+}
+
+// checkRuling accepts a ruling only when it names one of the contenders.
+func checkRuling(r Ruling, contenders map[string]Contender) (Ruling, error) {
+	r.Winner = strings.TrimSpace(r.Winner)
+	if _, ok := contenders[r.Winner]; !ok {
+		return Ruling{}, fmt.Errorf("arbitrate: director named %q, not one of %s", r.Winner, strings.Join(contenderIDs(contenders), ", "))
+	}
+	r.Reason = truncateStr(oneLine(r.Reason), 200)
+	return r, nil
+}
+
+func contenderIDs(contenders map[string]Contender) []string {
+	ids := make([]string, 0, len(contenders))
+	for id := range contenders {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // ── grading the shelf (ROADMAP M3.9) ────────────────────────────────────────

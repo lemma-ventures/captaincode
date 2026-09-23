@@ -49,11 +49,14 @@ const ArtifactVersion = 1
 // isolated worktree. Once created it is never mutated; the diff is saved to a
 // file so the manifest is a reference, not a container.
 type PatchManifest struct {
-	Version      int            `json:"version"`
-	TaskID       string         `json:"task_id"`
-	StageID      string         `json:"stage_id,omitempty"`
-	AttemptID    string         `json:"attempt_id,omitempty"`
-	Leg          string         `json:"leg"`
+	Version   int    `json:"version"`
+	TaskID    string `json:"task_id"`
+	StageID   string `json:"stage_id,omitempty"`
+	AttemptID string `json:"attempt_id,omitempty"`
+	Leg       string `json:"leg"`
+	// Worker names the worker within its stage (a leg can run twice in one
+	// stage). The director's ruling on a conflict names this id.
+	Worker       string         `json:"worker,omitempty"`
 	BaseRevision string         `json:"base_revision"`
 	WorktreeDir  string         `json:"worktree_dir,omitempty"`
 	ChangedFiles []string       `json:"changed_files"`
@@ -91,6 +94,7 @@ const (
 	IntegrationClean      = "clean"      // no conflicts; changes can be merged
 	IntegrationConflicted = "conflicted" // two or more workers changed the same file
 	IntegrationEmpty      = "empty"      // no worker produced any file changes
+	IntegrationResolved   = "resolved"   // conflicted, and the director picked whose changes land
 )
 
 // IntegrationCandidate collects the manifests from one stage's workers and
@@ -104,7 +108,13 @@ type IntegrationCandidate struct {
 	Conflicts         []FileConflict     `json:"conflicts,omitempty"`
 	SemanticConflicts []SemanticConflict `json:"semantic_conflicts,omitempty"`
 	Status            string             `json:"status"`
-	CreatedAt         time.Time          `json:"created_at"`
+	// Winner, Ruling and Dropped record the director's call on a conflicted
+	// candidate (status resolved): whose changes land, why, and which
+	// workers' changes were set aside. Their diffs stay on disk.
+	Winner    string    `json:"winner,omitempty"`
+	Ruling    string    `json:"ruling,omitempty"`
+	Dropped   []string  `json:"dropped,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // FileConflict records a file that two or more workers changed.
@@ -347,20 +357,94 @@ func (c IntegrationCandidate) HasConflicts() bool { return len(c.Conflicts) > 0 
 // an import/dependency relationship without a file-level conflict.
 func (c IntegrationCandidate) HasSemanticConflicts() bool { return len(c.SemanticConflicts) > 0 }
 
+// ManifestID is the id a ruling names: the worker id when the caller set
+// one, else the leg.
+func (m PatchManifest) ManifestID() string {
+	if m.Worker != "" {
+		return m.Worker
+	}
+	return m.Leg
+}
+
+// Contested lists the ids of the workers whose changes overlap another
+// worker's, in manifest order. These are the workers a ruling chooses between.
+func (c IntegrationCandidate) Contested() []string {
+	owners := map[string]int{}
+	for _, m := range c.Manifests {
+		for _, f := range m.ChangedFiles {
+			owners[f]++
+		}
+	}
+	var out []string
+	for _, m := range c.Manifests {
+		for _, f := range m.ChangedFiles {
+			if owners[f] > 1 {
+				out = append(out, m.ManifestID())
+				break
+			}
+		}
+	}
+	return out
+}
+
+// Resolve settles a conflicted candidate on one worker's changes. Workers do
+// not get their overlapping edits merged: the winner's changes land, every
+// other contested worker's changes are dropped whole, and a worker that
+// touched nothing anyone else touched keeps its changes. The result has no
+// overlapping files by construction, so it applies mechanically.
+func (c IntegrationCandidate) Resolve(winner, ruling string) (IntegrationCandidate, error) {
+	if c.Status != IntegrationConflicted {
+		return c, fmt.Errorf("resolve: candidate is %s, not conflicted", c.Status)
+	}
+	contested := c.Contested()
+	found := false
+	for _, id := range contested {
+		if id == winner {
+			found = true
+		}
+	}
+	if !found {
+		return c, fmt.Errorf("resolve: %q is not one of the conflicting workers (%s)", winner, strings.Join(contested, ", "))
+	}
+	c.Winner, c.Ruling, c.Dropped = winner, ruling, nil
+	for _, id := range contested {
+		if id != winner {
+			c.Dropped = append(c.Dropped, id)
+		}
+	}
+	c.Status = IntegrationResolved
+	return c, nil
+}
+
+// dropped reports whether a ruling set this manifest's changes aside.
+func (c IntegrationCandidate) dropped(m PatchManifest) bool {
+	for _, id := range c.Dropped {
+		if id == m.ManifestID() {
+			return true
+		}
+	}
+	return false
+}
+
 // ApplyIntegrationCandidate replays a clean candidate's diffs into the target
 // directory. Each manifest's saved diff (tracked changes + new files) is
 // applied via `git apply`, so the result is a working-tree change the user can
 // review, stage or discard. A conflicted or empty candidate is refused: only
-// a clean candidate (no file-level overlap) is safe to apply mechanically.
-// The apply is all-or-nothing per manifest — a diff that does not apply
-// cleanly stops the whole candidate so the user's tree is not left in a
-// half-merged state.
+// a clean candidate (no file-level overlap), or a resolved one with the
+// losing workers' changes left out, is safe to apply mechanically.
+// Every diff is checked with git apply --check before any of them is written,
+// so a later diff that does not apply leaves the tree untouched.
 func ApplyIntegrationCandidate(ctx context.Context, targetDir string, ic IntegrationCandidate) error {
-	if ic.Status != IntegrationClean {
-		return fmt.Errorf("apply: candidate is %s, not clean", ic.Status)
+	if ic.Status != IntegrationClean && ic.Status != IntegrationResolved {
+		return fmt.Errorf("apply: candidate is %s, not clean or resolved", ic.Status)
 	}
+	type pending struct {
+		leg  string
+		diff []byte
+	}
+	var diffs []pending
 	for _, m := range ic.Manifests {
-		if !m.HasChanges() || m.DiffPath == "" {
+		if !m.HasChanges() || m.DiffPath == "" || ic.dropped(m) {
 			continue
 		}
 		diff, err := os.ReadFile(m.DiffPath)
@@ -370,13 +454,32 @@ func ApplyIntegrationCandidate(ctx context.Context, targetDir string, ic Integra
 		if len(diff) == 0 {
 			continue
 		}
+		diffs = append(diffs, pending{leg: m.Leg, diff: diff})
+	}
+	apply := func(check bool, p pending) error {
+		args := []string{"-C", targetDir, "apply", "--whitespace=nowarn"}
+		if check {
+			args = append(args, "--check")
+		}
+		args = append(args, "-")
 		c, cancel := context.WithTimeout(ctx, 30*time.Second)
-		cmd := exec.CommandContext(c, "git", "-C", targetDir, "apply", "--whitespace=nowarn", "-")
-		cmd.Stdin = bytes.NewReader(diff)
+		defer cancel()
+		cmd := exec.CommandContext(c, "git", args...)
+		cmd.Stdin = bytes.NewReader(p.diff)
 		out, err := cmd.CombinedOutput()
-		cancel()
 		if err != nil {
-			return fmt.Errorf("apply: git apply %s: %w: %s", m.Leg, err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("apply: git apply %s: %w: %s", p.leg, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	for _, p := range diffs {
+		if err := apply(true, p); err != nil {
+			return err
+		}
+	}
+	for _, p := range diffs {
+		if err := apply(false, p); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -429,6 +532,8 @@ func (c IntegrationCandidate) Summary() string {
 		return fmt.Sprintf("%d workers, no file changes%s%s", workers, testSummary, semSummary)
 	case IntegrationConflicted:
 		return fmt.Sprintf("%d workers, %d files changed, %d conflicts%s%s", workers, files, len(c.Conflicts), testSummary, semSummary)
+	case IntegrationResolved:
+		return fmt.Sprintf("%d workers, %d files changed, %d conflicts settled on %s%s%s", workers, files, len(c.Conflicts), c.Winner, testSummary, semSummary)
 	default:
 		return fmt.Sprintf("%d workers, %d files changed, no conflicts%s%s", workers, files, testSummary, semSummary)
 	}
@@ -493,7 +598,7 @@ func diffWorktree(ctx context.Context, dir, revision string) ([]byte, error) {
 	defer cancel()
 	exec.CommandContext(c, "git", "-C", dir, "add", "-N", ".").Run()
 	defer exec.CommandContext(c, "git", "-C", dir, "reset", "--quiet", "--").Run()
-	cmd := exec.CommandContext(c, "git", "-C", dir, "diff", "--no-renames", revision, "--")
+	cmd := exec.CommandContext(c, "git", "-C", dir, "diff", "--binary", "--no-renames", revision, "--")
 	cmd.Dir = dir
 	return cmd.Output()
 }

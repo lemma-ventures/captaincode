@@ -305,7 +305,6 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	// M3.4: register the team's root context so cancellation cascades.
 	teamCtx, teamCancel := b.cancelTree.Register(taskID, "team", "team:"+teamKey, context.Background())
 	defer teamCancel()
-	_ = teamCtx
 	fmt.Printf("captain brain: team running %d workers (%s) - %s\n", len(plan.Workers), teamKey, plan.Rationale)
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: "team", Model: teamKey, Text: promptPeek(task)})
 	emit(fmt.Sprintf("[captain/team] %d workers in parallel (%s) - %s\n\n", len(plan.Workers), teamKey, plan.Rationale))
@@ -323,8 +322,9 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	// the team serializes — slower, but safe.
 	var wts []*captaincode.Worktree
 	isolated := false
+	rev := ""
 	if len(plan.Workers) > 1 {
-		rev := captaincode.CurrentRevision(req.ws.Dir)
+		rev = captaincode.CurrentRevision(req.ws.Dir)
 		if rev != "" {
 			var werr error
 			wts, werr = captaincode.IsolateWorkers(context.Background(), req.ws.Dir, rev, len(plan.Workers))
@@ -417,6 +417,23 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 			runTeamSlot(i, wk, title)
 		}
 	}
+	// Isolated workers' changes live in their worktrees: land them before
+	// the worktrees close. Overlapping changes are the director's call
+	// (brain_arbitrate.go); nothing is spliced.
+	integration := ""
+	if isolated {
+		var slots []teamSlot
+		for i, o := range results {
+			if o.err != nil || i >= len(wts) || wts[i] == nil {
+				continue // a worker that failed did not finish its changes
+			}
+			slots = append(slots, teamSlot{id: o.title, dir: wts[i].Dir, leg: string(o.leg), text: o.res.Text})
+		}
+		ic, applyErr := b.integrateTeam(teamCtx, req.ws.Dir, rev, taskID, stageID, task, slots, func(s string) {
+			emit("[captain/team] " + s)
+		})
+		integration = rulingNote(ic, applyErr)
+	}
 	captaincode.CloseAll(wts)
 
 	outputs := map[string]captaincode.WorkerOutput{}
@@ -449,7 +466,11 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 
 	final := ""
 	stocked := teamShelfRefs(shelves)
-	if ma, err := b.doAssessMulti(taskID, task, outputs, "none", stocked...); err == nil && strings.TrimSpace(ma.Synthesis) != "" {
+	objective := "none"
+	if integration != "" {
+		objective = integration
+	}
+	if ma, err := b.doAssessMulti(taskID, task, outputs, objective, stocked...); err == nil && strings.TrimSpace(ma.Synthesis) != "" {
 		// A team is not a leg (the same distinction Event.Team draws), so the
 		// rows carry the task and no leg rather than a leg that never ran.
 		b.recordShelf(taskID, "", plan.Class, captaincode.TriageTask(task).Domain, skillRefNames(stocked), ma.Skills)

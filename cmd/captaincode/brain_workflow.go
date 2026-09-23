@@ -651,6 +651,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 		// before the worktrees are closed. The manifests feed the integration
 		// candidate that detects file-level conflicts between parallel workers.
 		var manifests []captaincode.PatchManifest
+		stageTexts := map[string]string{}
 		if isolated {
 			rev := captaincode.CurrentRevision(req.ws.Dir)
 			diffDir := filepath.Join(filepath.Dir(rf.location()), "diffs")
@@ -663,6 +664,8 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 				if err != nil {
 					fmt.Printf("captain brain: workflow %s stage %d - manifest capture failed for %s: %v\n", key, si+1, s.ev.Leg, err)
 				}
+				m.Worker = fmt.Sprintf("s%dw%d-%s", si+1, i+1, s.ev.Leg)
+				stageTexts[m.Worker] = s.out.Text
 				if s.gateCmd != "" {
 					m.RecordCheck([]string{"sh", "-c", s.gateCmd}, 0, s.gateOk, s.gateOut)
 				}
@@ -697,6 +700,9 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 					feed.note(fmt.Sprintf("    [semantic] %s → %s (%s) ← %s\n", sc.File, sc.DependsOn, sc.Reason, strings.Join(sc.Workers, ", ")))
 				}
 			}
+			// Overlapping changes are the director's call, not a merge
+			// (brain_arbitrate.go).
+			ic = b.settleConflict(taskID, task, ic, stageTexts, func(s string) { feed.note("    " + s) })
 			b.setLastIntegration(taskID, ic)
 		}
 		captaincode.CloseAll(wts)
@@ -773,6 +779,11 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	if aborted != "" {
 		objective += " NOTE: the workflow was cut short - " + aborted + ". Say so in the deliverable."
 	}
+	if ic, ok := b.lastIntegration(taskID); ok {
+		if n := rulingNote(ic, nil); n != "" {
+			objective += " NOTE: " + n
+		}
+	}
 	shelfMu.Lock()
 	stocked := teamShelfRefs(wfShelves)
 	shelfMu.Unlock()
@@ -840,9 +851,9 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	// from each isolated worktree are replayed into the user's directory via
 	// `git apply`, so the worker changes land as uncommitted working-tree
 	// changes the user can review, stage or discard. A conflicted or empty
-	// candidate is not applied — the review sees the conflict report and
-	// decides manually.
-	if ic, ok := b.lastIntegration(taskID); ok && ic.Status == captaincode.IntegrationClean {
+	// candidate the director did not settle is not applied. A resolved one
+	// lands with only the winner's overlapping changes (brain_arbitrate.go).
+	if ic, ok := b.lastIntegration(taskID); ok && (ic.Status == captaincode.IntegrationClean || ic.Status == captaincode.IntegrationResolved) {
 		if err := captaincode.ApplyIntegrationCandidate(workflowCtx, req.ws.Dir, ic); err != nil {
 			fmt.Printf("captain brain: workflow %s integration apply failed: %v\n", key, err)
 			feed.note(fmt.Sprintf("    [integration] apply failed: %v\n", err))
