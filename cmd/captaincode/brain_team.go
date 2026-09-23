@@ -99,7 +99,8 @@ func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief s
 		"\nThe conversation above is authoritative: the user's own words, files, and style take precedence over any paraphrase in the assignment. Stay inside your assignment's scope; another worker covers the rest." +
 		workerContext(ws) +
 		deliverableContract +
-		callbackContract(ws, leg)
+		callbackContract(ws, leg) +
+		securityContract()
 }
 
 // skills, when the stage staged a shelf, adds M3.9's second question to the
@@ -166,7 +167,10 @@ func (b *brain) teamPlanFor(ws captaincode.Workspace, task, prefer string, requi
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.planHints = b.valueHints(captaincode.ClassHigh, captaincode.TriageTask(task).Domain, order)
+	if prefer == "" && ws.Pool.Empty() {
+		order = b.orderBySteer(captaincode.ClassHigh, captaincode.TriageTask(task).Domain, order)
+	}
+	b.planHints = b.valueHints(captaincode.ClassHigh, captaincode.TriageTask(task).Domain, order, prefer == "" && ws.Pool.Empty())
 	defer func() { b.planHints = nil }()
 	return b.planWith(ws, required, task, "", prefer, order, stats, teams, true)
 }
@@ -281,7 +285,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		}
 		recordRunHistory(hist)
 		fmt.Printf("captain brain: team single worker %s done in %s (%d chars)\n", leg, time.Since(t0).Round(time.Millisecond), len(res.Text))
-		go b.recordRun(leg, prompt, res, req.ws.Dir, shelf.Refs()...)
+		go b.recordRunAt(leg, prompt, res, req.ws, "", 1, "", "", shelf.Refs()...)
 		emit(res.Text)
 		finish()
 		return
@@ -419,7 +423,8 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	events := map[string]*captaincode.Event{}
 	for _, o := range results {
 		ev := captaincode.Event{Task: truncate(task, 120), Class: plan.Class, Leg: o.leg, Team: teamKey,
-			Reason: "team: " + plan.Rationale, Tokens: o.res.Tokens, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs}
+			Reason: "team: " + plan.Rationale, Tokens: o.res.Tokens, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs,
+			Effort: req.ws.Effort, Model: captaincode.ModelIDAt(o.leg, req.ws.Effort), Path: captaincode.PathDirector, ClassBy: captaincode.TriageByDirector, Attempt: 1}
 		usage := captaincode.CallUsage(o.leg, o.res.Tokens, o.res.CostUSD, nil)
 		ev.CostUSD, ev.CostStatus = usage.CostUSD, usage.CostStatus
 		ev.TaskID = taskID
@@ -507,14 +512,40 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	finish()
 }
 
-// frontierChat serves model="frontier": the claude leg at frontier settings
-// (pinned strongest model version + maxed thinking budget, 2x time budget).
-// Runs record under the claude leg - frontier IS claude at full effort.
+// frontierChat serves model="frontier": the frontier lane's leg for this
+// turn (brain_lanes.go frontierLead) at its strongest settings. claude runs
+// as the frontier pseudo-leg (pinned strongest model version + maxed
+// thinking budget, 2x time budget) and records under the claude leg; any
+// other frontier leg runs at max effort - codex-cli's frontier model at
+// xhigh - and records under its own name.
 func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	emit, status, finish := newCompletionWriter(w, req, "frontier")
 	defer finish()
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: "claude", Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
+	// Which frontier leg, before anything is appended to the prompt: the
+	// lane evens out its recent turns (140 on claude, 13 on codex-cli, 12-23
+	// September, every one of the 13 a reroute), and says so on the turn.
+	pick := b.frontierLead(lastUserTurn(prompt))
+	lead, ws := captaincode.LegFrontier, req.ws.WithEffort(captaincode.EffortMax)
+	if pick.Leg != captaincode.LegClaude {
+		lead = pick.Leg
+	}
+	fmt.Printf("captain brain: %s\n", pick.Reason)
+	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(pick.Leg), Model: "frontier", Text: pick.Reason})
+	status(pick.Reason + "\n")
+	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
 	t0 := time.Now()
+	// The standing contracts every other worker prompt carries. The frontier
+	// path went without them, so the callback line never reached the path of
+	// the very turn that motivated it (a frontier turn, 2026-09-22), and a
+	// frontier worker - the one trusted with the largest changes - was the
+	// only one never asked to put security first.
+	prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract()
+	// M3.9: the shelf a solo worker gets, staged in the user's directory for
+	// the turn. It carries the always-on security-audit skill, which a
+	// frontier worker otherwise never saw.
+	shelf := b.stockShelf(req.ws.Dir, lastUserTurn(prompt))
+	defer shelf.Remove()
+	stocked := shelf.Refs()
 	// Frontier thinks for minutes before its first token - the progress feed is
 	// the only thing standing between the user and an apparently dead turn.
 	feed := newProgressFeed("frontier", status)
@@ -524,7 +555,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// way a /team /frontier plan already did. Calling the frontier runner
 	// directly returned the 429 to the TUI, which retried four times in
 	// twenty seconds and gave up (live 2026-09-12).
-	ranLeg, res, err := b.runWorkerRerouted(req.ws, captaincode.LegFrontier, prompt, func(d string) { feed.touch(); emit(d) }, feed.note, "")
+	ranLeg, res, err := b.runWorkerRerouted(ws, lead, prompt, func(d string) { feed.touch(); emit(d) }, feed.note, "")
 	feed.close()
 	if err != nil {
 		fmt.Printf("captain brain: frontier error in %s - %v\n", time.Since(t0).Round(time.Millisecond), err)
@@ -536,7 +567,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		Task: lastUserTurn(prompt), Output: res.Text, DurationMs: time.Since(t0).Milliseconds()})
 	fmt.Printf("captain brain: frontier done on %s in %s (%d chars)\n", ranLeg, time.Since(t0).Round(time.Millisecond), len(res.Text))
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(ranLeg), Model: "frontier", Text: promptPeek(res.Text), Ms: time.Since(t0).Milliseconds()})
-	go b.recordRun(ranLeg, prompt, res, req.ws.Dir)
+	go b.recordRunAt(ranLeg, prompt, res, ws, "", 1, "", "", stocked...)
 	if !req.Stream || !res.Streamed {
 		emit(res.Text)
 	}

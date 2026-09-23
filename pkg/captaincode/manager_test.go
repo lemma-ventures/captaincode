@@ -27,20 +27,29 @@ func TestModelForDirectorOverride(t *testing.T) {
 	assert.Equal(t, "grok-4.7", frontier.Model, "/frontier /grok upgrades the burner to the flagship")
 
 	assert.Equal(t, "grok-4.7-xhigh", cursorModel(EffortMax), "/frontier /cursor pins Grok 4.7 Extra High")
-	assert.Empty(t, cursorModel(""), "bare cursor leaves the CLI default")
+	assert.Equal(t, "grok-4.7-medium", cursorModel(""), "bare cursor pins the family's medium rung so the run is attributable")
+	assert.Equal(t, "composer-2.5", cursorModel(EffortLow), "cheap tier: Cursor's own model")
+	assert.Equal(t, "grok-4.7-high", cursorModel(EffortHigh))
+	t.Setenv("CAPTAIN_CURSOR_MODEL", "auto")
+	assert.Empty(t, cursorModel(EffortMedium), "CAPTAIN_CURSOR_MODEL=auto leaves the CLI's own router")
+	t.Setenv("CAPTAIN_CURSOR_MODEL", "composer-2.5")
+	assert.Equal(t, "composer-2.5", cursorModel(EffortHigh), "a full name is used as is")
+	t.Setenv("CAPTAIN_CURSOR_MODEL", "")
 	assert.Equal(t, "grok-4.7-xhigh", ModelIDAt(LegCursor, EffortMax))
-	assert.Equal(t, "composer-2.5", ModelID(LegCursor), "routine cursor stays Composer in the registry")
+	assert.Equal(t, "grok-4.7-medium", ModelID(LegCursor), "routine cursor is attributed to the pinned rung")
 
 	// Codex as director must use the full-effort model, never the fast lane:
 	// the latency-optimized variant is too weak to plan/assess (see
-	// directorModels). 2026-09-15: the ChatGPT route refused spark and lost
-	// gpt-5.3-codex; the pair is gpt-5.5-fast / gpt-5.5 now.
+	// directorModels). 2026-09-22: GPT-6 Sol replaced gpt-5.5; the pair is
+	// gpt-6-sol-fast / gpt-6-sol now.
 	codexWorker, _ := modelFor(LegCodex, false)
 	codexDirector, _ := modelFor(LegCodex, true)
-	assert.Equal(t, "gpt-5.5-fast", codexWorker.Model, "worker leg keeps the fast variant")
-	assert.Equal(t, "gpt-5.5", codexDirector.Model, "director path must use the full-effort model")
+	assert.Equal(t, "gpt-6-sol-fast", codexWorker.Model, "worker leg keeps the fast variant")
+	assert.Equal(t, "gpt-6-sol", codexDirector.Model, "director path runs standard speed")
 	codexFrontier, _ := modelForEffort(LegCodex, false, EffortMax)
-	assert.Equal(t, "gpt-5.5", codexFrontier.Model, "/frontier /codex also takes the full-effort twin")
+	assert.Equal(t, "gpt-6-astra", codexFrontier.Model, "/frontier /codex takes the frontier tier, not the director's twin")
+	lunaWorker, _ := modelFor(LegLuna, false)
+	assert.Equal(t, "openai/gpt-6-luna", lunaWorker.Provider+"/"+lunaWorker.Model, "luna is OpenAI's cheap tier on the same ChatGPT credential")
 
 	// A leg with no director override (free) falls back to its regular
 	// worker model either way.

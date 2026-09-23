@@ -43,6 +43,11 @@ const (
 	PointShape     = "shape"
 	PointLeg       = "leg"
 	PointNoteRoute = "note-route"
+	// The two questions added beside class and domain at the triage point
+	// (stage 2): whether the work has a cheap undo, and whether a mid-tier
+	// worker would get it right first time.
+	PointIrreversible = "irreversible"
+	PointMidTier      = "mid-tier"
 )
 
 // Shapes a turn can take. The director's plan is one worker or a fan-out;
@@ -168,10 +173,10 @@ func shadowFrom(c *SystemOneClient, resp S1Response, res Result, err error, menu
 		sh.Err = err.Error()
 		return sh
 	}
-	sh.Answers = make(map[string]ShadowAnswer, len(resp.Answers))
-	for name, a := range resp.Answers {
-		sh.Answers[name] = ShadowAnswer{Choice: a.Choice, Confidence: a.Confidence, Probabilities: a.Probabilities}
-	}
+	// A noul answer (irreversible, mid-tier) is a probability, recorded the
+	// way the gate and the supervisor record theirs: as a true/false choice
+	// at the probability's confidence, so the calibration reads one shape.
+	sh.Answers = nulAnswers(resp.Answers)
 	return sh
 }
 
@@ -322,8 +327,17 @@ func triageFromAnswers(resp S1Response, res Result) (TriageResult, error) {
 	if dc := resp.Answers[PointDomain].Confidence; dc < conf {
 		conf = dc
 	}
-	return TriageResult{Class: class, Domain: domain, Confidence: conf,
-		Why: fmt.Sprintf("jev %s/%s (conf %.2f, %s, %dms)", class, domain, conf, resp.Model, res.DurationMs)}, nil
+	tr := TriageResult{Class: class, Domain: domain, Confidence: conf, By: TriageByJev,
+		Why: fmt.Sprintf("jev %s/%s (conf %.2f, %s, %dms)", class, domain, conf, resp.Model, res.DurationMs)}
+	// The noul answers: a probability each, read only when the model
+	// answered them (an older backend, or a conformance fake, may not).
+	if a, ok := resp.Answers[PointIrreversible]; ok {
+		tr.Irreversible = a.Noul >= 0.5
+	}
+	if a, ok := resp.Answers[PointMidTier]; ok {
+		tr.MidTierP = a.Noul
+	}
+	return tr, nil
 }
 
 // RouteNoteWithJev asks which running worker a mid-turn note concerns, from

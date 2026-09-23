@@ -46,8 +46,12 @@ const (
 	// (2× budget, never auto-assigned to routine work, third in the /frontier
 	// failover after claude and codex-cli). The grok leg keeps grok-build-0.1,
 	// the fast daily-reset burner; the two share the SuperGrok credential.
-	// /frontier /grok upgrades the burner to grok-4.7 via directorModels.
+	// /frontier /grok upgrades the burner to grok-4.7, its frontier tier (tiers.go).
 	LegGrokMax Leg = "grok-max" // opencode serve -> xai/grok-4.7 (SuperGrok)
+	// luna (2026-09-22): GPT-6 Luna, OpenAI's cheap fast tier, on the same
+	// ChatGPT credential as codex (GPT-6 Sol, the quality tier) and codex-cli
+	// (GPT-6 Astra, the frontier tier) - one vendor, three price points.
+	LegLuna Leg = "luna" // opencode serve -> openai/gpt-6-luna (ChatGPT sub)
 	// jev (2026-09-17): TypeSafe's System One model, a DECISION leg. It answers
 	// typed questions (choice/score/noul) with calibrated probabilities in
 	// ~100-500ms and never generates text or runs a tool, so it is in the

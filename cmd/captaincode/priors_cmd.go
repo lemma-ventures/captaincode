@@ -106,7 +106,7 @@ func cmdPriorsSync(apply bool) {
 	for _, l := range captaincode.AllLegs {
 		cur := captaincode.QualityPrior(l)
 		if dp, ok := proposed[l]; ok {
-			m, _ := captaincode.MatchAA(models, l)
+			m, _ := captaincode.MatchAACoding(models, l)
 			marker := ""
 			if dp["all"] != cur {
 				marker = "  *"

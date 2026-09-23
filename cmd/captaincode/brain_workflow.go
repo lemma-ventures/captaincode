@@ -337,6 +337,7 @@ func (b *brain) workflowStagePrompt(ws captaincode.Workspace, conversation strin
 	sb.WriteString(workerContext(ws))
 	sb.WriteString(deliverableContract)
 	sb.WriteString(callbackContract(ws, leg))
+	sb.WriteString(securityContract())
 	return sb.String()
 }
 
@@ -596,7 +597,13 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			tr.finishWorker(si, li, ran, res, dur, err)
 			ev := captaincode.Event{Task: truncate(task, 120), Leg: ran, Workflow: key,
 				Reason: fmt.Sprintf("workflow stage %d/%d", si+1, len(wf.Stages)),
-				Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs}
+				Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs,
+				Effort: ws.Effort, Model: captaincode.ModelIDAt(ran, ws.Effort), Path: captaincode.PathWorkflow, Attempt: 1}
+			if gateEscalated {
+				ev.Attempt, ev.EscalatedFrom = 3, wl.Leg
+			} else if gateRetried {
+				ev.Attempt = 2
+			}
 			if err != nil {
 				ev.Outcome, ev.Error = "fail", truncate(err.Error(), 160)
 				rf.stage(si+1, len(wf.Stages), string(ran), dur, "", err)

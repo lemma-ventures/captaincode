@@ -39,7 +39,7 @@ func TestCaptainWordSwitchesTheDirector(t *testing.T) {
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain quality"))
 	assert.Contains(t, rec.Body.String(), "tier 2")
-	assert.Equal(t, captaincode.LegGLM, b.effectiveDirector(), "the best of tier 2 on the compiled ranking")
+	assert.Equal(t, captaincode.LegCodex, b.effectiveDirector(), "the best of tier 2 on the compiled ranking: codex directs as gpt-6-sol, read off 5.6 Sol (47), below the band under Opus 5.5, above grok-4.7 (46)")
 	assert.Equal(t, "quality", b.ledger.DirectorMode)
 
 	rec = httptest.NewRecorder()
@@ -78,7 +78,7 @@ func TestDirectorModeSurvivesARestart(t *testing.T) {
 	b2 := teamBrain()
 	b2.ledger.DirectorMode = saved
 	b2.restoreDirectorMode()
-	assert.Equal(t, captaincode.LegGLM, b2.effectiveDirector())
+	assert.Equal(t, captaincode.LegCodex, b2.effectiveDirector(), "the best of tier 2 on the compiled ranking")
 	assert.Equal(t, "quality", b2.directorModeName())
 
 	// CAPTAIN_DIRECTOR=auto seeds the mode when nothing is persisted.

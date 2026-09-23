@@ -165,7 +165,7 @@ func TestPromptBudgetFromRegistryContext(t *testing.T) {
 	t.Setenv("CAPTAIN_WRAPPER_MAX_PROMPT", "")
 	assert.Equal(t, 700_000, promptBudget(captaincode.LegClaude))
 	assert.Equal(t, 700_000, promptBudget(captaincode.LegFrontier))
-	assert.Equal(t, 700_000, promptBudget(captaincode.LegCodex), "gpt-5.5-fast's 400k window × 3 chars, capped (spark's 128k left with spark, 2026-09-15)")
+	assert.Equal(t, 700_000, promptBudget(captaincode.LegCodex), "gpt-6-sol-fast's 1.05M window × 3 chars, capped at the budget ceiling")
 	assert.Equal(t, 131072*3, promptBudget(captaincode.LegMiniMax), "128k window × 3 chars")
 	assert.Equal(t, 700_000, promptBudget(captaincode.LegGrok), "256k×3 capped")
 }
@@ -231,8 +231,8 @@ func TestRecordRunChargesTheRepairAttempt(t *testing.T) {
 func TestChargeAuxBillsReviewToTheSameTask(t *testing.T) {
 	b := teamBrain()
 	b.mu.Lock()
-	taskID, _ := b.chargeTurn(captaincode.LegGLM, "rewrite the intro",
-		captaincode.CallUsage(captaincode.LegGLM, 1000, 0, nil), 500, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegGLM, "rewrite the intro",
+		captaincode.CallUsage(captaincode.LegGLM, 1000, 0, nil), 500, false, "")
 	b.mu.Unlock()
 
 	charge := b.chargeAux(taskID)

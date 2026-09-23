@@ -1,5 +1,5 @@
 // captain - Captain Code: an agent scaffolding where the strongest model
-// (Claude Fable, via the user's Max subscription) is the router MANAGER. It
+// (Claude Opus 5.5, via the user's Max subscription) is the router MANAGER. It
 // bootstraps each task into a worker brief, picks the worker model on live
 // 3-axis scorecards (performance / quality / cost), assesses the result
 // fairly, and maintains those stats locally.
@@ -53,7 +53,7 @@ func main() {
 	prefer := flag.String("prefer", "", "quality | speed | save")
 	until := flag.String("until", "", "shell command; loop until it exits 0")
 	maxIters := flag.Int("max-iters", 5, "max loop iterations")
-	noManager := flag.Bool("no-manager", false, "skip the Fable router manager; pure heuristic ladder")
+	noManager := flag.Bool("no-manager", false, "skip the Claude router manager; pure heuristic ladder")
 	flag.Parse()
 	args := flag.Args()
 
@@ -640,6 +640,9 @@ func cmdWhy(l *captaincode.Ledger) {
 	e := l.Events[len(l.Events)-1]
 	fmt.Printf("last: %q\n  class=%s leg=%s outcome=%s (%s)\n  quality=%.1f verdict=%s tokens=%d cost=$%.4f duration=%dms at=%s\n",
 		e.Task, orDash(string(e.Class)), e.Leg, e.Outcome, e.Reason, e.Quality, orDash(e.Verdict), e.Tokens, e.CostUSD, e.Duration, e.At.Format(time.RFC3339))
+	if e.Model != "" || e.Effort != "" {
+		fmt.Printf("  ran as %s at %s effort · attempt %d · class by %s\n", orDash(e.Model), orDash(string(e.Effort)), e.Attempt, orDash(e.ClassBy))
+	}
 	if e.Error != "" {
 		fmt.Printf("  error: %s\n", e.Error)
 	}
@@ -676,6 +679,19 @@ func printDecision(l *captaincode.Ledger, taskID string) {
 	}
 	fmt.Printf(") in %dms\n", d.DecidedMs)
 	fmt.Printf("    policy: %s\n", d.Policy.Version)
+	if d.TriageBy != "" || d.Effort != "" {
+		extra := ""
+		if d.Irreversible {
+			extra += " irreversible"
+		}
+		if d.MidTierP > 0 {
+			extra += fmt.Sprintf(" mid-tier p=%.2f", d.MidTierP)
+		}
+		fmt.Printf("    triage: %s (conf %.2f) · effort %s · attempt %d%s\n", orDash(d.TriageBy), d.Confidence, orDash(string(d.Effort)), d.Attempt, extra)
+	}
+	if len(d.Expected) > 0 {
+		fmt.Print(captaincode.FormatExpected(d.Expected, d.Chosen, d.Effort))
+	}
 	if d.Shadow != nil {
 		fmt.Printf("    shadow: %s\n", captaincode.FormatShadow(*d.Shadow))
 	}

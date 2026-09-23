@@ -29,6 +29,16 @@ func s1Answering(t *testing.T, want map[string]string, conf float64, got *map[st
 		*got = req
 		answers := map[string]any{}
 		for name, raw := range req["questions"].(map[string]any) {
+			if raw.(map[string]any)["type"] == "noul" {
+				// The two stage-2 triage answers and the supervisor's points
+				// are probabilities, not choices: answered low unless wanted.
+				p := 0.2
+				if want[name] == "true" {
+					p = 0.9
+				}
+				answers[name] = map[string]any{"type": "noul", "noul": p, "confidence": conf}
+				continue
+			}
 			crit, _ := raw.(map[string]any)["criteria"].(map[string]any)
 			keys := make([]string, 0, len(crit))
 			for k := range crit {
@@ -68,7 +78,7 @@ func TestTriageWithJevAsksShapeAndLegBesideClassAndDomain(t *testing.T) {
 	tr, sh, res, err := TriageWithJev(context.Background(), c, "refactor the queue worker and its tests", JevTriageOptions{
 		Shadow: true, Menu: []Leg{LegCursor, LegCodex, LegJev, "nope", LegGrok, LegCursor}, Domain: DomainCode})
 	require.NoError(t, err)
-	assert.Equal(t, []string{PointClass, PointDomain, PointLeg, PointShape}, questionNames(got), "one request carries all four questions")
+	assert.Equal(t, []string{PointClass, PointDomain, PointIrreversible, PointLeg, PointMidTier, PointShape}, questionNames(got), "one request carries all six questions")
 	assert.Equal(t, ClassMedium, tr.Class)
 	assert.Equal(t, DomainCode, tr.Domain)
 	assert.InDelta(t, 0.8, tr.Confidence, 1e-9, "the gate reads the weaker of class and domain - never a shadow answer")
@@ -99,14 +109,14 @@ func TestClassifyWithJevStillAsksOnlyTheTriageQuestions(t *testing.T) {
 	c := s1Answering(t, map[string]string{PointClass: "trivial", PointDomain: "editorial"}, 0.9, &got)
 	tr, _, err := ClassifyWithJev(context.Background(), c, "fix the typo")
 	require.NoError(t, err)
-	assert.Equal(t, []string{PointClass, PointDomain}, questionNames(got))
+	assert.Equal(t, []string{PointClass, PointDomain, PointIrreversible, PointMidTier}, questionNames(got))
 	assert.Equal(t, ClassTrivial, tr.Class)
 
 	c = s1Answering(t, nil, 0.9, &got)
 	_, sh, _, err := TriageWithJev(context.Background(), c, "fix the typo", JevTriageOptions{Menu: []Leg{LegCursor, LegGrok}})
 	require.NoError(t, err)
 	assert.Nil(t, sh, "no shadow asked for, none returned")
-	assert.Equal(t, []string{PointClass, PointDomain}, questionNames(got))
+	assert.Equal(t, []string{PointClass, PointDomain, PointIrreversible, PointMidTier}, questionNames(got))
 }
 
 func TestJevLegQuestionNeedsTwoWorkersAndSkipsDecisionLegs(t *testing.T) {
@@ -126,7 +136,7 @@ func TestJevLegQuestionNeedsTwoWorkersAndSkipsDecisionLegs(t *testing.T) {
 	c := s1Answering(t, nil, 0.9, &got)
 	_, sh, _, err := TriageWithJev(context.Background(), c, "x", JevTriageOptions{Shadow: true, Menu: []Leg{LegCursor}})
 	require.NoError(t, err)
-	assert.Equal(t, []string{PointClass, PointDomain, PointShape}, questionNames(got), "the shape is still asked when the menu has no choice")
+	assert.Equal(t, []string{PointClass, PointDomain, PointIrreversible, PointMidTier, PointShape}, questionNames(got), "the shape is still asked when the menu has no choice")
 	assert.Nil(t, sh.Menu)
 }
 

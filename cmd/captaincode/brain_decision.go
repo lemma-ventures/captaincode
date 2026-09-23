@@ -16,7 +16,10 @@ package main
 // row claiming it spent something.
 
 import (
+	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -50,6 +53,72 @@ func (b *brain) recordDecision(task string, d captaincode.Decision) {
 		}
 	}
 	b.pendingDecisions[d.Task] = pendingDecision{dec: d, at: time.Now()}
+}
+
+// stampTriage puts the triage verdict on the record: who settled the class,
+// how sure, and the two extra answers (stage 1). Attempt 1 - the repair and
+// escalation attempts re-stamp their own.
+func stampTriage(d *captaincode.Decision, tr captaincode.TriageResult) {
+	d.TriageBy, d.Confidence = tr.By, tr.Confidence
+	d.Irreversible, d.MidTierP = tr.Irreversible, tr.MidTierP
+	if d.Attempt == 0 {
+		d.Attempt = 1
+	}
+}
+
+// stampPendingEffort writes the effort decideRoute settled onto the parked
+// decision, which was recorded by decideLeg before the effort existed.
+func (b *brain) stampPendingEffort(task string, e captaincode.Effort) {
+	if e == "" {
+		return
+	}
+	b.rtmu.Lock()
+	defer b.rtmu.Unlock()
+	if p, ok := b.pendingDecisions[truncate(task, 120)]; ok {
+		p.dec.Effort = e
+		b.pendingDecisions[truncate(task, 120)] = p
+	}
+}
+
+// deliveredTask is what a workspace last delivered, for the follow-up read.
+type deliveredTask struct {
+	taskID string
+	at     time.Time
+}
+
+// noteDelivered remembers the task a workspace just delivered. Caller
+// holds b.mu.
+func (b *brain) noteDelivered(dir, taskID string) {
+	if dir == "" || taskID == "" {
+		return
+	}
+	if b.lastDelivered == nil {
+		b.lastDelivered = map[string]deliveredTask{}
+	}
+	b.lastDelivered[dir] = deliveredTask{taskID: taskID, at: time.Now()}
+}
+
+// noteFollowUp reads the next prompt on a workspace against what it last
+// delivered: a corrective opener inside the settle window is the user
+// sending the work back, and settles that task as rejected (settle.go).
+// Any other prompt is a new task and says nothing.
+func (b *brain) noteFollowUp(dir, text string) {
+	if dir == "" || strings.TrimSpace(text) == "" || !captaincode.CorrectiveReprompt(text) {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	d, ok := b.lastDelivered[dir]
+	if !ok || time.Since(d.at) > captaincode.OutcomeSettleWindow() {
+		return
+	}
+	delete(b.lastDelivered, dir)
+	b.ledger.RecordReprompt(d.taskID, truncate(text, 160), time.Now())
+	b.ledger.SettleOutcomes(time.Now())
+	if err := b.ledger.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "captain brain: save reprompt: %v\n", err)
+	}
+	fmt.Printf("captain brain: follow-up read as a correction of task %s (%q)\n", d.taskID, promptPeek(text))
 }
 
 // attachDecision stamps the task identity onto this turn's parked decision and

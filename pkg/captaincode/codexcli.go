@@ -44,7 +44,8 @@ func legBudgetMultiplier(l Leg) time.Duration {
 
 // codexCLICmdArgs builds the `codex exec` argument list for one task.
 //
-//   - CAPTAIN_CODEX_CLI_MODEL (default gpt-6-astra) - the frontier model id.
+//   - the model: the effort's tier (codexCLIModel - gpt-6-sol at low, else
+//     CAPTAIN_CODEX_CLI_MODEL, default gpt-6-astra).
 //   - CAPTAIN_CODEX_CLI_EFFORT (default xhigh) - model_reasoning_effort; xhigh is
 //     the same deliberate second-to-best choice /frontier makes for claude.
 //   - CAPTAIN_CODEX_CLI_SANDBOX - unset/"skip": bypass approvals AND the sandbox
@@ -58,10 +59,7 @@ func legBudgetMultiplier(l Leg) time.Duration {
 // pins the worker to the request's workspace (cmd.Dir does too; the
 // flag is what codex reports as its working root).
 func codexCLICmdArgs(dir, task string, effort Effort) []string {
-	model := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_MODEL"))
-	if model == "" {
-		model = "gpt-6-astra"
-	}
+	model := codexCLIModel(effort)
 	// The request's effort (effort.go), xhigh when none was decided - the
 	// leg is frontier-class and used to run at xhigh always; a pinned
 	// CAPTAIN_CODEX_CLI_EFFORT still wins.

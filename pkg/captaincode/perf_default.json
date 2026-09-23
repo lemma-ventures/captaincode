@@ -1,7 +1,43 @@
 {
  "source": "snapshot",
- "snapshot_date": "2026-09-13",
+ "snapshot_date": "2026-09-22",
  "models": [
+  {
+   "name": "Claude Opus 5.5 (Adaptive Reasoning, Max Effort, Default Fallback)",
+   "slug": "claude-opus-5-5",
+   "creator": "Anthropic",
+   "released": "2026-09-22",
+   "intelligence": 57.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
+  },
+  {
+   "name": "Claude Opus 5.5 (Adaptive Reasoning, Xhigh Effort, Default Fallback)",
+   "slug": "claude-opus-5-5-xhigh",
+   "creator": "Anthropic",
+   "released": "2026-09-17",
+   "intelligence": 56,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
+  },
+  {
+   "name": "Claude Opus 5.5 (Adaptive Reasoning, High Effort, Default Fallback)",
+   "slug": "claude-opus-5-5-high",
+   "creator": "Anthropic",
+   "released": "2026-09-17",
+   "intelligence": 53.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
+  },
   {
    "name": "Claude Fable 5.1 (Adaptive Reasoning, Max Effort, Default Fallback)",
    "slug": "claude-fable-5-1",
@@ -12,7 +48,7 @@
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 67.075
+   "tps": 65.081
   },
   {
    "name": "Claude Fable 5.1 (Adaptive Reasoning, Xhigh Effort, Default Fallback)",
@@ -24,31 +60,43 @@
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 63.299
+   "tps": 54.533
   },
   {
    "name": "GPT-6 Astra (max)",
    "slug": "gpt-6-astra",
    "creator": "OpenAI",
    "released": "2026-09-03",
-   "intelligence": 52.8,
+   "intelligence": 52.7,
    "coding": 76.9,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 67.356
+   "tps": 54.334
   },
   {
    "name": "GPT-6 Astra (xhigh)",
    "slug": "gpt-6-astra-xhigh",
    "creator": "OpenAI",
    "released": "2026-09-03",
-   "intelligence": 52.5,
+   "intelligence": 52.4,
    "coding": 75.9,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 62.383
+   "tps": 50.211
+  },
+  {
+   "name": "Claude Opus 5.5 (Adaptive Reasoning, Medium Effort, Default Fallback)",
+   "slug": "claude-opus-5-5-medium",
+   "creator": "Anthropic",
+   "released": "2026-09-17",
+   "intelligence": 51.2,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
   },
   {
    "name": "Claude Fable 5.1 (Adaptive Reasoning, High Effort, Default Fallback)",
@@ -60,55 +108,31 @@
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 61.391
+   "tps": 48.775
   },
   {
    "name": "GPT-6 Astra (high)",
    "slug": "gpt-6-astra-high",
    "creator": "OpenAI",
    "released": "2026-09-03",
-   "intelligence": 51,
+   "intelligence": 50.9,
    "coding": 77.1,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 56.773
+   "tps": 48.971
   },
   {
    "name": "Claude Opus 5 (Adaptive Reasoning, Max Effort)",
    "slug": "claude-opus-5",
    "creator": "Anthropic",
    "released": "2026-07-24",
-   "intelligence": 50.7,
+   "intelligence": 50.8,
    "coding": 78,
    "math": 0,
    "price_in": 5,
    "price_out": 25,
-   "tps": 57.617
-  },
-  {
-   "name": "GPT-6 Astra (medium)",
-   "slug": "gpt-6-astra-medium",
-   "creator": "OpenAI",
-   "released": "2026-09-03",
-   "intelligence": 49.7,
-   "coding": 76.7,
-   "math": 0,
-   "price_in": 10,
-   "price_out": 50,
-   "tps": 51.607
-  },
-  {
-   "name": "Claude Fable 5 (Adaptive Reasoning, Max Effort, Opus 4.8 Fallback)",
-   "slug": "claude-fable-5",
-   "creator": "Anthropic",
-   "released": "2026-06-09",
-   "intelligence": 49.7,
-   "coding": 76.5,
-   "math": 0,
-   "price_in": 10,
-   "price_out": 50,
-   "tps": 69.457
+   "tps": 50.062
   },
   {
    "name": "Claude Opus 5 (Adaptive Reasoning, Xhigh Effort)",
@@ -120,206 +144,314 @@
    "math": 0,
    "price_in": 5,
    "price_out": 25,
-   "tps": 58.148
+   "tps": 50.062
+  },
+  {
+   "name": "Claude Fable 5 (Adaptive Reasoning, Max Effort, Opus 4.8 Fallback)",
+   "slug": "claude-fable-5",
+   "creator": "Anthropic",
+   "released": "2026-06-09",
+   "intelligence": 49.6,
+   "coding": 76.5,
+   "math": 0,
+   "price_in": 10,
+   "price_out": 50,
+   "tps": 0
+  },
+  {
+   "name": "GPT-6 Astra (medium)",
+   "slug": "gpt-6-astra-medium",
+   "creator": "OpenAI",
+   "released": "2026-09-03",
+   "intelligence": 49.6,
+   "coding": 76.7,
+   "math": 0,
+   "price_in": 10,
+   "price_out": 50,
+   "tps": 48.502
   },
   {
    "name": "Claude Fable 5.1 (Adaptive Reasoning, Medium Effort, Default Fallback)",
    "slug": "claude-fable-5-1-medium",
    "creator": "Anthropic",
    "released": "2026-09-01",
-   "intelligence": 49.1,
+   "intelligence": 48.9,
    "coding": 77.1,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 57.661
-  },
-  {
-   "name": "Muse Spark 1.3 (max)",
-   "slug": "muse-spark-1-3",
-   "creator": "Meta",
-   "released": "2026-09-02",
-   "intelligence": 48.2,
-   "coding": 75.8,
-   "math": 0,
-   "price_in": 1.25,
-   "price_out": 4.25,
-   "tps": 385.651
+   "tps": 50.085
   },
   {
    "name": "Claude Opus 5 (Adaptive Reasoning, High Effort)",
    "slug": "claude-opus-5-high",
    "creator": "Anthropic",
    "released": "2026-07-24",
-   "intelligence": 48.2,
+   "intelligence": 48.1,
    "coding": 76.5,
    "math": 0,
    "price_in": 5,
    "price_out": 25,
-   "tps": 59.201
+   "tps": 48.814
+  },
+  {
+   "name": "Muse Spark 1.3 (max)",
+   "slug": "muse-spark-1-3",
+   "creator": "Meta",
+   "released": "2026-09-02",
+   "intelligence": 48.1,
+   "coding": 75.8,
+   "math": 0,
+   "price_in": 1.25,
+   "price_out": 4.25,
+   "tps": 220.34
   },
   {
    "name": "GPT-5.6 Sol (max)",
    "slug": "gpt-5-6-sol",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 47.1,
+   "intelligence": 47,
    "coding": 77.4,
    "math": 0,
    "price_in": 4,
    "price_out": 20,
-   "tps": 67.721
+   "tps": 63.86
   },
   {
    "name": "Claude Fable 5.1 (Adaptive Reasoning, Low Effort, Default Fallback)",
    "slug": "claude-fable-5-1-low",
    "creator": "Anthropic",
    "released": "2026-09-01",
-   "intelligence": 47,
+   "intelligence": 46.8,
    "coding": 75.2,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 56.244
+   "tps": 49.13
+  },
+  {
+   "name": "Grok 4.7 (xhigh)",
+   "slug": "grok-4-7",
+   "creator": "SpaceXAI",
+   "released": "2026-09-21",
+   "intelligence": 46.4,
+   "coding": 0,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 6,
+   "tps": 44.37
+  },
+  {
+   "name": "Grok 4.7 (high)",
+   "slug": "grok-4-7-high",
+   "creator": "SpaceXAI",
+   "released": "2026-09-21",
+   "intelligence": 46.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 6,
+   "tps": 38.606
+  },
+  {
+   "name": "MiMo-V2.6-Pro",
+   "slug": "mimo-v2-6-pro",
+   "creator": "Xiaomi",
+   "released": "2026-09-21",
+   "intelligence": 46.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.435,
+   "price_out": 0.87,
+   "tps": 68.863
   },
   {
    "name": "GPT-6 Astra (low)",
    "slug": "gpt-6-astra-low",
    "creator": "OpenAI",
    "released": "2026-09-03",
-   "intelligence": 46,
+   "intelligence": 45.8,
    "coding": 75.7,
    "math": 0,
    "price_in": 10,
    "price_out": 50,
-   "tps": 57.257
+   "tps": 46.709
+  },
+  {
+   "name": "Qwen3.8 Max (0902)",
+   "slug": "qwen3-8-max",
+   "creator": "Alibaba",
+   "released": "2026-09-02",
+   "intelligence": 45.4,
+   "coding": 76.2,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 6,
+   "tps": 41.141
   },
   {
    "name": "Muse Spark 1.3 (xhigh)",
    "slug": "muse-spark-1-3-xhigh",
    "creator": "Meta",
    "released": "2026-09-02",
-   "intelligence": 45.2,
+   "intelligence": 45.1,
    "coding": 76.5,
    "math": 0,
    "price_in": 1.25,
    "price_out": 4.25,
-   "tps": 327.871
+   "tps": 246.987
   },
   {
    "name": "Claude Opus 5 (Adaptive Reasoning, Medium Effort)",
    "slug": "claude-opus-5-medium",
    "creator": "Anthropic",
    "released": "2026-07-24",
-   "intelligence": 45.1,
+   "intelligence": 44.8,
    "coding": 74.3,
    "math": 0,
    "price_in": 5,
    "price_out": 25,
-   "tps": 57.923
+   "tps": 49.605
   },
   {
    "name": "GLM-5.3 (max)",
    "slug": "glm-5-3",
    "creator": "Z AI",
    "released": "2026-08-18",
-   "intelligence": 44.9,
+   "intelligence": 44.8,
    "coding": 74.8,
    "math": 0,
    "price_in": 1.4,
    "price_out": 4.4,
-   "tps": 60.295
+   "tps": 63.714
   },
   {
    "name": "Grok 4.6 (high)",
    "slug": "grok-4-6",
    "creator": "SpaceXAI",
    "released": "2026-08-12",
-   "intelligence": 44.4,
+   "intelligence": 44.3,
    "coding": 76.8,
    "math": 0,
    "price_in": 2,
    "price_out": 6,
-   "tps": 72.952
+   "tps": 63.634
   },
   {
    "name": "Grok 4.6 (xhigh)",
    "slug": "grok-4-6-xhigh",
    "creator": "SpaceXAI",
    "released": "2026-08-12",
-   "intelligence": 44.3,
+   "intelligence": 44.2,
    "coding": 75.9,
    "math": 0,
    "price_in": 2,
    "price_out": 6,
-   "tps": 71.086
+   "tps": 59.634
   },
   {
    "name": "GPT-5.6 Sol (xhigh)",
    "slug": "gpt-5-6-sol-xhigh",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 44.1,
+   "intelligence": 44,
    "coding": 78.3,
    "math": 0,
    "price_in": 4,
    "price_out": 20,
-   "tps": 65.387
+   "tps": 66.013
+  },
+  {
+   "name": "Step 5 Preview",
+   "slug": "step-5",
+   "creator": "StepFun",
+   "released": "2026-09-18",
+   "intelligence": 43.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 1,
+   "price_out": 2.7,
+   "tps": 84.834
   },
   {
    "name": "Kimi K3 (max)",
    "slug": "kimi-k3",
    "creator": "Kimi",
    "released": "2026-07-16",
-   "intelligence": 43.8,
+   "intelligence": 43.6,
    "coding": 76.2,
    "math": 0,
    "price_in": 3,
    "price_out": 15,
-   "tps": 37.2
+   "tps": 37.695
   },
   {
    "name": "Grok 4.6 (medium)",
    "slug": "grok-4-6-medium",
    "creator": "SpaceXAI",
    "released": "2026-08-12",
-   "intelligence": 43,
+   "intelligence": 42.8,
    "coding": 74.4,
    "math": 0,
    "price_in": 2,
    "price_out": 6,
-   "tps": 70.09
+   "tps": 61.608
   },
   {
    "name": "GPT-5.6 Sol (high)",
    "slug": "gpt-5-6-sol-high",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 42.5,
+   "intelligence": 42.3,
    "coding": 77.2,
    "math": 0,
    "price_in": 4,
    "price_out": 20,
-   "tps": 67.976
+   "tps": 64.759
+  },
+  {
+   "name": "Claude Opus 5.5 (Adaptive Reasoning, Low Effort, Default Fallback)",
+   "slug": "claude-opus-5-5-low",
+   "creator": "Anthropic",
+   "released": "2026-09-17",
+   "intelligence": 42.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
   },
   {
    "name": "GPT-5.6 Terra (max)",
    "slug": "gpt-5-6-terra",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 42.3,
+   "intelligence": 42.1,
    "coding": 76.7,
    "math": 0,
    "price_in": 2,
    "price_out": 12,
-   "tps": 117.496
+   "tps": 98.006
+  },
+  {
+   "name": "GLM 5.3 Flash",
+   "slug": "glm-5-3-flash",
+   "creator": "Z AI",
+   "released": "2026-08-26",
+   "intelligence": 41.8,
+   "coding": 71.5,
+   "math": 0,
+   "price_in": 0.15,
+   "price_out": 0.5,
+   "tps": 73.66
   },
   {
    "name": "Claude Opus 4.8 (Adaptive Reasoning, Max Effort)",
    "slug": "claude-opus-4-8",
    "creator": "Anthropic",
    "released": "2026-05-28",
-   "intelligence": 42,
+   "intelligence": 41.8,
    "coding": 74.3,
    "math": 0,
    "price_in": 5,
@@ -327,28 +459,16 @@
    "tps": 0
   },
   {
-   "name": "GLM-5.3-Flash",
-   "slug": "glm-5-3-flash",
-   "creator": "Z AI",
-   "released": "2026-08-26",
-   "intelligence": 41.9,
-   "coding": 71.5,
-   "math": 0,
-   "price_in": 0.15,
-   "price_out": 0.5,
-   "tps": 115.77
-  },
-  {
    "name": "Gemini 3.8 Flash (high)",
    "slug": "gemini-3-8-flash",
    "creator": "Google",
    "released": "2026-09-02",
-   "intelligence": 41.2,
+   "intelligence": 40.9,
    "coding": 76.3,
    "math": 0,
    "price_in": 0.75,
    "price_out": 3.75,
-   "tps": 338.284
+   "tps": 305.094
   },
   {
    "name": "Claude Opus 4.7 (Adaptive Reasoning, Max Effort)",
@@ -364,26 +484,14 @@
   },
   {
    "name": "Qwen3.8 Max",
-   "slug": "qwen3-8-max",
+   "slug": "qwen3-8-max-0803",
    "creator": "Alibaba",
    "released": "2026-08-03",
-   "intelligence": 40.3,
+   "intelligence": 40.2,
    "coding": 71.8,
    "math": 0,
    "price_in": 2,
    "price_out": 6,
-   "tps": 41.728
-  },
-  {
-   "name": "Gemini 3.8 Flash (medium)",
-   "slug": "gemini-3-8-flash-medium",
-   "creator": "Google",
-   "released": "2026-09-02",
-   "intelligence": 40,
-   "coding": 74.1,
-   "math": 0,
-   "price_in": 0.75,
-   "price_out": 3.75,
    "tps": 0
   },
   {
@@ -391,48 +499,36 @@
    "slug": "qwen3-8-2-4t-a95b",
    "creator": "Alibaba",
    "released": "2026-08-12",
-   "intelligence": 40,
+   "intelligence": 39.9,
    "coding": 71.9,
    "math": 0,
    "price_in": 2,
    "price_out": 6,
-   "tps": 41.657
+   "tps": 40.866
   },
   {
    "name": "Qwen3.8-Flash-Next",
    "slug": "qwen3-8-flash-next",
    "creator": "Alibaba",
    "released": "2026-08-26",
-   "intelligence": 39.9,
+   "intelligence": 39.8,
    "coding": 73.1,
    "math": 0,
    "price_in": 0.15,
    "price_out": 0.47,
-   "tps": 51.75
+   "tps": 54.227
   },
   {
-   "name": "Muse Spark 1.2 (xhigh)",
-   "slug": "muse-spark-1-2",
-   "creator": "Meta",
-   "released": "2026-08-05",
+   "name": "Gemini 3.8 Flash (medium)",
+   "slug": "gemini-3-8-flash-medium",
+   "creator": "Google",
+   "released": "2026-09-02",
    "intelligence": 39.8,
-   "coding": 72.2,
+   "coding": 74.1,
    "math": 0,
-   "price_in": 1.25,
-   "price_out": 4.25,
-   "tps": 250.075
-  },
-  {
-   "name": "Claude Opus 5 (Adaptive Reasoning, Low Effort)",
-   "slug": "claude-opus-5-low",
-   "creator": "Anthropic",
-   "released": "2026-07-24",
-   "intelligence": 39.8,
-   "coding": 66.9,
-   "math": 0,
-   "price_in": 5,
-   "price_out": 25,
-   "tps": 59.105
+   "price_in": 0.75,
+   "price_out": 3.75,
+   "tps": 0
   },
   {
    "name": "Gemini 3.7 Flash (medium)",
@@ -444,7 +540,19 @@
    "math": 0,
    "price_in": 0.75,
    "price_out": 3.75,
-   "tps": 347.842
+   "tps": 0
+  },
+  {
+   "name": "Muse Spark 1.2 (xhigh)",
+   "slug": "muse-spark-1-2",
+   "creator": "Meta",
+   "released": "2026-08-05",
+   "intelligence": 39.6,
+   "coding": 72.2,
+   "math": 0,
+   "price_in": 1.25,
+   "price_out": 4.25,
+   "tps": 0
   },
   {
    "name": "DeepSeek V4.1 Flash (Reasoning, Max Effort)",
@@ -456,43 +564,43 @@
    "math": 0,
    "price_in": 0.3,
    "price_out": 1.2,
-   "tps": 237.251
+   "tps": 226.881
+  },
+  {
+   "name": "Claude Opus 5 (Adaptive Reasoning, Low Effort)",
+   "slug": "claude-opus-5-low",
+   "creator": "Anthropic",
+   "released": "2026-07-24",
+   "intelligence": 39.4,
+   "coding": 66.9,
+   "math": 0,
+   "price_in": 5,
+   "price_out": 25,
+   "tps": 49.822
   },
   {
    "name": "GPT-5.6 Sol (medium)",
    "slug": "gpt-5-6-sol-medium",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 39.5,
+   "intelligence": 39.2,
    "coding": 76.3,
    "math": 0,
    "price_in": 4,
    "price_out": 20,
-   "tps": 62.812
+   "tps": 62.377
   },
   {
    "name": "Gemini 3.7 Flash (high)",
    "slug": "gemini-3-7-flash",
    "creator": "Google",
    "released": "2026-08-13",
-   "intelligence": 39.4,
+   "intelligence": 39.1,
    "coding": 76.1,
    "math": 0,
    "price_in": 0.75,
    "price_out": 3.75,
-   "tps": 336.312
-  },
-  {
-   "name": "Grok 4.5 (high)",
-   "slug": "grok-4-5",
-   "creator": "SpaceXAI",
-   "released": "2026-07-08",
-   "intelligence": 39.1,
-   "coding": 72.4,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 6,
-   "tps": 61.423
+   "tps": 0
   },
   {
    "name": "GPT-5.4 (xhigh)",
@@ -507,11 +615,23 @@
    "tps": 0
   },
   {
+   "name": "Grok 4.5 (high)",
+   "slug": "grok-4-5",
+   "creator": "SpaceXAI",
+   "released": "2026-07-08",
+   "intelligence": 38.8,
+   "coding": 72.4,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 6,
+   "tps": 0
+  },
+  {
    "name": "GPT-5.5 (xhigh)",
    "slug": "gpt-5-5",
    "creator": "OpenAI",
    "released": "2026-04-23",
-   "intelligence": 38.6,
+   "intelligence": 38.4,
    "coding": 74.9,
    "math": 0,
    "price_in": 5,
@@ -523,43 +643,43 @@
    "slug": "claude-sonnet-5",
    "creator": "Anthropic",
    "released": "2026-06-30",
-   "intelligence": 38.4,
+   "intelligence": 38.2,
    "coding": 71.5,
    "math": 0,
    "price_in": 2,
    "price_out": 10,
-   "tps": 87.517
+   "tps": 81.868
   },
   {
    "name": "GPT-5.6 Terra (xhigh)",
    "slug": "gpt-5-6-terra-xhigh",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 38.2,
+   "intelligence": 38,
    "coding": 70.6,
    "math": 0,
    "price_in": 2,
    "price_out": 12,
-   "tps": 106.232
+   "tps": 85.579
   },
   {
    "name": "GPT-5.6 Luna (max)",
    "slug": "gpt-5-6-luna",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 37.5,
+   "intelligence": 37.3,
    "coding": 71.4,
    "math": 0,
    "price_in": 0.2,
    "price_out": 1.2,
-   "tps": 120.525
+   "tps": 148.266
   },
   {
    "name": "GPT-5.5 (high)",
    "slug": "gpt-5-5-high",
    "creator": "OpenAI",
    "released": "2026-04-23",
-   "intelligence": 37.3,
+   "intelligence": 37,
    "coding": 71.6,
    "math": 0,
    "price_in": 5,
@@ -576,19 +696,19 @@
    "math": 0,
    "price_in": 0.75,
    "price_out": 3.75,
-   "tps": 329.981
+   "tps": 0
   },
   {
    "name": "DeepSeek V4 Pro 0813 (Reasoning, Max Effort)",
    "slug": "deepseek-v4-pro",
    "creator": "DeepSeek",
    "released": "2026-08-13",
-   "intelligence": 36.3,
+   "intelligence": 36,
    "coding": 68.8,
    "math": 0,
    "price_in": 1.32,
    "price_out": 3.96,
-   "tps": 65.039
+   "tps": 78.454
   },
   {
    "name": "Agnes 3.0 Flash",
@@ -600,19 +720,7 @@
    "math": 0,
    "price_in": 0.05,
    "price_out": 0.15,
-   "tps": 228.43
-  },
-  {
-   "name": "Grok 4.6 (low)",
-   "slug": "grok-4-6-low",
-   "creator": "SpaceXAI",
-   "released": "2026-08-12",
-   "intelligence": 35.4,
-   "coding": 66.3,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 6,
-   "tps": 58.973
+   "tps": 0
   },
   {
    "name": "Agnes 2.5 Pro Beta",
@@ -627,87 +735,99 @@
    "tps": 0
   },
   {
+   "name": "Grok 4.6 (low)",
+   "slug": "grok-4-6-low",
+   "creator": "SpaceXAI",
+   "released": "2026-08-12",
+   "intelligence": 35.1,
+   "coding": 66.3,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 6,
+   "tps": 52.682
+  },
+  {
    "name": "DeepSeek V4 Flash Vision (Reasoning, Max Effort)",
    "slug": "deepseek-v4-flash-vision",
    "creator": "DeepSeek",
    "released": "2026-08-21",
-   "intelligence": 35,
+   "intelligence": 34.8,
    "coding": 65,
    "math": 0,
    "price_in": 0.44,
    "price_out": 1.32,
-   "tps": 228.429
+   "tps": 223.692
   },
   {
    "name": "GPT-5.6 Luna (xhigh)",
    "slug": "gpt-5-6-luna-xhigh",
    "creator": "OpenAI",
    "released": "2026-07-09",
-   "intelligence": 34.8,
+   "intelligence": 34.6,
    "coding": 68.6,
    "math": 0,
    "price_in": 0.2,
    "price_out": 1.2,
-   "tps": 129.947
+   "tps": 142.286
+  },
+  {
+   "name": "Kimi K3 (low)",
+   "slug": "kimi-k3-low",
+   "creator": "Kimi",
+   "released": "2026-07-16",
+   "intelligence": 34.5,
+   "coding": 72,
+   "math": 0,
+   "price_in": 3,
+   "price_out": 15,
+   "tps": 36.507
   },
   {
    "name": "Claude Sonnet 5 (Adaptive Reasoning, Xhigh Effort)",
    "slug": "claude-sonnet-5-xhigh",
    "creator": "Anthropic",
    "released": "2026-06-30",
-   "intelligence": 34.7,
+   "intelligence": 34.4,
    "coding": 0,
    "math": 0,
    "price_in": 2,
    "price_out": 10,
-   "tps": 81.287
-  },
-  {
-   "name": "GPT-5.6 Terra (high)",
-   "slug": "gpt-5-6-terra-high",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 34.5,
-   "coding": 67.1,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 12,
-   "tps": 101.38
+   "tps": 72.408
   },
   {
    "name": "DeepSeek V4 Flash 0731 (Reasoning, Max Effort)",
    "slug": "deepseek-v4-flash",
    "creator": "DeepSeek",
    "released": "2026-07-31",
-   "intelligence": 34.5,
+   "intelligence": 34.3,
    "coding": 69.1,
    "math": 0,
    "price_in": 0.44,
    "price_out": 1.32,
-   "tps": 233.797
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.6 Terra (high)",
+   "slug": "gpt-5-6-terra-high",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 34.2,
+   "coding": 67.1,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 12,
+   "tps": 81.032
   },
   {
    "name": "Gemini 3.6 Flash (high)",
    "slug": "gemini-3-6-flash",
    "creator": "Google",
    "released": "2026-07-21",
-   "intelligence": 34.3,
+   "intelligence": 34,
    "coding": 69.2,
    "math": 0,
    "price_in": 0.75,
    "price_out": 3.75,
-   "tps": 225.421
-  },
-  {
-   "name": "Muse Spark 1.1 (xhigh)",
-   "slug": "muse-spark-1-1",
-   "creator": "Meta",
-   "released": "2026-07-09",
-   "intelligence": 34.3,
-   "coding": 71.3,
-   "math": 0,
-   "price_in": 1.25,
-   "price_out": 4.25,
    "tps": 0
   },
   {
@@ -715,7 +835,7 @@
    "slug": "gpt-5-5-medium",
    "creator": "OpenAI",
    "released": "2026-04-23",
-   "intelligence": 34.2,
+   "intelligence": 33.8,
    "coding": 71.5,
    "math": 0,
    "price_in": 5,
@@ -723,52 +843,40 @@
    "tps": 0
   },
   {
+   "name": "Muse Spark 1.1 (xhigh)",
+   "slug": "muse-spark-1-1",
+   "creator": "Meta",
+   "released": "2026-07-09",
+   "intelligence": 33.7,
+   "coding": 71.3,
+   "math": 0,
+   "price_in": 1.25,
+   "price_out": 4.25,
+   "tps": 0
+  },
+  {
    "name": "GLM-5.2 (max)",
    "slug": "glm-5-2",
    "creator": "Z AI",
    "released": "2026-06-16",
-   "intelligence": 34,
+   "intelligence": 33.7,
    "coding": 68.8,
    "math": 0,
    "price_in": 1.4,
    "price_out": 4.4,
-   "tps": 72.627
+   "tps": 0
   },
   {
    "name": "Qwen3.8 27B (xhigh)",
    "slug": "qwen3-8-27b",
    "creator": "Alibaba",
    "released": "2026-08-14",
-   "intelligence": 33.9,
+   "intelligence": 33.7,
    "coding": 68.1,
    "math": 0,
    "price_in": 0.5,
    "price_out": 3,
-   "tps": 43.144
-  },
-  {
-   "name": "Gemini 3.8 Flash (low)",
-   "slug": "gemini-3-8-flash-low",
-   "creator": "Google",
-   "released": "2026-09-02",
-   "intelligence": 33.8,
-   "coding": 73.5,
-   "math": 0,
-   "price_in": 0.75,
-   "price_out": 3.75,
-   "tps": 0
-  },
-  {
-   "name": "GPT-5.6 Sol (low)",
-   "slug": "gpt-5-6-sol-low",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 33.8,
-   "coding": 69.7,
-   "math": 0,
-   "price_in": 4,
-   "price_out": 20,
-   "tps": 61.581
+   "tps": 46.32
   },
   {
    "name": "Gemini 3.5 Flash (medium)",
@@ -780,7 +888,7 @@
    "math": 0,
    "price_in": 1.5,
    "price_out": 9,
-   "tps": 280.089
+   "tps": 0
   },
   {
    "name": "Motif 3",
@@ -795,11 +903,35 @@
    "tps": 0
   },
   {
+   "name": "GPT-5.6 Sol (low)",
+   "slug": "gpt-5-6-sol-low",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 33.5,
+   "coding": 69.7,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 66.29
+  },
+  {
+   "name": "Gemini 3.8 Flash (low)",
+   "slug": "gemini-3-8-flash-low",
+   "creator": "Google",
+   "released": "2026-09-02",
+   "intelligence": 33.5,
+   "coding": 73.5,
+   "math": 0,
+   "price_in": 0.75,
+   "price_out": 3.75,
+   "tps": 0
+  },
+  {
    "name": "Gemini 3.5 Flash (high)",
    "slug": "gemini-3-5-flash",
    "creator": "Google",
    "released": "2026-05-19",
-   "intelligence": 33,
+   "intelligence": 32.6,
    "coding": 70.1,
    "math": 0,
    "price_in": 1.5,
@@ -816,19 +948,7 @@
    "math": 0,
    "price_in": 1.75,
    "price_out": 14,
-   "tps": 138.565
-  },
-  {
-   "name": "GPT-5.6 Luna (high)",
-   "slug": "gpt-5-6-luna-high",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 32.4,
-   "coding": 63.3,
-   "math": 0,
-   "price_in": 0.2,
-   "price_out": 1.2,
-   "tps": 125.827
+   "tps": 143.049
   },
   {
    "name": "Motif 3 (Beta)",
@@ -843,16 +963,16 @@
    "tps": 0
   },
   {
-   "name": "Claude Sonnet 5 (Adaptive Reasoning, High Effort)",
-   "slug": "claude-sonnet-5-high",
-   "creator": "Anthropic",
-   "released": "2026-06-30",
-   "intelligence": 32,
-   "coding": 0,
+   "name": "GPT-5.6 Luna (high)",
+   "slug": "gpt-5-6-luna-high",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 32.1,
+   "coding": 63.3,
    "math": 0,
-   "price_in": 2,
-   "price_out": 10,
-   "tps": 71.178
+   "price_in": 0.2,
+   "price_out": 1.2,
+   "tps": 141.736
   },
   {
    "name": "Claude Opus 4.6 (Adaptive Reasoning, Max Effort)",
@@ -867,6 +987,18 @@
    "tps": 0
   },
   {
+   "name": "Claude Sonnet 5 (Adaptive Reasoning, High Effort)",
+   "slug": "claude-sonnet-5-high",
+   "creator": "Anthropic",
+   "released": "2026-06-30",
+   "intelligence": 31.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 10,
+   "tps": 63.212
+  },
+  {
    "name": "Muse Spark",
    "slug": "muse-spark",
    "creator": "Meta",
@@ -879,30 +1011,6 @@
    "tps": 0
   },
   {
-   "name": "Kimi K2.6",
-   "slug": "kimi-k2-6",
-   "creator": "Kimi",
-   "released": "2026-04-20",
-   "intelligence": 31.3,
-   "coding": 61.8,
-   "math": 0,
-   "price_in": 0.95,
-   "price_out": 4,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek V4 Pro (Reasoning, Max Effort)",
-   "slug": "deepseek-v4-pro-0424",
-   "creator": "DeepSeek",
-   "released": "2026-04-24",
-   "intelligence": 30.9,
-   "coding": 59.4,
-   "math": 0,
-   "price_in": 0.435,
-   "price_out": 0.87,
-   "tps": 66.723
-  },
-  {
    "name": "Claude Opus 4.7 (Non-reasoning, High Effort)",
    "slug": "claude-opus-4-7-non-reasoning",
    "creator": "Anthropic",
@@ -912,18 +1020,6 @@
    "math": 0,
    "price_in": 5,
    "price_out": 25,
-   "tps": 0
-  },
-  {
-   "name": "K2 Horizon 375B A23B",
-   "slug": "k2-horizon-375b-a23b",
-   "creator": "MBZUAI Institute of Foundation Models",
-   "released": "2026-09-03",
-   "intelligence": 30.8,
-   "coding": 61.5,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
    "tps": 0
   },
   {
@@ -939,63 +1035,27 @@
    "tps": 0
   },
   {
-   "name": "Kimi K3 (low)",
-   "slug": "kimi-k3-low",
-   "creator": "Kimi",
-   "released": "2026-07-16",
+   "name": "K2 Horizon 375B A23B",
+   "slug": "k2-horizon-375b-a23b",
+   "creator": "Institute of Foundation Models",
+   "released": "2026-09-03",
    "intelligence": 30.5,
-   "coding": 72,
+   "coding": 61.5,
    "math": 0,
-   "price_in": 3,
-   "price_out": 15,
-   "tps": 35.373
-  },
-  {
-   "name": "Claude Sonnet 4.6 (Adaptive Reasoning, Max Effort)",
-   "slug": "claude-sonnet-4-6-adaptive",
-   "creator": "Anthropic",
-   "released": "2026-02-17",
-   "intelligence": 30.5,
-   "coding": 63,
-   "math": 0,
-   "price_in": 3,
-   "price_out": 15,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
-   "name": "GPT-5.6 Terra (medium)",
-   "slug": "gpt-5-6-terra-medium",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
+   "name": "DeepSeek V4 Pro 0424 (Reasoning, Max Effort)",
+   "slug": "deepseek-v4-pro-0424",
+   "creator": "DeepSeek",
+   "released": "2026-04-24",
    "intelligence": 30.4,
-   "coding": 64.7,
+   "coding": 59.4,
    "math": 0,
-   "price_in": 2,
-   "price_out": 12,
-   "tps": 98.961
-  },
-  {
-   "name": "Gemini 3.1 Pro Preview",
-   "slug": "gemini-3-1-pro-preview",
-   "creator": "Google",
-   "released": "2026-02-19",
-   "intelligence": 30.4,
-   "coding": 68.8,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 12,
-   "tps": 125.95
-  },
-  {
-   "name": "Apodex 1.1",
-   "slug": "apodex-1-1",
-   "creator": "Apodex",
-   "released": "2026-08-30",
-   "intelligence": 30.4,
-   "coding": 60.8,
-   "math": 0,
-   "price_in": 0.3,
-   "price_out": 3,
+   "price_in": 0.435,
+   "price_out": 0.87,
    "tps": 0
   },
   {
@@ -1011,7 +1071,19 @@
    "tps": 0
   },
   {
-   "name": "DeepSeek V4 Pro (Reasoning, High Effort)",
+   "name": "Apodex 1.1",
+   "slug": "apodex-1-1",
+   "creator": "Apodex",
+   "released": "2026-08-30",
+   "intelligence": 30.4,
+   "coding": 60.8,
+   "math": 0,
+   "price_in": 0.3,
+   "price_out": 3,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek V4 Pro 0424 (Reasoning, High Effort)",
    "slug": "deepseek-v4-pro-0424-high",
    "creator": "DeepSeek",
    "released": "2026-04-24",
@@ -1020,14 +1092,50 @@
    "math": 0,
    "price_in": 0.435,
    "price_out": 0.87,
-   "tps": 67.939
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.6 Terra (medium)",
+   "slug": "gpt-5-6-terra-medium",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 30.1,
+   "coding": 64.7,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 12,
+   "tps": 77.857
+  },
+  {
+   "name": "Claude Sonnet 4.6 (Adaptive Reasoning, Max Effort)",
+   "slug": "claude-sonnet-4-6-adaptive",
+   "creator": "Anthropic",
+   "released": "2026-02-17",
+   "intelligence": 30.1,
+   "coding": 63,
+   "math": 0,
+   "price_in": 3,
+   "price_out": 15,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 3.1 Pro Preview",
+   "slug": "gemini-3-1-pro-preview",
+   "creator": "Google",
+   "released": "2026-02-19",
+   "intelligence": 29.7,
+   "coding": 68.8,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 12,
+   "tps": 130.012
   },
   {
    "name": "Qwen3.7 Max",
    "slug": "qwen3-7-max",
    "creator": "Alibaba",
    "released": "2026-05-19",
-   "intelligence": 29.9,
+   "intelligence": 29.5,
    "coding": 66,
    "math": 0,
    "price_in": 2.5,
@@ -1039,12 +1147,12 @@
    "slug": "minimax-m3",
    "creator": "MiniMax",
    "released": "2026-06-01",
-   "intelligence": 29.6,
+   "intelligence": 29.2,
    "coding": 58.6,
    "math": 0,
    "price_in": 0.3,
    "price_out": 1.2,
-   "tps": 119.085
+   "tps": 146.051
   },
   {
    "name": "Claude Opus 4.5 (Reasoning)",
@@ -1057,18 +1165,6 @@
    "price_in": 5,
    "price_out": 25,
    "tps": 0
-  },
-  {
-   "name": "Claude Sonnet 5 (Non-reasoning, High Effort)",
-   "slug": "claude-sonnet-5-non-reasoning",
-   "creator": "Anthropic",
-   "released": "2026-06-30",
-   "intelligence": 28.9,
-   "coding": 66.4,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 10,
-   "tps": 72.179
   },
   {
    "name": "MiMo-V2-Pro",
@@ -1095,18 +1191,6 @@
    "tps": 0
   },
   {
-   "name": "Claude Sonnet 5 (Adaptive Reasoning, Medium Effort)",
-   "slug": "claude-sonnet-5-medium",
-   "creator": "Anthropic",
-   "released": "2026-06-30",
-   "intelligence": 28.4,
-   "coding": 0,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 10,
-   "tps": 72.563
-  },
-  {
    "name": "Qwen3.6 Max Preview",
    "slug": "qwen3-6-max",
    "creator": "Alibaba",
@@ -1128,7 +1212,19 @@
    "math": 0,
    "price_in": 4,
    "price_out": 20,
-   "tps": 63.842
+   "tps": 61.765
+  },
+  {
+   "name": "Nex-N2-Pro (based on Qwen3.5-397B-A17B)",
+   "slug": "nex-n2-pro",
+   "creator": "Nex AGI",
+   "released": "2026-06-02",
+   "intelligence": 28.2,
+   "coding": 59.1,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
   },
   {
    "name": "Solar Pro 4",
@@ -1140,19 +1236,19 @@
    "math": 0,
    "price_in": 0.3,
    "price_out": 1.2,
-   "tps": 50.103
+   "tps": 50.012
   },
   {
-   "name": "Nex-N2-Pro",
-   "slug": "nex-n2-pro",
-   "creator": "Nex AGI",
-   "released": "2026-06-02",
-   "intelligence": 28.2,
-   "coding": 59.1,
+   "name": "Claude Sonnet 5 (Adaptive Reasoning, Medium Effort)",
+   "slug": "claude-sonnet-5-medium",
+   "creator": "Anthropic",
+   "released": "2026-06-30",
+   "intelligence": 28.1,
+   "coding": 0,
    "math": 0,
-   "price_in": 0.5,
-   "price_out": 2.5,
-   "tps": 0
+   "price_in": 2,
+   "price_out": 10,
+   "tps": 61.168
   },
   {
    "name": "Gemini 3 Pro Preview (high)",
@@ -1167,18 +1263,6 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.6 Terra (low)",
-   "slug": "gpt-5-6-terra-low",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 27.9,
-   "coding": 58.1,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 12,
-   "tps": 99.712
-  },
-  {
    "name": "GLM-5 (Reasoning)",
    "slug": "glm-5",
    "creator": "Z AI",
@@ -1191,28 +1275,16 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.8 27B (medium)",
-   "slug": "qwen3-8-27b-medium",
-   "creator": "Alibaba",
-   "released": "2026-08-14",
+   "name": "Inkling Small",
+   "slug": "inkling-small",
+   "creator": "Thinking Machines",
+   "released": "2026-07-30",
    "intelligence": 27.8,
-   "coding": 56.1,
+   "coding": 52.9,
    "math": 0,
-   "price_in": 0.5,
-   "price_out": 3,
-   "tps": 47.514
-  },
-  {
-   "name": "Agnes 2.5 Pro Alpha",
-   "slug": "agnes-2-5-pro-alpha",
-   "creator": "Sapiens AI",
-   "released": "2026-07-24",
-   "intelligence": 27.8,
-   "coding": 58.8,
-   "math": 0,
-   "price_in": 0.45,
-   "price_out": 0.9,
-   "tps": 202.336
+   "price_in": 0.3,
+   "price_out": 1.2,
+   "tps": 224.765
   },
   {
    "name": "GPT-5.4 (low)",
@@ -1225,6 +1297,30 @@
    "price_in": 2.5,
    "price_out": 15,
    "tps": 0
+  },
+  {
+   "name": "Qwen3.8 27B (medium)",
+   "slug": "qwen3-8-27b-medium",
+   "creator": "Alibaba",
+   "released": "2026-08-14",
+   "intelligence": 27.6,
+   "coding": 56.1,
+   "math": 0,
+   "price_in": 0.5,
+   "price_out": 3,
+   "tps": 48.343
+  },
+  {
+   "name": "GPT-5.6 Terra (low)",
+   "slug": "gpt-5-6-terra-low",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 27.5,
+   "coding": 58.1,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 12,
+   "tps": 75.823
   },
   {
    "name": "JT-4.1 Flash 236B A21B",
@@ -1251,18 +1347,6 @@
    "tps": 0
   },
   {
-   "name": "Quasar 438B (max, based on GLM-5.2)",
-   "slug": "quasar-438b",
-   "creator": "Multiverse Computing",
-   "released": "2026-08-10",
-   "intelligence": 27.1,
-   "coding": 61.2,
-   "math": 0,
-   "price_in": 0.6,
-   "price_out": 1.8,
-   "tps": 219.444
-  },
-  {
    "name": "Qwen3.6 Plus",
    "slug": "qwen3-6-plus",
    "creator": "Alibaba",
@@ -1275,16 +1359,40 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.5 Instant (June 2026)",
-   "slug": "gpt-5-5-instant-06-26",
-   "creator": "OpenAI",
-   "released": "2026-06-25",
-   "intelligence": 26.8,
-   "coding": 39.4,
+   "name": "Kimi K2.6",
+   "slug": "kimi-k2-6",
+   "creator": "Kimi",
+   "released": "2026-04-20",
+   "intelligence": 27,
+   "coding": 61.8,
    "math": 0,
-   "price_in": 5,
-   "price_out": 30,
-   "tps": 142.229
+   "price_in": 0.95,
+   "price_out": 4,
+   "tps": 0
+  },
+  {
+   "name": "Agnes 2.5 Pro Alpha",
+   "slug": "agnes-2-5-pro-alpha",
+   "creator": "Sapiens AI",
+   "released": "2026-07-24",
+   "intelligence": 26.8,
+   "coding": 58.8,
+   "math": 0,
+   "price_in": 0.45,
+   "price_out": 0.9,
+   "tps": 187.161
+  },
+  {
+   "name": "Quasar 438B (max, based on GLM-5.2)",
+   "slug": "quasar-438b",
+   "creator": "Multiverse Computing",
+   "released": "2026-08-10",
+   "intelligence": 26.7,
+   "coding": 61.2,
+   "math": 0,
+   "price_in": 0.6,
+   "price_out": 1.8,
+   "tps": 150.329
   },
   {
    "name": "GLM-5-Turbo",
@@ -1299,18 +1407,6 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.8 27B (low)",
-   "slug": "qwen3-8-27b-low",
-   "creator": "Alibaba",
-   "released": "2026-08-14",
-   "intelligence": 26.5,
-   "coding": 58.2,
-   "math": 0,
-   "price_in": 0.5,
-   "price_out": 3,
-   "tps": 50.136
-  },
-  {
    "name": "GPT-5.2 (medium)",
    "slug": "gpt-5-2-medium",
    "creator": "OpenAI",
@@ -1321,18 +1417,6 @@
    "price_in": 1.75,
    "price_out": 14,
    "tps": 0
-  },
-  {
-   "name": "MiMo-V2.5-Pro",
-   "slug": "mimo-v2-5-pro",
-   "creator": "Xiaomi",
-   "released": "2026-04-22",
-   "intelligence": 26.4,
-   "coding": 60.2,
-   "math": 0,
-   "price_in": 0.435,
-   "price_out": 0.87,
-   "tps": 43.871
   },
   {
    "name": "Claude Opus 4.6 (Non-reasoning, High Effort)",
@@ -1347,30 +1431,6 @@
    "tps": 0
   },
   {
-   "name": "GLM-5.1 (Reasoning)",
-   "slug": "glm-5-1",
-   "creator": "Z AI",
-   "released": "2026-04-07",
-   "intelligence": 26.4,
-   "coding": 55.8,
-   "math": 0,
-   "price_in": 1.2,
-   "price_out": 4.4,
-   "tps": 0
-  },
-  {
-   "name": "Kimi K2.7 Code",
-   "slug": "kimi-k2-7-code",
-   "creator": "Kimi",
-   "released": "2026-06-12",
-   "intelligence": 26.3,
-   "coding": 60.8,
-   "math": 0,
-   "price_in": 0.95,
-   "price_out": 4,
-   "tps": 42.799
-  },
-  {
    "name": "Gemini 3 Flash Preview (Reasoning)",
    "slug": "gemini-3-flash-reasoning",
    "creator": "Google",
@@ -1383,40 +1443,76 @@
    "tps": 0
   },
   {
-   "name": "Inkling Small",
-   "slug": "inkling-small",
-   "creator": "Thinking Machines",
-   "released": "2026-07-30",
-   "intelligence": 26.1,
-   "coding": 52.9,
-   "math": 0,
-   "price_in": 0.3,
-   "price_out": 1.2,
-   "tps": 146.406
-  },
-  {
-   "name": "Hy3",
-   "slug": "hy3",
-   "creator": "Tencent",
-   "released": "2026-07-06",
-   "intelligence": 25.8,
-   "coding": 58.8,
-   "math": 0,
-   "price_in": 0.136,
-   "price_out": 0.554,
-   "tps": 93.968
-  },
-  {
-   "name": "Qwen3.7 Plus",
-   "slug": "qwen3-7-plus",
+   "name": "Qwen3.8 27B (low)",
+   "slug": "qwen3-8-27b-low",
    "creator": "Alibaba",
-   "released": "2026-06-01",
-   "intelligence": 25.8,
-   "coding": 55.9,
+   "released": "2026-08-14",
+   "intelligence": 26.2,
+   "coding": 58.2,
    "math": 0,
-   "price_in": 0.4,
-   "price_out": 1.6,
-   "tps": 72.468
+   "price_in": 0.5,
+   "price_out": 3,
+   "tps": 50.629
+  },
+  {
+   "name": "GLM-5.1 (Reasoning)",
+   "slug": "glm-5-1",
+   "creator": "Z AI",
+   "released": "2026-04-07",
+   "intelligence": 26.1,
+   "coding": 55.8,
+   "math": 0,
+   "price_in": 1.285,
+   "price_out": 4.07,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.5 Instant (June 2026)",
+   "slug": "gpt-5-5-instant-06-26",
+   "creator": "OpenAI",
+   "released": "2026-06-25",
+   "intelligence": 26,
+   "coding": 39.4,
+   "math": 0,
+   "price_in": 5,
+   "price_out": 30,
+   "tps": 127.681
+  },
+  {
+   "name": "DeepSeek V4 Flash 0420 (Reasoning, High Effort)",
+   "slug": "deepseek-v4-flash-0420-high",
+   "creator": "DeepSeek",
+   "released": "2026-04-24",
+   "intelligence": 26,
+   "coding": 52,
+   "math": 0,
+   "price_in": 0.13,
+   "price_out": 0.28,
+   "tps": 0
+  },
+  {
+   "name": "MiMo-V2.5-Pro",
+   "slug": "mimo-v2-5-pro",
+   "creator": "Xiaomi",
+   "released": "2026-04-22",
+   "intelligence": 26,
+   "coding": 60.2,
+   "math": 0,
+   "price_in": 0.435,
+   "price_out": 0.87,
+   "tps": 49.688
+  },
+  {
+   "name": "Kimi K2.7 Code",
+   "slug": "kimi-k2-7-code",
+   "creator": "Kimi",
+   "released": "2026-06-12",
+   "intelligence": 25.8,
+   "coding": 60.8,
+   "math": 0,
+   "price_in": 0.95,
+   "price_out": 4,
+   "tps": 52.409
   },
   {
    "name": "Grok 4.20 0309 v2 (Reasoning)",
@@ -1431,40 +1527,28 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.6 Luna (medium)",
-   "slug": "gpt-5-6-luna-medium",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 25.5,
-   "coding": 50.7,
+   "name": "K2 Horizon MoVA 36B A4B",
+   "slug": "k2-horizon-mova-36b-a4b",
+   "creator": "Institute of Foundation Models",
+   "released": "2026-09-03",
+   "intelligence": 25.3,
+   "coding": 0,
    "math": 0,
-   "price_in": 0.2,
-   "price_out": 1.2,
-   "tps": 111.472
-  },
-  {
-   "name": "Inkling (xhigh)",
-   "slug": "inkling",
-   "creator": "Thinking Machines",
-   "released": "2026-07-15",
-   "intelligence": 25.5,
-   "coding": 52.1,
-   "math": 0,
-   "price_in": 1,
-   "price_out": 4.05,
-   "tps": 90.414
-  },
-  {
-   "name": "Grok 4.3 (high)",
-   "slug": "grok-4-3",
-   "creator": "SpaceXAI",
-   "released": "2026-04-30",
-   "intelligence": 25.4,
-   "coding": 42.2,
-   "math": 0,
-   "price_in": 1.25,
-   "price_out": 2.5,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
+  },
+  {
+   "name": "Hy3",
+   "slug": "hy3",
+   "creator": "Tencent",
+   "released": "2026-07-06",
+   "intelligence": 25.3,
+   "coding": 58.8,
+   "math": 0,
+   "price_in": 0.14,
+   "price_out": 0.58,
+   "tps": 94.957
   },
   {
    "name": "Grok 4.20 0309 (Reasoning)",
@@ -1479,6 +1563,30 @@
    "tps": 0
   },
   {
+   "name": "MiMo-V2.5",
+   "slug": "mimo-v2-5-0424",
+   "creator": "Xiaomi",
+   "released": "2026-04-22",
+   "intelligence": 25.2,
+   "coding": 56.8,
+   "math": 0,
+   "price_in": 0.14,
+   "price_out": 0.28,
+   "tps": 33.876
+  },
+  {
+   "name": "Qwen3.7 Plus",
+   "slug": "qwen3-7-plus",
+   "creator": "Alibaba",
+   "released": "2026-06-01",
+   "intelligence": 25.2,
+   "coding": 55.9,
+   "math": 0,
+   "price_in": 0.4,
+   "price_out": 1.6,
+   "tps": 61.393
+  },
+  {
    "name": "MiMo-V2-Omni-0327",
    "slug": "mimo-v2-omni-0327",
    "creator": "Xiaomi",
@@ -1491,6 +1599,30 @@
    "tps": 0
   },
   {
+   "name": "GPT-5.6 Luna (medium)",
+   "slug": "gpt-5-6-luna-medium",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 25,
+   "coding": 50.7,
+   "math": 0,
+   "price_in": 0.2,
+   "price_out": 1.2,
+   "tps": 138.082
+  },
+  {
+   "name": "Inkling (xhigh)",
+   "slug": "inkling",
+   "creator": "Thinking Machines",
+   "released": "2026-07-15",
+   "intelligence": 25,
+   "coding": 52.1,
+   "math": 0,
+   "price_in": 1,
+   "price_out": 4.05,
+   "tps": 105.553
+  },
+  {
    "name": "Ling 3.0 Flash",
    "slug": "ling-3-0-flash",
    "creator": "InclusionAI",
@@ -1500,7 +1632,7 @@
    "math": 0,
    "price_in": 0.075,
    "price_out": 0.22,
-   "tps": 325.728
+   "tps": 366.609
   },
   {
    "name": "GPT-5 Codex (high)",
@@ -1515,16 +1647,16 @@
    "tps": 0
   },
   {
-   "name": "Ling-3.0-flash-VL",
-   "slug": "ling-3-0-flash-vl",
-   "creator": "InclusionAI",
-   "released": "2026-09-10",
-   "intelligence": 24.8,
-   "coding": 57,
+   "name": "Grok 4.3 (high)",
+   "slug": "grok-4-3",
+   "creator": "SpaceXAI",
+   "released": "2026-04-30",
+   "intelligence": 24.9,
+   "coding": 42.2,
    "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 144.784
+   "price_in": 1.25,
+   "price_out": 2.5,
+   "tps": 0
   },
   {
    "name": "Grok 4.3 (medium)",
@@ -1536,31 +1668,7 @@
    "math": 0,
    "price_in": 1.25,
    "price_out": 2.5,
-   "tps": 125.657
-  },
-  {
-   "name": "DeepSeek V4 Flash (Reasoning, High Effort)",
-   "slug": "deepseek-v4-flash-0420-high",
-   "creator": "DeepSeek",
-   "released": "2026-04-24",
-   "intelligence": 24.8,
-   "coding": 52,
-   "math": 0,
-   "price_in": 0.13,
-   "price_out": 0.28,
    "tps": 0
-  },
-  {
-   "name": "Claude Sonnet 5 (Adaptive Reasoning, Low Effort)",
-   "slug": "claude-sonnet-5-low",
-   "creator": "Anthropic",
-   "released": "2026-06-30",
-   "intelligence": 24.7,
-   "coding": 0,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 10,
-   "tps": 67.751
   },
   {
    "name": "Solar Open2 250B",
@@ -1599,28 +1707,16 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.4 mini (xhigh)",
-   "slug": "gpt-5-4-mini",
-   "creator": "OpenAI",
-   "released": "2026-03-17",
+   "name": "Ling-3.0-flash-VL",
+   "slug": "ling-3-0-flash-vl",
+   "creator": "InclusionAI",
+   "released": "2026-09-10",
    "intelligence": 24.6,
-   "coding": 56.1,
+   "coding": 57,
    "math": 0,
-   "price_in": 0.75,
-   "price_out": 4.5,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek V4 Flash (Reasoning, Max Effort)",
-   "slug": "deepseek-v4-flash-0420",
-   "creator": "DeepSeek",
-   "released": "2026-04-24",
-   "intelligence": 24.6,
-   "coding": 56.2,
-   "math": 0,
-   "price_in": 0.13,
-   "price_out": 0.28,
-   "tps": 0
+   "price_in": 0.075,
+   "price_out": 0.22,
+   "tps": 143.284
   },
   {
    "name": "Grok 4.3 (low)",
@@ -1632,7 +1728,19 @@
    "math": 0,
    "price_in": 1.25,
    "price_out": 2.5,
-   "tps": 116.005
+   "tps": 0
+  },
+  {
+   "name": "Claude Sonnet 5 (Adaptive Reasoning, Low Effort)",
+   "slug": "claude-sonnet-5-low",
+   "creator": "Anthropic",
+   "released": "2026-06-30",
+   "intelligence": 24.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 10,
+   "tps": 61.239
   },
   {
    "name": "GLM-5.1 (Non-reasoning)",
@@ -1644,6 +1752,30 @@
    "math": 0,
    "price_in": 1.38,
    "price_out": 4.4,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek V4 Flash 0420 (Reasoning, Max Effort)",
+   "slug": "deepseek-v4-flash-0420",
+   "creator": "DeepSeek",
+   "released": "2026-04-24",
+   "intelligence": 24.2,
+   "coding": 56.2,
+   "math": 0,
+   "price_in": 0.13,
+   "price_out": 0.28,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.4 mini (xhigh)",
+   "slug": "gpt-5-4-mini",
+   "creator": "OpenAI",
+   "released": "2026-03-17",
+   "intelligence": 24.1,
+   "coding": 56.1,
+   "math": 0,
+   "price_in": 0.75,
+   "price_out": 4.5,
    "tps": 0
   },
   {
@@ -1668,7 +1800,7 @@
    "math": 0,
    "price_in": 1.5,
    "price_out": 9,
-   "tps": 254.476
+   "tps": 0
   },
   {
    "name": "GPT-5.1 Codex (high)",
@@ -1707,18 +1839,6 @@
    "tps": 0
   },
   {
-   "name": "Kimi K2.5 (Reasoning)",
-   "slug": "kimi-k2-5",
-   "creator": "Kimi",
-   "released": "2026-01-27",
-   "intelligence": 23.5,
-   "coding": 46.8,
-   "math": 0,
-   "price_in": 0.6,
-   "price_out": 2.75,
-   "tps": 0
-  },
-  {
    "name": "GLM 5V Turbo (Reasoning)",
    "slug": "glm-5v-turbo",
    "creator": "Z AI",
@@ -1731,16 +1851,16 @@
    "tps": 0
   },
   {
-   "name": "Nemotron 3 Ultra 550B A55B (Reasoning)",
-   "slug": "nvidia-nemotron-3-ultra-550b-a55b",
-   "creator": "NVIDIA",
-   "released": "2026-06-04",
-   "intelligence": 23.4,
-   "coding": 49.3,
+   "name": "Kimi K2.5 (Reasoning)",
+   "slug": "kimi-k2-5",
+   "creator": "Kimi",
+   "released": "2026-01-27",
+   "intelligence": 23.5,
+   "coding": 46.8,
    "math": 0,
    "price_in": 0.6,
-   "price_out": 2.6,
-   "tps": 189.369
+   "price_out": 2.75,
+   "tps": 0
   },
   {
    "name": "Claude Sonnet 4.6 (Non-reasoning, Low Effort)",
@@ -1752,7 +1872,19 @@
    "math": 0,
    "price_in": 3,
    "price_out": 15,
-   "tps": 58.487
+   "tps": 0
+  },
+  {
+   "name": "Claude Sonnet 5 (Non-reasoning, High Effort)",
+   "slug": "claude-sonnet-5-non-reasoning",
+   "creator": "Anthropic",
+   "released": "2026-06-30",
+   "intelligence": 23.2,
+   "coding": 66.4,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 10,
+   "tps": 59.227
   },
   {
    "name": "GPT-5.5 (Non-reasoning)",
@@ -1764,18 +1896,6 @@
    "math": 0,
    "price_in": 5,
    "price_out": 30,
-   "tps": 0
-  },
-  {
-   "name": "MiniMax-M2.7",
-   "slug": "minimax-m2-7",
-   "creator": "MiniMax",
-   "released": "2026-03-18",
-   "intelligence": 23.2,
-   "coding": 52.6,
-   "math": 0,
-   "price_in": 0.3,
-   "price_out": 1.2,
    "tps": 0
   },
   {
@@ -1791,16 +1911,16 @@
    "tps": 0
   },
   {
-   "name": "GPT-5 (medium)",
-   "slug": "gpt-5-medium",
-   "creator": "OpenAI",
-   "released": "2025-08-07",
+   "name": "Nemotron 3 Ultra 550B A55B (Reasoning)",
+   "slug": "nvidia-nemotron-3-ultra-550b-a55b",
+   "creator": "NVIDIA",
+   "released": "2026-06-04",
    "intelligence": 22.9,
-   "coding": 0,
-   "math": 91.7,
-   "price_in": 1.25,
-   "price_out": 10,
-   "tps": 0
+   "coding": 49.3,
+   "math": 0,
+   "price_in": 0.6,
+   "price_out": 2.5,
+   "tps": 164.723
   },
   {
    "name": "Qwen3.5 27B (Reasoning)",
@@ -1812,6 +1932,18 @@
    "math": 0,
    "price_in": 0.3,
    "price_out": 2.4,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5 (medium)",
+   "slug": "gpt-5-medium",
+   "creator": "OpenAI",
+   "released": "2025-08-07",
+   "intelligence": 22.9,
+   "coding": 0,
+   "math": 91.7,
+   "price_in": 1.25,
+   "price_out": 10,
    "tps": 0
   },
   {
@@ -1839,16 +1971,28 @@
    "tps": 0
   },
   {
-   "name": "Gemini 3.5 Flash-Lite",
-   "slug": "gemini-3-5-flash-lite",
-   "creator": "Google",
-   "released": "2026-07-21",
-   "intelligence": 22.7,
-   "coding": 49.3,
+   "name": "MiniMax-M2.7",
+   "slug": "minimax-m2-7",
+   "creator": "MiniMax",
+   "released": "2026-03-18",
+   "intelligence": 22.8,
+   "coding": 52.6,
    "math": 0,
    "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 356.065
+   "price_out": 1.2,
+   "tps": 0
+  },
+  {
+   "name": "Hy3-preview (Reasoning)",
+   "slug": "hy3-preview",
+   "creator": "Tencent",
+   "released": "2026-04-23",
+   "intelligence": 22.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.063,
+   "price_out": 0.21,
+   "tps": 0
   },
   {
    "name": "A.X-K2",
@@ -1875,16 +2019,16 @@
    "tps": 0
   },
   {
-   "name": "Hy3-preview (Reasoning)",
-   "slug": "hy3-preview",
-   "creator": "Tencent",
-   "released": "2026-04-23",
-   "intelligence": 22.7,
-   "coding": 0,
+   "name": "Ling-3.0-flash-Fin",
+   "slug": "ling-3-0-flash-fin",
+   "creator": "InclusionAI",
+   "released": "2026-09-11",
+   "intelligence": 22.6,
+   "coding": 55.6,
    "math": 0,
-   "price_in": 0.063,
-   "price_out": 0.21,
-   "tps": 0
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 160.861
   },
   {
    "name": "Grok 4",
@@ -1920,43 +2064,7 @@
    "math": 0,
    "price_in": 1.4,
    "price_out": 4.4,
-   "tps": 136.968
-  },
-  {
-   "name": "Qwen3.8 27B (Non-reasoning)",
-   "slug": "qwen3-8-27b-non-reasoning",
-   "creator": "Alibaba",
-   "released": "2026-08-14",
-   "intelligence": 22.4,
-   "coding": 44.6,
-   "math": 0,
-   "price_in": 0.5,
-   "price_out": 3,
-   "tps": 49.282
-  },
-  {
-   "name": "GPT-5.6 Terra (Non-reasoning)",
-   "slug": "gpt-5-6-terra-non-reasoning",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 22.3,
-   "coding": 52.3,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 12,
-   "tps": 100.068
-  },
-  {
-   "name": "MiMo-V2.5",
-   "slug": "mimo-v2-5-0424",
-   "creator": "Xiaomi",
-   "released": "2026-04-22",
-   "intelligence": 22.3,
-   "coding": 56.8,
-   "math": 0,
-   "price_in": 0.14,
-   "price_out": 0.28,
-   "tps": 56.717
+   "tps": 0
   },
   {
    "name": "Gemini 3 Pro Preview (low)",
@@ -1983,6 +2091,18 @@
    "tps": 0
   },
   {
+   "name": "Gemini 3.5 Flash-Lite",
+   "slug": "gemini-3-5-flash-lite",
+   "creator": "Google",
+   "released": "2026-07-21",
+   "intelligence": 22.2,
+   "coding": 49.3,
+   "math": 0,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 317.63
+  },
+  {
    "name": "Kimi K2 Thinking",
    "slug": "kimi-k2-thinking",
    "creator": "Kimi",
@@ -1993,18 +2113,6 @@
    "price_in": 0.6,
    "price_out": 2.5,
    "tps": 0
-  },
-  {
-   "name": "Qwen3.6 27B (Reasoning)",
-   "slug": "qwen3-6-27b",
-   "creator": "Alibaba",
-   "released": "2026-04-22",
-   "intelligence": 21.9,
-   "coding": 53.7,
-   "math": 0,
-   "price_in": 0.6,
-   "price_out": 3.6,
-   "tps": 57.021
   },
   {
    "name": "o3-pro",
@@ -2055,18 +2163,6 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.6 Luna (low)",
-   "slug": "gpt-5-6-luna-low",
-   "creator": "OpenAI",
-   "released": "2026-07-09",
-   "intelligence": 21.5,
-   "coding": 44.2,
-   "math": 0,
-   "price_in": 0.2,
-   "price_out": 1.2,
-   "tps": 120.725
-  },
-  {
    "name": "DeepSeek V3.2 (Reasoning)",
    "slug": "deepseek-v3-2-reasoning",
    "creator": "DeepSeek",
@@ -2088,7 +2184,19 @@
    "math": 0,
    "price_in": 0.6,
    "price_out": 3.6,
-   "tps": 86.163
+   "tps": 82.455
+  },
+  {
+   "name": "Qwen3.6 27B (Reasoning)",
+   "slug": "qwen3-6-27b",
+   "creator": "Alibaba",
+   "released": "2026-04-22",
+   "intelligence": 21.4,
+   "coding": 53.7,
+   "math": 0,
+   "price_in": 0.6,
+   "price_out": 3.6,
+   "tps": 0
   },
   {
    "name": "Qwen3 Max Thinking",
@@ -2103,28 +2211,16 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.4 nano (xhigh)",
-   "slug": "gpt-5-4-nano",
+   "name": "GPT-5.6 Luna (low)",
+   "slug": "gpt-5-6-luna-low",
    "creator": "OpenAI",
-   "released": "2026-03-17",
-   "intelligence": 21.2,
-   "coding": 56.1,
+   "released": "2026-07-09",
+   "intelligence": 21,
+   "coding": 44.2,
    "math": 0,
    "price_in": 0.2,
-   "price_out": 1.25,
-   "tps": 0
-  },
-  {
-   "name": "Claude 4.5 Sonnet (Reasoning)",
-   "slug": "claude-4-5-sonnet-thinking",
-   "creator": "Anthropic",
-   "released": "2025-09-29",
-   "intelligence": 21.2,
-   "coding": 52.1,
-   "math": 88,
-   "price_in": 3,
-   "price_out": 15,
-   "tps": 0
+   "price_out": 1.2,
+   "tps": 141.496
   },
   {
    "name": "MiniMax-M2.1",
@@ -2139,7 +2235,7 @@
    "tps": 0
   },
   {
-   "name": "DeepSeek V4 Pro (Non-reasoning)",
+   "name": "DeepSeek V4 Pro 0424 (Non-reasoning)",
    "slug": "deepseek-v4-pro-0424-non-reasoning",
    "creator": "DeepSeek",
    "released": "2026-04-24",
@@ -2148,18 +2244,6 @@
    "math": 0,
    "price_in": 0.435,
    "price_out": 0.87,
-   "tps": 66.437
-  },
-  {
-   "name": "GPT-5 (low)",
-   "slug": "gpt-5-low",
-   "creator": "OpenAI",
-   "released": "2025-08-07",
-   "intelligence": 20.8,
-   "coding": 0,
-   "math": 83,
-   "price_in": 1.25,
-   "price_out": 10,
    "tps": 0
   },
   {
@@ -2175,15 +2259,51 @@
    "tps": 0
   },
   {
-   "name": "GPT-5 mini (medium)",
-   "slug": "gpt-5-mini-medium",
+   "name": "GPT-5 (low)",
+   "slug": "gpt-5-low",
    "creator": "OpenAI",
    "released": "2025-08-07",
-   "intelligence": 20.6,
+   "intelligence": 20.8,
    "coding": 0,
-   "math": 85,
-   "price_in": 0.25,
-   "price_out": 2,
+   "math": 83,
+   "price_in": 1.25,
+   "price_out": 10,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.6 Terra (Non-reasoning)",
+   "slug": "gpt-5-6-terra-non-reasoning",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 20.8,
+   "coding": 52.3,
+   "math": 0,
+   "price_in": 2,
+   "price_out": 12,
+   "tps": 75.752
+  },
+  {
+   "name": "GPT-5.4 nano (xhigh)",
+   "slug": "gpt-5-4-nano",
+   "creator": "OpenAI",
+   "released": "2026-03-17",
+   "intelligence": 20.7,
+   "coding": 56.1,
+   "math": 0,
+   "price_in": 0.2,
+   "price_out": 1.25,
+   "tps": 0
+  },
+  {
+   "name": "Claude 4.5 Sonnet (Reasoning)",
+   "slug": "claude-4-5-sonnet-thinking",
+   "creator": "Anthropic",
+   "released": "2025-09-29",
+   "intelligence": 20.7,
+   "coding": 52.1,
+   "math": 88,
+   "price_in": 3,
+   "price_out": 15,
    "tps": 0
   },
   {
@@ -2199,6 +2319,30 @@
    "tps": 0
   },
   {
+   "name": "GPT-5 mini (medium)",
+   "slug": "gpt-5-mini-medium",
+   "creator": "OpenAI",
+   "released": "2025-08-07",
+   "intelligence": 20.6,
+   "coding": 0,
+   "math": 85,
+   "price_in": 0.25,
+   "price_out": 2,
+   "tps": 0
+  },
+  {
+   "name": "K2 Horizon 7B",
+   "slug": "k2-horizon-7b",
+   "creator": "Institute of Foundation Models",
+   "released": "2026-09-03",
+   "intelligence": 20.6,
+   "coding": 38.6,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Qwen3.5 Omni Plus",
    "slug": "qwen3-5-omni-plus",
    "creator": "Alibaba",
@@ -2208,7 +2352,7 @@
    "math": 0,
    "price_in": 0.4,
    "price_out": 4.8,
-   "tps": 92.45
+   "tps": 87.159
   },
   {
    "name": "GPT-5.1 Codex mini (high)",
@@ -2244,7 +2388,19 @@
    "math": 88.3,
    "price_in": 2,
    "price_out": 8,
-   "tps": 121.379
+   "tps": 152.195
+  },
+  {
+   "name": "Qwen3.8 27B (Non-reasoning)",
+   "slug": "qwen3-8-27b-non-reasoning",
+   "creator": "Alibaba",
+   "released": "2026-08-14",
+   "intelligence": 20.2,
+   "coding": 44.6,
+   "math": 0,
+   "price_in": 0.5,
+   "price_out": 3,
+   "tps": 48.745
   },
   {
    "name": "GPT-5.4 nano (medium)",
@@ -2268,30 +2424,6 @@
    "math": 0,
    "price_in": 0.6,
    "price_out": 3.6,
-   "tps": 58.73
-  },
-  {
-   "name": "K-EXAONE 2.0",
-   "slug": "k-exaone-2-0-0803",
-   "creator": "LG AI Research",
-   "released": "2026-08-12",
-   "intelligence": 19.7,
-   "coding": 40.6,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "LongCat 2.0",
-   "slug": "longcat-2-0",
-   "creator": "LongCat",
-   "released": "2026-06-29",
-   "intelligence": 19.7,
-   "coding": 45.3,
-   "math": 0,
-   "price_in": 0.3,
-   "price_out": 1.2,
    "tps": 0
   },
   {
@@ -2307,6 +2439,18 @@
    "tps": 0
   },
   {
+   "name": "K-EXAONE 2.0 0803",
+   "slug": "k-exaone-2-0-0803",
+   "creator": "LG AI Research",
+   "released": "2026-08-12",
+   "intelligence": 19.7,
+   "coding": 40.6,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Step 3.7 Flash",
    "slug": "step-3-7-flash",
    "creator": "StepFun",
@@ -2316,7 +2460,7 @@
    "math": 0,
    "price_in": 0.2,
    "price_out": 1.15,
-   "tps": 133.258
+   "tps": 196.671
   },
   {
    "name": "Kimi K2.5 (Non-reasoning)",
@@ -2367,19 +2511,43 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.5 397B A17B (Reasoning)",
-   "slug": "qwen3-5-397b-a17b",
-   "creator": "Alibaba",
-   "released": "2026-02-16",
+   "name": "LongCat 2.0",
+   "slug": "longcat-2-0",
+   "creator": "LongCat",
+   "released": "2026-06-29",
    "intelligence": 19.1,
-   "coding": 48.2,
+   "coding": 45.3,
    "math": 0,
-   "price_in": 0.6,
-   "price_out": 3.6,
-   "tps": 83.378
+   "price_in": 0.3,
+   "price_out": 1.2,
+   "tps": 0
   },
   {
-   "name": "DeepSeek V4 Flash (Non-reasoning)",
+   "name": "Gemma 4 31B (Reasoning)",
+   "slug": "gemma-4-31b",
+   "creator": "Google",
+   "released": "2026-04-02",
+   "intelligence": 19,
+   "coding": 43.4,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 35.317
+  },
+  {
+   "name": "Claude 4 Sonnet (Reasoning)",
+   "slug": "claude-4-sonnet-thinking",
+   "creator": "Anthropic",
+   "released": "2025-05-22",
+   "intelligence": 18.9,
+   "coding": 37.6,
+   "math": 74.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek V4 Flash 0420 (Non-reasoning)",
    "slug": "deepseek-v4-flash-0420-non-reasoning",
    "creator": "DeepSeek",
    "released": "2026-04-24",
@@ -2391,30 +2559,6 @@
    "tps": 0
   },
   {
-   "name": "Claude 4 Sonnet (Reasoning)",
-   "slug": "claude-4-sonnet-thinking",
-   "creator": "Anthropic",
-   "released": "2025-05-22",
-   "intelligence": 18.9,
-   "coding": 37.6,
-   "math": 74.3,
-   "price_in": 3,
-   "price_out": 15,
-   "tps": 0
-  },
-  {
-   "name": "Qwen3.6 35B A3B (Reasoning)",
-   "slug": "qwen3-6-35b-a3b",
-   "creator": "Alibaba",
-   "released": "2026-04-16",
-   "intelligence": 18.8,
-   "coding": 41.9,
-   "math": 0,
-   "price_in": 0.375,
-   "price_out": 2.25,
-   "tps": 148.83
-  },
-  {
    "name": "JT-35B-Flash",
    "slug": "jt-35b-flash",
    "creator": "China Mobile",
@@ -2424,18 +2568,6 @@
    "math": 0,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Claude 4.1 Opus (Non-reasoning)",
-   "slug": "claude-4-1-opus",
-   "creator": "Anthropic",
-   "released": "2025-08-05",
-   "intelligence": 18.6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 15,
-   "price_out": 75,
    "tps": 0
   },
   {
@@ -2463,6 +2595,18 @@
    "tps": 0
   },
   {
+   "name": "Claude 4.1 Opus (Non-reasoning)",
+   "slug": "claude-4-1-opus",
+   "creator": "Anthropic",
+   "released": "2025-08-05",
+   "intelligence": 18.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 15,
+   "price_out": 75,
+   "tps": 0
+  },
+  {
    "name": "GLM-4.6 (Reasoning)",
    "slug": "glm-4-6-reasoning",
    "creator": "Z AI",
@@ -2475,6 +2619,18 @@
    "tps": 0
   },
   {
+   "name": "Qwen3.5 397B A17B (Reasoning)",
+   "slug": "qwen3-5-397b-a17b",
+   "creator": "Alibaba",
+   "released": "2026-02-16",
+   "intelligence": 18.4,
+   "coding": 48.2,
+   "math": 0,
+   "price_in": 0.6,
+   "price_out": 3.6,
+   "tps": 85.498
+  },
+  {
    "name": "MiMo-V2.5-Pro (Non-reasoning)",
    "slug": "mimo-v2-5-pro-non-reasoning",
    "creator": "Xiaomi",
@@ -2484,7 +2640,19 @@
    "math": 0,
    "price_in": 0.435,
    "price_out": 0.87,
-   "tps": 40.672
+   "tps": 44.172
+  },
+  {
+   "name": "Qwen3.6 35B A3B (Reasoning)",
+   "slug": "qwen3-6-35b-a3b",
+   "creator": "Alibaba",
+   "released": "2026-04-16",
+   "intelligence": 18.2,
+   "coding": 41.9,
+   "math": 0,
+   "price_in": 0.375,
+   "price_out": 2.25,
+   "tps": 127.217
   },
   {
    "name": "GPT-5.4 (Non-reasoning)",
@@ -2496,30 +2664,6 @@
    "math": 0,
    "price_in": 2.5,
    "price_out": 15,
-   "tps": 0
-  },
-  {
-   "name": "Muse Glimmer (high)",
-   "slug": "muse-glimmer",
-   "creator": "Meta",
-   "released": "2026-08-10",
-   "intelligence": 18.1,
-   "coding": 49,
-   "math": 0,
-   "price_in": 0.35,
-   "price_out": 1.5,
-   "tps": 92.529
-  },
-  {
-   "name": "Gemini 3 Flash Preview (Non-reasoning)",
-   "slug": "gemini-3-flash",
-   "creator": "Google",
-   "released": "2025-12-17",
-   "intelligence": 17.9,
-   "coding": 0,
-   "math": 55.7,
-   "price_in": 0.5,
-   "price_out": 3,
    "tps": 0
   },
   {
@@ -2535,6 +2679,18 @@
    "tps": 0
   },
   {
+   "name": "Gemini 3 Flash Preview (Non-reasoning)",
+   "slug": "gemini-3-flash",
+   "creator": "Google",
+   "released": "2025-12-17",
+   "intelligence": 17.9,
+   "coding": 0,
+   "math": 55.7,
+   "price_in": 0.5,
+   "price_out": 3,
+   "tps": 0
+  },
+  {
    "name": "Qwen3.5 122B A10B (Non-reasoning)",
    "slug": "qwen3-5-122b-a10b-non-reasoning",
    "creator": "Alibaba",
@@ -2544,7 +2700,7 @@
    "math": 0,
    "price_in": 0.4,
    "price_out": 3.2,
-   "tps": 148.176
+   "tps": 141.891
   },
   {
    "name": "Claude 3.7 Sonnet (Reasoning)",
@@ -2559,28 +2715,16 @@
    "tps": 0
   },
   {
-   "name": "Claude 4.5 Haiku (Reasoning)",
-   "slug": "claude-4-5-haiku-reasoning",
-   "creator": "Anthropic",
-   "released": "2025-10-15",
-   "intelligence": 17.6,
-   "coding": 43.9,
-   "math": 83.7,
-   "price_in": 1,
-   "price_out": 5,
-   "tps": 109.54
-  },
-  {
-   "name": "GPT-5 mini (high)",
-   "slug": "gpt-5-mini",
-   "creator": "OpenAI",
-   "released": "2025-08-07",
-   "intelligence": 17.4,
-   "coding": 15.6,
-   "math": 90.7,
-   "price_in": 0.25,
-   "price_out": 2,
-   "tps": 0
+   "name": "Muse Glimmer (high)",
+   "slug": "muse-glimmer",
+   "creator": "Meta",
+   "released": "2026-08-10",
+   "intelligence": 17.5,
+   "coding": 49,
+   "math": 0,
+   "price_in": 0.35,
+   "price_out": 1.5,
+   "tps": 93.889
   },
   {
    "name": "GLM-4.7 (Non-reasoning)",
@@ -2592,42 +2736,6 @@
    "math": 48,
    "price_in": 0.6,
    "price_out": 2.2,
-   "tps": 0
-  },
-  {
-   "name": "Ring-2.6-1T",
-   "slug": "ring-2-6-1t",
-   "creator": "InclusionAI",
-   "released": "2026-05-08",
-   "intelligence": 17.3,
-   "coding": 42.8,
-   "math": 0,
-   "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 129.447
-  },
-  {
-   "name": "GPT-5.2 (Non-reasoning)",
-   "slug": "gpt-5-2-non-reasoning",
-   "creator": "OpenAI",
-   "released": "2025-12-11",
-   "intelligence": 17,
-   "coding": 0,
-   "math": 51,
-   "price_in": 1.75,
-   "price_out": 14,
-   "tps": 0
-  },
-  {
-   "name": "Step 3.5 Flash 2603",
-   "slug": "step-3-5-flash",
-   "creator": "StepFun",
-   "released": "2026-04-02",
-   "intelligence": 17,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.1,
-   "price_out": 0.3,
    "tps": 0
   },
   {
@@ -2655,6 +2763,30 @@
    "tps": 0
   },
   {
+   "name": "GPT-5.2 (Non-reasoning)",
+   "slug": "gpt-5-2-non-reasoning",
+   "creator": "OpenAI",
+   "released": "2025-12-11",
+   "intelligence": 17,
+   "coding": 0,
+   "math": 51,
+   "price_in": 1.75,
+   "price_out": 14,
+   "tps": 0
+  },
+  {
+   "name": "Step 3.5 Flash 2603",
+   "slug": "step-3-5-flash",
+   "creator": "StepFun",
+   "released": "2026-04-02",
+   "intelligence": 17,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.1,
+   "price_out": 0.3,
+   "tps": 0
+  },
+  {
    "name": "Doubao Seed Code",
    "slug": "doubao-seed-code",
    "creator": "ByteDance Seed",
@@ -2667,16 +2799,28 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.6 Luna (Non-reasoning)",
-   "slug": "gpt-5-6-luna-non-reasoning",
+   "name": "Claude 4.5 Haiku (Reasoning)",
+   "slug": "claude-4-5-haiku-reasoning",
+   "creator": "Anthropic",
+   "released": "2025-10-15",
+   "intelligence": 16.9,
+   "coding": 43.9,
+   "math": 83.7,
+   "price_in": 1,
+   "price_out": 5,
+   "tps": 144.637
+  },
+  {
+   "name": "GPT-5 mini (high)",
+   "slug": "gpt-5-mini",
    "creator": "OpenAI",
-   "released": "2026-07-09",
+   "released": "2025-08-07",
    "intelligence": 16.8,
-   "coding": 39.3,
-   "math": 0,
-   "price_in": 0.2,
-   "price_out": 1.2,
-   "tps": 124.784
+   "coding": 15.6,
+   "math": 90.7,
+   "price_in": 0.25,
+   "price_out": 2,
+   "tps": 0
   },
   {
    "name": "Gemma 4 26B A4B (Reasoning)",
@@ -2703,27 +2847,27 @@
    "tps": 0
   },
   {
-   "name": "Gemini 2.5 Pro",
-   "slug": "gemini-2-5-pro",
-   "creator": "Google",
-   "released": "2025-06-05",
-   "intelligence": 16.7,
-   "coding": 33.3,
-   "math": 87.7,
-   "price_in": 1.25,
-   "price_out": 10,
-   "tps": 0
+   "name": "Ring-2.6-1T",
+   "slug": "ring-2-6-1t",
+   "creator": "InclusionAI",
+   "released": "2026-05-08",
+   "intelligence": 16.6,
+   "coding": 42.8,
+   "math": 0,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 123.422
   },
   {
-   "name": "Claude 4 Sonnet (Non-reasoning)",
-   "slug": "claude-4-sonnet",
-   "creator": "Anthropic",
-   "released": "2025-05-22",
+   "name": "Step 3.5 Flash",
+   "slug": "step-3-5-flash-0202",
+   "creator": "StepFun",
+   "released": "2026-02-02",
    "intelligence": 16.6,
    "coding": 0,
-   "math": 38,
-   "price_in": 3,
-   "price_out": 15,
+   "math": 0,
+   "price_in": 0.1,
+   "price_out": 0.3,
    "tps": 0
   },
   {
@@ -2739,6 +2883,18 @@
    "tps": 0
   },
   {
+   "name": "Claude 4 Sonnet (Non-reasoning)",
+   "slug": "claude-4-sonnet",
+   "creator": "Anthropic",
+   "released": "2025-05-22",
+   "intelligence": 16.6,
+   "coding": 0,
+   "math": 38,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "DeepSeek V3.2 Exp (Reasoning)",
    "slug": "deepseek-v3-2-reasoning-0925",
    "creator": "DeepSeek",
@@ -2748,18 +2904,6 @@
    "math": 87.7,
    "price_in": 0.28,
    "price_out": 0.42,
-   "tps": 0
-  },
-  {
-   "name": "Step 3.5 Flash",
-   "slug": "step-3-5-flash-0202",
-   "creator": "StepFun",
-   "released": "2026-02-02",
-   "intelligence": 16.6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.1,
-   "price_out": 0.3,
    "tps": 0
   },
   {
@@ -2775,16 +2919,16 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.5 122B A10B (Reasoning)",
-   "slug": "qwen3-5-122b-a10b",
-   "creator": "Alibaba",
-   "released": "2026-02-24",
-   "intelligence": 16.2,
-   "coding": 45.7,
-   "math": 0,
-   "price_in": 0.4,
-   "price_out": 3.2,
-   "tps": 130.551
+   "name": "Gemini 2.5 Pro",
+   "slug": "gemini-2-5-pro",
+   "creator": "Google",
+   "released": "2025-06-05",
+   "intelligence": 16.1,
+   "coding": 33.3,
+   "math": 87.7,
+   "price_in": 1.25,
+   "price_out": 10,
+   "tps": 0
   },
   {
    "name": "MiMo-V2-Flash (Non-reasoning)",
@@ -2796,18 +2940,6 @@
    "math": 67.7,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Gemini 3.1 Flash-Lite",
-   "slug": "gemini-3-1-flash-lite-preview",
-   "creator": "Google",
-   "released": "2026-03-03",
-   "intelligence": 16,
-   "coding": 34.7,
-   "math": 0,
-   "price_in": 0.25,
-   "price_out": 1.5,
    "tps": 0
   },
   {
@@ -2823,6 +2955,18 @@
    "tps": 0
   },
   {
+   "name": "K2 Horizon 3.7B",
+   "slug": "k2-horizon-3-7b",
+   "creator": "Institute of Foundation Models",
+   "released": "2026-09-03",
+   "intelligence": 15.6,
+   "coding": 26.1,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Qwen3 Max",
    "slug": "qwen3-max",
    "creator": "Alibaba",
@@ -2833,6 +2977,42 @@
    "price_in": 1.2,
    "price_out": 6,
    "tps": 0
+  },
+  {
+   "name": "Qwen3.5 122B A10B (Reasoning)",
+   "slug": "qwen3-5-122b-a10b",
+   "creator": "Alibaba",
+   "released": "2026-02-24",
+   "intelligence": 15.6,
+   "coding": 45.7,
+   "math": 0,
+   "price_in": 0.4,
+   "price_out": 3.2,
+   "tps": 131.827
+  },
+  {
+   "name": "Gemini 3.1 Flash-Lite",
+   "slug": "gemini-3-1-flash-lite-preview",
+   "creator": "Google",
+   "released": "2026-03-03",
+   "intelligence": 15.6,
+   "coding": 34.7,
+   "math": 0,
+   "price_in": 0.25,
+   "price_out": 1.5,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.6 Luna (Non-reasoning)",
+   "slug": "gpt-5-6-luna-non-reasoning",
+   "creator": "OpenAI",
+   "released": "2026-07-09",
+   "intelligence": 15.5,
+   "coding": 39.3,
+   "math": 0,
+   "price_in": 0.2,
+   "price_out": 1.2,
+   "tps": 144.446
   },
   {
    "name": "Gemini 2.5 Flash Preview (Sep '25) (Reasoning)",
@@ -2847,18 +3027,6 @@
    "tps": 0
   },
   {
-   "name": "Gemma 4 31B (Reasoning)",
-   "slug": "gemma-4-31b",
-   "creator": "Google",
-   "released": "2026-04-02",
-   "intelligence": 15.4,
-   "coding": 43.4,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 34.948
-  },
-  {
    "name": "Claude 4.5 Haiku (Non-reasoning)",
    "slug": "claude-4-5-haiku",
    "creator": "Anthropic",
@@ -2868,31 +3036,7 @@
    "math": 39,
    "price_in": 1,
    "price_out": 5,
-   "tps": 93.275
-  },
-  {
-   "name": "DeepSeek V3.1 Terminus (Reasoning)",
-   "slug": "deepseek-v3-1-terminus-reasoning",
-   "creator": "DeepSeek",
-   "released": "2025-09-22",
-   "intelligence": 15.4,
-   "coding": 43.5,
-   "math": 89.7,
-   "price_in": 1.635,
-   "price_out": 2.75,
-   "tps": 0
-  },
-  {
-   "name": "Claude 3.7 Sonnet (Non-reasoning)",
-   "slug": "claude-3-7-sonnet",
-   "creator": "Anthropic",
-   "released": "2025-02-24",
-   "intelligence": 15.3,
-   "coding": 0,
-   "math": 21,
-   "price_in": 3,
-   "price_out": 15,
-   "tps": 0
+   "tps": 96.076
   },
   {
    "name": "Kimi K2 0905",
@@ -2907,6 +3051,30 @@
    "tps": 0
   },
   {
+   "name": "Ling 3.0 Tiny",
+   "slug": "ling-3-0-tiny",
+   "creator": "InclusionAI",
+   "released": "2026-08-06",
+   "intelligence": 15.3,
+   "coding": 26.5,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 26.316
+  },
+  {
+   "name": "Claude 3.7 Sonnet (Non-reasoning)",
+   "slug": "claude-3-7-sonnet",
+   "creator": "Anthropic",
+   "released": "2025-02-24",
+   "intelligence": 15.3,
+   "coding": 0,
+   "math": 21,
+   "price_in": 3,
+   "price_out": 15,
+   "tps": 0
+  },
+  {
    "name": "Qwen3.6 35B A3B (Non-reasoning)",
    "slug": "qwen3-6-35b-a3b-non-reasoning",
    "creator": "Alibaba",
@@ -2916,7 +3084,7 @@
    "math": 0,
    "price_in": 0.375,
    "price_out": 2.25,
-   "tps": 156.59
+   "tps": 130.917
   },
   {
    "name": "o1",
@@ -2940,7 +3108,7 @@
    "math": 0,
    "price_in": 0.25,
    "price_out": 2,
-   "tps": 158.346
+   "tps": 0
   },
   {
    "name": "Gemini 2.5 Pro Preview (Mar' 25)",
@@ -2952,30 +3120,6 @@
    "math": 0,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Mistral Medium 3.5",
-   "slug": "mistral-medium-3-5",
-   "creator": "Mistral",
-   "released": "2026-04-29",
-   "intelligence": 14.9,
-   "coding": 46.9,
-   "math": 0,
-   "price_in": 1.5,
-   "price_out": 7.5,
-   "tps": 159.98
-  },
-  {
-   "name": "GLM-4.7-Flash (Reasoning)",
-   "slug": "glm-4-7-flash",
-   "creator": "Z AI",
-   "released": "2026-01-19",
-   "intelligence": 14.9,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.07,
-   "price_out": 0.4,
    "tps": 0
   },
   {
@@ -2991,6 +3135,18 @@
    "tps": 0
   },
   {
+   "name": "GLM-4.7-Flash (Reasoning)",
+   "slug": "glm-4-7-flash",
+   "creator": "Z AI",
+   "released": "2026-01-19",
+   "intelligence": 14.9,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.07,
+   "price_out": 0.4,
+   "tps": 0
+  },
+  {
    "name": "Granite 4.2 30B",
    "slug": "granite-4-2-30b",
    "creator": "IBM",
@@ -3000,7 +3156,19 @@
    "math": 0,
    "price_in": 0.16,
    "price_out": 0.65,
-   "tps": 77.916
+   "tps": 71.431
+  },
+  {
+   "name": "DeepSeek V3.1 Terminus (Reasoning)",
+   "slug": "deepseek-v3-1-terminus-reasoning",
+   "creator": "DeepSeek",
+   "released": "2025-09-22",
+   "intelligence": 14.8,
+   "coding": 43.5,
+   "math": 89.7,
+   "price_in": 1.635,
+   "price_out": 2.75,
+   "tps": 0
   },
   {
    "name": "Grok 3 mini Reasoning (high)",
@@ -3025,18 +3193,6 @@
    "price_in": 2,
    "price_out": 6,
    "tps": 0
-  },
-  {
-   "name": "Grok 4.3 (Non-reasoning)",
-   "slug": "grok-4-3-non-reasoning",
-   "creator": "SpaceXAI",
-   "released": "2026-04-30",
-   "intelligence": 14.5,
-   "coding": 35.2,
-   "math": 0,
-   "price_in": 1.25,
-   "price_out": 2.5,
-   "tps": 114.362
   },
   {
    "name": "Gemini 2.5 Pro Preview (May' 25)",
@@ -3087,6 +3243,30 @@
    "tps": 0
   },
   {
+   "name": "Grok 4.20 0309 v2 (Non-reasoning)",
+   "slug": "grok-4-20-non-reasoning",
+   "creator": "SpaceXAI",
+   "released": "2026-04-07",
+   "intelligence": 14.2,
+   "coding": 0,
+   "math": 0,
+   "price_in": 1.25,
+   "price_out": 2.5,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Medium 3.5",
+   "slug": "mistral-medium-3-5",
+   "creator": "Mistral",
+   "released": "2026-04-29",
+   "intelligence": 14.2,
+   "coding": 46.9,
+   "math": 0,
+   "price_in": 1.5,
+   "price_out": 7.5,
+   "tps": 158.309
+  },
+  {
    "name": "Gemma 4 12B (Reasoning)",
    "slug": "gemma-4-12b",
    "creator": "Google",
@@ -3096,7 +3276,7 @@
    "math": 0,
    "price_in": 0.1,
    "price_out": 0.3,
-   "tps": 134.882
+   "tps": 138.333
   },
   {
    "name": "Nova 2.0 Pro Preview (medium)",
@@ -3108,19 +3288,7 @@
    "math": 89,
    "price_in": 1.25,
    "price_out": 10,
-   "tps": 129.989
-  },
-  {
-   "name": "Grok 4.20 0309 v2 (Non-reasoning)",
-   "slug": "grok-4-20-non-reasoning",
-   "creator": "SpaceXAI",
-   "released": "2026-04-07",
-   "intelligence": 14.2,
-   "coding": 0,
-   "math": 0,
-   "price_in": 1.25,
-   "price_out": 2.5,
-   "tps": 0
+   "tps": 121.025
   },
   {
    "name": "Grok Code Fast 1",
@@ -3135,39 +3303,15 @@
    "tps": 0
   },
   {
-   "name": "Gemma 4 31B (Non-reasoning)",
-   "slug": "gemma-4-31b-non-reasoning",
-   "creator": "Google",
-   "released": "2026-04-02",
-   "intelligence": 13.9,
-   "coding": 33.2,
+   "name": "Grok 4.3 (Non-reasoning)",
+   "slug": "grok-4-3-non-reasoning",
+   "creator": "SpaceXAI",
+   "released": "2026-04-30",
+   "intelligence": 14,
+   "coding": 35.2,
    "math": 0,
-   "price_in": 0.14,
-   "price_out": 0.4,
-   "tps": 47.584
-  },
-  {
-   "name": "Command A+",
-   "slug": "command-a-plus",
-   "creator": "Cohere",
-   "released": "2026-05-20",
-   "intelligence": 13.9,
-   "coding": 27.8,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 245.764
-  },
-  {
-   "name": "DeepSeek V3.2 Exp (Non-reasoning)",
-   "slug": "deepseek-v3-2-0925",
-   "creator": "DeepSeek",
-   "released": "2025-09-29",
-   "intelligence": 13.9,
-   "coding": 0,
-   "math": 57.7,
-   "price_in": 0.28,
-   "price_out": 0.42,
+   "price_in": 1.25,
+   "price_out": 2.5,
    "tps": 0
   },
   {
@@ -3183,6 +3327,30 @@
    "tps": 0
   },
   {
+   "name": "Gemma 4 31B (Non-reasoning)",
+   "slug": "gemma-4-31b-non-reasoning",
+   "creator": "Google",
+   "released": "2026-04-02",
+   "intelligence": 13.9,
+   "coding": 33.2,
+   "math": 0,
+   "price_in": 0.14,
+   "price_out": 0.4,
+   "tps": 36.317
+  },
+  {
+   "name": "DeepSeek V3.2 Exp (Non-reasoning)",
+   "slug": "deepseek-v3-2-0925",
+   "creator": "DeepSeek",
+   "released": "2025-09-29",
+   "intelligence": 13.9,
+   "coding": 0,
+   "math": 57.7,
+   "price_in": 0.28,
+   "price_out": 0.42,
+   "tps": 0
+  },
+  {
    "name": "Apriel-v1.5-15B-Thinker",
    "slug": "apriel-v1-5-15b-thinker",
    "creator": "ServiceNow",
@@ -3195,16 +3363,16 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.5 9B (Reasoning)",
-   "slug": "qwen3-5-9b",
-   "creator": "Alibaba",
-   "released": "2026-03-02",
-   "intelligence": 13.7,
-   "coding": 28.7,
+   "name": "Mercury 2",
+   "slug": "mercury-2",
+   "creator": "Inception",
+   "released": "2026-02-20",
+   "intelligence": 13.8,
+   "coding": 31.1,
    "math": 0,
-   "price_in": 0.135,
-   "price_out": 0.2,
-   "tps": 88.244
+   "price_in": 0.25,
+   "price_out": 0.75,
+   "tps": 746.487
   },
   {
    "name": "DeepSeek V3.1 (Non-reasoning)",
@@ -3219,6 +3387,18 @@
    "tps": 0
   },
   {
+   "name": "Qwen3.5 9B (Reasoning)",
+   "slug": "qwen3-5-9b",
+   "creator": "Alibaba",
+   "released": "2026-03-02",
+   "intelligence": 13.7,
+   "coding": 28.7,
+   "math": 0,
+   "price_in": 0.135,
+   "price_out": 0.2,
+   "tps": 70.902
+  },
+  {
    "name": "Nova 2.0 Omni (medium)",
    "slug": "nova-2-0-omni-reasoning-medium",
    "creator": "Amazon",
@@ -3231,30 +3411,6 @@
    "tps": 0
   },
   {
-   "name": "Nemotron 3.5 Lightning",
-   "slug": "nemotron-3-5-lightning",
-   "creator": "NVIDIA",
-   "released": "2026-08-11",
-   "intelligence": 13.6,
-   "coding": 26.8,
-   "math": 0,
-   "price_in": 0.06,
-   "price_out": 0.2,
-   "tps": 292.09
-  },
-  {
-   "name": "Nemotron 3 Super 120B A12B (Reasoning)",
-   "slug": "nvidia-nemotron-3-super-120b-a12b",
-   "creator": "NVIDIA",
-   "released": "2026-03-11",
-   "intelligence": 13.6,
-   "coding": 37.7,
-   "math": 0,
-   "price_in": 0.193,
-   "price_out": 0.65,
-   "tps": 170.144
-  },
-  {
    "name": "DeepSeek V3.1 (Reasoning)",
    "slug": "deepseek-v3-1-reasoning",
    "creator": "DeepSeek",
@@ -3264,30 +3420,6 @@
    "math": 89.7,
    "price_in": 0.59,
    "price_out": 1.69,
-   "tps": 0
-  },
-  {
-   "name": "Nova 2.0 Lite (high)",
-   "slug": "nova-2-0-lite-reasoning",
-   "creator": "Amazon",
-   "released": "2025-10-29",
-   "intelligence": 13.4,
-   "coding": 23,
-   "math": 94.3,
-   "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 205.48
-  },
-  {
-   "name": "Apriel-v1.6-15B-Thinker",
-   "slug": "apriel-v1-6-15b-thinker",
-   "creator": "ServiceNow",
-   "released": "2025-11-25",
-   "intelligence": 13.4,
-   "coding": 0,
-   "math": 88,
-   "price_in": 0,
-   "price_out": 0,
    "tps": 0
   },
   {
@@ -3303,16 +3435,28 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.5 9B (Non-reasoning)",
-   "slug": "qwen3-5-9b-non-reasoning",
-   "creator": "Alibaba",
-   "released": "2026-03-02",
-   "intelligence": 13.3,
-   "coding": 23.5,
-   "math": 0,
-   "price_in": 0.17,
-   "price_out": 0.25,
-   "tps": 90.421
+   "name": "Apriel-v1.6-15B-Thinker",
+   "slug": "apriel-v1-6-15b-thinker",
+   "creator": "ServiceNow",
+   "released": "2025-11-25",
+   "intelligence": 13.4,
+   "coding": 0,
+   "math": 88,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Nova 2.0 Lite (high)",
+   "slug": "nova-2-0-lite-reasoning",
+   "creator": "Amazon",
+   "released": "2025-10-29",
+   "intelligence": 13.4,
+   "coding": 23,
+   "math": 94.3,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 183.954
   },
   {
    "name": "GPT-5.1 (Non-reasoning)",
@@ -3327,6 +3471,18 @@
    "tps": 0
   },
   {
+   "name": "Qwen3.5 9B (Non-reasoning)",
+   "slug": "qwen3-5-9b-non-reasoning",
+   "creator": "Alibaba",
+   "released": "2026-03-02",
+   "intelligence": 13.3,
+   "coding": 23.5,
+   "math": 0,
+   "price_in": 0.17,
+   "price_out": 0.25,
+   "tps": 91.087
+  },
+  {
    "name": "EXAONE 4.5 33B",
    "slug": "exaone-4-5-33b",
    "creator": "LG AI Research",
@@ -3339,16 +3495,16 @@
    "tps": 0
   },
   {
-   "name": "MiniCPM5-2B",
-   "slug": "minicpm5-2b",
-   "creator": "OpenBMB",
-   "released": "2026-09-07",
+   "name": "Command A+",
+   "slug": "command-a-plus",
+   "creator": "Cohere",
+   "released": "2026-05-20",
    "intelligence": 13.1,
-   "coding": 14.5,
+   "coding": 27.8,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
+   "tps": 239.041
   },
   {
    "name": "Gemma 4 26B A4B (Non-reasoning)",
@@ -3360,7 +3516,7 @@
    "math": 0,
    "price_in": 0.13,
    "price_out": 0.4,
-   "tps": 83.48
+   "tps": 72.823
   },
   {
    "name": "Qwen3.5 4B (Reasoning)",
@@ -3372,19 +3528,7 @@
    "math": 0,
    "price_in": 0.03,
    "price_out": 0.15,
-   "tps": 25.465
-  },
-  {
-   "name": "Gemini 2.5 Flash (Reasoning)",
-   "slug": "gemini-2-5-flash-reasoning",
-   "creator": "Google",
-   "released": "2025-05-20",
-   "intelligence": 13.1,
-   "coding": 0,
-   "math": 73.3,
-   "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 0
+   "tps": 19.495
   },
   {
    "name": "DeepSeek R1 0528 (May '25)",
@@ -3396,6 +3540,18 @@
    "math": 76,
    "price_in": 1.35,
    "price_out": 3,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 2.5 Flash (Reasoning)",
+   "slug": "gemini-2-5-flash-reasoning",
+   "creator": "Google",
+   "released": "2025-05-20",
+   "intelligence": 13.1,
+   "coding": 0,
+   "math": 73.3,
+   "price_in": 0.3,
+   "price_out": 2.5,
    "tps": 0
   },
   {
@@ -3411,6 +3567,30 @@
    "tps": 0
   },
   {
+   "name": "Nemotron 3.5 Lightning",
+   "slug": "nemotron-3-5-lightning",
+   "creator": "NVIDIA",
+   "released": "2026-08-11",
+   "intelligence": 12.9,
+   "coding": 26.8,
+   "math": 0,
+   "price_in": 0.07,
+   "price_out": 0.22,
+   "tps": 273.172
+  },
+  {
+   "name": "Nemotron 3 Super 120B A12B (Reasoning)",
+   "slug": "nvidia-nemotron-3-super-120b-a12b",
+   "creator": "NVIDIA",
+   "released": "2026-03-11",
+   "intelligence": 12.8,
+   "coding": 37.7,
+   "math": 0,
+   "price_in": 0.3,
+   "price_out": 0.9,
+   "tps": 163.367
+  },
+  {
    "name": "Nova 2.0 Pro Preview (low)",
    "slug": "nova-2-0-pro-reasoning-low",
    "creator": "Amazon",
@@ -3420,19 +3600,7 @@
    "math": 63.3,
    "price_in": 1.25,
    "price_out": 10,
-   "tps": 141.98
-  },
-  {
-   "name": "North Mini Code",
-   "slug": "north-mini-code",
-   "creator": "Cohere",
-   "released": "2026-06-09",
-   "intelligence": 12.8,
-   "coding": 36.5,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 103.642
+   "tps": 129.497
   },
   {
    "name": "GLM-4.5 (Reasoning)",
@@ -3444,18 +3612,6 @@
    "math": 73.7,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "GPT-4.1",
-   "slug": "gpt-4-1",
-   "creator": "OpenAI",
-   "released": "2025-04-14",
-   "intelligence": 12.7,
-   "coding": 0,
-   "math": 34.7,
-   "price_in": 2,
-   "price_out": 8,
    "tps": 0
   },
   {
@@ -3483,6 +3639,18 @@
    "tps": 0
   },
   {
+   "name": "GPT-4.1",
+   "slug": "gpt-4-1",
+   "creator": "OpenAI",
+   "released": "2025-04-14",
+   "intelligence": 12.7,
+   "coding": 0,
+   "math": 34.7,
+   "price_in": 2,
+   "price_out": 8,
+   "tps": 0
+  },
+  {
    "name": "Qwen3 Max (Preview)",
    "slug": "qwen3-max-preview",
    "creator": "Alibaba",
@@ -3504,7 +3672,19 @@
    "math": 88.7,
    "price_in": 0.3,
    "price_out": 2.5,
-   "tps": 187.346
+   "tps": 182.538
+  },
+  {
+   "name": "GPT-5 nano (medium)",
+   "slug": "gpt-5-nano-medium",
+   "creator": "OpenAI",
+   "released": "2025-08-07",
+   "intelligence": 12.5,
+   "coding": 0,
+   "math": 78.3,
+   "price_in": 0.05,
+   "price_out": 0.4,
+   "tps": 0
   },
   {
    "name": "Qwen3.5 Omni Flash",
@@ -3516,7 +3696,7 @@
    "math": 0,
    "price_in": 0.1,
    "price_out": 0.8,
-   "tps": 250.544
+   "tps": 234.925
   },
   {
    "name": "o3-mini",
@@ -3531,15 +3711,15 @@
    "tps": 0
   },
   {
-   "name": "GPT-5 nano (medium)",
-   "slug": "gpt-5-nano-medium",
-   "creator": "OpenAI",
-   "released": "2025-08-07",
+   "name": "MiniCPM5-2B",
+   "slug": "minicpm5-2b",
+   "creator": "OpenBMB",
+   "released": "2026-09-07",
    "intelligence": 12.5,
-   "coding": 0,
-   "math": 78.3,
-   "price_in": 0.05,
-   "price_out": 0.4,
+   "coding": 14.5,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -3565,18 +3745,6 @@
    "price_in": 0,
    "price_out": 0,
    "tps": 0
-  },
-  {
-   "name": "gpt-oss-120b (high)",
-   "slug": "gpt-oss-120b",
-   "creator": "OpenAI",
-   "released": "2025-08-05",
-   "intelligence": 12.3,
-   "coding": 30.4,
-   "math": 93.4,
-   "price_in": 0.15,
-   "price_out": 0.595,
-   "tps": 191.193
   },
   {
    "name": "JT-MINI",
@@ -3627,18 +3795,6 @@
    "tps": 0
   },
   {
-   "name": "Ling 3.0 Tiny",
-   "slug": "ling-3-0-tiny",
-   "creator": "InclusionAI",
-   "released": "2026-08-06",
-   "intelligence": 11.9,
-   "coding": 26.5,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 196.957
-  },
-  {
    "name": "Qwen3 Coder 480B A35B Instruct",
    "slug": "qwen3-coder-480b-a35b-instruct",
    "creator": "Alibaba",
@@ -3675,30 +3831,6 @@
    "tps": 0
   },
   {
-   "name": "Nova 2.0 Lite (low)",
-   "slug": "nova-2-0-lite-reasoning-low",
-   "creator": "Amazon",
-   "released": "2025-10-29",
-   "intelligence": 11.8,
-   "coding": 0,
-   "math": 46.7,
-   "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 192.612
-  },
-  {
-   "name": "Granite 4.2 8B",
-   "slug": "granite-4-2-8b",
-   "creator": "IBM",
-   "released": "2026-08-25",
-   "intelligence": 11.8,
-   "coding": 22.4,
-   "math": 0,
-   "price_in": 0.06,
-   "price_out": 0.25,
-   "tps": 93.548
-  },
-  {
    "name": "Sonar Reasoning Pro",
    "slug": "sonar-reasoning-pro",
    "creator": "Perplexity",
@@ -3711,16 +3843,16 @@
    "tps": 0
   },
   {
-   "name": "Nemotron Cascade 2 30B A3B",
-   "slug": "nemotron-cascade-2-30b-a3b",
-   "creator": "NVIDIA",
-   "released": "2026-03-19",
-   "intelligence": 11.7,
-   "coding": 25.3,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "name": "Nova 2.0 Lite (low)",
+   "slug": "nova-2-0-lite-reasoning-low",
+   "creator": "Amazon",
+   "released": "2025-10-29",
+   "intelligence": 11.8,
+   "coding": 0,
+   "math": 46.7,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 200.475
   },
   {
    "name": "HyperNova 60B 2605 (high, based on gpt-oss-120b)",
@@ -3729,30 +3861,6 @@
    "released": "2026-05-26",
    "intelligence": 11.7,
    "coding": 23.2,
-   "math": 0,
-   "price_in": 0.04,
-   "price_out": 0.14,
-   "tps": 375.203
-  },
-  {
-   "name": "GPT-5.4 nano (Non-Reasoning)",
-   "slug": "gpt-5-4-nano-non-reasoning",
-   "creator": "OpenAI",
-   "released": "2026-03-17",
-   "intelligence": 11.7,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.2,
-   "price_out": 1.25,
-   "tps": 0
-  },
-  {
-   "name": "Gemini 2.5 Flash Preview (Reasoning)",
-   "slug": "gemini-2-5-flash-reasoning-04-2025",
-   "creator": "Google",
-   "released": "2025-04-17",
-   "intelligence": 11.7,
-   "coding": 0,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -3771,33 +3879,57 @@
    "tps": 0
   },
   {
-   "name": "Mistral Small 4 (Reasoning)",
-   "slug": "mistral-small-4",
-   "creator": "Mistral",
-   "released": "2026-03-16",
-   "intelligence": 11.5,
-   "coding": 26.6,
+   "name": "GPT-5.4 nano (Non-Reasoning)",
+   "slug": "gpt-5-4-nano-non-reasoning",
+   "creator": "OpenAI",
+   "released": "2026-03-17",
+   "intelligence": 11.7,
+   "coding": 0,
    "math": 0,
-   "price_in": 0.15,
-   "price_out": 0.6,
-   "tps": 172.154
+   "price_in": 0.2,
+   "price_out": 1.25,
+   "tps": 0
   },
   {
-   "name": "Mercury 2",
-   "slug": "mercury-2",
-   "creator": "Inception",
-   "released": "2026-02-20",
-   "intelligence": 11.5,
-   "coding": 31.1,
+   "name": "Nemotron Cascade 2 30B A3B",
+   "slug": "nemotron-cascade-2-30b-a3b",
+   "creator": "NVIDIA",
+   "released": "2026-03-19",
+   "intelligence": 11.7,
+   "coding": 25.3,
    "math": 0,
-   "price_in": 0.25,
-   "price_out": 0.75,
-   "tps": 1070.147
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 2.5 Flash Preview (Reasoning)",
+   "slug": "gemini-2-5-flash-reasoning-04-2025",
+   "creator": "Google",
+   "released": "2025-04-17",
+   "intelligence": 11.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "gpt-oss-120b (high)",
+   "slug": "gpt-oss-120b",
+   "creator": "OpenAI",
+   "released": "2025-08-05",
+   "intelligence": 11.6,
+   "coding": 30.4,
+   "math": 93.4,
+   "price_in": 0.15,
+   "price_out": 0.595,
+   "tps": 210.676
   },
   {
    "name": "K2 Think V2",
    "slug": "k2-think-v2",
-   "creator": "MBZUAI Institute of Foundation Models",
+   "creator": "Institute of Foundation Models",
    "released": "2025-12-15",
    "intelligence": 11.5,
    "coding": 21,
@@ -3816,30 +3948,6 @@
    "math": 0,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "HyperCLOVA X SEED Think (32B)",
-   "slug": "hyperclova-x-seed-think-32b",
-   "creator": "Naver",
-   "released": "2025-12-26",
-   "intelligence": 11.4,
-   "coding": 0,
-   "math": 59,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "o1-preview",
-   "slug": "o1-preview",
-   "creator": "OpenAI",
-   "released": "2024-09-12",
-   "intelligence": 11.4,
-   "coding": 34,
-   "math": 79.7,
-   "price_in": 16.5,
-   "price_out": 66,
    "tps": 0
   },
   {
@@ -3867,6 +3975,30 @@
    "tps": 0
   },
   {
+   "name": "o1-preview",
+   "slug": "o1-preview",
+   "creator": "OpenAI",
+   "released": "2024-09-12",
+   "intelligence": 11.4,
+   "coding": 34,
+   "math": 79.7,
+   "price_in": 16.5,
+   "price_out": 66,
+   "tps": 0
+  },
+  {
+   "name": "HyperCLOVA X SEED Think (32B)",
+   "slug": "hyperclova-x-seed-think-32b",
+   "creator": "Naver",
+   "released": "2025-12-26",
+   "intelligence": 11.4,
+   "coding": 0,
+   "math": 59,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Grok 4.1 Fast (Non-reasoning)",
    "slug": "grok-4-1-fast",
    "creator": "SpaceXAI",
@@ -3876,6 +4008,30 @@
    "math": 34.3,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Small 4 (Reasoning)",
+   "slug": "mistral-small-4",
+   "creator": "Mistral",
+   "released": "2026-03-16",
+   "intelligence": 11.3,
+   "coding": 26.6,
+   "math": 0,
+   "price_in": 0.15,
+   "price_out": 0.6,
+   "tps": 167.333
+  },
+  {
+   "name": "GLM-4.6V (Reasoning)",
+   "slug": "glm-4-6v-reasoning",
+   "creator": "Z AI",
+   "released": "2025-12-08",
+   "intelligence": 11.2,
+   "coding": 0,
+   "math": 85.3,
+   "price_in": 0.3,
+   "price_out": 0.9,
    "tps": 0
   },
   {
@@ -3900,18 +4056,18 @@
    "math": 84.3,
    "price_in": 0.15,
    "price_out": 1.2,
-   "tps": 204.595
+   "tps": 162.043
   },
   {
-   "name": "GLM-4.6V (Reasoning)",
-   "slug": "glm-4-6v-reasoning",
-   "creator": "Z AI",
-   "released": "2025-12-08",
-   "intelligence": 11.2,
+   "name": "GPT-5.4 mini (Non-Reasoning)",
+   "slug": "gpt-5-4-mini-non-reasoning",
+   "creator": "OpenAI",
+   "released": "2026-03-17",
+   "intelligence": 11.1,
    "coding": 0,
-   "math": 85.3,
-   "price_in": 0.3,
-   "price_out": 0.9,
+   "math": 0,
+   "price_in": 0.75,
+   "price_out": 4.5,
    "tps": 0
   },
   {
@@ -3927,16 +4083,28 @@
    "tps": 0
   },
   {
-   "name": "GPT-5.4 mini (Non-Reasoning)",
-   "slug": "gpt-5-4-mini-non-reasoning",
-   "creator": "OpenAI",
-   "released": "2026-03-17",
+   "name": "GLM-4.5-Air",
+   "slug": "glm-4-5-air",
+   "creator": "Z AI",
+   "released": "2025-07-28",
    "intelligence": 11.1,
    "coding": 0,
-   "math": 0,
-   "price_in": 0.75,
-   "price_out": 4.5,
+   "math": 80.7,
+   "price_in": 0.17,
+   "price_out": 0.98,
    "tps": 0
+  },
+  {
+   "name": "Granite 4.2 8B",
+   "slug": "granite-4-2-8b",
+   "creator": "IBM",
+   "released": "2026-08-25",
+   "intelligence": 11.1,
+   "coding": 22.4,
+   "math": 0,
+   "price_in": 0.06,
+   "price_out": 0.25,
+   "tps": 98.882
   },
   {
    "name": "Grok 4 Fast (Non-reasoning)",
@@ -3948,18 +4116,6 @@
    "math": 41.3,
    "price_in": 0.2,
    "price_out": 0.5,
-   "tps": 0
-  },
-  {
-   "name": "GLM-4.5-Air",
-   "slug": "glm-4-5-air",
-   "creator": "Z AI",
-   "released": "2025-07-28",
-   "intelligence": 11.1,
-   "coding": 0,
-   "math": 80.7,
-   "price_in": 0.17,
-   "price_out": 0.98,
    "tps": 0
   },
   {
@@ -3987,18 +4143,6 @@
    "tps": 0
   },
   {
-   "name": "Trinity Large Thinking",
-   "slug": "trinity-large-thinking",
-   "creator": "Arcee AI",
-   "released": "2026-04-01",
-   "intelligence": 10.9,
-   "coding": 25.8,
-   "math": 0,
-   "price_in": 0.25,
-   "price_out": 0.9,
-   "tps": 356.747
-  },
-  {
    "name": "Ring-1T",
    "slug": "ring-1t",
    "creator": "InclusionAI",
@@ -4023,6 +4167,18 @@
    "tps": 0
   },
   {
+   "name": "Trinity Large Thinking",
+   "slug": "trinity-large-thinking",
+   "creator": "Arcee AI",
+   "released": "2026-04-01",
+   "intelligence": 10.8,
+   "coding": 25.8,
+   "math": 0,
+   "price_in": 0.25,
+   "price_out": 0.9,
+   "tps": 338.672
+  },
+  {
    "name": "Qwen3.5 4B (Non-reasoning)",
    "slug": "qwen3-5-4b-non-reasoning",
    "creator": "Alibaba",
@@ -4032,7 +4188,7 @@
    "math": 0,
    "price_in": 0.03,
    "price_out": 0.15,
-   "tps": 17.367
+   "tps": 16.084
   },
   {
    "name": "INTELLECT-3",
@@ -4059,18 +4215,6 @@
    "tps": 0
   },
   {
-   "name": "Solar Open 100B (Reasoning)",
-   "slug": "solar-open-100b-reasoning",
-   "creator": "Upstage",
-   "released": "2025-12-17",
-   "intelligence": 10.4,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
    "name": "GPT-5 (ChatGPT)",
    "slug": "gpt-5-chatgpt",
    "creator": "OpenAI",
@@ -4083,15 +4227,15 @@
    "tps": 0
   },
   {
-   "name": "Gemini 2.5 Flash-Lite Preview (Sep '25) (Reasoning)",
-   "slug": "gemini-2-5-flash-lite-preview-09-2025-reasoning",
-   "creator": "Google",
-   "released": "2025-09-08",
+   "name": "Solar Open 100B (Reasoning)",
+   "slug": "solar-open-100b-reasoning",
+   "creator": "Upstage",
+   "released": "2025-12-17",
    "intelligence": 10.4,
    "coding": 0,
-   "math": 68.7,
-   "price_in": 0.1,
-   "price_out": 0.4,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -4107,6 +4251,18 @@
    "tps": 0
   },
   {
+   "name": "Gemini 2.5 Flash-Lite Preview (Sep '25) (Reasoning)",
+   "slug": "gemini-2-5-flash-lite-preview-09-2025-reasoning",
+   "creator": "Google",
+   "released": "2025-09-25",
+   "intelligence": 10.4,
+   "coding": 0,
+   "math": 68.7,
+   "price_in": 0.1,
+   "price_out": 0.4,
+   "tps": 0
+  },
+  {
    "name": "Nemotron 3 Nano Omni 30B A3B Reasoning",
    "slug": "nemotron-3-nano-omni-30b-a3b",
    "creator": "NVIDIA",
@@ -4114,9 +4270,9 @@
    "intelligence": 10.3,
    "coding": 13.8,
    "math": 0,
-   "price_in": 0.09,
-   "price_out": 0.36,
-   "tps": 0
+   "price_in": 0.195,
+   "price_out": 1.095,
+   "tps": 271.934
   },
   {
    "name": "gpt-oss-120b (low)",
@@ -4128,7 +4284,7 @@
    "math": 66.7,
    "price_in": 0.15,
    "price_out": 0.545,
-   "tps": 206.311
+   "tps": 194.945
   },
   {
    "name": "GPT-4.1 mini",
@@ -4143,40 +4299,16 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 Coder Next",
-   "slug": "qwen3-coder-next",
-   "creator": "Alibaba",
-   "released": "2026-02-03",
-   "intelligence": 10.1,
-   "coding": 36.2,
-   "math": 0,
-   "price_in": 0.35,
-   "price_out": 1.2,
-   "tps": 107.223
-  },
-  {
-   "name": "gpt-oss-20b (low)",
-   "slug": "gpt-oss-20b-low",
-   "creator": "OpenAI",
-   "released": "2025-08-05",
+   "name": "Llama 4 Maverick",
+   "slug": "llama-4-maverick",
+   "creator": "Meta",
+   "released": "2025-04-05",
    "intelligence": 10,
-   "coding": 0,
-   "math": 62.3,
-   "price_in": 0.07,
-   "price_out": 0.2,
-   "tps": 268.33
-  },
-  {
-   "name": "Nova 2.0 Pro Preview (Non-reasoning)",
-   "slug": "nova-2-0-pro",
-   "creator": "Amazon",
-   "released": "2025-11-27",
-   "intelligence": 10,
-   "coding": 20.9,
-   "math": 30.7,
-   "price_in": 1.25,
-   "price_out": 10,
-   "tps": 133.008
+   "coding": 16.3,
+   "math": 19.3,
+   "price_in": 0.26,
+   "price_out": 0.91,
+   "tps": 105.992
   },
   {
    "name": "MiniMax M1 40k",
@@ -4191,16 +4323,52 @@
    "tps": 0
   },
   {
-   "name": "K2-V2 (high)",
-   "slug": "k2-v2",
-   "creator": "MBZUAI Institute of Foundation Models",
-   "released": "2025-12-05",
+   "name": "Nova 2.0 Pro Preview (Non-reasoning)",
+   "slug": "nova-2-0-pro",
+   "creator": "Amazon",
+   "released": "2025-11-27",
+   "intelligence": 10,
+   "coding": 20.9,
+   "math": 30.7,
+   "price_in": 1.25,
+   "price_out": 10,
+   "tps": 136.238
+  },
+  {
+   "name": "gpt-oss-20b (low)",
+   "slug": "gpt-oss-20b-low",
+   "creator": "OpenAI",
+   "released": "2025-08-05",
+   "intelligence": 10,
+   "coding": 0,
+   "math": 62.3,
+   "price_in": 0.07,
+   "price_out": 0.215,
+   "tps": 265.68
+  },
+  {
+   "name": "Qwen3 VL 235B A22B Instruct",
+   "slug": "qwen3-vl-235b-a22b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-09-23",
    "intelligence": 9.9,
    "coding": 0,
-   "math": 78.3,
+   "math": 70.7,
+   "price_in": 0.4,
+   "price_out": 1.6,
+   "tps": 0
+  },
+  {
+   "name": "North Mini Code",
+   "slug": "north-mini-code",
+   "creator": "Cohere",
+   "released": "2026-06-09",
+   "intelligence": 9.9,
+   "coding": 36.5,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
+   "tps": 83.531
   },
   {
    "name": "GPT-5 mini (minimal)",
@@ -4212,6 +4380,18 @@
    "math": 46.7,
    "price_in": 0.25,
    "price_out": 2,
+   "tps": 0
+  },
+  {
+   "name": "K2-V2 (high)",
+   "slug": "k2-v2",
+   "creator": "Institute of Foundation Models",
+   "released": "2025-12-05",
+   "intelligence": 9.9,
+   "coding": 0,
+   "math": 78.3,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -4227,27 +4407,15 @@
    "tps": 0
   },
   {
-   "name": "Mistral Medium 3.1",
-   "slug": "mistral-medium-3-1",
-   "creator": "Mistral",
-   "released": "2025-08-12",
-   "intelligence": 9.9,
-   "coding": 20.5,
-   "math": 38.3,
-   "price_in": 0.4,
-   "price_out": 2,
-   "tps": 0
-  },
-  {
-   "name": "Qwen3 VL 235B A22B Instruct",
-   "slug": "qwen3-vl-235b-a22b-instruct",
+   "name": "Qwen3 30B A3B 2507 (Reasoning)",
+   "slug": "qwen3-30b-a3b-2507-reasoning",
    "creator": "Alibaba",
-   "released": "2025-09-23",
-   "intelligence": 9.9,
-   "coding": 0,
-   "math": 70.7,
-   "price_in": 0.4,
-   "price_out": 1.6,
+   "released": "2025-07-30",
+   "intelligence": 9.8,
+   "coding": 12.1,
+   "math": 56.3,
+   "price_in": 0.2,
+   "price_out": 2.4,
    "tps": 0
   },
   {
@@ -4261,30 +4429,6 @@
    "price_in": 0,
    "price_out": 0,
    "tps": 0
-  },
-  {
-   "name": "Qwen3 30B A3B 2507 (Reasoning)",
-   "slug": "qwen3-30b-a3b-2507-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-07-30",
-   "intelligence": 9.8,
-   "coding": 12.1,
-   "math": 56.3,
-   "price_in": 0.2,
-   "price_out": 2.4,
-   "tps": 0
-  },
-  {
-   "name": "Mistral Large 3",
-   "slug": "mistral-large-3",
-   "creator": "Mistral",
-   "released": "2025-12-02",
-   "intelligence": 9.7,
-   "coding": 20.1,
-   "math": 38,
-   "price_in": 0.5,
-   "price_out": 1.5,
-   "tps": 78.244
   },
   {
    "name": "DeepSeek V3 0324",
@@ -4320,19 +4464,7 @@
    "math": 66.3,
    "price_in": 0.15,
    "price_out": 1.2,
-   "tps": 193.995
-  },
-  {
-   "name": "GPT-4.5 (Preview)",
-   "slug": "gpt-4-5",
-   "creator": "OpenAI",
-   "released": "2025-02-27",
-   "intelligence": 9.6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "tps": 166.844
   },
   {
    "name": "Tri-21B-think Preview",
@@ -4359,6 +4491,18 @@
    "tps": 0
   },
   {
+   "name": "GPT-4.5 (Preview)",
+   "slug": "gpt-4-5",
+   "creator": "OpenAI",
+   "released": "2025-02-27",
+   "intelligence": 9.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "DiffusionGemma 26B A4B",
    "slug": "diffusiongemma-26b-a4b",
    "creator": "Google",
@@ -4368,6 +4512,18 @@
    "math": 0,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 235B A22B (Reasoning)",
+   "slug": "qwen3-235b-a22b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
+   "intelligence": 9.5,
+   "coding": 0,
+   "math": 82,
+   "price_in": 0.7,
+   "price_out": 8.4,
    "tps": 0
   },
   {
@@ -4395,42 +4551,6 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 235B A22B (Reasoning)",
-   "slug": "qwen3-235b-a22b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 9.5,
-   "coding": 0,
-   "math": 82,
-   "price_in": 0.7,
-   "price_out": 8.4,
-   "tps": 0
-  },
-  {
-   "name": "Gemma 4 12B (Non-reasoning)",
-   "slug": "gemma-4-12b-non-reasoning",
-   "creator": "Google",
-   "released": "2026-06-03",
-   "intelligence": 9.4,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.1,
-   "price_out": 0.3,
-   "tps": 140.008
-  },
-  {
-   "name": "Devstral 2",
-   "slug": "devstral-2",
-   "creator": "Mistral",
-   "released": "2025-12-09",
-   "intelligence": 9.4,
-   "coding": 31.3,
-   "math": 36.7,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 152.359
-  },
-  {
    "name": "Gemini 2.0 Flash Thinking Experimental (Jan '25)",
    "slug": "gemini-2-0-flash-thinking-exp-0121",
    "creator": "Google",
@@ -4443,16 +4563,16 @@
    "tps": 0
   },
   {
-   "name": "Llama 4 Maverick",
-   "slug": "llama-4-maverick",
-   "creator": "Meta",
-   "released": "2025-04-05",
-   "intelligence": 9.3,
-   "coding": 16.3,
-   "math": 19.3,
-   "price_in": 0.26,
-   "price_out": 0.91,
-   "tps": 95.789
+   "name": "Gemma 4 12B (Non-reasoning)",
+   "slug": "gemma-4-12b-non-reasoning",
+   "creator": "Google",
+   "released": "2026-06-03",
+   "intelligence": 9.4,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.1,
+   "price_out": 0.3,
+   "tps": 137.964
   },
   {
    "name": "Gemini 2.5 Flash-Lite Preview (Sep '25) (Non-reasoning)",
@@ -4467,16 +4587,28 @@
    "tps": 0
   },
   {
-   "name": "Nova Premier",
-   "slug": "nova-premier",
-   "creator": "Amazon",
-   "released": "2025-04-30",
+   "name": "Mistral Large 3",
+   "slug": "mistral-large-3",
+   "creator": "Mistral",
+   "released": "2025-12-02",
+   "intelligence": 9.3,
+   "coding": 20.1,
+   "math": 38,
+   "price_in": 0.5,
+   "price_out": 1.5,
+   "tps": 76.851
+  },
+  {
+   "name": "Qwen3 Coder Next",
+   "slug": "qwen3-coder-next",
+   "creator": "Alibaba",
+   "released": "2026-02-03",
    "intelligence": 9.2,
-   "coding": 0,
-   "math": 17.3,
-   "price_in": 2.5,
-   "price_out": 12.5,
-   "tps": 73.927
+   "coding": 36.2,
+   "math": 0,
+   "price_in": 0.35,
+   "price_out": 1.2,
+   "tps": 105.46
   },
   {
    "name": "Motif-2-12.7B-Reasoning",
@@ -4488,6 +4620,18 @@
    "math": 80.3,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Medium 3.1",
+   "slug": "mistral-medium-3-1",
+   "creator": "Mistral",
+   "released": "2025-08-12",
+   "intelligence": 9.2,
+   "coding": 20.5,
+   "math": 38.3,
+   "price_in": 0.4,
+   "price_out": 2,
    "tps": 0
   },
   {
@@ -4503,25 +4647,13 @@
    "tps": 0
   },
   {
-   "name": "Granite 4.2 3B",
-   "slug": "granite-4-2-3b",
-   "creator": "IBM",
-   "released": "2026-08-25",
-   "intelligence": 9.1,
-   "coding": 17.5,
-   "math": 0,
-   "price_in": 0.03,
-   "price_out": 0.12,
-   "tps": 224.594
-  },
-  {
-   "name": "Magistral Medium 1",
-   "slug": "magistral-medium",
-   "creator": "Mistral",
-   "released": "2025-06-10",
-   "intelligence": 9.1,
+   "name": "Nova Premier",
+   "slug": "nova-premier",
+   "creator": "Amazon",
+   "released": "2025-04-30",
+   "intelligence": 9.2,
    "coding": 0,
-   "math": 40.3,
+   "math": 17.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -4539,85 +4671,25 @@
    "tps": 0
   },
   {
-   "name": "gpt-oss-20b (high)",
-   "slug": "gpt-oss-20b",
-   "creator": "OpenAI",
-   "released": "2025-08-05",
-   "intelligence": 9,
-   "coding": 20.7,
-   "math": 89.3,
-   "price_in": 0.06,
-   "price_out": 0.19,
-   "tps": 224.241
-  },
-  {
-   "name": "Mistral Small 4 (Non-reasoning)",
-   "slug": "mistral-small-4-non-reasoning",
-   "creator": "Mistral",
-   "released": "2026-03-16",
-   "intelligence": 9,
-   "coding": 0,
+   "name": "Granite 4.2 3B",
+   "slug": "granite-4-2-3b",
+   "creator": "IBM",
+   "released": "2026-08-25",
+   "intelligence": 9.1,
+   "coding": 17.5,
    "math": 0,
-   "price_in": 0.15,
-   "price_out": 0.6,
-   "tps": 161.214
+   "price_in": 0.03,
+   "price_out": 0.12,
+   "tps": 231.649
   },
   {
-   "name": "Llama Nemotron Super 49B v1.5 (Reasoning)",
-   "slug": "llama-nemotron-super-49b-v1-5-reasoning",
-   "creator": "NVIDIA",
-   "released": "2025-07-25",
-   "intelligence": 9,
-   "coding": 0,
-   "math": 76.7,
-   "price_in": 0.4,
-   "price_out": 0.4,
-   "tps": 60.875
-  },
-  {
-   "name": "K2-V2 (medium)",
-   "slug": "k2-v2-medium",
-   "creator": "MBZUAI Institute of Foundation Models",
-   "released": "2025-12-05",
-   "intelligence": 9,
-   "coding": 0,
-   "math": 64.7,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Tri-21B-Think",
-   "slug": "tri-21b-think-v0-5",
-   "creator": "Trillion Labs",
-   "released": "2026-02-10",
-   "intelligence": 9,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "GPT-4o (March 2025, chatgpt-4o-latest)",
-   "slug": "gpt-4o-chatgpt-03-25",
-   "creator": "OpenAI",
-   "released": "2025-03-27",
-   "intelligence": 9,
-   "coding": 0,
-   "math": 25.7,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Devstral Medium",
-   "slug": "devstral-medium",
+   "name": "Magistral Medium 1",
+   "slug": "magistral-medium",
    "creator": "Mistral",
-   "released": "2025-07-10",
-   "intelligence": 9,
+   "released": "2025-06-10",
+   "intelligence": 9.1,
    "coding": 0,
-   "math": 4.7,
+   "math": 40.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -4635,28 +4707,88 @@
    "tps": 0
   },
   {
-   "name": "Gemma 4 E4B (Reasoning)",
-   "slug": "gemma-4-e4b",
-   "creator": "Google",
-   "released": "2026-04-03",
-   "intelligence": 8.9,
-   "coding": 9.4,
-   "math": 0,
-   "price_in": 0.02,
-   "price_out": 0.1,
-   "tps": 39.614
+   "name": "K2-V2 (medium)",
+   "slug": "k2-v2-medium",
+   "creator": "Institute of Foundation Models",
+   "released": "2025-12-05",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 64.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
   },
   {
-   "name": "NVIDIA Nemotron 3 Nano 30B A3B (Reasoning)",
-   "slug": "nvidia-nemotron-3-nano-30b-a3b-reasoning",
+   "name": "Llama Nemotron Super 49B v1.5 (Reasoning)",
+   "slug": "llama-nemotron-super-49b-v1-5-reasoning",
    "creator": "NVIDIA",
-   "released": "2025-12-15",
-   "intelligence": 8.9,
-   "coding": 14.4,
-   "math": 91,
-   "price_in": 0.05,
-   "price_out": 0.2,
-   "tps": 265.908
+   "released": "2025-07-25",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 76.7,
+   "price_in": 0.4,
+   "price_out": 0.4,
+   "tps": 88.217
+  },
+  {
+   "name": "Devstral Medium",
+   "slug": "devstral-medium",
+   "creator": "Mistral",
+   "released": "2025-07-10",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 4.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Small 4 (Non-reasoning)",
+   "slug": "mistral-small-4-non-reasoning",
+   "creator": "Mistral",
+   "released": "2026-03-16",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.15,
+   "price_out": 0.6,
+   "tps": 158.221
+  },
+  {
+   "name": "Tri-21B-Think",
+   "slug": "tri-21b-think-v0-5",
+   "creator": "Trillion Labs",
+   "released": "2026-02-10",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "gpt-oss-20b (high)",
+   "slug": "gpt-oss-20b",
+   "creator": "OpenAI",
+   "released": "2025-08-05",
+   "intelligence": 9,
+   "coding": 20.7,
+   "math": 89.3,
+   "price_in": 0.07,
+   "price_out": 0.18,
+   "tps": 178.904
+  },
+  {
+   "name": "GPT-4o (March 2025, chatgpt-4o-latest)",
+   "slug": "gpt-4o-chatgpt-03-25",
+   "creator": "OpenAI",
+   "released": "2025-03-27",
+   "intelligence": 9,
+   "coding": 0,
+   "math": 25.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
   },
   {
    "name": "Gemini 2.0 Flash (Feb '25)",
@@ -4695,15 +4827,39 @@
    "tps": 0
   },
   {
-   "name": "Sarvam 105B (high)",
-   "slug": "sarvam-105b",
-   "creator": "Sarvam",
-   "released": "2026-03-06",
+   "name": "Gemma 4 E4B (Reasoning)",
+   "slug": "gemma-4-e4b",
+   "creator": "Google",
+   "released": "2026-04-03",
+   "intelligence": 8.9,
+   "coding": 9.4,
+   "math": 0,
+   "price_in": 0.02,
+   "price_out": 0.1,
+   "tps": 47.151
+  },
+  {
+   "name": "NVIDIA Nemotron 3 Nano 30B A3B (Reasoning)",
+   "slug": "nvidia-nemotron-3-nano-30b-a3b-reasoning",
+   "creator": "NVIDIA",
+   "released": "2025-12-15",
+   "intelligence": 8.9,
+   "coding": 14.4,
+   "math": 91,
+   "price_in": 0.05,
+   "price_out": 0.2,
+   "tps": 139.654
+  },
+  {
+   "name": "Qwen3 4B 2507 (Reasoning)",
+   "slug": "qwen3-4b-2507-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-08-06",
    "intelligence": 8.8,
    "coding": 0,
-   "math": 0,
-   "price_in": 0.042,
-   "price_out": 0.17,
+   "math": 82.7,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -4719,39 +4875,15 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 4B 2507 (Reasoning)",
-   "slug": "qwen3-4b-2507-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-08-06",
+   "name": "Sarvam 105B (high)",
+   "slug": "sarvam-105b",
+   "creator": "Sarvam",
+   "released": "2026-03-06",
    "intelligence": 8.8,
    "coding": 0,
-   "math": 82.7,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Nova 2.0 Lite (Non-reasoning)",
-   "slug": "nova-2-0-lite",
-   "creator": "Amazon",
-   "released": "2025-10-29",
-   "intelligence": 8.7,
-   "coding": 0,
-   "math": 33.7,
-   "price_in": 0.3,
-   "price_out": 2.5,
-   "tps": 222.577
-  },
-  {
-   "name": "MiniCPM5-1B (Non-reasoning)",
-   "slug": "minicpm5-1b-non-reasoning",
-   "creator": "OpenBMB",
-   "released": "2026-05-25",
-   "intelligence": 8.7,
-   "coding": 0,
    "math": 0,
-   "price_in": 0,
-   "price_out": 0,
+   "price_in": 0.042,
+   "price_out": 0.17,
    "tps": 0
   },
   {
@@ -4767,10 +4899,22 @@
    "tps": 0
   },
   {
-   "name": "Gemini 2.5 Flash Preview (Non-reasoning)",
-   "slug": "gemini-2-5-flash-04-2025",
-   "creator": "Google",
-   "released": "2025-04-17",
+   "name": "Nova 2.0 Lite (Non-reasoning)",
+   "slug": "nova-2-0-lite",
+   "creator": "Amazon",
+   "released": "2025-10-29",
+   "intelligence": 8.7,
+   "coding": 0,
+   "math": 33.7,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 224.528
+  },
+  {
+   "name": "Devstral Small (May '25)",
+   "slug": "devstral-small-2505",
+   "creator": "Mistral",
+   "released": "2025-05-21",
    "intelligence": 8.7,
    "coding": 0,
    "math": 0,
@@ -4791,10 +4935,10 @@
    "tps": 0
   },
   {
-   "name": "Devstral Small (May '25)",
-   "slug": "devstral-small-2505",
-   "creator": "Mistral",
-   "released": "2025-05-21",
+   "name": "MiniCPM5-1B (Non-reasoning)",
+   "slug": "minicpm5-1b-non-reasoning",
+   "creator": "OpenBMB",
+   "released": "2026-05-25",
    "intelligence": 8.7,
    "coding": 0,
    "math": 0,
@@ -4815,6 +4959,30 @@
    "tps": 0
   },
   {
+   "name": "Gemini 2.5 Flash Preview (Non-reasoning)",
+   "slug": "gemini-2-5-flash-04-2025",
+   "creator": "Google",
+   "released": "2025-04-17",
+   "intelligence": 8.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Devstral 2",
+   "slug": "devstral-2",
+   "creator": "Mistral",
+   "released": "2025-12-09",
+   "intelligence": 8.6,
+   "coding": 31.3,
+   "math": 36.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 148.415
+  },
+  {
    "name": "Magistral Small 1.2",
    "slug": "magistral-small-2509",
    "creator": "Mistral",
@@ -4824,6 +4992,18 @@
    "math": 80.3,
    "price_in": 0.5,
    "price_out": 1.5,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 32B (Reasoning)",
+   "slug": "qwen3-32b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
+   "intelligence": 8.6,
+   "coding": 15.3,
+   "math": 73,
+   "price_in": 0.16,
+   "price_out": 0.64,
    "tps": 0
   },
   {
@@ -4851,28 +5031,16 @@
    "tps": 0
   },
   {
-   "name": "Devstral Small 2",
-   "slug": "devstral-small-2",
-   "creator": "Mistral",
-   "released": "2025-12-09",
+   "name": "GPT-4o (Nov '24)",
+   "slug": "gpt-4o",
+   "creator": "OpenAI",
+   "released": "2024-11-20",
    "intelligence": 8.4,
-   "coding": 29.3,
-   "math": 34.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 151.169
-  },
-  {
-   "name": "LFM2.5-2.6B",
-   "slug": "lfm2-5-2-6b",
-   "creator": "Liquid AI",
-   "released": "2026-08-04",
-   "intelligence": 8.4,
-   "coding": 7.7,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 207.034
+   "coding": 0,
+   "math": 6,
+   "price_in": 2.5,
+   "price_out": 10,
+   "tps": 0
   },
   {
    "name": "Nanbeige4.1-3B",
@@ -4887,15 +5055,27 @@
    "tps": 0
   },
   {
-   "name": "GPT-4o (Nov '24)",
-   "slug": "gpt-4o",
-   "creator": "OpenAI",
-   "released": "2024-11-20",
+   "name": "LFM2.5-2.6B",
+   "slug": "lfm2-5-2-6b",
+   "creator": "Liquid AI",
+   "released": "2026-08-04",
+   "intelligence": 8.4,
+   "coding": 7.7,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 VL 32B Instruct",
+   "slug": "qwen3-vl-32b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-10-21",
    "intelligence": 8.4,
    "coding": 0,
-   "math": 6,
-   "price_in": 2.5,
-   "price_out": 10,
+   "math": 68.3,
+   "price_in": 0.16,
+   "price_out": 0.64,
    "tps": 0
   },
   {
@@ -4923,18 +5103,6 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 VL 32B Instruct",
-   "slug": "qwen3-vl-32b-instruct",
-   "creator": "Alibaba",
-   "released": "2025-10-21",
-   "intelligence": 8.4,
-   "coding": 0,
-   "math": 68.3,
-   "price_in": 0.16,
-   "price_out": 0.64,
-   "tps": 0
-  },
-  {
    "name": "Qwen3 235B A22B (Non-reasoning)",
    "slug": "qwen3-235b-a22b-instruct",
    "creator": "Alibaba",
@@ -4947,25 +5115,25 @@
    "tps": 0
   },
   {
-   "name": "Nova 2.0 Omni (Non-reasoning)",
-   "slug": "nova-2-0-omni",
-   "creator": "Amazon",
-   "released": "2025-11-26",
+   "name": "Mistral Small 3.2",
+   "slug": "mistral-small-3-2",
+   "creator": "Mistral",
+   "released": "2025-06-20",
    "intelligence": 8.2,
-   "coding": 0,
-   "math": 37,
-   "price_in": 0.3,
-   "price_out": 2.5,
+   "coding": 12.5,
+   "math": 27,
+   "price_in": 0.1,
+   "price_out": 0.3,
    "tps": 0
   },
   {
-   "name": "EXAONE 4.0 32B (Reasoning)",
-   "slug": "exaone-4-0-32b-reasoning",
-   "creator": "LG AI Research",
-   "released": "2025-07-15",
+   "name": "Magistral Small 1",
+   "slug": "magistral-small",
+   "creator": "Mistral",
+   "released": "2025-06-10",
    "intelligence": 8.2,
    "coding": 0,
-   "math": 80,
+   "math": 41.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -4983,13 +5151,13 @@
    "tps": 0
   },
   {
-   "name": "Magistral Small 1",
-   "slug": "magistral-small",
-   "creator": "Mistral",
-   "released": "2025-06-10",
+   "name": "EXAONE 4.0 32B (Reasoning)",
+   "slug": "exaone-4-0-32b-reasoning",
+   "creator": "LG AI Research",
+   "released": "2025-07-15",
    "intelligence": 8.2,
    "coding": 0,
-   "math": 41.3,
+   "math": 80,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5007,6 +5175,30 @@
    "tps": 0
   },
   {
+   "name": "Qwen3 14B (Reasoning)",
+   "slug": "qwen3-14b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
+   "intelligence": 8.2,
+   "coding": 13.8,
+   "math": 55.7,
+   "price_in": 0.35,
+   "price_out": 4.2,
+   "tps": 0
+  },
+  {
+   "name": "Nova 2.0 Omni (Non-reasoning)",
+   "slug": "nova-2-0-omni",
+   "creator": "Amazon",
+   "released": "2025-11-26",
+   "intelligence": 8.2,
+   "coding": 0,
+   "math": 37,
+   "price_in": 0.3,
+   "price_out": 2.5,
+   "tps": 0
+  },
+  {
    "name": "DeepSeek R1 0528 Qwen3 8B",
    "slug": "deepseek-r1-qwen3-8b",
    "creator": "DeepSeek",
@@ -5019,6 +5211,18 @@
    "tps": 0
   },
   {
+   "name": "Llama 4 Scout",
+   "slug": "llama-4-scout",
+   "creator": "Meta",
+   "released": "2025-04-05",
+   "intelligence": 8.1,
+   "coding": 8.2,
+   "math": 14,
+   "price_in": 0.19,
+   "price_out": 0.68,
+   "tps": 102.293
+  },
+  {
    "name": "Qwen2.5 Max",
    "slug": "qwen-2-5-max",
    "creator": "Alibaba",
@@ -5028,6 +5232,18 @@
    "math": 0,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 VL 30B A3B Instruct",
+   "slug": "qwen3-vl-30b-a3b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-10-03",
+   "intelligence": 7.9,
+   "coding": 0,
+   "math": 72.3,
+   "price_in": 0.2,
+   "price_out": 0.8,
    "tps": 0
   },
   {
@@ -5055,15 +5271,15 @@
    "tps": 0
   },
   {
-   "name": "Claude 3.5 Sonnet (Oct '24)",
-   "slug": "claude-35-sonnet",
-   "creator": "Anthropic",
-   "released": "2024-10-22",
+   "name": "Solar Pro 2 (Preview) (Non-reasoning)",
+   "slug": "solar-pro-2-preview",
+   "creator": "Upstage",
+   "released": "2025-05-20",
    "intelligence": 7.9,
-   "coding": 30.2,
+   "coding": 0,
    "math": 0,
-   "price_in": 3,
-   "price_out": 15,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -5079,37 +5295,25 @@
    "tps": 0
   },
   {
-   "name": "Solar Pro 2 (Preview) (Non-reasoning)",
-   "slug": "solar-pro-2-preview",
-   "creator": "Upstage",
-   "released": "2025-05-20",
+   "name": "Claude 3.5 Sonnet (Oct '24)",
+   "slug": "claude-35-sonnet",
+   "creator": "Anthropic",
+   "released": "2024-10-22",
    "intelligence": 7.9,
-   "coding": 0,
+   "coding": 30.2,
    "math": 0,
-   "price_in": 0,
-   "price_out": 0,
+   "price_in": 3,
+   "price_out": 15,
    "tps": 0
   },
   {
-   "name": "Qwen3 VL 30B A3B Instruct",
-   "slug": "qwen3-vl-30b-a3b-instruct",
-   "creator": "Alibaba",
-   "released": "2025-10-03",
-   "intelligence": 7.9,
-   "coding": 0,
-   "math": 72.3,
-   "price_in": 0.2,
-   "price_out": 0.8,
-   "tps": 0
-  },
-  {
-   "name": "Gemma 4 E2B (Reasoning)",
-   "slug": "gemma-4-e2b",
-   "creator": "Google",
-   "released": "2026-04-02",
+   "name": "DeepSeek R1 Distill Qwen 14B",
+   "slug": "deepseek-r1-distill-qwen-14b",
+   "creator": "DeepSeek",
+   "released": "2025-01-20",
    "intelligence": 7.8,
-   "coding": 7.2,
-   "math": 0,
+   "coding": 0,
+   "math": 55.7,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5127,30 +5331,6 @@
    "tps": 0
   },
   {
-   "name": "Solar Pro 3",
-   "slug": "solar-pro-3",
-   "creator": "Upstage",
-   "released": "2026-04-06",
-   "intelligence": 7.8,
-   "coding": 16.2,
-   "math": 0,
-   "price_in": 0.15,
-   "price_out": 0.6,
-   "tps": 157.19
-  },
-  {
-   "name": "Qwen3 Omni 30B A3B (Reasoning)",
-   "slug": "qwen3-omni-30b-a3b-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-09-22",
-   "intelligence": 7.8,
-   "coding": 0,
-   "math": 74,
-   "price_in": 0.25,
-   "price_out": 0.97,
-   "tps": 109.008
-  },
-  {
    "name": "GPT-4.1 nano",
    "slug": "gpt-4-1-nano",
    "creator": "OpenAI",
@@ -5163,15 +5343,15 @@
    "tps": 0
   },
   {
-   "name": "DeepSeek R1 Distill Qwen 14B",
-   "slug": "deepseek-r1-distill-qwen-14b",
-   "creator": "DeepSeek",
-   "released": "2025-01-20",
+   "name": "Solar Pro 3",
+   "slug": "solar-pro-3",
+   "creator": "Upstage",
+   "released": "2026-04-06",
    "intelligence": 7.8,
-   "coding": 0,
-   "math": 55.7,
-   "price_in": 0,
-   "price_out": 0,
+   "coding": 16.2,
+   "math": 0,
+   "price_in": 0.15,
+   "price_out": 0.6,
    "tps": 0
   },
   {
@@ -5187,28 +5367,28 @@
    "tps": 0
   },
   {
-   "name": "Llama 3.3 Instruct 70B",
-   "slug": "llama-3-3-instruct-70b",
-   "creator": "Meta",
-   "released": "2024-12-06",
-   "intelligence": 7.7,
-   "coding": 11.9,
-   "math": 7.7,
-   "price_in": 0.655,
-   "price_out": 0.72,
-   "tps": 88.2
-  },
-  {
-   "name": "Step3 VL 10B",
-   "slug": "step-3-vl-10b",
-   "creator": "StepFun",
-   "released": "2026-01-20",
-   "intelligence": 7.7,
-   "coding": 0,
+   "name": "Gemma 4 E2B (Reasoning)",
+   "slug": "gemma-4-e2b",
+   "creator": "Google",
+   "released": "2026-04-02",
+   "intelligence": 7.8,
+   "coding": 7.2,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
+  },
+  {
+   "name": "Qwen3 Omni 30B A3B (Reasoning)",
+   "slug": "qwen3-omni-30b-a3b-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-09-22",
+   "intelligence": 7.8,
+   "coding": 0,
+   "math": 74,
+   "price_in": 0.25,
+   "price_out": 0.97,
+   "tps": 109.678
   },
   {
    "name": "GPT-4o (Aug '24)",
@@ -5220,18 +5400,6 @@
    "math": 0,
    "price_in": 2.5,
    "price_out": 10,
-   "tps": 0
-  },
-  {
-   "name": "Sonar",
-   "slug": "sonar",
-   "creator": "Perplexity",
-   "released": "2025-01-21",
-   "intelligence": 7.7,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
    "tps": 0
   },
   {
@@ -5247,13 +5415,61 @@
    "tps": 0
   },
   {
-   "name": "Mistral Large 2 (Nov '24)",
-   "slug": "mistral-large-2",
-   "creator": "Mistral",
-   "released": "2024-11-18",
+   "name": "Sonar",
+   "slug": "sonar",
+   "creator": "Perplexity",
+   "released": "2025-01-21",
+   "intelligence": 7.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Step3 VL 10B",
+   "slug": "step-3-vl-10b",
+   "creator": "StepFun",
+   "released": "2026-01-20",
+   "intelligence": 7.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.3 Instruct 70B",
+   "slug": "llama-3-3-instruct-70b",
+   "creator": "Meta",
+   "released": "2024-12-06",
+   "intelligence": 7.7,
+   "coding": 11.9,
+   "math": 7.7,
+   "price_in": 0.71,
+   "price_out": 0.72,
+   "tps": 92.515
+  },
+  {
+   "name": "Qwen3 30B A3B (Reasoning)",
+   "slug": "qwen3-30b-a3b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
    "intelligence": 7.6,
    "coding": 0,
-   "math": 14,
+   "math": 72.3,
+   "price_in": 0.2,
+   "price_out": 2.4,
+   "tps": 0
+  },
+  {
+   "name": "Sonar Pro",
+   "slug": "sonar-pro",
+   "creator": "Perplexity",
+   "released": "2025-01-21",
+   "intelligence": 7.6,
+   "coding": 0,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5271,10 +5487,10 @@
    "tps": 0
   },
   {
-   "name": "Sonar Pro",
-   "slug": "sonar-pro",
-   "creator": "Perplexity",
-   "released": "2025-01-21",
+   "name": "QwQ 32B-Preview",
+   "slug": "QwQ-32B-Preview",
+   "creator": "Alibaba",
+   "released": "2024-11-27",
    "intelligence": 7.6,
    "coding": 0,
    "math": 0,
@@ -5295,40 +5511,28 @@
    "tps": 0
   },
   {
-   "name": "QwQ 32B-Preview",
-   "slug": "QwQ-32B-Preview",
-   "creator": "Alibaba",
-   "released": "2024-11-27",
+   "name": "Mistral Large 2 (Nov '24)",
+   "slug": "mistral-large-2",
+   "creator": "Mistral",
+   "released": "2024-11-18",
    "intelligence": 7.6,
    "coding": 0,
-   "math": 0,
+   "math": 14,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Qwen3 30B A3B (Reasoning)",
-   "slug": "qwen3-30b-a3b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 7.6,
-   "coding": 0,
-   "math": 72.3,
-   "price_in": 0.2,
-   "price_out": 2.4,
-   "tps": 0
-  },
-  {
-   "name": "Gemma 4 E4B (Non-reasoning)",
-   "slug": "gemma-4-e4b-non-reasoning",
-   "creator": "Google",
-   "released": "2026-04-03",
+   "name": "Devstral Small 2",
+   "slug": "devstral-small-2",
+   "creator": "Mistral",
+   "released": "2025-12-09",
    "intelligence": 7.5,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.02,
-   "price_out": 0.1,
-   "tps": 44.426
+   "coding": 29.3,
+   "math": 34.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 149.338
   },
   {
    "name": "Llama 3.1 Nemotron Ultra 253B v1 (Reasoning)",
@@ -5338,54 +5542,6 @@
    "intelligence": 7.5,
    "coding": 0,
    "math": 63.7,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "NVIDIA Nemotron Nano 12B v2 VL (Reasoning)",
-   "slug": "nvidia-nemotron-nano-12b-v2-vl-reasoning",
-   "creator": "NVIDIA",
-   "released": "2025-10-28",
-   "intelligence": 7.5,
-   "coding": 0,
-   "math": 75,
-   "price_in": 0.2,
-   "price_out": 0.6,
-   "tps": 74.094
-  },
-  {
-   "name": "Hermes 4 - Llama-3.1 405B (Reasoning)",
-   "slug": "hermes-4-llama-3-1-405b-reasoning",
-   "creator": "Nous Research",
-   "released": "2025-08-27",
-   "intelligence": 7.5,
-   "coding": 0,
-   "math": 69.7,
-   "price_in": 1,
-   "price_out": 3,
-   "tps": 42.439
-  },
-  {
-   "name": "ERNIE 4.5 300B A47B",
-   "slug": "ernie-4-5-300b-a47b",
-   "creator": "Baidu",
-   "released": "2025-06-30",
-   "intelligence": 7.5,
-   "coding": 0,
-   "math": 41.3,
-   "price_in": 0.28,
-   "price_out": 1.1,
-   "tps": 0
-  },
-  {
-   "name": "Solar Pro 2 (Reasoning)",
-   "slug": "solar-pro-2-reasoning",
-   "creator": "Upstage",
-   "released": "2025-07-09",
-   "intelligence": 7.5,
-   "coding": 0,
-   "math": 61.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5403,40 +5559,64 @@
    "tps": 0
   },
   {
-   "name": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
-   "slug": "nvidia-nemotron-nano-9b-v2-reasoning",
-   "creator": "NVIDIA",
-   "released": "2025-08-18",
-   "intelligence": 7.4,
+   "name": "ERNIE 4.5 300B A47B",
+   "slug": "ernie-4-5-300b-a47b",
+   "creator": "Baidu",
+   "released": "2025-06-30",
+   "intelligence": 7.5,
+   "coding": 0,
+   "math": 41.3,
+   "price_in": 0.28,
+   "price_out": 1.1,
+   "tps": 0
+  },
+  {
+   "name": "Hermes 4 - Llama-3.1 405B (Reasoning)",
+   "slug": "hermes-4-llama-3-1-405b-reasoning",
+   "creator": "Nous Research",
+   "released": "2025-08-27",
+   "intelligence": 7.5,
    "coding": 0,
    "math": 69.7,
-   "price_in": 0.04,
-   "price_out": 0.16,
-   "tps": 101.678
+   "price_in": 1,
+   "price_out": 3,
+   "tps": 40.872
   },
   {
-   "name": "Llama Nemotron Super 49B v1.5 (Non-reasoning)",
-   "slug": "llama-nemotron-super-49b-v1-5",
-   "creator": "NVIDIA",
-   "released": "2025-07-25",
-   "intelligence": 7.4,
+   "name": "Solar Pro 2 (Reasoning)",
+   "slug": "solar-pro-2-reasoning",
+   "creator": "Upstage",
+   "released": "2025-07-09",
+   "intelligence": 7.5,
    "coding": 0,
-   "math": 8,
-   "price_in": 0.4,
-   "price_out": 0.4,
-   "tps": 66.424
-  },
-  {
-   "name": "NVIDIA Nemotron 3 Nano 4B",
-   "slug": "nvidia-nemotron-3-nano-4b",
-   "creator": "NVIDIA",
-   "released": "2026-03-16",
-   "intelligence": 7.4,
-   "coding": 8,
-   "math": 0,
+   "math": 61.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
+  },
+  {
+   "name": "NVIDIA Nemotron Nano 12B v2 VL (Reasoning)",
+   "slug": "nvidia-nemotron-nano-12b-v2-vl-reasoning",
+   "creator": "NVIDIA",
+   "released": "2025-10-28",
+   "intelligence": 7.5,
+   "coding": 0,
+   "math": 75,
+   "price_in": 0.2,
+   "price_out": 0.6,
+   "tps": 88.023
+  },
+  {
+   "name": "Gemma 4 E4B (Non-reasoning)",
+   "slug": "gemma-4-e4b-non-reasoning",
+   "creator": "Google",
+   "released": "2026-04-03",
+   "intelligence": 7.5,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.02,
+   "price_out": 0.1,
+   "tps": 51.433
   },
   {
    "name": "Granite 4.1 30B",
@@ -5451,6 +5631,18 @@
    "tps": 0
   },
   {
+   "name": "NVIDIA Nemotron Nano 9B V2 (Reasoning)",
+   "slug": "nvidia-nemotron-nano-9b-v2-reasoning",
+   "creator": "NVIDIA",
+   "released": "2025-08-18",
+   "intelligence": 7.4,
+   "coding": 0,
+   "math": 69.7,
+   "price_in": 0.04,
+   "price_out": 0.16,
+   "tps": 90.554
+  },
+  {
    "name": "Hermes 4 - Llama-3.1 405B (Non-reasoning)",
    "slug": "hermes-4-llama-3-1-405b",
    "creator": "Nous Research",
@@ -5460,7 +5652,7 @@
    "math": 15.3,
    "price_in": 1,
    "price_out": 3,
-   "tps": 44.25
+   "tps": 40.798
   },
   {
    "name": "Gemini 2.0 Flash-Lite (Feb '25)",
@@ -5475,51 +5667,39 @@
    "tps": 0
   },
   {
-   "name": "Mistral Small 3.1",
-   "slug": "mistral-small-3-1",
-   "creator": "Mistral",
-   "released": "2025-03-17",
+   "name": "NVIDIA Nemotron 3 Nano 4B",
+   "slug": "nvidia-nemotron-3-nano-4b",
+   "creator": "NVIDIA",
+   "released": "2026-03-16",
    "intelligence": 7.4,
-   "coding": 26.3,
-   "math": 3.7,
-   "price_in": 0.1,
-   "price_out": 0.3,
-   "tps": 0
-  },
-  {
-   "name": "Llama 3.1 Instruct 405B",
-   "slug": "llama-3-1-instruct-405b",
-   "creator": "Meta",
-   "released": "2024-07-23",
-   "intelligence": 7.3,
-   "coding": 0,
-   "math": 3,
+   "coding": 8,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Kimi Linear 48B A3B Instruct",
-   "slug": "kimi-linear-48b-a3b-instruct",
-   "creator": "Kimi",
-   "released": "2025-10-30",
-   "intelligence": 7.3,
+   "name": "Llama Nemotron Super 49B v1.5 (Non-reasoning)",
+   "slug": "llama-nemotron-super-49b-v1-5",
+   "creator": "NVIDIA",
+   "released": "2025-07-25",
+   "intelligence": 7.4,
    "coding": 0,
-   "math": 36.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "math": 8,
+   "price_in": 0.4,
+   "price_out": 0.4,
+   "tps": 76.03
   },
   {
-   "name": "K2-V2 (low)",
-   "slug": "k2-v2-low",
-   "creator": "MBZUAI Institute of Foundation Models",
-   "released": "2025-12-05",
+   "name": "Qwen3 32B (Non-reasoning)",
+   "slug": "qwen3-32b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
    "intelligence": 7.3,
    "coding": 0,
-   "math": 35.3,
-   "price_in": 0,
-   "price_out": 0,
+   "math": 19.7,
+   "price_in": 0.16,
+   "price_out": 0.64,
    "tps": 0
   },
   {
@@ -5547,13 +5727,13 @@
    "tps": 0
   },
   {
-   "name": "Llama 3.3 Nemotron Super 49B v1 (Non-reasoning)",
-   "slug": "llama-3-3-nemotron-super-49b",
-   "creator": "NVIDIA",
-   "released": "2025-03-18",
+   "name": "K2-V2 (low)",
+   "slug": "k2-v2-low",
+   "creator": "Institute of Foundation Models",
+   "released": "2025-12-05",
    "intelligence": 7.3,
    "coding": 0,
-   "math": 7.7,
+   "math": 35.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5571,15 +5751,51 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 32B (Non-reasoning)",
-   "slug": "qwen3-32b-instruct",
+   "name": "Kimi Linear 48B A3B Instruct",
+   "slug": "kimi-linear-48b-a3b-instruct",
+   "creator": "Kimi",
+   "released": "2025-10-30",
+   "intelligence": 7.3,
+   "coding": 0,
+   "math": 36.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.1 Instruct 405B",
+   "slug": "llama-3-1-instruct-405b",
+   "creator": "Meta",
+   "released": "2024-07-23",
+   "intelligence": 7.3,
+   "coding": 0,
+   "math": 3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 8B (Reasoning)",
+   "slug": "qwen3-8b-instruct-reasoning",
    "creator": "Alibaba",
    "released": "2025-04-28",
    "intelligence": 7.3,
+   "coding": 9,
+   "math": 19,
+   "price_in": 0.18,
+   "price_out": 2.1,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.3 Nemotron Super 49B v1 (Non-reasoning)",
+   "slug": "llama-3-3-nemotron-super-49b",
+   "creator": "NVIDIA",
+   "released": "2025-03-18",
+   "intelligence": 7.3,
    "coding": 0,
-   "math": 19.7,
-   "price_in": 0.16,
-   "price_out": 0.64,
+   "math": 7.7,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -5595,34 +5811,22 @@
    "tps": 0
   },
   {
-   "name": "LFM2.5-8B-A1B",
-   "slug": "lfm2-5-8b-a1b",
-   "creator": "Liquid AI",
-   "released": "2026-05-28",
+   "name": "Qwen3 4B (Reasoning)",
+   "slug": "qwen3-4b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
    "intelligence": 7.2,
    "coding": 0,
-   "math": 0,
+   "math": 22.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Ring-flash-2.0",
-   "slug": "ring-flash-2-0",
-   "creator": "InclusionAI",
-   "released": "2025-09-19",
-   "intelligence": 7.2,
-   "coding": 0,
-   "math": 83.7,
-   "price_in": 0.14,
-   "price_out": 0.57,
-   "tps": 0
-  },
-  {
-   "name": "GPT-4o (ChatGPT)",
-   "slug": "gpt-4o-chatgpt",
-   "creator": "OpenAI",
-   "released": "2025-02-15",
+   "name": "LFM2.5-8B-A1B",
+   "slug": "lfm2-5-8b-a1b",
+   "creator": "Liquid AI",
+   "released": "2026-05-28",
    "intelligence": 7.2,
    "coding": 0,
    "math": 0,
@@ -5655,25 +5859,37 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 32B (Reasoning)",
-   "slug": "qwen3-32b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
+   "name": "GPT-4o (ChatGPT)",
+   "slug": "gpt-4o-chatgpt",
+   "creator": "OpenAI",
+   "released": "2025-02-15",
    "intelligence": 7.2,
-   "coding": 15.3,
-   "math": 73,
-   "price_in": 0.16,
-   "price_out": 0.64,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Qwen3 4B (Reasoning)",
-   "slug": "qwen3-4b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
+   "name": "Ring-flash-2.0",
+   "slug": "ring-flash-2-0",
+   "creator": "InclusionAI",
+   "released": "2025-09-19",
    "intelligence": 7.2,
    "coding": 0,
-   "math": 22.3,
+   "math": 83.7,
+   "price_in": 0.14,
+   "price_out": 0.57,
+   "tps": 0
+  },
+  {
+   "name": "Pixtral Large",
+   "slug": "pixtral-large-2411",
+   "creator": "Mistral",
+   "released": "2024-11-18",
+   "intelligence": 7.1,
+   "coding": 0,
+   "math": 2.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5686,6 +5902,30 @@
    "intelligence": 7.1,
    "coding": 0,
    "math": 77.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Small 3.1",
+   "slug": "mistral-small-3-1",
+   "creator": "Mistral",
+   "released": "2025-03-17",
+   "intelligence": 7.1,
+   "coding": 26.3,
+   "math": 3.7,
+   "price_in": 0.1,
+   "price_out": 0.3,
+   "tps": 0
+  },
+  {
+   "name": "Grok 2 (Dec '24)",
+   "slug": "grok-2-1212",
+   "creator": "SpaceXAI",
+   "released": "2024-12-12",
+   "intelligence": 7.1,
+   "coding": 0,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5715,40 +5955,16 @@
    "tps": 0
   },
   {
-   "name": "Pixtral Large",
-   "slug": "pixtral-large-2411",
-   "creator": "Mistral",
-   "released": "2024-11-18",
-   "intelligence": 7.1,
-   "coding": 0,
-   "math": 2.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Grok 2 (Dec '24)",
-   "slug": "grok-2-1212",
-   "creator": "SpaceXAI",
-   "released": "2024-12-12",
-   "intelligence": 7.1,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Command A",
-   "slug": "command-a",
-   "creator": "Cohere",
-   "released": "2025-03-13",
+   "name": "Qwen3 VL 4B (Reasoning)",
+   "slug": "qwen3-vl-4b-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-10-14",
    "intelligence": 7,
    "coding": 0,
-   "math": 13,
-   "price_in": 2.5,
-   "price_out": 10,
-   "tps": 67.269
+   "math": 25.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
   },
   {
    "name": "GPT-4 Turbo",
@@ -5760,30 +5976,6 @@
    "math": 0,
    "price_in": 10,
    "price_out": 30,
-   "tps": 0
-  },
-  {
-   "name": "Mistral Small 3.2",
-   "slug": "mistral-small-3-2",
-   "creator": "Mistral",
-   "released": "2025-06-20",
-   "intelligence": 7,
-   "coding": 12.5,
-   "math": 27,
-   "price_in": 0.1,
-   "price_out": 0.3,
-   "tps": 0
-  },
-  {
-   "name": "Nova Pro",
-   "slug": "nova-pro",
-   "creator": "Amazon",
-   "released": "2024-12-03",
-   "intelligence": 7,
-   "coding": 0,
-   "math": 7,
-   "price_in": 0.8,
-   "price_out": 3.2,
    "tps": 0
   },
   {
@@ -5799,13 +5991,37 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 VL 4B (Reasoning)",
-   "slug": "qwen3-vl-4b-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-10-14",
+   "name": "Nova Pro",
+   "slug": "nova-pro",
+   "creator": "Amazon",
+   "released": "2024-12-03",
    "intelligence": 7,
    "coding": 0,
-   "math": 25.7,
+   "math": 7,
+   "price_in": 0.8,
+   "price_out": 3.2,
+   "tps": 0
+  },
+  {
+   "name": "Command A",
+   "slug": "command-a",
+   "creator": "Cohere",
+   "released": "2025-03-13",
+   "intelligence": 7,
+   "coding": 0,
+   "math": 13,
+   "price_in": 2.5,
+   "price_out": 10,
+   "tps": 61.375
+  },
+  {
+   "name": "Qwen3.5 2B (Reasoning)",
+   "slug": "qwen3-5-2b",
+   "creator": "Alibaba",
+   "released": "2026-03-02",
+   "intelligence": 6.9,
+   "coding": 2.9,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -5820,19 +6036,7 @@
    "math": 11,
    "price_in": 1.2,
    "price_out": 1.2,
-   "tps": 62.319
-  },
-  {
-   "name": "Qwen3.5 2B (Reasoning)",
-   "slug": "qwen3-5-2b",
-   "creator": "Alibaba",
-   "released": "2026-03-02",
-   "intelligence": 6.9,
-   "coding": 2.9,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "tps": 107.391
   },
   {
    "name": "Llama 3.1 Instruct 8B",
@@ -5871,18 +6075,6 @@
    "tps": 0
   },
   {
-   "name": "NVIDIA Nemotron Nano 9B V2 (Non-reasoning)",
-   "slug": "nvidia-nemotron-nano-9b-v2",
-   "creator": "NVIDIA",
-   "released": "2025-08-18",
-   "intelligence": 6.8,
-   "coding": 0,
-   "math": 62.3,
-   "price_in": 0.05,
-   "price_out": 0.195,
-   "tps": 160.664
-  },
-  {
    "name": "NVIDIA Nemotron 3 Nano 30B A3B (Non-reasoning)",
    "slug": "nvidia-nemotron-3-nano-30b-a3b",
    "creator": "NVIDIA",
@@ -5892,7 +6084,19 @@
    "math": 13.3,
    "price_in": 0.05,
    "price_out": 0.2,
-   "tps": 176.313
+   "tps": 173.665
+  },
+  {
+   "name": "NVIDIA Nemotron Nano 9B V2 (Non-reasoning)",
+   "slug": "nvidia-nemotron-nano-9b-v2",
+   "creator": "NVIDIA",
+   "released": "2025-08-18",
+   "intelligence": 6.8,
+   "coding": 0,
+   "math": 62.3,
+   "price_in": 0.05,
+   "price_out": 0.195,
+   "tps": 152.726
   },
   {
    "name": "Mistral Large 2 (Jul '24)",
@@ -5907,87 +6111,15 @@
    "tps": 0
   },
   {
-   "name": "Hermes 4 - Llama-3.1 70B (Non-reasoning)",
-   "slug": "hermes-4-llama-3-1-70b",
-   "creator": "Nous Research",
-   "released": "2025-08-27",
+   "name": "Qwen3 4B 2507 Instruct",
+   "slug": "qwen3-4b-2507-instruct",
+   "creator": "Alibaba",
+   "released": "2025-08-06",
    "intelligence": 6.7,
    "coding": 0,
-   "math": 11.3,
+   "math": 52.3,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "GPT-4o mini",
-   "slug": "gpt-4o-mini",
-   "creator": "OpenAI",
-   "released": "2024-07-18",
-   "intelligence": 6.7,
-   "coding": 11.4,
-   "math": 14.7,
-   "price_in": 0.15,
-   "price_out": 0.6,
-   "tps": 0
-  },
-  {
-   "name": "GPT-4",
-   "slug": "gpt-4",
-   "creator": "OpenAI",
-   "released": "2023-03-14",
-   "intelligence": 6.7,
-   "coding": 13.1,
-   "math": 0,
-   "price_in": 30,
-   "price_out": 60,
-   "tps": 0
-  },
-  {
-   "name": "Gemini 2.5 Flash-Lite (Non-reasoning)",
-   "slug": "gemini-2-5-flash-lite",
-   "creator": "Google",
-   "released": "2025-06-17",
-   "intelligence": 6.7,
-   "coding": 0,
-   "math": 35.3,
-   "price_in": 0.1,
-   "price_out": 0.4,
-   "tps": 0
-  },
-  {
-   "name": "Mistral Small 3",
-   "slug": "mistral-small-3",
-   "creator": "Mistral",
-   "released": "2025-01-30",
-   "intelligence": 6.7,
-   "coding": 0,
-   "math": 4.3,
-   "price_in": 0.1,
-   "price_out": 0.3,
-   "tps": 0
-  },
-  {
-   "name": "Nova Lite",
-   "slug": "nova-lite",
-   "creator": "Amazon",
-   "released": "2024-12-03",
-   "intelligence": 6.7,
-   "coding": 0,
-   "math": 7,
-   "price_in": 0.06,
-   "price_out": 0.24,
-   "tps": 0
-  },
-  {
-   "name": "GLM-4.5V (Non-reasoning)",
-   "slug": "glm-4-5v",
-   "creator": "Z AI",
-   "released": "2025-08-11",
-   "intelligence": 6.7,
-   "coding": 0,
-   "math": 15.3,
-   "price_in": 0.6,
-   "price_out": 1.8,
    "tps": 0
   },
   {
@@ -6015,63 +6147,99 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 4B 2507 Instruct",
-   "slug": "qwen3-4b-2507-instruct",
-   "creator": "Alibaba",
-   "released": "2025-08-06",
+   "name": "GPT-4",
+   "slug": "gpt-4",
+   "creator": "OpenAI",
+   "released": "2023-03-14",
+   "intelligence": 6.7,
+   "coding": 13.1,
+   "math": 0,
+   "price_in": 30,
+   "price_out": 60,
+   "tps": 0
+  },
+  {
+   "name": "GLM-4.5V (Non-reasoning)",
+   "slug": "glm-4-5v",
+   "creator": "Z AI",
+   "released": "2025-08-11",
    "intelligence": 6.7,
    "coding": 0,
-   "math": 52.3,
-   "price_in": 0,
-   "price_out": 0,
+   "math": 15.3,
+   "price_in": 0.6,
+   "price_out": 1.8,
    "tps": 0
   },
   {
-   "name": "Granite 4.1 8B",
-   "slug": "granite-4-1-8b",
-   "creator": "IBM",
-   "released": "2026-04-29",
-   "intelligence": 6.6,
-   "coding": 9.5,
-   "math": 0,
-   "price_in": 0.05,
-   "price_out": 0.1,
-   "tps": 134.126
-  },
-  {
-   "name": "Sarvam 30B (high)",
-   "slug": "sarvam-30b",
-   "creator": "Sarvam",
-   "released": "2026-03-06",
-   "intelligence": 6.6,
+   "name": "Mistral Small 3",
+   "slug": "mistral-small-3",
+   "creator": "Mistral",
+   "released": "2025-01-30",
+   "intelligence": 6.7,
    "coding": 0,
-   "math": 0,
-   "price_in": 0.026,
-   "price_out": 0.11,
+   "math": 4.3,
+   "price_in": 0.1,
+   "price_out": 0.3,
    "tps": 0
   },
   {
-   "name": "Llama 3.1 Instruct 70B",
-   "slug": "llama-3-1-instruct-70b",
-   "creator": "Meta",
-   "released": "2024-07-23",
-   "intelligence": 6.6,
-   "coding": 0,
-   "math": 4,
-   "price_in": 0.56,
-   "price_out": 0.56,
-   "tps": 0
-  },
-  {
-   "name": "Gemini 2.0 Flash Thinking Experimental (Dec '24)",
-   "slug": "gemini-2-0-flash-thinking-exp-1219",
+   "name": "Gemini 2.5 Flash-Lite (Non-reasoning)",
+   "slug": "gemini-2-5-flash-lite",
    "creator": "Google",
-   "released": "2024-12-19",
-   "intelligence": 6.6,
+   "released": "2025-06-17",
+   "intelligence": 6.7,
    "coding": 0,
-   "math": 0,
+   "math": 35.3,
+   "price_in": 0.1,
+   "price_out": 0.4,
+   "tps": 0
+  },
+  {
+   "name": "Nova Lite",
+   "slug": "nova-lite",
+   "creator": "Amazon",
+   "released": "2024-12-03",
+   "intelligence": 6.7,
+   "coding": 0,
+   "math": 7,
+   "price_in": 0.06,
+   "price_out": 0.24,
+   "tps": 0
+  },
+  {
+   "name": "GPT-4o mini",
+   "slug": "gpt-4o-mini",
+   "creator": "OpenAI",
+   "released": "2024-07-18",
+   "intelligence": 6.7,
+   "coding": 11.4,
+   "math": 14.7,
+   "price_in": 0.15,
+   "price_out": 0.6,
+   "tps": 0
+  },
+  {
+   "name": "Hermes 4 - Llama-3.1 70B (Non-reasoning)",
+   "slug": "hermes-4-llama-3-1-70b",
+   "creator": "Nous Research",
+   "released": "2025-08-27",
+   "intelligence": 6.7,
+   "coding": 0,
+   "math": 11.3,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 30B A3B (Non-reasoning)",
+   "slug": "qwen3-30b-a3b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
+   "intelligence": 6.6,
+   "coding": 0,
+   "math": 21.7,
+   "price_in": 0.2,
+   "price_out": 0.8,
    "tps": 0
   },
   {
@@ -6079,18 +6247,6 @@
    "slug": "deepseek-v2-5",
    "creator": "DeepSeek",
    "released": "2024-12-10",
-   "intelligence": 6.6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek-V2.5",
-   "slug": "deepseek-v2-5-sep-2024",
-   "creator": "DeepSeek",
-   "released": "2024-09-06",
    "intelligence": 6.6,
    "coding": 0,
    "math": 0,
@@ -6111,35 +6267,59 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 30B A3B (Non-reasoning)",
-   "slug": "qwen3-30b-a3b-instruct",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
+   "name": "Llama 3.1 Instruct 70B",
+   "slug": "llama-3-1-instruct-70b",
+   "creator": "Meta",
+   "released": "2024-07-23",
    "intelligence": 6.6,
    "coding": 0,
-   "math": 21.7,
-   "price_in": 0.2,
-   "price_out": 0.8,
+   "math": 4,
+   "price_in": 0.56,
+   "price_out": 0.56,
    "tps": 0
   },
   {
-   "name": "Llama 4 Scout",
-   "slug": "llama-4-scout",
-   "creator": "Meta",
-   "released": "2025-04-05",
-   "intelligence": 6.5,
-   "coding": 8.2,
-   "math": 14,
-   "price_in": 0.19,
-   "price_out": 0.68,
-   "tps": 106.453
+   "name": "Granite 4.1 8B",
+   "slug": "granite-4-1-8b",
+   "creator": "IBM",
+   "released": "2026-04-29",
+   "intelligence": 6.6,
+   "coding": 9.5,
+   "math": 0,
+   "price_in": 0.05,
+   "price_out": 0.1,
+   "tps": 0
   },
   {
-   "name": "Gemma 4 E2B (Non-reasoning)",
-   "slug": "gemma-4-e2b-non-reasoning",
+   "name": "Sarvam 30B (high)",
+   "slug": "sarvam-30b",
+   "creator": "Sarvam",
+   "released": "2026-03-06",
+   "intelligence": 6.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.026,
+   "price_out": 0.11,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 2.0 Flash Thinking Experimental (Dec '24)",
+   "slug": "gemini-2-0-flash-thinking-exp-1219",
    "creator": "Google",
-   "released": "2026-04-02",
-   "intelligence": 6.5,
+   "released": "2024-12-19",
+   "intelligence": 6.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek-V2.5",
+   "slug": "deepseek-v2-5-sep-2024",
+   "creator": "DeepSeek",
+   "released": "2024-09-06",
+   "intelligence": 6.6,
    "coding": 0,
    "math": 0,
    "price_in": 0,
@@ -6183,6 +6363,18 @@
    "tps": 0
   },
   {
+   "name": "Gemma 4 E2B (Non-reasoning)",
+   "slug": "gemma-4-e2b-non-reasoning",
+   "creator": "Google",
+   "released": "2026-04-02",
+   "intelligence": 6.5,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Olmo 3 32B Think",
    "slug": "olmo-3-32b-think",
    "creator": "Allen Institute for AI",
@@ -6195,12 +6387,12 @@
    "tps": 0
   },
   {
-   "name": "Llama 3.2 Instruct 90B (Vision)",
-   "slug": "llama-3-2-instruct-90b-vision",
-   "creator": "Meta",
-   "released": "2024-09-25",
+   "name": "Gemini 1.5 Pro (May '24)",
+   "slug": "gemini-1-5-pro-may-2024",
+   "creator": "Google",
+   "released": "2024-05-15",
    "intelligence": 6.4,
-   "coding": 0,
+   "coding": 19.8,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -6219,12 +6411,36 @@
    "tps": 0
   },
   {
-   "name": "Gemini 1.5 Pro (May '24)",
-   "slug": "gemini-1-5-pro-may-2024",
-   "creator": "Google",
-   "released": "2024-05-15",
+   "name": "Qwen2.5 Turbo",
+   "slug": "qwen-turbo",
+   "creator": "Alibaba",
+   "released": "2024-11-18",
    "intelligence": 6.4,
-   "coding": 19.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.05,
+   "price_out": 0.2,
+   "tps": 0
+  },
+  {
+   "name": "Reka Flash (Sep '24)",
+   "slug": "reka-flash",
+   "creator": "Reka AI",
+   "released": "2024-10-04",
+   "intelligence": 6.4,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.2,
+   "price_out": 0.8,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.2 Instruct 90B (Vision)",
+   "slug": "llama-3-2-instruct-90b-vision",
+   "creator": "Meta",
+   "released": "2024-09-25",
+   "intelligence": 6.4,
+   "coding": 0,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -6243,46 +6459,34 @@
    "tps": 0
   },
   {
-   "name": "Reka Flash (Sep '24)",
-   "slug": "reka-flash",
-   "creator": "Reka AI",
-   "released": "2024-10-04",
-   "intelligence": 6.4,
-   "coding": 0,
+   "name": "Celeris-1",
+   "slug": "celeris-1",
+   "creator": "Celeris",
+   "released": "2026-07-24",
+   "intelligence": 6.3,
+   "coding": 14.4,
    "math": 0,
    "price_in": 0.2,
-   "price_out": 0.8,
-   "tps": 0
-  },
-  {
-   "name": "Qwen2.5 Turbo",
-   "slug": "qwen-turbo",
-   "creator": "Alibaba",
-   "released": "2024-11-18",
-   "intelligence": 6.4,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.05,
-   "price_out": 0.2,
-   "tps": 0
-  },
-  {
-   "name": "Qwen3 14B (Reasoning)",
-   "slug": "qwen3-14b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 6.4,
-   "coding": 13.8,
-   "math": 55.7,
-   "price_in": 0.35,
-   "price_out": 4.2,
-   "tps": 0
+   "price_out": 0.7,
+   "tps": 1892.794
   },
   {
    "name": "Grok-1",
    "slug": "grok-1",
    "creator": "SpaceXAI",
    "released": "2024-03-17",
+   "intelligence": 6.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen2 Instruct 72B",
+   "slug": "qwen2-72b-instruct",
+   "creator": "Alibaba",
+   "released": "2024-06-07",
    "intelligence": 6.3,
    "coding": 0,
    "math": 0,
@@ -6300,7 +6504,7 @@
    "math": 6.7,
    "price_in": 0,
    "price_out": 0,
-   "tps": 47.743
+   "tps": 45.304
   },
   {
    "name": "EXAONE 4.0 32B (Non-reasoning)",
@@ -6310,30 +6514,6 @@
    "intelligence": 6.3,
    "coding": 0,
    "math": 39.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Celeris-1",
-   "slug": "celeris-1",
-   "creator": "Celeris",
-   "released": "2026-07-24",
-   "intelligence": 6.3,
-   "coding": 14.4,
-   "math": 0,
-   "price_in": 0.2,
-   "price_out": 0.7,
-   "tps": 2148.933
-  },
-  {
-   "name": "Qwen2 Instruct 72B",
-   "slug": "qwen2-72b-instruct",
-   "creator": "Alibaba",
-   "released": "2024-06-07",
-   "intelligence": 6.3,
-   "coding": 0,
-   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -6356,6 +6536,18 @@
    "creator": "Google",
    "released": "2024-10-03",
    "intelligence": 6.2,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3.5 0.8B (Reasoning)",
+   "slug": "qwen3-5-0-8b",
+   "creator": "Alibaba",
+   "released": "2026-03-02",
+   "intelligence": 6.1,
    "coding": 0,
    "math": 0,
    "price_in": 0,
@@ -6387,16 +6579,16 @@
    "tps": 0
   },
   {
-   "name": "Qwen3.5 0.8B (Reasoning)",
-   "slug": "qwen3-5-0-8b",
-   "creator": "Alibaba",
-   "released": "2026-03-02",
-   "intelligence": 6.1,
+   "name": "Granite 4.0 H Small",
+   "slug": "granite-4-0-h-small",
+   "creator": "IBM",
+   "released": "2025-09-22",
+   "intelligence": 6,
    "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "math": 13.7,
+   "price_in": 0.06,
+   "price_out": 0.25,
+   "tps": 12.513
   },
   {
    "name": "Ministral 3 14B",
@@ -6408,19 +6600,19 @@
    "math": 30,
    "price_in": 0.2,
    "price_out": 0.2,
-   "tps": 93.113
+   "tps": 91.709
   },
   {
-   "name": "Granite 4.0 H Small",
-   "slug": "granite-4-0-h-small",
-   "creator": "IBM",
-   "released": "2025-09-22",
+   "name": "Jamba 1.5 Large",
+   "slug": "jamba-1-5-large",
+   "creator": "AI21 Labs",
+   "released": "2024-08-22",
    "intelligence": 6,
    "coding": 0,
-   "math": 13.7,
-   "price_in": 0.06,
-   "price_out": 0.25,
-   "tps": 18.336
+   "math": 0,
+   "price_in": 2,
+   "price_out": 8,
+   "tps": 0
   },
   {
    "name": "Qwen3 Omni 30B A3B Instruct",
@@ -6432,7 +6624,31 @@
    "math": 52.3,
    "price_in": 0.25,
    "price_out": 0.97,
-   "tps": 107.407
+   "tps": 107.194
+  },
+  {
+   "name": "Hermes 3 - Llama-3.1 70B",
+   "slug": "hermes-3-llama-3-1-70b",
+   "creator": "Nous Research",
+   "released": "2024-08-15",
+   "intelligence": 6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.7,
+   "price_out": 0.7,
+   "tps": 0
+  },
+  {
+   "name": "Qwen3 8B (Non-reasoning)",
+   "slug": "qwen3-8b-instruct",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
+   "intelligence": 6,
+   "coding": 0,
+   "math": 24.3,
+   "price_in": 0.18,
+   "price_out": 0.7,
+   "tps": 0
   },
   {
    "name": "DeepSeek-Coder-V2",
@@ -6459,30 +6675,6 @@
    "tps": 0
   },
   {
-   "name": "Hermes 3 - Llama-3.1 70B",
-   "slug": "hermes-3-llama-3-1-70b",
-   "creator": "Nous Research",
-   "released": "2024-08-15",
-   "intelligence": 6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.7,
-   "price_out": 0.7,
-   "tps": 0
-  },
-  {
-   "name": "Jamba 1.5 Large",
-   "slug": "jamba-1-5-large",
-   "creator": "AI21 Labs",
-   "released": "2024-08-22",
-   "intelligence": 6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 2,
-   "price_out": 8,
-   "tps": 0
-  },
-  {
    "name": "Jamba 1.6 Large",
    "slug": "jamba-1-6-large",
    "creator": "AI21 Labs",
@@ -6495,60 +6687,12 @@
    "tps": 0
   },
   {
-   "name": "Qwen3 8B (Non-reasoning)",
-   "slug": "qwen3-8b-instruct",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 6,
-   "coding": 0,
-   "math": 24.3,
-   "price_in": 0.18,
-   "price_out": 0.7,
-   "tps": 0
-  },
-  {
-   "name": "Nova Micro",
-   "slug": "nova-micro",
-   "creator": "Amazon",
-   "released": "2024-12-03",
-   "intelligence": 5.9,
-   "coding": 0,
-   "math": 6,
-   "price_in": 0.035,
-   "price_out": 0.14,
-   "tps": 285.742
-  },
-  {
-   "name": "Phi-4",
-   "slug": "phi-4",
-   "creator": "Microsoft",
-   "released": "2024-12-12",
-   "intelligence": 5.9,
-   "coding": 0,
-   "math": 18,
-   "price_in": 0.125,
-   "price_out": 0.5,
-   "tps": 43.209
-  },
-  {
    "name": "LFM2 24B A2B",
    "slug": "lfm2-24b-a2b",
    "creator": "Liquid AI",
    "released": "2026-02-25",
    "intelligence": 5.9,
    "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Granite 4.1 3B",
-   "slug": "granite-4-1-3b",
-   "creator": "IBM",
-   "released": "2026-04-29",
-   "intelligence": 5.9,
-   "coding": 4.7,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -6567,6 +6711,18 @@
    "tps": 0
   },
   {
+   "name": "Phi-4",
+   "slug": "phi-4",
+   "creator": "Microsoft",
+   "released": "2024-12-12",
+   "intelligence": 5.9,
+   "coding": 0,
+   "math": 18,
+   "price_in": 0.125,
+   "price_out": 0.5,
+   "tps": 36.366
+  },
+  {
    "name": "Claude 3 Sonnet",
    "slug": "claude-3-sonnet",
    "creator": "Anthropic",
@@ -6579,48 +6735,24 @@
    "tps": 0
   },
   {
-   "name": "Phi-4 Multimodal Instruct",
-   "slug": "phi-4-multimodal",
-   "creator": "Microsoft",
-   "released": "2025-02-26",
-   "intelligence": 5.8,
+   "name": "Nova Micro",
+   "slug": "nova-micro",
+   "creator": "Amazon",
+   "released": "2024-12-03",
+   "intelligence": 5.9,
    "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 17.228
+   "math": 6,
+   "price_in": 0.035,
+   "price_out": 0.14,
+   "tps": 245.37
   },
   {
-   "name": "NVIDIA Nemotron Nano 12B v2 VL (Non-reasoning)",
-   "slug": "nvidia-nemotron-nano-12b-v2-vl",
-   "creator": "NVIDIA",
-   "released": "2025-10-28",
-   "intelligence": 5.8,
-   "coding": 0,
-   "math": 26.7,
-   "price_in": 0.2,
-   "price_out": 0.6,
-   "tps": 79.122
-  },
-  {
-   "name": "Gemma 3n E4B Instruct Preview (May '25)",
-   "slug": "gemma-3n-e4b-preview-0520",
-   "creator": "Google",
-   "released": "2025-05-20",
-   "intelligence": 5.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Gemini 1.0 Ultra",
-   "slug": "gemini-1-0-ultra",
-   "creator": "Google",
-   "released": "2023-12-06",
-   "intelligence": 5.8,
-   "coding": 17.6,
+   "name": "Granite 4.1 3B",
+   "slug": "granite-4-1-3b",
+   "creator": "IBM",
+   "released": "2026-04-29",
+   "intelligence": 5.9,
+   "coding": 4.7,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -6639,15 +6771,15 @@
    "tps": 0
   },
   {
-   "name": "Mistral Large (Feb '24)",
-   "slug": "mistral-large",
-   "creator": "Mistral",
-   "released": "2024-02-26",
+   "name": "Gemini 1.0 Ultra",
+   "slug": "gemini-1-0-ultra",
+   "creator": "Google",
+   "released": "2023-12-06",
    "intelligence": 5.8,
-   "coding": 0,
+   "coding": 17.6,
    "math": 0,
-   "price_in": 4,
-   "price_out": 12,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -6663,13 +6795,97 @@
    "tps": 0
   },
   {
-   "name": "Qwen2.5 Coder Instruct 7B ",
+   "name": "NVIDIA Nemotron Nano 12B v2 VL (Non-reasoning)",
+   "slug": "nvidia-nemotron-nano-12b-v2-vl",
+   "creator": "NVIDIA",
+   "released": "2025-10-28",
+   "intelligence": 5.8,
+   "coding": 0,
+   "math": 26.7,
+   "price_in": 0.2,
+   "price_out": 0.6,
+   "tps": 192.182
+  },
+  {
+   "name": "Gemma 3n E4B Instruct Preview (May '25)",
+   "slug": "gemma-3n-e4b-preview-0520",
+   "creator": "Google",
+   "released": "2025-05-20",
+   "intelligence": 5.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Phi-4 Multimodal Instruct",
+   "slug": "phi-4-multimodal",
+   "creator": "Microsoft",
+   "released": "2025-02-26",
+   "intelligence": 5.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 16.972
+  },
+  {
+   "name": "Qwen2.5 Coder Instruct 7B",
    "slug": "qwen2-5-coder-7b-instruct",
    "creator": "Alibaba",
    "released": "2024-09-19",
    "intelligence": 5.8,
    "coding": 0,
    "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mistral Large (Feb '24)",
+   "slug": "mistral-large",
+   "creator": "Mistral",
+   "released": "2024-02-26",
+   "intelligence": 5.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 12,
+   "tps": 0
+  },
+  {
+   "name": "Mixtral 8x22B Instruct",
+   "slug": "mistral-8x22b-instruct",
+   "creator": "Mistral",
+   "released": "2024-04-17",
+   "intelligence": 5.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Llama 2 Chat 7B",
+   "slug": "llama-2-chat-7b",
+   "creator": "Meta",
+   "released": "2023-07-18",
+   "intelligence": 5.7,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.05,
+   "price_out": 0.25,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.2 Instruct 3B",
+   "slug": "llama-3-2-instruct-3b",
+   "creator": "Meta",
+   "released": "2024-09-25",
+   "intelligence": 5.7,
+   "coding": 0,
+   "math": 3.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -6699,42 +6915,6 @@
    "tps": 0
   },
   {
-   "name": "Llama 3.2 Instruct 3B",
-   "slug": "llama-3-2-instruct-3b",
-   "creator": "Meta",
-   "released": "2024-09-25",
-   "intelligence": 5.7,
-   "coding": 0,
-   "math": 3.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Llama 2 Chat 7B",
-   "slug": "llama-2-chat-7b",
-   "creator": "Meta",
-   "released": "2023-07-18",
-   "intelligence": 5.7,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.05,
-   "price_out": 0.25,
-   "tps": 0
-  },
-  {
-   "name": "Mixtral 8x22B Instruct",
-   "slug": "mistral-8x22b-instruct",
-   "creator": "Mistral",
-   "released": "2024-04-17",
-   "intelligence": 5.7,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
    "name": "Qwen3 VL 4B Instruct",
    "slug": "qwen3-vl-4b-instruct",
    "creator": "Alibaba",
@@ -6759,6 +6939,18 @@
    "tps": 0
   },
   {
+   "name": "Reka Flash 3",
+   "slug": "reka-flash-3",
+   "creator": "Reka AI",
+   "released": "2025-03-10",
+   "intelligence": 5.6,
+   "coding": 0,
+   "math": 33.7,
+   "price_in": 0.2,
+   "price_out": 0.8,
+   "tps": 96.516
+  },
+  {
    "name": "Olmo 3 7B Think",
    "slug": "olmo-3-7b-think",
    "creator": "Allen Institute for AI",
@@ -6766,6 +6958,42 @@
    "intelligence": 5.6,
    "coding": 0,
    "math": 70.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Claude 2.1",
+   "slug": "claude-21",
+   "creator": "Anthropic",
+   "released": "2023-11-21",
+   "intelligence": 5.6,
+   "coding": 14,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Claude 3 Haiku",
+   "slug": "claude-3-haiku",
+   "creator": "Anthropic",
+   "released": "2024-03-04",
+   "intelligence": 5.6,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.25,
+   "price_out": 1.25,
+   "tps": 0
+  },
+  {
+   "name": "OLMo 2 7B",
+   "slug": "olmo-2-7b",
+   "creator": "Allen Institute for AI",
+   "released": "2024-11-26",
+   "intelligence": 5.6,
+   "coding": 0,
+   "math": 0.7,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -6783,87 +7011,27 @@
    "tps": 0
   },
   {
-   "name": "Reka Flash 3",
-   "slug": "reka-flash-3",
-   "creator": "Reka AI",
-   "released": "2025-03-10",
-   "intelligence": 5.6,
+   "name": "Ling-mini-2.0",
+   "slug": "ling-mini-2-0",
+   "creator": "InclusionAI",
+   "released": "2025-09-09",
+   "intelligence": 5.5,
    "coding": 0,
-   "math": 33.7,
-   "price_in": 0.2,
-   "price_out": 0.8,
-   "tps": 85.894
-  },
-  {
-   "name": "Claude 3 Haiku",
-   "slug": "claude-3-haiku",
-   "creator": "Anthropic",
-   "released": "2024-03-04",
-   "intelligence": 5.6,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.25,
-   "price_out": 1.25,
-   "tps": 0
-  },
-  {
-   "name": "Claude 2.1",
-   "slug": "claude-21",
-   "creator": "Anthropic",
-   "released": "2023-11-21",
-   "intelligence": 5.6,
-   "coding": 14,
-   "math": 0,
+   "math": 49.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
   },
   {
-   "name": "OLMo 2 7B",
-   "slug": "olmo-2-7b",
-   "creator": "Allen Institute for AI",
-   "released": "2024-11-26",
-   "intelligence": 5.6,
+   "name": "DeepSeek R1 Distill Qwen 1.5B",
+   "slug": "deepseek-r1-distill-qwen-1-5b",
+   "creator": "DeepSeek",
+   "released": "2025-01-20",
+   "intelligence": 5.5,
    "coding": 0,
-   "math": 0.7,
+   "math": 22,
    "price_in": 0,
    "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Ministral 3 8B",
-   "slug": "ministral-3-8b",
-   "creator": "Mistral",
-   "released": "2025-12-02",
-   "intelligence": 5.5,
-   "coding": 9.7,
-   "math": 31.7,
-   "price_in": 0.15,
-   "price_out": 0.15,
-   "tps": 90.267
-  },
-  {
-   "name": "GPT-3.5 Turbo",
-   "slug": "gpt-35-turbo",
-   "creator": "OpenAI",
-   "released": "2022-11-30",
-   "intelligence": 5.5,
-   "coding": 10.7,
-   "math": 0,
-   "price_in": 0.5,
-   "price_out": 1.5,
-   "tps": 0
-  },
-  {
-   "name": "Llama 3 Instruct 70B",
-   "slug": "llama-3-instruct-70b",
-   "creator": "Meta",
-   "released": "2024-04-18",
-   "intelligence": 5.5,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.65,
-   "price_out": 2.75,
    "tps": 0
   },
   {
@@ -6873,6 +7041,18 @@
    "released": "2023-07-11",
    "intelligence": 5.5,
    "coding": 12.9,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek-V2-Chat",
+   "slug": "deepseek-v2",
+   "creator": "DeepSeek",
+   "released": "2024-05-06",
+   "intelligence": 5.5,
+   "coding": 0,
    "math": 0,
    "price_in": 0,
    "price_out": 0,
@@ -6903,87 +7083,39 @@
    "tps": 0
   },
   {
-   "name": "DeepSeek R1 Distill Qwen 1.5B",
-   "slug": "deepseek-r1-distill-qwen-1-5b",
-   "creator": "DeepSeek",
-   "released": "2025-01-20",
+   "name": "GPT-3.5 Turbo",
+   "slug": "gpt-35-turbo",
+   "creator": "OpenAI",
+   "released": "2022-11-30",
    "intelligence": 5.5,
-   "coding": 0,
-   "math": 22,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek-V2-Chat",
-   "slug": "deepseek-v2",
-   "creator": "DeepSeek",
-   "released": "2024-05-06",
-   "intelligence": 5.5,
-   "coding": 0,
+   "coding": 10.7,
    "math": 0,
-   "price_in": 0,
-   "price_out": 0,
+   "price_in": 0.5,
+   "price_out": 1.5,
    "tps": 0
   },
   {
-   "name": "Ling-mini-2.0",
-   "slug": "ling-mini-2-0",
-   "creator": "InclusionAI",
-   "released": "2025-09-09",
+   "name": "Ministral 3 8B",
+   "slug": "ministral-3-8b",
+   "creator": "Mistral",
+   "released": "2025-12-02",
    "intelligence": 5.5,
-   "coding": 0,
-   "math": 49.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "coding": 9.7,
+   "math": 31.7,
+   "price_in": 0.15,
+   "price_out": 0.15,
+   "tps": 99.317
   },
   {
-   "name": "Llama 3.2 Instruct 11B (Vision)",
-   "slug": "llama-3-2-instruct-11b-vision",
+   "name": "Llama 3 Instruct 70B",
+   "slug": "llama-3-instruct-70b",
    "creator": "Meta",
-   "released": "2024-09-25",
-   "intelligence": 5.4,
-   "coding": 0,
-   "math": 1.7,
-   "price_in": 0.345,
-   "price_out": 0.345,
-   "tps": 22.696
-  },
-  {
-   "name": "Qwen3.5 0.8B (Non-reasoning)",
-   "slug": "qwen3-5-0-8b-non-reasoning",
-   "creator": "Alibaba",
-   "released": "2026-03-02",
-   "intelligence": 5.4,
-   "coding": 1.2,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "PALM-2",
-   "slug": "palm-2",
-   "creator": "Google",
-   "released": "2023-05-10",
-   "intelligence": 5.4,
-   "coding": 4.6,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "LFM 40B",
-   "slug": "lfm-40b",
-   "creator": "Liquid AI",
-   "released": "2024-09-30",
-   "intelligence": 5.4,
+   "released": "2024-04-18",
+   "intelligence": 5.5,
    "coding": 0,
    "math": 0,
-   "price_in": 0,
-   "price_out": 0,
+   "price_in": 0.65,
+   "price_out": 2.75,
    "tps": 0
   },
   {
@@ -7011,13 +7143,97 @@
    "tps": 0
   },
   {
-   "name": "Exaone 4.0 1.2B (Reasoning)",
-   "slug": "exaone-4-0-1-2b-reasoning",
-   "creator": "LG AI Research",
-   "released": "2025-07-15",
+   "name": "LFM 40B",
+   "slug": "lfm-40b",
+   "creator": "Liquid AI",
+   "released": "2024-09-30",
+   "intelligence": 5.4,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.2 Instruct 11B (Vision)",
+   "slug": "llama-3-2-instruct-11b-vision",
+   "creator": "Meta",
+   "released": "2024-09-25",
+   "intelligence": 5.4,
+   "coding": 0,
+   "math": 1.7,
+   "price_in": 0.345,
+   "price_out": 0.345,
+   "tps": 16.596
+  },
+  {
+   "name": "Qwen3.5 0.8B (Non-reasoning)",
+   "slug": "qwen3-5-0-8b-non-reasoning",
+   "creator": "Alibaba",
+   "released": "2026-03-02",
+   "intelligence": 5.4,
+   "coding": 1.2,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "PALM-2",
+   "slug": "palm-2",
+   "creator": "Google",
+   "released": "2023-05-10",
+   "intelligence": 5.4,
+   "coding": 4.6,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 1.0 Pro",
+   "slug": "gemini-1-0-pro",
+   "creator": "Google",
+   "released": "2023-12-06",
    "intelligence": 5.3,
    "coding": 0,
-   "math": 50.3,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek Coder V2 Lite Instruct",
+   "slug": "deepseek-coder-v2-lite",
+   "creator": "DeepSeek",
+   "released": "2024-06-17",
+   "intelligence": 5.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Sarvam M (Reasoning)",
+   "slug": "sarvam-m-reasoning",
+   "creator": "Sarvam",
+   "released": "2025-05-23",
+   "intelligence": 5.3,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "DeepSeek LLM 67B Chat (V1)",
+   "slug": "deepseek-llm-67b-chat",
+   "creator": "DeepSeek",
+   "released": "2023-11-29",
+   "intelligence": 5.3,
+   "coding": 0,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7047,34 +7263,10 @@
    "tps": 0
   },
   {
-   "name": "Gemini 1.0 Pro",
-   "slug": "gemini-1-0-pro",
-   "creator": "Google",
-   "released": "2023-12-06",
-   "intelligence": 5.3,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek LLM 67B Chat (V1)",
-   "slug": "deepseek-llm-67b-chat",
-   "creator": "DeepSeek",
-   "released": "2023-11-29",
-   "intelligence": 5.3,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "DeepSeek Coder V2 Lite Instruct",
-   "slug": "deepseek-coder-v2-lite",
-   "creator": "DeepSeek",
-   "released": "2024-06-17",
+   "name": "Command-R+ (Apr '24)",
+   "slug": "command-r-plus-04-2024",
+   "creator": "Cohere",
+   "released": "2024-04-04",
    "intelligence": 5.3,
    "coding": 0,
    "math": 0,
@@ -7107,25 +7299,37 @@
    "tps": 0
   },
   {
-   "name": "Sarvam M (Reasoning)",
-   "slug": "sarvam-m-reasoning",
-   "creator": "Sarvam",
-   "released": "2025-05-23",
+   "name": "Exaone 4.0 1.2B (Reasoning)",
+   "slug": "exaone-4-0-1-2b-reasoning",
+   "creator": "LG AI Research",
+   "released": "2025-07-15",
    "intelligence": 5.3,
    "coding": 0,
-   "math": 0,
+   "math": 50.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Command-R+ (Apr '24)",
-   "slug": "command-r-plus-04-2024",
-   "creator": "Cohere",
-   "released": "2024-04-04",
-   "intelligence": 5.3,
+   "name": "Olmo 3 7B Instruct",
+   "slug": "olmo-3-7b-instruct",
+   "creator": "Allen Institute for AI",
+   "released": "2025-11-20",
+   "intelligence": 5.2,
    "coding": 0,
-   "math": 0,
+   "math": 41.3,
+   "price_in": 0.1,
+   "price_out": 0.2,
+   "tps": 0
+  },
+  {
+   "name": "Exaone 4.0 1.2B (Non-reasoning)",
+   "slug": "exaone-4-0-1-2b",
+   "creator": "LG AI Research",
+   "released": "2025-07-15",
+   "intelligence": 5.2,
+   "coding": 0,
+   "math": 24,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7138,6 +7342,18 @@
    "intelligence": 5.2,
    "coding": 0,
    "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Jamba 1.7 Mini",
+   "slug": "jamba-1-7-mini",
+   "creator": "AI21 Labs",
+   "released": "2025-07-07",
+   "intelligence": 5.2,
+   "coding": 0,
+   "math": 0.3,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7167,15 +7383,15 @@
    "tps": 0
   },
   {
-   "name": "Olmo 3 7B Instruct",
-   "slug": "olmo-3-7b-instruct",
-   "creator": "Allen Institute for AI",
-   "released": "2025-11-20",
+   "name": "Jamba 1.5 Mini",
+   "slug": "jamba-1-5-mini",
+   "creator": "AI21 Labs",
+   "released": "2024-08-22",
    "intelligence": 5.2,
    "coding": 0,
-   "math": 41.3,
-   "price_in": 0.1,
-   "price_out": 0.2,
+   "math": 0,
+   "price_in": 0.2,
+   "price_out": 0.4,
    "tps": 0
   },
   {
@@ -7191,25 +7407,13 @@
    "tps": 0
   },
   {
-   "name": "Exaone 4.0 1.2B (Non-reasoning)",
-   "slug": "exaone-4-0-1-2b",
-   "creator": "LG AI Research",
-   "released": "2025-07-15",
+   "name": "Qwen3 1.7B (Reasoning)",
+   "slug": "qwen3-1.7b-instruct-reasoning",
+   "creator": "Alibaba",
+   "released": "2025-04-28",
    "intelligence": 5.2,
    "coding": 0,
-   "math": 24,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Jamba 1.7 Mini",
-   "slug": "jamba-1-7-mini",
-   "creator": "AI21 Labs",
-   "released": "2025-07-07",
-   "intelligence": 5.2,
-   "coding": 0,
-   "math": 0.3,
+   "math": 38.7,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7227,39 +7431,15 @@
    "tps": 0
   },
   {
-   "name": "Jamba 1.5 Mini",
-   "slug": "jamba-1-5-mini",
-   "creator": "AI21 Labs",
-   "released": "2024-08-22",
-   "intelligence": 5.2,
+   "name": "Mixtral 8x7B Instruct",
+   "slug": "mixtral-8x7b-instruct",
+   "creator": "Mistral",
+   "released": "2023-12-11",
+   "intelligence": 5.1,
    "coding": 0,
    "math": 0,
-   "price_in": 0.2,
-   "price_out": 0.4,
-   "tps": 0
-  },
-  {
-   "name": "Qwen3 8B (Reasoning)",
-   "slug": "qwen3-8b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 5.2,
-   "coding": 9,
-   "math": 19,
-   "price_in": 0.18,
-   "price_out": 2.1,
-   "tps": 0
-  },
-  {
-   "name": "Qwen3 1.7B (Reasoning)",
-   "slug": "qwen3-1.7b-instruct-reasoning",
-   "creator": "Alibaba",
-   "released": "2025-04-28",
-   "intelligence": 5.2,
-   "coding": 0,
-   "math": 38.7,
-   "price_in": 0,
-   "price_out": 0,
+   "price_in": 0.45,
+   "price_out": 0.7,
    "tps": 0
   },
   {
@@ -7272,6 +7452,18 @@
    "math": 2.3,
    "price_in": 0,
    "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Apertus 70B Instruct",
+   "slug": "apertus-70b-instruct",
+   "creator": "Swiss AI Initiative",
+   "released": "2025-09-02",
+   "intelligence": 5.1,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.82,
+   "price_out": 2.92,
    "tps": 0
   },
   {
@@ -7299,27 +7491,27 @@
    "tps": 0
   },
   {
-   "name": "Apertus 70B Instruct",
-   "slug": "apertus-70b-instruct",
-   "creator": "Swiss AI Initiative",
-   "released": "2025-09-02",
-   "intelligence": 5.1,
-   "coding": 0,
+   "name": "Claude Instant",
+   "slug": "claude-instant",
+   "creator": "Anthropic",
+   "released": "2023-03-14",
+   "intelligence": 5,
+   "coding": 7.8,
    "math": 0,
-   "price_in": 0.82,
-   "price_out": 2.92,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
-   "name": "Mixtral 8x7B Instruct",
-   "slug": "mixtral-8x7b-instruct",
-   "creator": "Mistral",
-   "released": "2023-12-11",
-   "intelligence": 5.1,
+   "name": "Command-R (Mar '24)",
+   "slug": "command-r-03-2024",
+   "creator": "Cohere",
+   "released": "2024-03-12",
+   "intelligence": 5,
    "coding": 0,
    "math": 0,
-   "price_in": 0.45,
-   "price_out": 0.7,
+   "price_in": 0,
+   "price_out": 0,
    "tps": 0
   },
   {
@@ -7335,22 +7527,22 @@
    "tps": 0
   },
   {
+   "name": "Mistral 7B Instruct",
+   "slug": "mistral-7b-instruct",
+   "creator": "Mistral",
+   "released": "2023-09-27",
+   "intelligence": 5,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.25,
+   "price_out": 0.25,
+   "tps": 0
+  },
+  {
    "name": "Qwen Chat 14B",
    "slug": "qwen-chat-14b",
    "creator": "Alibaba",
    "released": "2023-09-25",
-   "intelligence": 5,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Molmo2-8B",
-   "slug": "molmo2-8b",
-   "creator": "Allen Institute for AI",
-   "released": "2025-12-11",
    "intelligence": 5,
    "coding": 0,
    "math": 0,
@@ -7371,34 +7563,10 @@
    "tps": 0
   },
   {
-   "name": "Claude Instant",
-   "slug": "claude-instant",
-   "creator": "Anthropic",
-   "released": "2023-03-14",
-   "intelligence": 5,
-   "coding": 7.8,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Mistral 7B Instruct",
-   "slug": "mistral-7b-instruct",
-   "creator": "Mistral",
-   "released": "2023-09-27",
-   "intelligence": 5,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.25,
-   "price_out": 0.25,
-   "tps": 0
-  },
-  {
-   "name": "Command-R (Mar '24)",
-   "slug": "command-r-03-2024",
-   "creator": "Cohere",
-   "released": "2024-03-12",
+   "name": "Molmo2-8B",
+   "slug": "molmo2-8b",
+   "creator": "Allen Institute for AI",
+   "released": "2025-12-11",
    "intelligence": 5,
    "coding": 0,
    "math": 0,
@@ -7414,18 +7582,6 @@
    "intelligence": 4.9,
    "coding": 0,
    "math": 25.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Gemma 3 27B Instruct",
-   "slug": "gemma-3-27b",
-   "creator": "Google",
-   "released": "2025-03-12",
-   "intelligence": 4.9,
-   "coding": 10.1,
-   "math": 20.7,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7455,6 +7611,18 @@
    "tps": 0
   },
   {
+   "name": "Gemma 3 27B Instruct",
+   "slug": "gemma-3-27b",
+   "creator": "Google",
+   "released": "2025-03-12",
+   "intelligence": 4.9,
+   "coding": 10.1,
+   "math": 20.7,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "Ministral 3 3B",
    "slug": "ministral-3-3b",
    "creator": "Mistral",
@@ -7464,43 +7632,7 @@
    "math": 22,
    "price_in": 0.1,
    "price_out": 0.1,
-   "tps": 218.052
-  },
-  {
-   "name": "LFM2.5-VL-1.6B",
-   "slug": "lfm2-5-vl-1-6b",
-   "creator": "Liquid AI",
-   "released": "2026-01-05",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Granite 4.0 350M",
-   "slug": "granite-4-0-350m",
-   "creator": "IBM",
-   "released": "2025-10-28",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
-  },
-  {
-   "name": "Granite 4.0 H 350M",
-   "slug": "granite-4-0-h-350m",
-   "creator": "IBM",
-   "released": "2025-10-28",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 1.3,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 0
+   "tps": 234.133
   },
   {
    "name": "Apertus 8B Instruct",
@@ -7512,42 +7644,6 @@
    "math": 0,
    "price_in": 0.1,
    "price_out": 0.2,
-   "tps": 0
-  },
-  {
-   "name": "Tiny Aya Global",
-   "slug": "tiny-aya-global",
-   "creator": "Cohere",
-   "released": "2026-02-17",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
-   "tps": 130.992
-  },
-  {
-   "name": "Llama 3 Instruct 8B",
-   "slug": "llama-3-instruct-8b",
-   "creator": "Meta",
-   "released": "2024-04-18",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0.045,
-   "price_out": 0.145,
-   "tps": 0
-  },
-  {
-   "name": "Llama 3.2 Instruct 1B",
-   "slug": "llama-3-2-instruct-1b",
-   "creator": "Meta",
-   "released": "2024-09-25",
-   "intelligence": 4.8,
-   "coding": 0,
-   "math": 0,
-   "price_in": 0,
-   "price_out": 0,
    "tps": 0
   },
   {
@@ -7599,6 +7695,30 @@
    "tps": 0
   },
   {
+   "name": "Granite 4.0 350M",
+   "slug": "granite-4-0-350m",
+   "creator": "IBM",
+   "released": "2025-10-28",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Granite 4.0 H 350M",
+   "slug": "granite-4-0-h-350m",
+   "creator": "IBM",
+   "released": "2025-10-28",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 1.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
    "name": "LFM2 1.2B",
    "slug": "lfm2-1-2b",
    "creator": "Liquid AI",
@@ -7606,6 +7726,42 @@
    "intelligence": 4.8,
    "coding": 0,
    "math": 3.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "LFM2.5-VL-1.6B",
+   "slug": "lfm2-5-vl-1-6b",
+   "creator": "Liquid AI",
+   "released": "2026-01-05",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3 Instruct 8B",
+   "slug": "llama-3-instruct-8b",
+   "creator": "Meta",
+   "released": "2024-04-18",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0.045,
+   "price_out": 0.145,
+   "tps": 0
+  },
+  {
+   "name": "Llama 3.2 Instruct 1B",
+   "slug": "llama-3-2-instruct-1b",
+   "creator": "Meta",
+   "released": "2024-09-25",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 0,
    "price_in": 0,
    "price_out": 0,
    "tps": 0
@@ -7635,6 +7791,18 @@
    "tps": 0
   },
   {
+   "name": "Tiny Aya Global",
+   "slug": "tiny-aya-global",
+   "creator": "Cohere",
+   "released": "2026-02-17",
+   "intelligence": 4.8,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 131.241
+  },
+  {
    "name": "Gemma 3 12B Instruct",
    "slug": "gemma-3-12b",
    "creator": "Google",
@@ -7642,6 +7810,126 @@
    "intelligence": 3.8,
    "coding": 5.8,
    "math": 18.3,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "K2 Horizon 0.9B",
+   "slug": "k2-horizon-0-9b",
+   "creator": "Institute of Foundation Models",
+   "released": "2026-09-03",
+   "intelligence": 3,
+   "coding": 3.4,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Cogito v2.1 (Reasoning)",
+   "slug": "cogito-v2-1-reasoning",
+   "creator": "Deep Cogito",
+   "released": "2025-11-18",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 72.7,
+   "price_in": 1.25,
+   "price_out": 1.25,
+   "tps": 0
+  },
+  {
+   "name": "EXAONE 4.5 33B (Non-reasoning)",
+   "slug": "exaone-4-5-33b-non-reasoning",
+   "creator": "LG AI Research",
+   "released": "2026-04-09",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 3 Deep Think",
+   "slug": "gemini-3-deep-think",
+   "creator": "Google",
+   "released": "2026-02-05",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "GPT-3.5 Turbo (0613)",
+   "slug": "gpt-3-5-turbo-0613",
+   "creator": "OpenAI",
+   "released": "2023-06-13",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "GPT-4o mini Realtime (Dec '24)",
+   "slug": "gpt-4o-mini-realtime-dec-2024",
+   "creator": "OpenAI",
+   "released": "2024-12-17",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "GPT-4o Realtime (Dec '24)",
+   "slug": "gpt-4o-realtime-dec-2024",
+   "creator": "OpenAI",
+   "released": "2024-12-17",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.4 Pro (xhigh)",
+   "slug": "gpt-5-4-pro",
+   "creator": "OpenAI",
+   "released": "2026-03-05",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 30,
+   "price_out": 180,
+   "tps": 0
+  },
+  {
+   "name": "GPT-5.5 Pro (xhigh)",
+   "slug": "gpt-5-5-pro",
+   "creator": "OpenAI",
+   "released": "2026-04-23",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 0,
+   "price_in": 0,
+   "price_out": 0,
+   "tps": 0
+  },
+  {
+   "name": "Mi:dm K 2.5 Pro Preview",
+   "slug": "midm-250-pro-rsnsft",
+   "creator": "Korea Telecom",
+   "released": "2025-12-11",
+   "intelligence": 0,
+   "coding": 0,
+   "math": 78.7,
    "price_in": 0,
    "price_out": 0,
    "tps": 0

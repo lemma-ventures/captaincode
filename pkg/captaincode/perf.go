@@ -82,11 +82,18 @@ var perf struct {
 	asOf   string // date the ranking reflects
 }
 
-func init() {
+func init() { PerfResetToSnapshot() }
+
+// PerfResetToSnapshot puts the compiled snapshot back as the active ranking
+// (tests that install a fixture feed restore it with this).
+func PerfResetToSnapshot() {
 	var f perfFile
-	if err := json.Unmarshal(perfDefaultJSON, &f); err == nil {
-		perf.models, perf.source, perf.asOf = f.rows(), "snapshot", f.SnapshotDate
+	if err := json.Unmarshal(perfDefaultJSON, &f); err != nil {
+		return
 	}
+	perf.mu.Lock()
+	defer perf.mu.Unlock()
+	perf.models, perf.source, perf.asOf = f.rows(), "snapshot", f.SnapshotDate
 }
 
 // PerfCachePath is where a live fetch is kept between brain starts.
@@ -100,21 +107,32 @@ func PerfCachePath() string {
 // as new as the binary's snapshot in practice, and a stale-but-live ranking
 // beats a stale-and-compiled one.
 func LoadPerfCache() bool {
-	data, err := os.ReadFile(PerfCachePath())
-	if err != nil {
-		return false
-	}
-	var f perfFile
-	if err := json.Unmarshal(data, &f); err != nil || len(f.Models) == 0 {
+	models, asOf, ok := PerfCache()
+	if !ok {
 		return false
 	}
 	perf.mu.Lock()
 	defer perf.mu.Unlock()
-	perf.models, perf.source = f.rows(), "cache"
-	if t, err := time.Parse(time.RFC3339, f.FetchedAt); err == nil {
-		perf.asOf = t.Format("2006-01-02")
-	}
+	perf.models, perf.source, perf.asOf = models, "cache", asOf
 	return true
+}
+
+// PerfCache reads the cached feed without installing it: what the last live
+// fetch listed and the day it was fetched. Doctor reports the cache's age
+// this way, next to a brain that may hold a newer fetch in memory.
+func PerfCache() (models []AAModel, asOf string, ok bool) {
+	data, err := os.ReadFile(PerfCachePath())
+	if err != nil {
+		return nil, "", false
+	}
+	var f perfFile
+	if err := json.Unmarshal(data, &f); err != nil || len(f.Models) == 0 {
+		return nil, "", false
+	}
+	if t, err := time.Parse(time.RFC3339, f.FetchedAt); err == nil {
+		asOf = t.Format("2006-01-02")
+	}
+	return f.rows(), asOf, true
 }
 
 // SetPerfModels installs a freshly fetched feed and caches it on disk.
@@ -178,6 +196,38 @@ func perfOrPrior(leg Leg) float64 {
 	return QualityPrior(leg) * 10 * 0.55 // priors top out at 9.5 ≈ the index's ~53 ceiling
 }
 
+// EffortIndex is the feed's intelligence index for the leg's model AT an
+// effort, read off the per-effort rows the feed carries beside the plain
+// one (claude-opus-5-5-medium, gpt-5-5-low, ...). The plain row is the
+// model at its top setting, so max reads it. ok is false when the feed has
+// no row for that effort - the caller falls back to the plain index and
+// must not present it as effort-specific.
+func EffortIndex(leg Leg, effort Effort) (float64, bool) {
+	models, _, _ := PerfModels()
+	m, ok := MatchAA(models, leg)
+	if !ok {
+		return 0, false
+	}
+	base := strings.ToLower(m.Slug)
+	for {
+		t := effortSuffix.ReplaceAllString(base, "")
+		if t == base {
+			break
+		}
+		base = t
+	}
+	if effort == "" || effort == EffortMax {
+		return m.IntelligenceIndex, m.IntelligenceIndex > 0
+	}
+	want := base + "-" + string(effort)
+	for _, x := range models {
+		if strings.ToLower(x.Slug) == want && x.IntelligenceIndex > 0 {
+			return x.IntelligenceIndex, true
+		}
+	}
+	return m.IntelligenceIndex, false
+}
+
 // RankByPerf orders legs by perf index, highest first; ties keep ladder order.
 func RankByPerf(legs []Leg) []Leg {
 	out := append([]Leg{}, legs...)
@@ -212,10 +262,11 @@ func FrontierLegsFor(r Requirements) []Leg {
 	return all
 }
 
-// FrontierChain is the /frontier failover order: every frontier leg by perf,
-// then every other leg by perf - so when the frontier tier is closed the
-// work lands on the next most capable model that is open, never on whatever
-// the cheap ladder had at hand. The failed leg is left out.
+// FrontierChain is the /frontier failover order: claude at standard settings
+// when the frontier tier itself closed (see FrontierChainFor), then every
+// frontier leg by perf, then every other leg by perf - so when the frontier
+// tier is closed the work lands on the next most capable model that is open,
+// never on whatever the cheap ladder had at hand. The failed leg is left out.
 func FrontierChain(failed Leg) []Leg { return FrontierChainFor(failed, Requirements{}) }
 
 // FrontierChainFor is FrontierChain with a capability floor: legs that can
@@ -232,6 +283,17 @@ func FrontierChainFor(failed Leg, r Requirements) []Leg {
 				out = append(out, l)
 			}
 		}
+	}
+	// The frontier tier closing is claude's own tier limit (a pinned fable's
+	// window, the extra-usage spend cap), not the CLI's: its other models
+	// still answer on the same credential, so claude at standard settings
+	// leads whatever the index says. The morning Opus 5.5 shipped
+	// (2026-09-22) the index ranked astra-xhigh above the Opus 5 row claude
+	// read until the feed listed 5.5, and a fresh row can lag the feed
+	// again: that must never send a /frontier turn to another subscription
+	// before its own CLI has been retried.
+	if failed == LegFrontier {
+		add(FilterCapable([]Leg{LegClaude}, r))
 	}
 	add(FilterCapable(FrontierLegs(), r))
 	add(FilterCapable(RankByPerf(AllLegs), r))
@@ -272,6 +334,12 @@ func isEffortVariant(slug string) bool { return effortSuffix.MatchString(strings
 // least a point better. ok=false when the leg is current or unlisted.
 func UpgradeFor(leg Leg) (PerfRow, bool) {
 	models, _, _ := PerfModels()
+	return UpgradeIn(models, leg)
+}
+
+// UpgradeIn is UpgradeFor against a given feed (a fetch not yet installed,
+// the cache doctor reads without touching the active ranking).
+func UpgradeIn(models []AAModel, leg Leg) (PerfRow, bool) {
 	cur, ok := MatchAA(models, leg)
 	if !ok {
 		return PerfRow{}, false
@@ -299,4 +367,90 @@ func UpgradeFor(leg Leg) (PerfRow, bool) {
 		return PerfRow{}, false
 	}
 	return rowOf(best), true
+}
+
+// ── what a refresh changed ───────────────────────────────────────────────────
+//
+// A refresh is only useful if someone hears what moved. Three things can: a
+// model the feed did not list before (Grok 4.7 the day after its release), a
+// leg whose row moved (grok-max read grok-4-6 until grok-4-7 was listed under
+// its own slug), and a leg the feed now flags ⇡. The brain logs each and
+// posts it to the sidebar's activity feed; nothing retargets on its own
+// (brain_upgrade.go).
+
+// PerfMove is a leg now reading a different row than before.
+type PerfMove struct {
+	Leg      Leg
+	From, To PerfRow // From is empty when the leg was unlisted before
+}
+
+// PerfFlag is a leg the feed flags ⇡: a newer family member outscores its row.
+type PerfFlag struct {
+	Leg              Leg
+	Current, Upgrade PerfRow
+}
+
+// PerfNews is what one feed lists that the previous one did not.
+type PerfNews struct {
+	Arrivals []PerfRow  // base variants new to the feed, best first
+	Moved    []PerfMove // legs now reading a different row
+	Flagged  []PerfFlag // legs flagged ⇡ now that were not, or toward a different model
+}
+
+// Empty is true when the refresh changed nothing worth saying.
+func (n PerfNews) Empty() bool {
+	return len(n.Arrivals) == 0 && len(n.Moved) == 0 && len(n.Flagged) == 0
+}
+
+// PerfFlags lists every leg a feed flags ⇡, in roster order.
+func PerfFlags(models []AAModel) []PerfFlag {
+	var out []PerfFlag
+	for _, leg := range AllLegs {
+		up, ok := UpgradeIn(models, leg)
+		if !ok {
+			continue
+		}
+		cur, _ := MatchAA(models, leg)
+		out = append(out, PerfFlag{Leg: leg, Current: rowOf(cur), Upgrade: up})
+	}
+	return out
+}
+
+// PerfDiff is the news in next that prev did not carry. Effort variants and
+// unscored rows are not arrivals: the base row is the model, and a row with
+// no index yet ranks nothing.
+func PerfDiff(prev, next []AAModel) PerfNews {
+	seen := map[string]bool{}
+	for _, m := range prev {
+		seen[strings.ToLower(m.Slug)] = true
+	}
+	var news PerfNews
+	for _, m := range next {
+		if seen[strings.ToLower(m.Slug)] || isEffortVariant(m.Slug) || (m.IntelligenceIndex <= 0 && m.CodingIndex <= 0) {
+			continue
+		}
+		news.Arrivals = append(news.Arrivals, rowOf(m))
+	}
+	sort.SliceStable(news.Arrivals, func(i, j int) bool { return news.Arrivals[i].Perf > news.Arrivals[j].Perf })
+	for _, leg := range AllLegs {
+		before, had := MatchAA(prev, leg)
+		after, has := MatchAA(next, leg)
+		if has && (!had || before.Slug != after.Slug) {
+			mv := PerfMove{Leg: leg, To: rowOf(after)}
+			if had {
+				mv.From = rowOf(before)
+			}
+			news.Moved = append(news.Moved, mv)
+		}
+	}
+	was := map[Leg]string{}
+	for _, f := range PerfFlags(prev) {
+		was[f.Leg] = f.Upgrade.Slug
+	}
+	for _, f := range PerfFlags(next) {
+		if was[f.Leg] != f.Upgrade.Slug {
+			news.Flagged = append(news.Flagged, f)
+		}
+	}
+	return news
 }

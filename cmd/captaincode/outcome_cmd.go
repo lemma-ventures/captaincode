@@ -14,6 +14,7 @@ package main
 // record acceptance evidence while the brain is running.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -62,6 +63,9 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 		// A sweep is task-wide: it settles every pending outcome whose own
 		// evidence has decided it (settle.go), so it carries no task id.
 		if req.Action == "settle" {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			b.ledger.SweepCommits(ctx, time.Now())
+			cancel()
 			n := b.ledger.SettleOutcomes(time.Now())
 			if err := b.ledger.Save(); err != nil {
 				fmt.Fprintf(os.Stderr, "captain brain: save outcome sweep: %v\n", err)

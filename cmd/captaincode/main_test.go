@@ -20,6 +20,12 @@ func TestMain(m *testing.M) {
 	// broke every opencode leg (2026-09-18).
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
 	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
+	// The director-path tests stub the PLAN call; the typed pick (the
+	// default since 2026-09-22) has its own tests, which opt in. Solo
+	// verification runs real test commands in real repositories; off here.
+	os.Setenv("CAPTAIN_DIRECTOR_PICK", "0")
+	os.Setenv("CAPTAIN_SOLO_VERIFY", "0")
+	os.Setenv("CAPTAIN_TRIAGE_SHADOW_RATE", "0")
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

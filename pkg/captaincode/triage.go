@@ -40,7 +40,28 @@ type TriageResult struct {
 	Domain     Domain
 	Confidence float64 // 0..1 - margin-based; below ~0.6 consider tier 1
 	Why        string  // one line for logs and `captain why`
+	// By names who settled the class: heuristic, classify (the free-leg
+	// call), jev, or director. Recorded on the decision and the event so a
+	// class can be attributed to the tier that produced it (stage 1).
+	By string
+	// Irreversible marks work that cannot be undone cheaply - a migration, a
+	// deletion, a deploy, a force-push, money moving. It raises the effort a
+	// rung (effort.go) and reserves the strongest settings for it.
+	Irreversible bool
+	// MidTierP is the decision leg's estimate that a capable mid-tier
+	// (non-frontier) worker completes this correctly first time, 0..1; 0
+	// when nobody estimated it. The ex-ante quality estimator the cascade
+	// literature calls the critical factor (stage 2).
+	MidTierP float64
 }
+
+// Triage sources, the values TriageResult.By takes.
+const (
+	TriageByHeuristic = "heuristic" // tier 0
+	TriageByClassify  = "classify"  // the free-leg classify, tier 1's fallback
+	TriageByJev       = "jev"       // the decision leg, tier 1
+	TriageByDirector  = "director"  // tier 2 re-rated the class
+)
 
 // NeedsDirector reports whether this task justifies the LLM director call.
 func (t TriageResult) NeedsDirector() bool { return t.Class == ClassHigh }
@@ -107,7 +128,26 @@ var (
 			"methodolog")...)
 
 	questionish = regexp.MustCompile(`(?i)^\s*(?:what|who|when|where|which|why|how|is|are|does|do|can)\b`)
+
+	// irreversibleSigs mark work with no cheap undo. Deliberately narrow: a
+	// task that MENTIONS a deploy in passing is not one that performs it, so
+	// these are imperative forms and destructive commands, not nouns.
+	irreversibleSigs = sigs(1,
+		"drop (?:the )?(?:table|database|column|index)", "rm -rf", "git push --force", "force[- ]push",
+		"delete (?:the |all |every )?(?:branch|repo|repository|bucket|database|table|records?|users?|files?)",
+		"run (?:the )?migration", "migrate (?:the )?(?:database|db|schema|prod)", "deploy (?:to|it to|this to)? ?(?:prod|production|live)",
+		"rotate (?:the )?(?:keys?|secrets?|credentials?)", "revoke", "wipe", "truncate (?:the )?table",
+		"send (?:the )?(?:payment|funds|money|transfer)", "charge (?:the )?(?:card|customer)", "publish (?:the )?(?:release|package|npm|crate)",
+		"tag (?:the )?release", "reset --hard", "purge", "destroy")
 )
+
+// IrreversibleTask reports whether the task asks for work without a cheap
+// undo (see irreversibleSigs). Tier 0's answer; jev's is calibrated and
+// replaces it when asked (systemone.go).
+func IrreversibleTask(task string) bool {
+	n, _ := score(task, irreversibleSigs)
+	return n > 0
+}
 
 func score(t string, ss []signal) (int, []string) {
 	n := 0
@@ -158,7 +198,21 @@ func TriageTask(task string) TriageResult {
 	case lo > hi && (realLo > 0 || (words <= 12 && anchors == 0)):
 		class, margin = ClassTrivial, lo-hi
 	default:
+		// Medium used to carry a fixed margin of 1, which capped its
+		// confidence at 0.70 and left every medium task without a domain
+		// hit at 0.50 - under the tier-1 bar, paying the ~5s (25s cap)
+		// free-leg classify on the one class that is the ordinary case. A
+		// constructive anchor ("implement", "write a unit test") and an
+		// ordinary length (13-60 words) are POSITIVE evidence of medium
+		// work, not the absence of evidence for the other two, so they
+		// count toward the margin. A bare fragment still lands at 0.50.
 		class, margin = ClassMedium, 1
+		if anchors > 0 {
+			margin++
+		}
+		if words >= 13 && words <= 60 && hi == 0 && realLo == 0 {
+			margin++
+		}
 	}
 
 	cd, cdHits := score(t, codeSigs)
@@ -204,7 +258,7 @@ func TriageTask(task string) TriageResult {
 	}
 
 	why := fmt.Sprintf("hi=%d%v lo=%d%v dom=%s%v", hi, trim3(hiHits), lo, trim3(loHits), domain, trim3(dHits))
-	return TriageResult{Class: class, Domain: domain, Confidence: conf, Why: why}
+	return TriageResult{Class: class, Domain: domain, Confidence: conf, Why: why, By: TriageByHeuristic, Irreversible: IrreversibleTask(t)}
 }
 
 func trim3(h []string) []string {
@@ -226,20 +280,21 @@ func min(a, b int) int {
 // gate; force it or say /quality to override), and the DIRECTOR's leg never
 // appears (it is excluded from auto-assignment everywhere else too). Orders
 // come from the Jul 19–31 scorecards: grok 7.7 leads prose, free is the
-// zero-cost trivial default, codex/cursor lead code.
+// zero-cost trivial default, cursor/codex lead code. OpenAI's tiers split
+// (2026-09-22): luna (GPT-6 Luna) takes trivial code, codex (GPT-6 Sol) medium.
 func FastLadder(c Class, d Domain) []Leg {
 	var pref []Leg
 	if c == ClassTrivial {
 		switch d {
 		case DomainCode:
-			pref = []Leg{LegFree, LegCodex, LegGrok, LegMiniMax}
+			pref = []Leg{LegFree, LegLuna, LegGrok, LegMiniMax}
 		default: // editorial / research / general one-liners
 			pref = []Leg{LegFree, LegGrok, LegMiniMax, LegGLM}
 		}
 	} else {
 		switch d {
 		case DomainCode:
-			pref = []Leg{LegCursor, LegCodex, LegGrok, LegFree}
+			pref = []Leg{LegCursor, LegCodex, LegGrok, LegLuna, LegFree}
 		case DomainResearch:
 			pref = []Leg{LegGrok, LegGLM, LegMiniMax, LegCursor}
 		default: // editorial / general
@@ -308,6 +363,13 @@ Task:
 // "…called OPSIS. /quality review…" was silently ignored (2026-08-01).
 var midPrefer = regexp.MustCompile(`(?i)(?:^|\s)/(quality|best|speed|fast|save|cheap|frontier)\b`)
 
+// leadQ is that leading /q, after any other leading directive ("/q fix X",
+// "/codex /q fix X"). The fork read it for its own route call; captain/auto
+// turns are routed here, from midPrefer alone, so a leading /q was stripped
+// as a directive with no preference behind it and never reached the
+// /quality lane (found 2026-09-23).
+var leadQ = regexp.MustCompile(`(?i)^\s*(?:/[a-z][a-z0-9-]*[\s:]+)*/q[\s:]`)
+
 // MidPromptFrontier reports a /frontier stated anywhere in the turn but its
 // head (the head is the pseudo-leg, read by the dispatch): the request's
 // effort is the ceiling on whichever leg runs - "/claude /frontier X" after
@@ -332,6 +394,9 @@ func MidPromptFrontier(task string) bool {
 func MidPromptPrefer(task string) string {
 	m := midPrefer.FindStringSubmatchIndex(task)
 	if m == nil {
+		if leadQ.MatchString(task) {
+			return "quality"
+		}
 		return ""
 	}
 	// A path segment follows immediately: "/quality/report.md" is a file, not a wish.

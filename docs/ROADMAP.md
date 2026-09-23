@@ -871,6 +871,52 @@ Euclid's context/token limits bound retrieved memory, not account spending. An o
 Atlas mandate is an additional action constraint; it does not replace Captain's resource
 controller or imply that a worker's unobserved tool calls were mandate-enforced.
 
+**Routing stages (22 September 2026).** The reflection of the same day
+found that captain estimated *scope* with a regex, mapped it to one of three
+classes, looked effort up from the class, and never closed the loop: 85% of
+outcomes pending, no task ever escalated, the ledger recording the old
+keyword classifier's class and neither effort nor model version, the
+director path spending 22.8s median writing a plan. Five stages landed at
+once, each behind its own switch and each shippable alone:
+
+1. **Close the loop.** Every event and decision carries the routing class,
+   who settled it and how sure, the effort, the model, the path and the
+   attempt number (`ledger.go`, `decision.go`). A durable
+   `routing.jsonl` beside `state.json` keeps every decision, event and
+   settled outcome past the ring buffers (`journal_routing.go`). Outcomes
+   settle from what captain observes itself: the repository's tests on the
+   files a solo worker changed, a follow-up commit that touched them, a
+   corrective re-prompt inside the window, and silence after a delivery
+   (`settle.go`, `verify.go`). jev is asked beside a sample of confident
+   tier-0 turns, where it had never been measured.
+2. **Estimate success per candidate.** A hashed-token kNN over the history
+   gives P(success) per `(leg, effort)` with version discounting and
+   ageing, cold-started from the feed's per-effort rows; jev answers scope,
+   irreversibility and mid-tier success in the one triage call
+   (`estimate.go`, `systemone.go`).
+3. **Pick leg and effort together** by expected cost per successful task,
+   `cost + (1 − P) · repair`, with latency tolerance per class, quota from
+   the window's burn rate, frontier work defaulting to medium, irreversible
+   work and later attempts climbing a rung, and cursor pinned to a named
+   rung so its runs are attributable (`expected.go`, `effort.go`,
+   `legs.go`). Gated on labelled outcomes; the value order runs until then.
+4. **Cheap, verify, escalate** for solo turns: tests, then a repair, then
+   the same leg one rung up, then the next stronger leg, bounded by the
+   M2.5 policy and the M2.4 budget, gated by the supervisor's answers
+   (`brain_verify.go`).
+5. **Learn online, then distill.** Thompson sampling over the same arms
+   behind a labelled-count gate, and `captain policy distill` exporting
+   the labelled history as training rows (`bandit.go`).
+
+Four quick wins stand on their own: the director answers a typed choice
+over the value menu in seconds instead of a plan (`Manager.Pick`); the
+judge's own leg joins a high-class menu; medium tasks earn a real tier-0
+margin and stop paying the free-leg classify; and effort and model version
+are on every event. `CONFIGURATION.md` lists every switch. What is NOT
+yet true: the estimator has no labelled history on any install older than
+this change, so the expected-cost order and the bandit refuse until their
+gates are met and the decisions say so.
+
 **M2.6 status (20 September 2026).** The decision leg stopped being one
 vendor.
 
@@ -1621,6 +1667,52 @@ record: stocked, used, use rate, and the mean usefulness over the runs that
 carried a grade. Only the runs the director scores are graded
 (`CAPTAIN_ASSESS_MIN_SCORED`), so a skill can be stocked many times and carry
 no grade at all - the report says so rather than showing a mean of one.
+
+**M3.9 addendum (22 September 2026): security first, on every shelf.**
+Selection by the task's words cannot stock a security skill: "add a login
+form" and "wire up this SDK" never say the word, and they are exactly the
+changes a security reviewer reads. So the shelf now has an always-on list,
+`CAPTAIN_SKILLS_ALWAYS`, stocked first and counted against both budgets like
+any other pick. Its default is `security-audit`, from a third first-party
+source: [`cloudflare/security-audit-skill`](https://github.com/cloudflare/security-audit-skill),
+MIT, pinned in code to `c1c8a8c`, the commit that was read in full before it
+was admitted - 20 files, a 22 KiB `SKILL.md`, and two validators at the skill's
+root that are plain Node reading the files they are pointed at (no network, no
+install, no child process; only their own tests spawn one). A newer head is a
+new review, not a sync. A name the catalog does not hold is simply not
+stocked, and `captain doctor` says it is missing and how to sync it.
+
+Every worker prompt - solo, team, workflow stage and `/frontier` - now also
+carries a security-first line: prefer the standard library or a dependency the
+project already has; otherwise confirm the exact package name and publisher on
+the official registry, pin a maintained release in the lockfile, read install
+scripts before they run, and name every dependency added or changed in the
+final message. The dependency half is aimed at a real attack: a model that
+adds a package by the name it remembers can install a typosquat, or a name it
+invented that someone has since registered. With the skill synced, the line
+points at it in guidance mode, the skill's own default; its full audit fans
+out across many agents and writes a report tree, so only the user starts one.
+`/frontier` had carried none of the standing contracts and stocked no shelf;
+it now gets both. `CAPTAIN_WORKER_SECURITY=0` drops the line.
+
+Always-on made the solo shelf the common case instead of the rare one, and
+that exposed four faults in staging, each fixed with a test. Two turns
+overlapping in one directory shared nothing, so the first to finish deleted
+the skill from under the second; shelves in a directory now share a
+refcounted copy and the last one out removes it. A linked worktree has no
+`.git/info/exclude` of its own - git reads the common directory's - so a
+parallel worker's shelf showed in the diff M3.1 merges back; the exclusion is
+now written where git reads it. The old block excluded every `.agents/skills/`
+and `.claude/skills/` directory anywhere in the repository, hiding the user's
+own untracked skills with it; it now names each staged path exactly, anchored
+at the directory the shelf is in. And a brain killed mid-turn
+left a copy the next turn took for the user's own, for good; a staged copy now
+carries a `.captain-staged` marker, and marked residue is taken back and
+refreshed. `captain skills unstage` went by catalog name alone, so it deleted
+a user's own copy of any catalog skill - the likely case once security-audit
+is on every shelf, since Cloudflare's README installs it into the repository.
+It now takes back only marked copies and the links left dangling by them, and
+names anything else it finds under a catalog name.
 
 
 ## M4 — Make Captain portable

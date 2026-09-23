@@ -363,6 +363,7 @@ func TestRerouteChainRespectsTheTimeBudget(t *testing.T) {
 func TestAPreferenceNeverFansOutUnlessLegsAreNamed(t *testing.T) {
 	t.Setenv("CAPTAIN_TEAM", "1")
 	t.Setenv("CAPTAIN_TRIAGE", "0") // every turn reaches the director
+	t.Setenv("CAPTAIN_LANES", "0")  // …a /quality one too: the lane never asks it (brain_lanes_test.go)
 	b := teamBrain()
 	var fanOut []bool
 	b.planFn = func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {

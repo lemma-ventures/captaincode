@@ -31,18 +31,19 @@ type AAModel struct {
 }
 
 // legAAPatterns maps each leg to ordered lowercase substrings matched against
-// an AA model's slug+name. Order matters: the codex leg runs the latency-
-// optimized SPARK variant, so "spark" must match before plain codex - the
-// full model would overstate the leg. Legs with no pattern hit keep their
+// an AA model's slug+name. Order matters: the first pattern that hits wins,
+// so a leg's own model comes before the predecessor it reads until the feed
+// scores it (codex: GPT-6 Sol, then 5.6 Sol). Legs with no pattern hit keep their
 // hand-written prior (cursor's Composer and grok-build are rarely listed).
 var legAAPatterns = map[Leg][]string{
 	// Family fallbacks (substring, shortest slug wins) for when the exact
 	// registry slug is absent from the feed - a renamed snapshot must not
 	// silently drop a leg's prior.
-	LegCodex:    {"gpt-5-5", "gpt-5.5"}, // the fast lane shares gpt-5.5's score; spark left the ChatGPT route 2026-09-15
+	LegCodex:    {"gpt-6-sol", "gpt-5-6-sol"},   // fast mode shares Sol's score; reads 5.6 Sol until AA scores GPT-6 Sol
+	LegLuna:     {"gpt-6-luna", "gpt-5-6-luna"}, // likewise 5.6 Luna until GPT-6 Luna is scored
 	LegGrok:     {"grok-build", "grok build"},
 	LegGrokMax:  {"grok-4-7", "grok-4-6"},
-	LegClaude:   {"claude-fable"},
+	LegClaude:   {"claude-opus-5"}, // the Opus 5 row when the feed lacks 5.5 or lists it unscored, as grok-max reads 4.6 until 4.7 is scored
 	LegCodexCLI: {"gpt-6-astra"},
 	LegGemini:   {"gemini-3-7-flash"},
 	LegKimi:     {"kimi-k3"},
@@ -72,9 +73,21 @@ func aaPatterns(leg Leg) []string {
 // fallbacks): an EXACT slug match wins; among substring matches the shortest
 // slug is the base variant and is preferred (2026-09-10: substring-first
 // matched codex-cli to "GPT-6 Astra (Non-reasoning)" and claude to a
-// "…Opus 4.8 Fallback" row).
+// "…Opus 4.8 Fallback" row). A row with either index ranks.
 func MatchAA(models []AAModel, leg Leg) (AAModel, bool) {
-	usable := func(m AAModel) bool { return m.CodingIndex > 0 || m.IntelligenceIndex > 0 }
+	return matchAA(models, leg, func(m AAModel) bool { return m.CodingIndex > 0 || m.IntelligenceIndex > 0 })
+}
+
+// MatchAACoding is MatchAA for the priors: a row without a coding index yet
+// (the feed lists a model days before its coding evals land - Opus 5.5 and
+// Grok 4.7 on 2026-09-22) is passed over for the newest family member that
+// has one, so a sync the day a model ships neither divides by zero nor
+// zeroes a leg's prior.
+func MatchAACoding(models []AAModel, leg Leg) (AAModel, bool) {
+	return matchAA(models, leg, func(m AAModel) bool { return m.CodingIndex > 0 })
+}
+
+func matchAA(models []AAModel, leg Leg, usable func(AAModel) bool) (AAModel, bool) {
 	for _, pat := range aaPatterns(leg) {
 		for _, m := range models {
 			if strings.ToLower(m.Slug) == pat && usable(m) {
@@ -106,13 +119,13 @@ func MatchAA(models []AAModel, leg Leg) (AAModel, bool) {
 // relative capability, not an absolute unit. Without the anchor model in the
 // data the scale would be meaningless, so that's an error, not a guess.
 func ProposePriors(models []AAModel) (map[Leg]float64, error) {
-	anchor, ok := MatchAA(models, LegClaude)
-	if !ok {
-		return nil, errors.New("claude (anchor model) not found in benchmark data - cannot scale priors")
+	anchor, ok := MatchAACoding(models, LegClaude)
+	if !ok || anchor.CodingIndex == 0 {
+		return nil, errors.New("claude (anchor model) not found in benchmark data with a coding index - cannot scale priors")
 	}
 	out := map[Leg]float64{}
 	for _, leg := range AllLegs {
-		m, ok := MatchAA(models, leg)
+		m, ok := MatchAACoding(models, leg)
 		if !ok {
 			continue
 		}
@@ -138,7 +151,7 @@ type DomainPriors map[string]float64
 // intelligence index (the prose domains have no benchmark of their own),
 // all ← the mean of the two. Legs with no row are skipped.
 func ProposeDomainPriors(models []AAModel) (map[Leg]DomainPriors, error) {
-	anchor, ok := MatchAA(models, LegClaude)
+	anchor, ok := MatchAACoding(models, LegClaude)
 	if !ok || anchor.CodingIndex == 0 || anchor.IntelligenceIndex == 0 {
 		return nil, errors.New("claude (anchor model) not found in benchmark data with both indices - cannot scale priors")
 	}
@@ -159,7 +172,7 @@ func ProposeDomainPriors(models []AAModel) (map[Leg]DomainPriors, error) {
 	}
 	out := map[Leg]DomainPriors{}
 	for _, leg := range AllLegs {
-		m, ok := MatchAA(models, leg)
+		m, ok := MatchAACoding(models, leg)
 		if !ok {
 			continue
 		}

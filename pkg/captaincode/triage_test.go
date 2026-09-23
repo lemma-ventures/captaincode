@@ -89,6 +89,8 @@ func TestFastLadderExcludesClaudeAndDirector(t *testing.T) {
 	// Trivial anything starts free (zero marginal cost, 4.8s median).
 	assert.Equal(t, LegFree, FastLadder(ClassTrivial, DomainEditorial)[0])
 	assert.Equal(t, LegFree, FastLadder(ClassTrivial, DomainCode)[0])
+	assert.Equal(t, LegLuna, FastLadder(ClassTrivial, DomainCode)[1], "OpenAI's cheap tier takes trivial code; Sol (codex) is kept for medium")
+	assert.Contains(t, FastLadder(ClassMedium, DomainCode), LegCodex)
 }
 
 // "…it will be called OPSIS. /quality review…" - the fork only parses
@@ -104,11 +106,17 @@ func TestMidPromptPrefer(t *testing.T) {
 		{"draft it /cheap and I'll polish", "save"},
 		{"run /quality on it", "quality"}, // referencing the command IS asking for it
 
+		// The short alias counts at the head of the turn, after any leg prefix.
+		{"/q refactor the lexer", "quality"},
+		{"/codex /q refactor the lexer", "quality"},
+
 		// Never fire on paths, code, or absent tokens.
 		{"open /quality/report.md and check the numbers", ""},
 		{"the binary is at /usr/bin/quality", ""},
 		{"we value quality and speed here", ""}, // words without the slash are prose
 		{"grep -r /q the repo", ""},             // the short alias is too ambiguous mid-prompt
+		{"/qa the release", ""},
+		{"/q/notes.md is stale", ""},
 		{"", ""},
 	}
 	for _, c := range cases {

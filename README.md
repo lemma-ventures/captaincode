@@ -150,7 +150,7 @@ tells you clearly when it finds nothing there. See [plugin/README.md](plugin/REA
 | Command | What it does |
 |---|---|
 | `/team` | Put several models on the same task |
-| `/claude`, `/frontier` | Send the task to a specific agent, or to the strongest one available |
+| `/claude`, `/frontier` | Send the task to a specific agent, or let the strongest agents take turns on it |
 | `/parallel`, `/repeat` | Run work in background threads while you keep typing |
 
 ### From the shell
@@ -163,7 +163,7 @@ tells you clearly when it finds nothing there. See [plugin/README.md](plugin/REA
 | `captain jev` | Check the Jev decision leg, or ask it a question by hand |
 | `captain stats` · `captain runs` | Look back at what ran, what it cost and how it went |
 
-See the full list in the [CLI cheat sheet](docs/CLI.md).
+See the full list in the [CLI cheat sheet](docs/CLI.md), and the `/…` words you type in a session in the [TUI cheat sheet](docs/TUI.md).
 
 ## How it works
 
@@ -232,6 +232,7 @@ captain jev classify "fix the typo in README"   # see how it would triage a task
 |---|---|
 | 🚀 [Agent setup](AGENT_SETUP.md) | Step-by-step install a coding agent can follow |
 | ⌨️ [CLI cheat sheet](docs/CLI.md) | Every shell command |
+| 💬 [TUI cheat sheet](docs/TUI.md) | Every `/…` word in a session |
 | ⚙️ [Configuration](docs/CONFIGURATION.md) | All settings |
 | 🏗️ [Architecture](docs/ARCHITECTURE.md) | How the pieces fit together |
 | ➕ [Adding a leg](docs/ADDING_A_LEG.md) | Connect a new model |

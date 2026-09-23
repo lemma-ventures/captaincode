@@ -16,6 +16,7 @@ import (
 // reading long after the shell was killed: a 5-minute budget took 22 minutes
 // to return, and the caller then read "failed" (live 2026-09-21, lemma).
 func TestATimedOutCheckIsKilledWithItsChildrenAndReportsNoVerdict(t *testing.T) {
+	outsideEvidenceRun(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "captain-test-marker"), []byte("x"), 0o644))
 	old := testCommandByFile
@@ -42,6 +43,7 @@ func TestATimedOutCheckIsKilledWithItsChildrenAndReportsNoVerdict(t *testing.T) 
 
 // A check that finishes inside the budget is an ordinary verdict, either way.
 func TestACheckThatFinishesIsNotMarkedTimedOut(t *testing.T) {
+	outsideEvidenceRun(t)
 	old := testCommandByFile
 	defer func() { testCommandByFile = old }()
 	t.Setenv("CAPTAIN_VERIFY_TIMEOUT", "30s")

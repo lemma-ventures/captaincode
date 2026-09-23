@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -361,6 +362,22 @@ type brain struct {
 	// the policy controls the per-failure sequence. Set at init from
 	// DefaultEscalationPolicy(); overridable in tests.
 	escalation captaincode.EscalationPolicy
+
+	// pickFn is the typed director pick's test seam (manager.go Pick).
+	pickFn func(task string, class captaincode.Class, prefer string, menu []captaincode.Scored, self captaincode.Leg) (captaincode.WorkerPick, error)
+	// The success estimator (brain_estimate.go): rebuilt from the routing
+	// history every estimatorTTL; estimatorFn is its test seam.
+	est         *captaincode.SuccessEstimator
+	estAt       time.Time
+	labeled     int
+	estimatorFn func() *captaincode.SuccessEstimator
+	// lastSupervise holds the supervisor's last answers per running worker
+	// (brain_supervise.go), read by the verify sequence (brain_verify.go).
+	smu           sync.Mutex
+	lastSupervise map[string]map[string]float64
+	// lastDelivered maps a workspace to the task it last delivered, so the
+	// next prompt there can be read as a follow-up (brain_openai.go).
+	lastDelivered map[string]deliveredTask
 
 	// processID identifies this brain process for ownership claims (M3.3).
 	// A brain restart mints a new one; an interrupted attempt's owner is stale.
@@ -737,6 +754,34 @@ func (b *brain) plan(ws captaincode.Workspace, task string, class captaincode.Cl
 	return b.planWith(ws, nil, task, class, prefer, open, stats, teams, allowFanOut)
 }
 
+// directorPickEnabled: CAPTAIN_DIRECTOR_PICK=0 restores the plan-and-
+// rationale call on the director path.
+func directorPickEnabled() bool { return os.Getenv("CAPTAIN_DIRECTOR_PICK") != "0" }
+
+// directorSelfEnabled: CAPTAIN_DIRECTOR_SELF=0 keeps the judge's own leg off
+// every menu, as before.
+func directorSelfEnabled() bool { return os.Getenv("CAPTAIN_DIRECTOR_SELF") != "0" }
+
+// pickMenuMax bounds the typed pick's menu: the top rows by value are the
+// whole question; a twelve-row menu is a plan prompt again.
+const pickMenuMax = 6
+
+// pick is the typed director choice (manager.go Pick) behind its test seam.
+// Called under mu (route holds it).
+func (b *brain) pick(task string, class captaincode.Class, prefer string, menu []captaincode.Scored, self captaincode.Leg) (captaincode.WorkerPick, error) {
+	if b.pickFn != nil {
+		return b.pickFn(task, class, prefer, menu, self)
+	}
+	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
+	if prefer == "" {
+		mgr.SteerNote = b.steerNote()
+	}
+	mgr.CallLabel, mgr.OnCall = "pick", b.chargeRoute(task)
+	p, err := mgr.Pick(task, class, prefer, menu, self)
+	b.noteDirectorOutcome(err)
+	return p, err
+}
+
 // planWith is plan with caller-bound legs: a leg or /frontier named right
 // after /team is a BINDING team member, passed to the director as such.
 func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
@@ -750,6 +795,9 @@ func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, t
 	// The workspace's memory rides along: the director plans with what the
 	// project already decided and learned, not from the task alone.
 	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Required: required, Hints: b.planHints, Memory: captaincode.DirectorMemoryWith(ws.Dir, ws.Brains)}
+	if prefer == "" {
+		mgr.SteerNote = b.steerNote()
+	}
 	mgr.CallLabel, mgr.OnCall = "director", b.chargeRoute(task)
 	p, err := mgr.Plan(task, class, prefer, open, stats, teams, allowFanOut)
 	b.noteDirectorOutcome(err)
@@ -1197,9 +1245,9 @@ func (b *brain) rerouteTarget(failed captaincode.Leg, prompt string, alsoExclude
 		// The chain is the perf ranking (captaincode.FrontierChain): the
 		// frontier legs by index, then every other leg by index. When the
 		// frontier tier is closed, claude itself (standard settings) comes
-		// first as the strongest model; when none of them is open the work
-		// lands on the next most capable leg - kimi, glm - not on whatever
-		// the cheap ladder had at hand.
+		// first - the same CLI, still open (perf.go FrontierChainFor); when
+		// none of them is open the work lands on the next most capable leg -
+		// kimi, glm - not on whatever the cheap ladder had at hand.
 		for _, l := range captaincode.FrontierChain(failed) {
 			if excluded[l] || (len(b.allowed) > 0 && !b.allowed[l]) {
 				continue
@@ -1529,6 +1577,37 @@ func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
 		" Never end a turn promising to report later; either finish the work inside this turn or arm that callback and say you armed it.", dir, leg)
 }
 
+// securityContract makes security the worker's starting posture rather than a
+// review that may or may not come later ("all agents should be conscious
+// about security first, in particular when they code or add libraries",
+// 2026-09-22). Dependencies are the sharp end: an agent that adds a package
+// by the name it remembers can pull a typosquat, or a name it invented that
+// someone has since registered, and an install script runs with the user's
+// credentials before anyone reads the diff. The line asks for what a careful
+// reviewer would, and has the worker name every dependency it touched so the
+// user sees it in the answer, not in a lockfile. When the always-on
+// security-audit skill (pkg skills.go) is synced, the line points at it in
+// guidance mode - the skill's own default; its full audit fans out across
+// many agents and writes a report tree, so only the user starts one.
+// CAPTAIN_WORKER_SECURITY=0 drops the line; the skill itself is governed by
+// CAPTAIN_SKILLS_ALWAYS.
+func securityContract() string {
+	if os.Getenv("CAPTAIN_WORKER_SECURITY") == "0" {
+		return ""
+	}
+	s := "\n\n[captain] Security first: write every change as one a security reviewer will read." +
+		" Before you add or upgrade a library, prefer the standard library or a dependency the project already has;" +
+		" otherwise confirm the exact package name and publisher on the official registry (typosquatted and hallucinated package names are live attacks)," +
+		" pick a maintained release with a compatible license, pin it in the project's lockfile, and read any install script before it runs - never pipe a download into a shell." +
+		" In code, validate input at trust boundaries, parameterize SQL and shell commands, never hardcode, log or print secrets, keep privileges minimal," +
+		" and never weaken TLS, auth or sandbox checks to make something work. Name every dependency you added or changed in your final message."
+	if captaincode.AlwaysStocked(captaincode.SecuritySkill) {
+		s += " Captain stocks the `" + captaincode.SecuritySkill + "` skill for every task (`.agents/skills/" + captaincode.SecuritySkill + "/SKILL.md` in your working directory):" +
+			" use it in guidance mode for security questions and security-sensitive changes, and run its full audit only when the user asks for one."
+	}
+	return s
+}
+
 const deliverableContract = "\n\n[captain] End-of-turn contract: your FINAL message must contain the complete deliverable itself - the answer, plan, code, or verdict in full. Never end your turn describing what you are about to do. Format the deliverable for scanning: markdown with short paragraphs (≤4 lines each), bullet or numbered lists for enumerations, ### section headers when the answer runs long, and fenced code blocks for code/commands - never one large paragraph."
 
 // narrationOnly detects an intention-only output: short, opens with an
@@ -1595,14 +1674,32 @@ func (b *brain) diffDir() string { return filepath.Join(captainHome(), "diffs") 
 // stocked, when the turn staged a shelf, is what the worker held: the
 // assessment grades it in the same call that grades the work (M3.9).
 func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Result, wsDir string, stocked ...captaincode.SkillRef) {
+	b.recordRunAt(leg, prompt, res, captaincode.Workspace{Dir: wsDir}, "", 1, "", "", stocked...)
+}
+
+// recordRunAt is recordRun with the run's attribution (stage 1): the
+// workspace it ran in (its effort is the run's), the task identity opened
+// before the run (minted here when the caller had none), which attempt of
+// the task this was, and - for a repair or an escalation - the leg whose
+// objective failure it answered and the label the charge carries.
+func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.Result, ws captaincode.Workspace, taskID string, attempt int, escalatedFrom captaincode.Leg, label string, stocked ...captaincode.SkillRef) {
 	if strings.Contains(prompt, "You are a title generator") || captaincode.IsDistillRequest(prompt) {
 		return
 	}
+	wsDir := ws.Dir
 	task := lastUserTurn(prompt)
+	if attempt < 1 {
+		attempt = 1
+	}
 	ev := captaincode.Event{
 		Task: truncate(task, 120), Class: captaincode.Classify(task),
 		Leg: leg, Reason: "wrapper", Outcome: "ok",
 		Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs,
+		Effort: ws.Effort, Model: captaincode.ModelIDAt(leg, ws.Effort),
+		Attempt: attempt, EscalatedFrom: escalatedFrom,
+	}
+	if label != "" {
+		ev.Reason = label
 	}
 	// API legs report tokens but not $: estimate from the registry price so
 	// spend is visible for every leg, not just claude (MM37). CallUsage keeps
@@ -1619,11 +1716,28 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 	// run, so the scoring call - a real provider call against real quota -
 	// is billed to the task that caused it instead of vanishing (M1.2).
 	b.mu.Lock()
-	ev.TaskID, ev.AttemptID = b.chargeTurn(leg, task, usage, res.DurationMs, res.Nudged)
+	ev.TaskID, ev.AttemptID = b.chargeTurn(taskID, leg, task, usage, res.DurationMs, res.Nudged, label)
+	// The class that ROUTED, and who settled it: read off the decision the
+	// identity just attached (stage 1). Without this the scorecards learned
+	// per-class quality under the old keyword classifier's class.
+	if d, ok := b.ledger.DecisionFor(ev.TaskID); ok {
+		if d.Class != "" {
+			ev.Class = d.Class
+		}
+		if d.Domain != "" {
+			ev.Domain = string(d.Domain)
+		}
+		ev.ClassBy, ev.Confidence, ev.Path = d.TriageBy, d.Confidence, d.Path
+		if ev.Effort == "" {
+			ev.Effort = d.Effort
+			ev.Model = captaincode.ModelIDAt(leg, d.Effort)
+		}
+	}
 	b.mu.Unlock()
 	// M3.5: capture what the solo worker changed in the user's workspace so
 	// the handoff brief carries the same artifact evidence a parallel workflow
 	// does. Skipped for title/distill calls and when wsDir is empty (tests).
+	var changed []string
 	if wsDir != "" && ev.AttemptID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		files, digest, diffPath, err := captaincode.CaptureSoloArtifact(ctx, wsDir, b.diffDir(), string(leg))
@@ -1631,13 +1745,17 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "captain brain: solo artifact capture: %v\n", err)
 		} else if len(files) > 0 || digest != "" {
+			changed = files
 			b.mu.Lock()
 			b.ledger.RecordSoloArtifact(ev.AttemptID, files, digest, diffPath)
 			b.mu.Unlock()
 		}
 	}
 	var grades []captaincode.SkillGrade
-	if len(res.Text) >= 200 && res.DurationMs >= 5000 && b.shouldAssess(leg) {
+	// A repair or an escalation attempt is not graded by the director: the
+	// objective check that gated it is its grade, and a judge call for an
+	// attempt that failed `go test` would price the failure twice.
+	if label == "" && len(res.Text) >= 200 && res.DurationMs >= 5000 && b.shouldAssess(leg) {
 		if a, err := b.doAssess(ev.TaskID, task, res.Text, "none", stocked); err == nil {
 			ev.Quality, ev.Verdict, grades = a.Quality, a.Verdict, a.Skills
 			if wsDir != "" { // the grade and its reasoning go to memory too (brain_euclid.go)
@@ -1685,9 +1803,21 @@ func (b *brain) recordRun(leg captaincode.Leg, prompt string, res captaincode.Re
 			Status: captaincode.AcceptancePending,
 		})
 	}
+	// Stage 1: what this run delivered, where, and as what - the settle
+	// window counts from here, a follow-up commit is looked for on these
+	// files, and the next prompt on this workspace is read against it.
+	b.ledger.NoteDelivery(ev.TaskID, wsDir, changed, len(res.Text), leg, ev.Effort, ev.Model, attempt)
+	b.noteDelivered(wsDir, ev.TaskID)
 	// M5.1: and settle the ones whose evidence has since decided them. A
 	// pending column that only a human verdict ever emptied stayed 100%
-	// pending, which is a constant, not a signal (settle.go).
+	// pending, which is a constant, not a signal (settle.go). The commit
+	// sweep first: a commit that kept a worker's files is the acceptance
+	// every other signal approximates.
+	if wsDir != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		b.ledger.SweepCommits(ctx, time.Now())
+		cancel()
+	}
 	b.ledger.SettleOutcomes(time.Now())
 	if err := b.ledger.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save run record: %v\n", err)
@@ -1711,11 +1841,18 @@ func assessmentExitCode(verdict string) int {
 // calls attach to the same task as further attempts as they are threaded
 // through. Only the call row carries money - the task and attempt rows exist
 // so a later charge can find its parent. Caller holds b.mu.
-func (b *brain) chargeTurn(leg captaincode.Leg, task string, usage captaincode.Usage, durationMs int64, nudged bool) (string, string) {
-	taskID := b.openTaskLocked(task)
+func (b *brain) chargeTurn(taskID string, leg captaincode.Leg, task string, usage captaincode.Usage, durationMs int64, nudged bool, label string) (string, string) {
+	if taskID == "" {
+		taskID = b.openTaskLocked(task)
+	} else {
+		b.attachDecision(taskID, task) // the decision parked at route time joins the identity the run opened
+	}
+	if label == "" {
+		label = "worker"
+	}
 	attemptID := captaincode.NewChargeID(captaincode.KindAttempt)
-	b.ledger.RecordCharge(captaincode.Charge{ID: attemptID, Parent: taskID, TaskID: taskID, Kind: captaincode.KindAttempt, Leg: leg, Label: "worker"})
-	b.ledger.RecordCharge(captaincode.Charge{Parent: attemptID, TaskID: taskID, Kind: captaincode.KindCall, Leg: leg, Label: "worker", DurationMs: durationMs, Usage: usage})
+	b.ledger.RecordCharge(captaincode.Charge{ID: attemptID, Parent: taskID, TaskID: taskID, Kind: captaincode.KindAttempt, Leg: leg, Label: label})
+	b.ledger.RecordCharge(captaincode.Charge{Parent: attemptID, TaskID: taskID, Kind: captaincode.KindCall, Leg: leg, Label: label, DurationMs: durationMs, Usage: usage})
 	// M3.3: persist the attempt's lifecycle state. The attempt started
 	// running under this brain's ownership; recordRun completes it.
 	now := time.Now()
@@ -1934,6 +2071,9 @@ type routeReq struct {
 	Prefer string `json:"prefer,omitempty"`
 	Forced string `json:"forced,omitempty"` // force a specific leg (skips the director)
 	ws     captaincode.Workspace
+	// planOnly: the route is asked what it would do, and nothing is sent
+	// (the task API's plan op). A lane does not count it as a turn.
+	planOnly bool
 }
 
 type routeResp struct {
@@ -1980,7 +2120,7 @@ func (b *brain) route(w http.ResponseWriter, r *http.Request) {
 // model inside chatCompletions - the latter so a caller never has to decide a
 // leg before the user's message renders.
 func (b *brain) decideRoute(req routeReq) (routeResp, *routeFail) {
-	resp, fail := b.decideLeg(req)
+	resp, tr, fail := b.decideLegTriage(req)
 	if fail != nil {
 		return resp, fail
 	}
@@ -1993,12 +2133,34 @@ func (b *brain) decideRoute(req routeReq) (routeResp, *routeFail) {
 	if resp.Model == "frontier" || captaincode.MidPromptFrontier(req.Task) {
 		prefer = "frontier"
 	}
-	resp.Effort = string(captaincode.EffortFor(prefer, captaincode.Class(resp.Class)))
+	// The per-task effort decision (effort.go): the class sets the rung,
+	// frontier-class work defaults to medium, irreversible work climbs one.
+	// The expected-cost policy may already have chosen a rung with the leg
+	// (resp.Effort set by the fast path); a stated preference outranks it.
+	if resp.Effort == "" || prefer != "" {
+		resp.Effort = string(captaincode.DecideEffort(prefer, captaincode.Class(resp.Class), captaincode.Leg(resp.Leg), tr.Irreversible, 1))
+	}
+	b.stampPendingEffort(req.Task, captaincode.Effort(resp.Effort))
 	return resp, nil
 }
 
 // decideLeg is decideRoute without the effort: the leg, the brief, the class.
 func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
+	resp, _, fail := b.decideLegTriage(req)
+	return resp, fail
+}
+
+// decideLegTriage is decideLeg returning the triage verdict beside the
+// route, for the effort decision and the record.
+func (b *brain) decideLegTriage(req routeReq) (routeResp, captaincode.TriageResult, *routeFail) {
+	var tr captaincode.TriageResult
+	resp, fail := b.decideLegWith(req, &tr)
+	return resp, tr, fail
+}
+
+// decideLegWith is the route; out receives the triage verdict that settled
+// the class (the heuristic's when triage did not run).
+func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (routeResp, *routeFail) {
 	// Registered first, so it runs last - after the mu defer below has let go.
 	defer b.rememberLast(req.ws.Dir, b.lastRoute())
 	// The user named the workers AND an order ("grok, codex and THEN claude"):
@@ -2052,6 +2214,14 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			fmt.Printf("captain brain: mid-prompt /%s honored for %q\n", p, truncate(req.Task, 60))
 		}
 	}
+	// /quality and /save are lanes (lanes.go, brain_lanes.go): their turns
+	// are spread over the legs that qualify rather than handed to a
+	// director that answered the same way every time. "/cheap" from a
+	// direct caller is /save, and starts on the same ladder.
+	lane := routeLane(req)
+	if lane == captaincode.LaneCheap {
+		req.Prefer = "save"
+	}
 
 	// /oss and /deterministic narrow the legs a turn may run on (pool.go);
 	// a forced leg is the user's word and is not second-guessed.
@@ -2102,6 +2272,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	if triageEnabled() && req.Forced == "" && req.Prefer == "" &&
 		len(captaincode.NamedAssignees(req.Task)) == 0 && !captaincode.TaskNeedsVision(req.Task) {
 		tr := captaincode.TriageTask(req.Task)
+		defer func() { *out = tr }()
 		// The heuristic's own confidence, before any tier-1 answer replaces
 		// it: what decides whether this turn was in the band at all, and so
 		// whether it is a turn worth asking a shadow backend about.
@@ -2135,6 +2306,13 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				// replaced it: a turn captain was going to think about anyway
 				// is a turn worth asking a shadow backend about.
 				openCh = b.openBeside(req.Task, tr.Domain, nil)
+			} else if shadow == nil {
+				// Above the band jev was never asked, so its triage answer
+				// was never measured where the heuristic is surest - the
+				// turns the calibration most needs (stage 1). A sample of
+				// them asks jev beside the route, acts on nothing, and
+				// records the comparison.
+				b.sampleTriageShadow(req.Task, tr)
 			}
 		}
 		if !tr.NeedsDirector() {
@@ -2145,28 +2323,51 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			ladder = captaincode.FilterPool(pool, ladder)
 			if len(ladder) > 0 {
 				leg := ladder[0]
-				totalMs := time.Since(t0).Milliseconds()
-				rationale := fmt.Sprintf("triage fast-path: %s/%s (conf %.2f) - director reserved for high complexity", tr.Class, tr.Domain, tr.Confidence)
+				rationale := fmt.Sprintf("triage fast-path: %s/%s (conf %.2f, %s) - director reserved for high complexity", tr.Class, tr.Domain, tr.Confidence, tr.By)
 				if !pool.Empty() {
 					rationale += " · pool " + pool.String() + ": " + legListShort(ladder, 4)
 				}
 				if valueRoutingEnabled() {
 					rationale += " · value-ranked " + legListShort(ladder, 4)
 				}
+				rationale += steerRationale(b.steerActive() && pool.Empty())
+				// Stages 2-3-5: the eligible legs scored as (leg, effort)
+				// arms by expected cost per successful task. The policy
+				// gate decides whether that order RUNS or is only recorded
+				// beside the value order (brain_estimate.go); either way
+				// the arms are on the decision for `captain why`.
+				var arms []captaincode.ExpectedRow
+				var effort captaincode.Effort
+				path := captaincode.PathValue
+				if valueRoutingEnabled() && routingPolicy() != policyValue {
+					arms = b.expectedArms(tr, req.Task, ladder)
+					if arm, by, why, ok := b.choosePolicy(arms); ok {
+						leg, effort, path = arm.Leg, arm.Effort, by
+						rationale += " · " + why
+					} else {
+						rationale += " · " + why
+					}
+				}
 				if len(ladder) > 1 && b.explore(tr.Class) {
-					leg = ladder[1]
+					leg, effort = ladder[1], ""
 					b.markExplored(req.Task)
 					rationale += fmt.Sprintf(" · EXPLORE: trying runner-up %s to earn it a score", leg)
 				}
+				totalMs := time.Since(t0).Milliseconds()
 				dec := b.valueDecision(tr, leg, rows, totalMs, rationale)
+				if path != captaincode.PathValue {
+					dec.Path, dec.Policy.Name = path, path
+				}
+				dec.Expected, dec.Effort = arms, effort
+				stampTriage(&dec, tr)
 				stampShadow(&dec, shadow, classBy)
 				b.recordOpenShadow(req.Task, dec, openCh, classBy)
 				b.recordDecision(req.Task, dec)
-				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: string(leg), Model: captaincode.ModelID(leg), Rationale: rationale, At: time.Now().Format("15:04:05")}
+				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Rationale: rationale, At: time.Now().Format("15:04:05")}
 				fmt.Printf("captain brain: routed %q → class=%s leg=%s in %dms [triage %s]\n", b.last.Task, tr.Class, leg, totalMs, tr.Why)
-				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: captaincode.ModelID(leg), Text: rationale, Ms: totalMs})
+				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Text: rationale, Ms: totalMs})
 				return routeResp{Class: string(tr.Class), Leg: string(leg), Provider: "captain",
-					Model: string(leg), Brief: req.Task, Rationale: rationale}, nil
+					Model: string(leg), Brief: req.Task, Rationale: rationale, Effort: string(effort)}, nil
 			}
 			// nothing on the fast ladder is open → the director path below still
 			// has the full menu (including cooled legs one rung up)
@@ -2205,13 +2406,33 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 		// an explicit request outranks a bench, and the wrapper still reroutes if
 		// the provider is genuinely down.
 		order, managerOrder = b.widenForNamed(req.Task, order), b.widenForNamed(req.Task, managerOrder)
+		// A high-class task may reach the judge's own leg (the second quick
+		// win): when claude directs, Rungs excludes claude, so the hardest
+		// work - the one class that justifies the strongest model - could
+		// never land on it unless the user named it. The director's leg
+		// joins the high-class menu when it takes tasks, is allowed and is
+		// open; trivial and medium menus are unchanged (the bazooka gate).
+		highClass := classHint == captaincode.ClassHigh || out.Class == captaincode.ClassHigh
+		if highClass && directorSelfEnabled() {
+			dir := captaincode.Director
+			cooling := time.Now().Before(b.ledger.Cooldowns[dir])
+			allowed := len(b.allowed) == 0 || b.allowed[dir]
+			if captaincode.KnownLeg(dir) && captaincode.ServesTasks(dir) && allowed && !cooling && !legInList(dir, managerOrder) && (!needVision || captaincode.LegSupportsVision(dir)) {
+				managerOrder = append(managerOrder, dir)
+				order = append(order, dir)
+			}
+		}
 		if req.Prefer == "quality" {
 			st := b.ledger.Stats()
 			cand := order
 			dir := captaincode.Director
 			cooling := time.Now().Before(b.ledger.Cooldowns[dir])
 			allowed := len(b.allowed) == 0 || b.allowed[dir]
-			if captaincode.KnownLeg(dir) && allowed && !cooling {
+			// Once, and only when it could run the turn: a high-class task
+			// already has the director's leg on the ladder (above), and a
+			// second copy made the menu "claude, claude" - a lane of one.
+			if captaincode.KnownLeg(dir) && captaincode.ServesTasks(dir) && allowed && !cooling &&
+				!legInList(dir, order) && (!needVision || captaincode.LegSupportsVision(dir)) {
 				cand = append([]captaincode.Leg{dir}, order...)
 			}
 			if tq := captaincode.TopQuality(cand, st, 2); len(tq) > 0 {
@@ -2219,6 +2440,23 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			}
 			if tq := captaincode.TopQuality(cand, st, 2); len(tq) > 0 {
 				managerOrder = tq
+			}
+		}
+		// The cheap lane runs open weights (lanes.go): the ladder and the
+		// menu keep only open-weight legs. With none open the turn takes the
+		// old /save path over the whole ladder, and says so.
+		if lane == captaincode.LaneCheap {
+			oss := captaincode.Pool{OSS: true}
+			if lo := captaincode.FilterPool(oss, order); len(lo) > 0 {
+				order = lo
+				if lm := captaincode.FilterPool(oss, managerOrder); len(lm) > 0 {
+					managerOrder = lm
+				}
+			} else {
+				lane = "" // nothing to balance: the director picks, as before lanes
+				msg := "save lane: no open-weight leg is open - /save routes over the whole ladder"
+				fmt.Println("captain brain: " + msg)
+				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: "pool", Model: "save", Text: msg})
 			}
 		}
 		if !pool.Empty() {
@@ -2231,6 +2469,14 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				managerOrder = pm
 			}
 		}
+		if req.Prefer == "" && pool.Empty() && b.steerActive() {
+			d := captaincode.TriageTask(req.Task).Domain
+			if out.Domain != "" {
+				d = out.Domain
+			}
+			order = b.orderBySteer(classHint, d, order)
+			managerOrder = b.orderBySteer(classHint, d, managerOrder)
+		}
 		if len(order) == 0 {
 			return routeResp{}, &routeFail{429, "no eligible legs (all cooling down or excluded by CAPTAIN_LEGS)"}
 		}
@@ -2241,6 +2487,12 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			leg = order[0]
 			rationale = "only runnable option"
 			decPath = captaincode.PathLadder
+		} else if pick, ok := b.pickLane(lane, req.Task, order, classHint, out.Domain); ok {
+			// /quality, /save: the lane's leg that is furthest behind its
+			// share of the recent turns, decided here and at once. The
+			// director was asked this every turn and answered with the top
+			// row every turn; no LLM call is made.
+			leg, rationale, decPath = pick.Leg, pick.Reason, captaincode.PathLane
 		} else if os.Getenv("CAPTAIN_FAST_ROUTE") == "1" {
 			// Fast route: skip the per-prompt director LLM call entirely and use the
 			// deterministic ladder (instant). Trades the director's live routing
@@ -2248,6 +2500,58 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			leg = order[0]
 			rationale = "fast route (ladder, director skipped)"
 			decPath = captaincode.PathLadder
+		} else if directorPickEnabled() && len(captaincode.NamedAssignees(req.Task)) == 0 {
+			// The typed pick (the first quick win): the director answers a
+			// two-field question over the value-ranked menu, within
+			// DirectorPickTimeout, instead of writing a plan and a rationale
+			// in twenty seconds. Named legs keep the plan path - the user's
+			// legs are binding and may be a team; the pick is one worker.
+			decPath = captaincode.PathPick
+			td := time.Now()
+			d := captaincode.TriageTask(req.Task).Domain
+			if out.Domain != "" {
+				d = out.Domain
+			}
+			menu := captaincode.ValueRank(classHint, d, managerOrder, b.ledger.Stats(), estTokensFor(classHint), b.pressure)
+			for i := range menu {
+				menu[i].Excluded = "" // the menu is the director's; τ does not gate it
+			}
+			sort.SliceStable(menu, func(i, j int) bool { return menu[i].Value > menu[j].Value })
+			if req.Prefer == "" && pool.Empty() {
+				menu = b.steerRows(menu)
+			}
+			if len(menu) > pickMenuMax {
+				menu = menu[:pickMenuMax]
+			}
+			shadowCh := b.shadowBeside(req.Task, managerOrder, shadow)
+			if openCh == nil {
+				openCh = b.openBeside(req.Task, d, managerOrder)
+			}
+			pick, err := b.pick(req.Task, classHint, req.Prefer, menu, b.effectiveDirector())
+			directorMs = time.Since(td).Milliseconds()
+			if shadowCh != nil {
+				shadow = b.shadowJoin(shadowCh, b.chargeRoute(req.Task))
+			}
+			if err == nil {
+				leg = pick.Leg
+				if pick.Class != "" {
+					class, classBy = pick.Class, captaincode.PathDirector
+					out.Class, out.By = pick.Class, captaincode.TriageByDirector
+				}
+				rank := 0
+				for i, r := range menu {
+					if r.Leg == leg {
+						rank = i + 1
+					}
+				}
+				rationale = fmt.Sprintf("director pick: %s (#%d of %d by value, %dms)", leg, rank, len(menu), directorMs)
+			} else {
+				leg = menu[0].Leg
+				decPath = captaincode.PathValue
+				rationale = fmt.Sprintf("director pick failed (%v) → value #1 %s", captaincode.ShortErr(err), leg)
+				fmt.Printf("captain brain: %s\n", rationale)
+			}
+			decMenu = managerOrder
 		} else {
 			decPath = captaincode.PathDirector
 			td := time.Now()
@@ -2265,7 +2569,7 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 			// a team is asked for as /team (live 2026-09-16: a /quality turn
 			// ran as a team of two). Named legs are the user's, and stay.
 			fanOut := teamEnabled() && (req.Prefer == "" || len(captaincode.NamedAssignees(req.Task)) > 0)
-			b.planHints = b.valueHints(classHint, captaincode.TriageTask(req.Task).Domain, managerOrder)
+			b.planHints = b.valueHints(classHint, captaincode.TriageTask(req.Task).Domain, managerOrder, req.Prefer == "" && pool.Empty())
 			// The decision leg answers the same questions while the director
 			// plans (brain_shadow.go): the comparison costs no latency.
 			shadowCh := b.shadowBeside(req.Task, managerOrder, shadow)
@@ -2294,6 +2598,8 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 				// record, so `captain why` and the shadow can read them.
 				dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, "", managerOrder, totalMs, rationale)
 				dec.Shape, dec.Workers = captaincode.ShapeTeam, planLegs(rr.Plan)
+				out.Class, out.By = class, captaincode.TriageByDirector
+				stampTriage(&dec, *out)
 				stampShadow(&dec, shadow, classBy)
 				b.recordOpenShadow(req.Task, dec, openCh, classBy)
 				b.recordDecision(req.Task, dec)
@@ -2341,6 +2647,13 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	if !captaincode.KnownLeg(leg) {
 		return routeResp{}, &routeFail{400, "unknown leg " + string(leg)}
 	}
+	// The turn counts toward its lane however the leg was settled - by the
+	// balancer, the only open leg, or the director when nothing cleared the
+	// bar - under the lock that read the counts. A plan-only route sends
+	// nothing and counts nothing.
+	if lane != "" && !req.planOnly {
+		b.ledger.NoteLane(lane, leg, time.Now())
+	}
 	// EVERY leg runs through captain's own wrapper, exposed on this brain's
 	// OpenAI-compatible endpoint as the "captain/<leg>" model - never the fork's
 	// native opencode registry. claude→claude -p, cursor→cursor-agent, the rest
@@ -2358,6 +2671,11 @@ func (b *brain) decideLeg(req routeReq) (routeResp, *routeFail) {
 	// can show what the director chose AGAINST, plus the legs that never
 	// reached the menu and why.
 	dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, leg, decMenu, totalMs, rationale)
+	if out.Class == "" {
+		out.Class, out.Domain, out.By = class, captaincode.TriageTask(req.Task).Domain, captaincode.TriageByHeuristic
+		out.Irreversible = captaincode.IrreversibleTask(req.Task)
+	}
+	stampTriage(&dec, *out)
 	stampShadow(&dec, shadow, classBy)
 	b.recordOpenShadow(req.Task, dec, openCh, classBy)
 	b.recordDecision(req.Task, dec)

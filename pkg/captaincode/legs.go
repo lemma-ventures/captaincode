@@ -288,7 +288,7 @@ var legModels = map[Leg]struct{ Provider, Model string }{}
 // so the inventory is complete: grok and codex are MODEL PINS, not CLIs).
 func LegModelPins() []struct{ Leg, Provider, Model string } {
 	out := make([]struct{ Leg, Provider, Model string }, 0, len(legModels))
-	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegGemini, LegKimi} {
+	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegLuna, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegGemini, LegKimi} {
 		if mm, ok := legModels[l]; ok {
 			out = append(out, struct{ Leg, Provider, Model string }{string(l), mm.Provider, mm.Model})
 		}
@@ -314,10 +314,8 @@ func applyLegModelEnv() {
 }
 
 // directorModels overrides legModels when a leg acts as DIRECTOR (planner/
-// judge) rather than worker, and when a worker runs at EffortMax (/frontier
-// as a modifier): the ceiling asks for the most performant model on that
-// leg, which is the same override the director already needed. Two reasons
-// a worker model can't judge (or serve the ceiling):
+// judge) rather than worker. A worker's own bands - cheap and frontier - are
+// the registry's Tiers (tiers.go). Two reasons a worker model can't judge:
 //   - agentic tuning: coding-agent models keep narrating tool calls as prose
 //     ("invoke Glob with pattern...") instead of returning plain JSON even
 //     with tools disabled (observed live with xAI's grok-build-0.1) -
@@ -328,14 +326,16 @@ func applyLegModelEnv() {
 //     a codex director runs the standard model instead.
 //
 // Legs absent here use legModels. The claude leg needs no entry: as director
-// it runs Claude Fable via claude -p - the strongest judge available, at the
-// price of ~2 Max-quota calls per managed task. Cursor is not opencode-
-// served; its /frontier model is cursorFrontierModel().
+// it runs Claude Opus 5.5 via claude -p - the strongest judge on the Max
+// subscription's own models, at the price of ~2 Max-quota calls per managed
+// task. Cursor is not opencode-served; its /frontier model is
+// cursorFrontierModel().
 var directorModels = map[Leg]struct{ Provider, Model string }{
 	LegGrok: {"xai", "grok-4.7"},
-	// gpt-5.5, the full-effort twin of the worker's gpt-5.5-fast: the ChatGPT
-	// route dropped gpt-5.3-codex on 2026-09-15 ("Model not found").
-	LegCodex: {"openai", "gpt-5.5"},
+	// gpt-6-sol, the standard-speed twin of the worker's gpt-6-sol-fast: a
+	// judge answers in one short turn, so fast mode would only double the
+	// quota it draws (2026-09-22; gpt-5.5 before).
+	LegCodex: {"openai", "gpt-6-sol"},
 }
 
 // ModelSpec returns the opencode provider/model a worker leg runs, so a
@@ -350,37 +350,112 @@ func modelFor(leg Leg, asDirector bool) (struct{ Provider, Model string }, bool)
 	return modelForEffort(leg, asDirector, "")
 }
 
-// modelForEffort is modelFor with the request's effort: EffortMax (/frontier
-// as a modifier) picks the director override when one exists, so "/frontier
-// /grok" runs grok-4.7 rather than the grok-build burner.
+// modelForEffort is modelFor with the request's effort: the effort's band
+// (tiers.go) swaps in the leg's sibling on the same provider, so "/frontier
+// /grok" runs grok-4.7 rather than the grok-build burner and "/save /codex"
+// runs gpt-6-luna.
 func modelForEffort(leg Leg, asDirector bool, effort Effort) (struct{ Provider, Model string }, bool) {
-	if asDirector || effort == EffortMax {
+	if asDirector {
 		if mm, ok := directorModels[leg]; ok {
 			return mm, true
 		}
 	}
 	mm, ok := legModels[leg]
-	return mm, ok
+	if !ok {
+		return mm, false
+	}
+	if m := tierModel(leg, TierOf(effort)); m != "" {
+		mm.Model = m
+	}
+	return mm, true
 }
 
 // cursorFrontierModel is the cursor-agent --model for /frontier (EffortMax):
-// Grok 4.7 at Extra High. Cursor encodes effort in the model id (no
-// separate --effort). CAPTAIN_CURSOR_FRONTIER_MODEL pins it.
+// the cursor leg's frontier tier, Grok 4.7 at Extra High. Cursor encodes
+// effort in the model id (no separate --effort).
+// CAPTAIN_CURSOR_FRONTIER_MODEL pins it.
 func cursorFrontierModel() string {
-	if m := strings.TrimSpace(os.Getenv("CAPTAIN_CURSOR_FRONTIER_MODEL")); m != "" {
+	if m := tierModel(LegCursor, TierFrontier); m != "" {
 		return m
 	}
 	return "grok-4.7-xhigh"
 }
 
+// claudeModel is the claude -p --model below /frontier: the cheap tier
+// (the sonnet alias) at low effort, CAPTAIN_CLAUDE_MODEL when pinned, else
+// "" - Claude Code's own default, which is Opus 5.5 on a Max login.
+func claudeModel(effort Effort) string {
+	if TierOf(effort) == TierCheap {
+		if m := tierModel(LegClaude, TierCheap); m != "" {
+			return m
+		}
+	}
+	return strings.TrimSpace(os.Getenv(specs[LegClaude].EnvPrefix() + "_MODEL"))
+}
+
+// codexCLIModel is the codex exec -m for this effort: the cheap tier at low,
+// the frontier tier at max when one is set, else CAPTAIN_CODEX_CLI_MODEL or
+// the registry's model (gpt-6-astra).
+func codexCLIModel(effort Effort) string {
+	if m := tierModel(LegCodexCLI, TierOf(effort)); m != "" {
+		return m
+	}
+	if m := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_MODEL")); m != "" {
+		return m
+	}
+	if m := specs[LegCodexCLI].Model; m != "" {
+		return m
+	}
+	return "gpt-6-astra"
+}
+
 // cursorModel picks the cursor-agent --model for this request. Empty means
 // leave the CLI default (today "auto"). Only /frontier pins a model unless
 // CAPTAIN_CURSOR_MODEL is set.
+// cursorFamilies are the model families cursor-agent exposes at more than
+// one effort, with the name each rung goes by (`cursor-agent --list-models`,
+// 2026-09-22). A family not listed here is used as a full name.
+var cursorFamilies = map[string]map[Effort]string{
+	"grok-4.7":        {EffortLow: "grok-4.7-low", EffortMedium: "grok-4.7-medium", EffortHigh: "grok-4.7-high", EffortXHigh: "grok-4.7-xhigh"},
+	"cursor-grok-4.6": {EffortLow: "cursor-grok-4.6-low", EffortMedium: "cursor-grok-4.6-medium", EffortHigh: "cursor-grok-4.6-high", EffortXHigh: "cursor-grok-4.6-xhigh"},
+	"gpt-5.3-codex":   {EffortLow: "gpt-5.3-codex-low", EffortMedium: "gpt-5.3-codex", EffortHigh: "gpt-5.3-codex-high", EffortXHigh: "gpt-5.3-codex-xhigh"},
+}
+
+// cursorModel pins cursor-agent's model per effort (stage 3). Cursor's own
+// "auto" router picked a model captain never learned the name of, so a
+// cursor run could not be attributed to a version and its effort knob did
+// nothing. CAPTAIN_CURSOR_MODEL names the family (default grok-4.7, the
+// family /frontier already pins); a listed family takes the rung the effort
+// asks for, a full name is used as is, and "auto" restores Cursor's router.
+// Max is the frontier tier, low the cheap one (Composer 2.5, Cursor's own
+// model, lighter on the plan than any grok rung).
 func cursorModel(effort Effort) string {
-	if effort == EffortMax {
+	switch TierOf(effort) {
+	case TierFrontier:
 		return cursorFrontierModel()
+	case TierCheap:
+		if m := tierModel(LegCursor, TierCheap); m != "" {
+			return m
+		}
 	}
-	return strings.TrimSpace(os.Getenv("CAPTAIN_CURSOR_MODEL"))
+	base := strings.TrimSpace(os.Getenv("CAPTAIN_CURSOR_MODEL"))
+	if base == "" {
+		base = "grok-4.7"
+	}
+	if strings.EqualFold(base, "auto") {
+		return ""
+	}
+	rungs, ok := cursorFamilies[base]
+	if !ok {
+		return base
+	}
+	if effort == "" {
+		effort = EffortMedium
+	}
+	if m := rungs[effort]; m != "" {
+		return m
+	}
+	return rungs[EffortMedium]
 }
 
 // OpencodeDispatcher drives a local `opencode serve` (spawning it on demand
@@ -440,10 +515,22 @@ func ModelID(l Leg) string { return ModelIDAt(l, "") }
 // grok run names the model it actually dispatched (grok-4.7-xhigh / grok-4.7).
 func ModelIDAt(l Leg, effort Effort) string {
 	if l == LegFrontier {
-		return "claude-fable-frontier"
+		return frontierModelID()
 	}
-	if l == LegCursor && effort == EffortMax {
-		return cursorFrontierModel()
+	switch specs[l].Transport {
+	case TransportCursorCLI:
+		if m := cursorModel(effort); m != "" {
+			return m
+		}
+	case TransportClaudeCLI:
+		if effort == EffortMax {
+			return frontierModelID()
+		}
+		if m := claudeModel(effort); m != "" {
+			return "claude-" + strings.TrimPrefix(m, "claude-")
+		}
+	case TransportCodexCLI:
+		return codexCLIModel(effort)
 	}
 	if mm, ok := modelForEffort(l, false, effort); ok {
 		return mm.Model
@@ -1829,20 +1916,47 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 	return res, err
 }
 
-// frontierCmdConfig returns the extra claude -p args and env for /frontier:
-// the strongest model version, explicitly pinned (CAPTAIN_FRONTIER_MODEL,
-// default claude-fable-5), with a maxed extended-thinking budget
-// (CAPTAIN_FRONTIER_THINKING tokens, default 31999 - Claude Code reads
-// MAX_THINKING_TOKENS). Best model, best version, highest effort.
-func frontierCmdConfig(effort Effort) (args []string, env []string) {
-	model := os.Getenv("CAPTAIN_FRONTIER_MODEL")
-	if model == "" {
-		// The ALIAS, not a pinned version: /frontier means "the strongest thing
-		// available", and an alias resolves to the newest release of that tier
-		// without a code change every time one ships (2026-09-09). Pin
-		// CAPTAIN_FRONTIER_MODEL to a full name to freeze it.
-		model = "fable"
+// FrontierModel is the claude -p --model for /frontier: CAPTAIN_FRONTIER_MODEL,
+// default the `opus` ALIAS. An alias, not a pinned version: /frontier means
+// "the strongest thing available on this tier", and an alias resolves to the
+// newest release without a code change every time one ships (2026-09-09).
+// The tier is opus, not fable (2026-09-22): Claude Opus 5.5 is Anthropic's
+// own go-to for long-running agentic coding and rides the Max subscription's
+// windows like every other claude run, while Fable is metered on the
+// extra-usage spend cap - "You've hit your monthly spend limit" refused
+// /frontier 41 times in three days while opus answered (ratelimit.go). On
+// Claude Code 2.1.280 and later `opus` resolves to claude-opus-5-5; an older
+// CLI resolves it to Opus 5 (and rejects the full id as unrecognized_model),
+// so the alias degrades to the previous Opus instead of failing.
+// CAPTAIN_FRONTIER_MODEL=fable brings Claude Fable 5.1 back; a full name
+// freezes a version.
+func FrontierModel() string {
+	if m := strings.TrimSpace(os.Getenv("CAPTAIN_FRONTIER_MODEL")); m != "" {
+		return m
 	}
+	if m := tierModel(LegClaude, TierFrontier); m != "" {
+		return m // CAPTAIN_CLAUDE_FRONTIER_MODEL, else the registry's opus alias
+	}
+	return "opus"
+}
+
+// frontierModelID names the /frontier run for worker tabs and the ledger:
+// claude-<model>-frontier, the alias or pin it actually dispatched.
+func frontierModelID() string {
+	m := FrontierModel()
+	if !strings.HasPrefix(m, "claude-") {
+		m = "claude-" + m
+	}
+	return m + "-frontier"
+}
+
+// frontierCmdConfig returns the extra claude -p args and env for /frontier:
+// the frontier tier's strongest model, explicitly pinned (FrontierModel), at
+// the request's effort (CAPTAIN_FRONTIER_THINKING is the legacy raw thinking
+// budget, Claude Code reads MAX_THINKING_TOKENS). Best model, best version,
+// highest effort.
+func frontierCmdConfig(effort Effort) (args []string, env []string) {
+	model := FrontierModel()
 	// Effort, not a raw token budget: claude -p exposes low|medium|high|xhigh|max.
 	// /frontier is the request's effort (max - the user asked for the ceiling,
 	// 2026-09-13; xhigh had been the deliberate second-to-best until then);
@@ -2061,10 +2175,18 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		var fargs []string
 		fargs, fenv = frontierCmdConfig(effort)
 		args = append(args, fargs...)
-	} else if effort != "" {
+	} else {
+		// The request's band (tiers.go): low effort runs the cheap tier's
+		// model; otherwise claude's own default unless CAPTAIN_CLAUDE_MODEL
+		// pins one.
+		if m := claudeModel(effort); m != "" {
+			args = append(args, "--model", m)
+		}
 		// The request's effort (effort.go): a typo fix does not think like a
 		// migration. Unset → claude's own default.
-		args = append(args, "--effort", effort.ClaudeFlag())
+		if effort != "" {
+			args = append(args, "--effort", effort.ClaudeFlag())
+		}
 	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	// Through the egress proxy while it listens (ANTHROPIC_BASE_URL): the

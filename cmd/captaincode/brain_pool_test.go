@@ -156,5 +156,22 @@ func TestLeadingPreferenceReachesTheRouteInAutoMode(t *testing.T) {
 	rec := httptest.NewRecorder()
 	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
 	require.Equal(t, 200, rec.Code)
+	// The quality lane took the turn (lanes.go): it counted it, and asked
+	// no director.
+	assert.Equal(t, "unset", seen, "the quality lane asks no director")
+	b.mu.Lock()
+	counts := b.ledger.LaneCounts(captaincode.LaneQuality, 10)
+	b.mu.Unlock()
+	n := 0
+	for _, c := range counts {
+		n += c
+	}
+	assert.Equal(t, 1, n, "the leading /quality reached the route as the quality lane")
+
+	// With lanes off, the director hears the preference.
+	t.Setenv("CAPTAIN_LANES", "0")
+	rec = httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code)
 	assert.Equal(t, "quality", seen)
 }

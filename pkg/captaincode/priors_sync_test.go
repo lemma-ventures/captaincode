@@ -17,9 +17,10 @@ import (
 
 func aaFixture() []AAModel {
 	return []AAModel{
-		{Name: "Claude Fable", Slug: "claude-fable", CodingIndex: 70},
-		{Name: "GPT-5.5", Slug: "gpt-5-5", CodingIndex: 48},
-		{Name: "GPT-5.5 Pro", Slug: "gpt-5-5-pro", CodingIndex: 60},
+		{Name: "Claude Opus 5.5", Slug: "claude-opus-5-5", CodingIndex: 70},
+		{Name: "GPT-5.6 Sol", Slug: "gpt-5-6-sol", CodingIndex: 48},
+		{Name: "GPT-5.6 Sol (xhigh)", Slug: "gpt-5-6-sol-xhigh", CodingIndex: 60},
+		{Name: "GPT-5.6 Luna", Slug: "gpt-5-6-luna", CodingIndex: 40},
 		{Name: "GLM-5.3", Slug: "glm-5-3", CodingIndex: 56},
 		{Name: "MiniMax M3", Slug: "minimax-m3", CodingIndex: 52},
 		{Name: "DeepSeek V4 Flash", Slug: "deepseek-v4-flash", CodingIndex: 38},
@@ -29,8 +30,19 @@ func aaFixture() []AAModel {
 func TestMatchAA_PrefersExactWorkerVariant(t *testing.T) {
 	m, ok := MatchAA(aaFixture(), LegCodex)
 	require.True(t, ok)
-	assert.Equal(t, "gpt-5-5", m.Slug,
-		"the codex LEG runs gpt-5.5-fast, scored as gpt-5.5 - matching the Pro variant would overstate it by 12 index points")
+	assert.Equal(t, "gpt-5-6-sol", m.Slug,
+		"the codex LEG runs gpt-6-sol-fast, read off 5.6 Sol's plain row until AA scores GPT-6 Sol - matching an effort variant would overstate it by 12 index points")
+	m, ok = MatchAA(aaFixture(), LegLuna)
+	require.True(t, ok)
+	assert.Equal(t, "gpt-5-6-luna", m.Slug, "luna reads 5.6 Luna the same way")
+}
+
+// The day AA scores GPT-6 Sol, codex reads that row and stops reading 5.6.
+func TestMatchAA_NewSolRowWinsOverThePredecessor(t *testing.T) {
+	models := append(aaFixture(), AAModel{Name: "GPT-6 Sol", Slug: "gpt-6-sol", CodingIndex: 58})
+	m, ok := MatchAA(models, LegCodex)
+	require.True(t, ok)
+	assert.Equal(t, "gpt-6-sol", m.Slug)
 }
 
 func TestMatchAA_NoMatchMeansSkip(t *testing.T) {
@@ -80,4 +92,39 @@ func TestLoadPriorOverridesMissingFileIsFine(t *testing.T) {
 	assert.NoError(t, err, "no override file is the normal state, not an error")
 	assert.Zero(t, n)
 	_ = os.Unsetenv("unused")
+}
+
+// The day a model ships, the feed lists it with the coding index pending
+// (Opus 5.5 and Grok 4.7, 2026-09-22). The ranking reads that row - it has an
+// intelligence index - but the priors, scaled from the coding index, must
+// pass it over for the newest family member that has one, or a sync that day
+// divides the anchor by zero.
+func TestPriorsSkipARowListedWithoutACodingIndex(t *testing.T) {
+	models := []AAModel{
+		{Name: "Claude Opus 5.5", Slug: "claude-opus-5-5", IntelligenceIndex: 57.6},
+		{Name: "Claude Opus 5", Slug: "claude-opus-5", IntelligenceIndex: 50.8, CodingIndex: 78},
+		{Name: "Grok 4.7", Slug: "grok-4-7", IntelligenceIndex: 46.4},
+		{Name: "Grok 4.6", Slug: "grok-4-6", IntelligenceIndex: 44.3, CodingIndex: 76.8},
+		{Name: "GLM-5.3", Slug: "glm-5-3", IntelligenceIndex: 44.8, CodingIndex: 74.8},
+	}
+	m, ok := MatchAA(models, LegClaude)
+	require.True(t, ok)
+	assert.Equal(t, "claude-opus-5-5", m.Slug, "the ranking reads the newest row")
+	m, ok = MatchAACoding(models, LegClaude)
+	require.True(t, ok)
+	assert.Equal(t, "claude-opus-5", m.Slug, "the priors read the newest scored row")
+	m, ok = MatchAACoding(models, LegGrokMax)
+	require.True(t, ok)
+	assert.Equal(t, "grok-4-6", m.Slug)
+
+	p, err := ProposePriors(models)
+	require.NoError(t, err)
+	assert.Equal(t, 9.5, p[LegClaude], "the anchor")
+	assert.Equal(t, 9.4, p[LegGrokMax], "76.8/78 of the anchor, from the 4.6 row")
+	dp, err := ProposeDomainPriors(models)
+	require.NoError(t, err)
+	assert.Equal(t, 9.5, dp[LegClaude]["code"])
+
+	_, err = ProposePriors(models[:1])
+	assert.Error(t, err, "an anchor with no coding index is an error, not a division by zero")
 }

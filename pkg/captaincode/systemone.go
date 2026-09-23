@@ -395,6 +395,13 @@ func jevClassQuestions() map[string]S1Question {
 				"research":  "finding out, comparing, analysing or explaining; the deliverable is knowledge",
 				"general":   "none of the above, or a mix with no clear centre",
 			}},
+		// Two more typed answers ride in the same call (stage 2): no extra
+		// latency, and they are what the effort decision and the cascade
+		// need that scope alone cannot say.
+		PointIrreversible: {Type: "noul",
+			Instructions: "Does this task ask for a change that cannot be undone cheaply? True for a database migration or drop, deleting data or branches, a deploy to production, a force-push, rotating or revoking credentials, publishing a release, or moving money. False for edits to files under version control, analysis, writing, and anything a git checkout or a re-run would restore."},
+		PointMidTier: {Type: "noul",
+			Instructions: "Would a capable mid-tier coding model - strong but not the frontier - complete this task correctly on the first try, without a stronger model having to redo it? Judge from the task's scope, ambiguity and how much of the codebase it must hold in mind. True for contained, well-specified work; false for work that needs deep reasoning across many files, subtle concurrency or security judgement, or an underspecified goal."},
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"sort"
 	"strings"
@@ -125,6 +126,69 @@ func (b *brain) shadowJoin(ch <-chan shadowReply, onCall captaincode.CallHook) *
 		fmt.Printf("captain brain: jev shadow beside the director: %v\n", r.err)
 	}
 	return r.sh
+}
+
+// triageShadowRate is the share of confident heuristic turns that ask jev
+// beside the route (stage 1). CAPTAIN_TRIAGE_SHADOW_RATE, default 0.2; 0
+// turns the sample off.
+func triageShadowRate() float64 {
+	if v, err := parseFloatEnv("CAPTAIN_TRIAGE_SHADOW_RATE"); err == nil && v >= 0 && v <= 1 {
+		return v
+	}
+	return 0.2
+}
+
+// sampleTriageShadow asks jev the triage questions beside a route the
+// heuristic settled with confidence, and records the comparison as a shadow
+// row stamped by the heuristic - the one place jev's triage answer had
+// never been measured. Acts on nothing; the route has already returned by
+// the time the row lands. Caller holds b.mu; the goroutine takes it again.
+func (b *brain) sampleTriageShadow(task string, tr captaincode.TriageResult) {
+	if b.jev == nil || !jevShadowEnabled() || b.ledger == nil {
+		return
+	}
+	rate := triageShadowRate()
+	if rate <= 0 {
+		return
+	}
+	if b.rng == nil {
+		b.rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	if b.rng.Float64() >= rate {
+		return
+	}
+	ch := b.shadowBeside(task, nil, nil)
+	if ch == nil {
+		return
+	}
+	taskID := b.routeTurnID(task)
+	head := truncate(task, 120)
+	go func() {
+		r := <-ch
+		if r.sh == nil {
+			return
+		}
+		r.sh.Stamp(captaincode.PointClass, string(tr.Class), tr.By)
+		r.sh.Stamp(captaincode.PointDomain, string(tr.Domain), tr.By)
+		if _, ok := r.sh.Answers[captaincode.PointIrreversible]; ok {
+			r.sh.Stamp(captaincode.PointIrreversible, fmt.Sprint(tr.Irreversible), tr.By)
+		}
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.ledger.RecordShadow(captaincode.ShadowRecord{
+			Point:  captaincode.PointClass,
+			Points: []string{captaincode.PointClass, captaincode.PointDomain, captaincode.PointIrreversible},
+			TaskID: taskID, Task: head, Shadow: *r.sh,
+		})
+		if hook := b.chargeOwnTask("jev triage shadow on a confident turn"); hook != nil {
+			hook(captaincode.LegJev, "shadow", r.res, r.err)
+		} else if err := b.ledger.Save(); err != nil {
+			fmt.Printf("captain brain: triage shadow row not saved: %v\n", err)
+		}
+		if r.err != nil {
+			fmt.Printf("captain brain: jev triage shadow: %v\n", r.err)
+		}
+	}()
 }
 
 // stampShadow puts what captain actually decided beside each of the decision

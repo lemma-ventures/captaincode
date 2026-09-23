@@ -68,7 +68,10 @@ func TestTriageSendsHighComplexityToTheDirector(t *testing.T) {
 }
 
 // Preferences, named legs, and vision keep their existing (director) semantics.
+// With lanes on, /quality is the quality lane instead - also never the triage
+// fast path (brain_lanes_test.go).
 func TestTriageDoesNotHijackSpecialRoutes(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "0")
 	for name, body := range map[string]map[string]any{
 		"quality": {"task": "polish this sentence", "prefer": "quality"},
 		"named":   {"task": "have grok and codex review this sentence"},
@@ -216,10 +219,16 @@ func TestRerouteTargetFallsBackToTheRungLadder(t *testing.T) {
 	assert.NotEmpty(t, leg)
 }
 
-// The OPSIS misroute: a mid-prompt /quality must reach the quality path (the
-// director with the top-quality menu), not the triage fast path.
+// The OPSIS misroute: a mid-prompt /quality must reach the quality path, not
+// the triage fast path - the quality lane (lanes.go), or with lanes off the
+// director with the top-quality menu.
 func TestMidPromptQualityReachesTheDirector(t *testing.T) {
 	b := teamBrain()
+	noDirector(t, b)
+	resp := routeBody(t, b, "I changed the paper title, it will be called OPSIS. /quality review the paper", nil)
+	assert.Contains(t, resp["rationale"], "quality lane:", "mid-prompt /quality routes like a leading /quality")
+
+	t.Setenv("CAPTAIN_LANES", "0")
 	prefer := ""
 	b.planFn = func(task string, class captaincode.Class, p string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
 		prefer = p
@@ -232,6 +241,11 @@ func TestMidPromptQualityReachesTheDirector(t *testing.T) {
 // An explicit leading prefix beats a different mid-prompt token.
 func TestLeadingPreferBeatsMidPrompt(t *testing.T) {
 	b := teamBrain()
+	noDirector(t, b)
+	resp := routeBody(t, b, "do it /cheap if you must", map[string]any{"prefer": "quality"})
+	assert.Contains(t, resp["rationale"], "quality lane:", "the leading /quality wins over a mid-prompt /cheap")
+
+	t.Setenv("CAPTAIN_LANES", "0")
 	prefer := ""
 	b.planFn = func(task string, class captaincode.Class, p string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
 		prefer = p

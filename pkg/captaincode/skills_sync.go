@@ -6,11 +6,18 @@ package captaincode
 // a network call on the hot path: a worker starting a task reads a catalog
 // that was fetched, vetted and hashed at some earlier, deliberate moment.
 //
-// Two sources, and only two. [anthropics/skills] is the primary - the
-// standard's author publishing its own reference implementation, most of it
-// Apache-2.0. [openai/plugins] is the secondary, where skills live inside
-// plugins under a `.codex-plugin/plugin.json` manifest (`openai/skills` is
-// deprecated and must not be pinned).
+// Three sources, each a publisher shipping its own work. [anthropics/skills]
+// is the primary - the standard's author publishing its own reference
+// implementation, most of it Apache-2.0. [openai/plugins] is the secondary,
+// where skills live inside plugins under a `.codex-plugin/plugin.json`
+// manifest (`openai/skills` is deprecated and must not be pinned).
+// [cloudflare/security-audit-skill] is one skill, MIT, from the company that
+// wrote it - and it is the one PINNED IN CODE, because it is the skill every
+// worker is stocked with whatever the task says (AlwaysSkills). The commit
+// below was read in full before it was admitted: the frontmatter, every
+// reference, both validators (plain Node that reads the files it is pointed
+// at - no network, no install, no child process). A newer head is a new
+// review, not a sync.
 //
 // This is NOT a marketplace and it does not read community catalogs: a 2026
 // audit found prompt injection in 36% of tested community skills, and the
@@ -64,6 +71,13 @@ func SkillSources() []SkillSource {
 		{
 			Repo:    "openai/plugins",
 			URL:     "https://github.com/openai/plugins.git",
+			License: "MIT",
+		},
+		{
+			Repo:    "cloudflare/security-audit-skill",
+			URL:     "https://github.com/cloudflare/security-audit-skill.git",
+			Commit:  "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8", // reviewed 2026-09-22
+			Roots:   []string{"skills"},
 			License: "MIT",
 		},
 	}

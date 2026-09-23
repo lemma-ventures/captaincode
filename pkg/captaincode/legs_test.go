@@ -487,8 +487,9 @@ func TestFrontierCmdConfig(t *testing.T) {
 	t.Setenv("CAPTAIN_FRONTIER_THINKING", "")
 	args, env := frontierCmdConfig(EffortMax)
 	// The ALIAS, not a pinned version: /frontier must follow the strongest
-	// release without a code change each time one ships (2026-09-09).
-	assert.Contains(t, strings.Join(args, " "), "--model fable")
+	// release without a code change each time one ships (2026-09-09); the
+	// tier is opus since 2026-09-22 (Claude Opus 5.5 on Claude Code 2.1.280+).
+	assert.Contains(t, strings.Join(args, " "), "--model opus")
 	assert.Contains(t, strings.Join(args, " "), "--effort max", "/frontier is the ceiling (2026-09-13)")
 	t.Setenv("CAPTAIN_FRONTIER_EFFORT", "xhigh")
 	args, _ = frontierCmdConfig(EffortMax)
@@ -917,4 +918,18 @@ func TestBillingRefusalIsNotARateLimit(t *testing.T) {
 	assert.ErrorIs(t, err, ErrProviderDown, "a provider fault: the task reroutes")
 	assert.NotErrorIs(t, err, ErrRateLimited)
 	assert.Contains(t, err.Error(), "depleted")
+}
+
+// The /frontier run is named after the model it dispatched: the alias by
+// default, the pin when CAPTAIN_FRONTIER_MODEL sets one.
+func TestFrontierModelIDFollowsThePin(t *testing.T) {
+	t.Setenv("CAPTAIN_FRONTIER_MODEL", "")
+	assert.Equal(t, "opus", FrontierModel())
+	assert.Equal(t, "claude-opus-frontier", ModelIDAt(LegFrontier, EffortMax))
+	t.Setenv("CAPTAIN_FRONTIER_MODEL", "fable")
+	assert.Equal(t, "claude-fable-frontier", ModelIDAt(LegFrontier, EffortMax), "Fable 5.1 is one pin away")
+	t.Setenv("CAPTAIN_FRONTIER_MODEL", "claude-opus-5-5")
+	assert.Equal(t, "claude-opus-5-5-frontier", ModelIDAt(LegFrontier, EffortMax), "a full id is not prefixed twice")
+	args, _ := frontierCmdConfig(EffortMax)
+	assert.Contains(t, strings.Join(args, " "), "--model claude-opus-5-5", "the pin reaches claude -p")
 }

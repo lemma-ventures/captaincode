@@ -21,6 +21,7 @@ package captaincode
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -104,6 +105,131 @@ type OutcomeEvidence struct {
 	// acceptance. Empty while the outcome is pending. See settle.go.
 	DecidedBy OutcomeDecider `json:"decided_by,omitempty"`
 	SettledAt time.Time      `json:"settled_at,omitempty"`
+
+	// Objective signals captain observes itself (stage 1): what was
+	// delivered and when, the files the worker changed in Dir, a commit that
+	// kept them, a corrective re-prompt, and how many attempts the task took
+	// with the escalation record when there was one. Effort and Model say
+	// what the delivering attempt ran as, so a label can be attributed to a
+	// version.
+	Dir            string             `json:"dir,omitempty"`
+	DeliveredAt    time.Time          `json:"delivered_at,omitempty"`
+	DeliveredChars int                `json:"delivered_chars,omitempty"`
+	ChangedFiles   []string           `json:"changed_files,omitempty"`
+	Commit         *CommitRecord      `json:"commit,omitempty"`
+	Reprompt       *RepromptRecord    `json:"reprompt,omitempty"`
+	Attempts       int                `json:"attempts,omitempty"`
+	Escalation     *EscalationOutcome `json:"escalation,omitempty"`
+	Effort         Effort             `json:"effort,omitempty"`
+	Model          string             `json:"model,omitempty"`
+}
+
+// deliveredAt is when the settle window starts: the delivery when it was
+// noted, the record's last update otherwise.
+func (o OutcomeEvidence) deliveredAt() time.Time {
+	if !o.DeliveredAt.IsZero() {
+		return o.DeliveredAt
+	}
+	return o.UpdatedAt
+}
+
+// Delivered says the task produced something the user could keep: text, or
+// changed files.
+func (o OutcomeEvidence) Delivered() bool {
+	return o.DeliveredChars > 0 || len(o.ChangedFiles) > 0
+}
+
+// NoteDelivery records what a task delivered: where, which files changed,
+// how much text, and what the delivering attempt ran as. Called once per
+// task when the answer goes out; the settle window counts from here.
+func (l *Ledger) NoteDelivery(taskID, dir string, files []string, chars int, leg Leg, effort Effort, model string, attempts int) {
+	if taskID == "" {
+		return
+	}
+	o := l.OutcomeFor(taskID)
+	if o == nil {
+		l.RecordOutcome(OutcomeEvidence{TaskID: taskID, Status: AcceptancePending})
+		o = l.OutcomeFor(taskID)
+	}
+	now := time.Now()
+	o.Dir, o.ChangedFiles, o.DeliveredChars, o.DeliveredAt = dir, files, chars, now
+	if leg != "" {
+		o.Leg = leg
+	}
+	o.Effort, o.Model = effort, model
+	if attempts > o.Attempts {
+		o.Attempts = attempts
+	}
+	o.UpdatedAt = now
+}
+
+// RecordCommitEvidence marks a follow-up commit that touched the worker's
+// files. Settles the outcome as accepted at once (settle.go): the user kept
+// the work, which is the acceptance every other signal approximates.
+func (l *Ledger) RecordCommitEvidence(taskID string, c CommitRecord) {
+	if taskID == "" || c.SHA == "" {
+		return
+	}
+	o := l.OutcomeFor(taskID)
+	if o == nil {
+		l.RecordOutcome(OutcomeEvidence{TaskID: taskID, Status: AcceptancePending})
+		o = l.OutcomeFor(taskID)
+	}
+	if c.At.IsZero() {
+		c.At = time.Now()
+	}
+	o.Commit = &c
+	o.UpdatedAt = time.Now()
+}
+
+// RecordReprompt marks a corrective prompt sent inside the settle window.
+// Settles the outcome as rejected (settle.go).
+func (l *Ledger) RecordReprompt(taskID, text string, at time.Time) {
+	if taskID == "" {
+		return
+	}
+	o := l.OutcomeFor(taskID)
+	if o == nil {
+		l.RecordOutcome(OutcomeEvidence{TaskID: taskID, Status: AcceptancePending})
+		o = l.OutcomeFor(taskID)
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	if len(text) > 160 {
+		text = text[:160]
+	}
+	o.Reprompt = &RepromptRecord{Text: text, At: at}
+	o.UpdatedAt = time.Now()
+}
+
+// RecordEscalationOutcome attaches the repair/escalation record to a task.
+func (l *Ledger) RecordEscalationOutcome(taskID string, e EscalationOutcome) {
+	if taskID == "" {
+		return
+	}
+	o := l.OutcomeFor(taskID)
+	if o == nil {
+		l.RecordOutcome(OutcomeEvidence{TaskID: taskID, Status: AcceptancePending})
+		o = l.OutcomeFor(taskID)
+	}
+	o.Escalation = &e
+	if e.Attempts > o.Attempts {
+		o.Attempts = e.Attempts
+	}
+	o.UpdatedAt = time.Now()
+}
+
+// correctiveOpeners are the ways a user says "that was wrong" in the first
+// words of the next prompt. Narrow on purpose: the next task in a session
+// is usually a new task, and reading every follow-up as a rejection would
+// manufacture failures out of ordinary work.
+var correctiveOpeners = regexp.MustCompile(`(?i)^\s*(?:no[,.!\s]|nope\b|wrong\b|that'?s (?:not|wrong)|not what i|still (?:broken|fails|failing|wrong|doesn'?t)|(?:doesn'?t|does not|didn'?t|did not) work|revert\b|undo\b|fix (?:it|that|this)\b|try again\b|redo\b|you (?:broke|missed|forgot|ignored)|that broke\b|it'?s broken\b|tests? (?:still )?fail)`)
+
+// CorrectiveReprompt reports whether a prompt reads as a correction of the
+// previous answer rather than a new task.
+func CorrectiveReprompt(text string) bool {
+	return correctiveOpeners.MatchString(text)
 }
 
 // OutcomeDecider is what moved an outcome off pending.
@@ -121,7 +247,33 @@ const (
 	DecidedByLifecycle OutcomeDecider = "lifecycle"
 	// DecidedByRegression: a later observation revoked an earlier acceptance.
 	DecidedByRegression OutcomeDecider = "regression"
+	// DecidedByCommit: a commit after the run touched the files the worker
+	// changed - the user kept the work. Strong, objective, and immediate.
+	DecidedByCommit OutcomeDecider = "commit"
+	// DecidedByReprompt: the user came straight back with a corrective
+	// prompt ("no, ...", "still broken", "revert") inside the settle window.
+	DecidedByReprompt OutcomeDecider = "reprompt"
+	// DecidedBySilence: something was delivered (an answer, a diff) and the
+	// user neither corrected it, re-prompted, interrupted, nor regressed it
+	// for the settle window. The weakest honest acceptance, labelled as such
+	// so calibration can weigh it under the others.
+	DecidedBySilence OutcomeDecider = "silence"
 )
+
+// CommitRecord is a follow-up commit that touched the worker's files.
+type CommitRecord struct {
+	SHA     string    `json:"sha"`
+	Subject string    `json:"subject,omitempty"`
+	At      time.Time `json:"at"`
+	Files   []string  `json:"files,omitempty"`
+}
+
+// RepromptRecord is a corrective prompt sent on the same workspace inside
+// the settle window.
+type RepromptRecord struct {
+	Text string    `json:"text"` // the head of the prompt, redacted upstream
+	At   time.Time `json:"at"`
+}
 
 // maxOutcomes caps the persisted outcome log.
 const maxOutcomes = 200
@@ -214,6 +366,7 @@ func (l *Ledger) RecordTaskReview(taskID, verdict, reviewer, note string, amend 
 	}
 	o.DecidedBy, o.SettledAt = DecidedByReviewer, rev.At
 	o.UpdatedAt = time.Now()
+	l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: taskID, Outcome: o})
 	return nil
 }
 
@@ -258,6 +411,7 @@ func (l *Ledger) RecordRegression(taskID, reason, source string) {
 		o.DecidedBy, o.SettledAt = DecidedByRegression, o.Regression.At
 	}
 	o.UpdatedAt = time.Now()
+	l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: taskID, Outcome: o})
 }
 
 // TotalCorrectionMinutes sums all correction records for a task.

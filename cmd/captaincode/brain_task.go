@@ -77,8 +77,9 @@ func (b *brain) taskPlan(w http.ResponseWriter, _ *http.Request, req captaincode
 		return
 	}
 	resp, fail := b.decideRoute(routeReq{
-		Task:   body.Prompt,
-		Prefer: body.Intent.Prefer,
+		Task:     body.Prompt,
+		Prefer:   body.Intent.Prefer,
+		planOnly: true,
 	})
 	if fail != nil {
 		writeJSON(w, fail.code, taskAPIError(captaincode.ErrInternal, fail.msg))

@@ -62,6 +62,10 @@ type LegSpec struct {
 	// Open says whether the model's weights are open (the /oss pool, pool.go);
 	// unset → guessed from the model family.
 	Open *bool `json:"open,omitempty"`
+	// Tiers names the sibling model this leg runs for the cheap and frontier
+	// bands (tiers.go); quality is Model. A band left out runs Model at that
+	// band's effort.
+	Tiers map[Tier]string `json:"tiers,omitempty"`
 }
 
 // EnvPrefix returns the env prefix for this leg's provider/model overrides.
@@ -87,7 +91,11 @@ var defaultLegSpecs = []LegSpec{
 		Note: "zero cost (opencode zen free roster, rotates); fine for simple/boilerplate work; benchmark claims unverified - don't trust with architecture"},
 	{ID: LegQwen, Transport: TransportOpencode, Provider: "openrouter", Model: "qwen/qwen3.5-397b-a17b", AA: "qwen3-5-397b-a17b",
 		PriceIn: 0.26, PriceOut: 1.0, Ctx: 262144, Prior: 6.8, Display: "Qwen (captain · opencode)",
-		Note: "Qwen 3.5 (OpenRouter, paid per token); cheap durable capacity for routine code edits and refactors; not the architecture apex"},
+		// Cheap only: qwen3.6-flash and -max-preview are served solely by
+		// endpoints without zero data retention, which OpenRouter refuses
+		// under a ZDR account setting (probed 2026-09-22).
+		Tiers: map[Tier]string{TierCheap: "qwen/qwen3.6-35b-a3b"},
+		Note:  "Qwen 3.5 (OpenRouter, paid per token); cheap durable capacity for routine code edits and refactors; not the architecture apex"},
 	{ID: LegStep, Transport: TransportOpencode, Provider: "huggingface", Model: "stepfun-ai/Step-3.5-Flash",
 		PriceIn: 0.1, PriceOut: 0.3, Ctx: 262144, Prior: 6.8, Open: boolp(true), Display: "Step 3.5 Flash (captain · Hugging Face)",
 		Note: "Step 3.5 Flash via Hugging Face router (~$0.10/M in, 256k ctx); cheap open-weight reasoning worker, tool-calling, no vision"},
@@ -96,10 +104,11 @@ var defaultLegSpecs = []LegSpec{
 		Note: "gpt-oss-120b (OpenAI open weights) via OpenRouter; served by Cerebras it is the one serving tuple the Agentic Determinism Index scores byte-exact run after run (streak 10, 2026-09-17) - the /deterministic pick, pinned to that tuple; a capable mid-tier coder, not a frontier reasoner"},
 	{ID: LegGrok, Transport: TransportOpencode, Provider: "xai", Model: "grok-build-0.1", AA: "grok-build-0-1-06-16",
 		Ctx: 262144, Vision: true, Subscription: true, Prior: 7.0, Display: "Grok (captain · opencode)",
-		Note: "grok-build-0.1, SuperGrok sub, resets daily (cheapest marginal - burn first); fast agentic coding, ~71% SWE-bench Verified"},
-	{ID: LegCodex, Transport: TransportOpencode, Provider: "openai", Model: "gpt-5.5-fast", AA: "gpt-5-5",
-		Ctx: 400000, Vision: true, Subscription: true, Prior: 7.0, Display: "Codex (captain · opencode, gpt-5.5-fast)",
-		Note: "gpt-5.5-fast on the ChatGPT sub (5h+weekly windows): the fast lane of gpt-5.5 (AA index 38.6 / coding 74.9) - the interactive/routine-edit leg; gpt-5.3-codex-spark was refused for ChatGPT accounts from 2026-09-15 (400 'not supported when using Codex with a ChatGPT account')"},
+		Tiers: map[Tier]string{TierFrontier: "grok-4.7"},
+		Note:  "grok-build-0.1, SuperGrok sub, resets daily (cheapest marginal - burn first); fast agentic coding, ~71% SWE-bench Verified"},
+	{ID: LegLuna, Transport: TransportOpencode, Provider: "openai", Model: "gpt-6-luna", AA: "gpt-6-luna",
+		Ctx: 1050000, Vision: true, Subscription: true, Prior: 7.0, Display: "Luna (captain · opencode, gpt-6-luna)",
+		Note: "GPT-6 Luna on the ChatGPT sub (the quota codex and codex-cli draw on): OpenAI's cheap fast tier (reads the GPT-5.6 Luna AA row, index 37 / coding 71 at ~150 tok/s, until AA scores 6 Luna) - routine edits, boilerplate, summaries and extraction at volume; not for architecture or hard bugs (that is codex, then codex-cli)"},
 	{ID: LegDS4Flash, Transport: TransportOpencode, Provider: "huggingface", Model: "deepseek-ai/DeepSeek-V4-Flash",
 		PriceIn: 0.14, PriceOut: 0.28, Ctx: 1048576, Prior: 7.2, Open: boolp(true), Display: "DeepSeek V4 Flash (captain · Hugging Face)",
 		Note: "DeepSeek V4 Flash via Hugging Face router (~$0.14/M in, 1M ctx); the cheap V4 lane under the OpenRouter V4 Pro leg; tool-calling, no vision"},
@@ -108,28 +117,38 @@ var defaultLegSpecs = []LegSpec{
 		Note: "MiniMax M3 via OpenRouter (~$0.30/M in); strong OSS agentic worker a notch below GLM-5.3; overflow lane when subscription legs are cooling. NIM retired every MiniMax model on 2026-09-09 (410 Gone), so the free lane is gone"},
 	{ID: LegDeepSeek, Transport: TransportOpencode, Provider: "openrouter", Model: "deepseek/deepseek-v4-pro", AA: "deepseek-v4-pro",
 		PriceIn: 0.52, PriceOut: 1.6, Ctx: 1048576, Prior: 7.6, Display: "DeepSeek V4 Pro (captain · opencode)",
-		Note: "DeepSeek V4 Pro (OpenRouter, ~$0.52/M in); strong cheap coder/reasoner with 1M context; good grok alternative when xAI wobbles"},
+		Tiers: map[Tier]string{TierCheap: "deepseek/deepseek-v4-flash"},
+		Note:  "DeepSeek V4 Pro (OpenRouter, ~$0.52/M in); strong cheap coder/reasoner with 1M context; good grok alternative when xAI wobbles"},
 	{ID: LegGLM, Transport: TransportOpencode, Provider: "openrouter", Model: "z-ai/glm-5.3", AA: "glm-5-3",
 		PriceIn: 1.09, PriceOut: 3.43, Ctx: 1310720, Prior: 8.2, Display: "GLM-5.3 (captain · opencode)",
-		Note: "GLM-5.3 (z-ai) via OpenRouter (~$1.09/M in, 1.3M ctx), the best open-weights model (AA index 44.9, a point above grok-4.6 and kimi-k3, 2026-09-13); near-frontier agentic coder without burning Claude/Codex quota; the open-weights fallback of /frontier"},
+		Tiers: map[Tier]string{TierCheap: "z-ai/glm-5.3-flash"},
+		Note:  "GLM-5.3 (z-ai) via OpenRouter (~$1.09/M in, 1.3M ctx), the best open-weights model (AA index 44.9, a point above grok-4.6 and kimi-k3, 2026-09-13); near-frontier agentic coder without burning Claude/Codex quota; the open-weights fallback of /frontier"},
 	{ID: LegGemini, Transport: TransportOpencode, Provider: "openrouter", Model: "google/gemini-3.7-flash", AA: "gemini-3-7-flash",
 		PriceIn: 0.38, PriceOut: 2.0, Ctx: 1048576, Vision: true, Prior: 7.8, Display: "Gemini 3.7 Flash (captain · opencode)",
-		Note: "Gemini 3.7 Flash (OpenRouter, ~$0.38/M in); vision-capable, 1M context, fast; the compaction leg; good for multimodal or long-context tasks"},
+		Tiers: map[Tier]string{TierCheap: "google/gemini-3.5-flash-lite", TierFrontier: "google/gemini-3.8-flash"},
+		Note:  "Gemini 3.7 Flash (OpenRouter, ~$0.38/M in); vision-capable, 1M context, fast; the compaction leg; good for multimodal or long-context tasks"},
 	{ID: LegKimi, Transport: TransportOpencode, Provider: "nim", Model: "moonshotai/kimi-k3", AA: "kimi-k3",
 		Ctx: 262144, Prior: 8.0, Display: "Kimi K3 (captain · opencode)",
 		Note: "Kimi K3 flagship via NVIDIA NIM (free with the NVIDIA key); strong pick for hard reasoning/code at zero marginal cost; single-host, watch for NIM stalls"},
-	{ID: LegCursor, Transport: TransportCursorCLI, Model: "composer-2.5", AA: "cursor-composer",
+	{ID: LegCursor, Transport: TransportCursorCLI, Model: "grok-4.7", AA: "cursor-composer",
 		Ctx: 262144, Vision: true, Subscription: true, Prior: 8.0, Display: "Cursor (captain · cursor-agent)",
-		Note: "Cursor Composer 2.5 (cursor-agent); near-frontier agentic coding (#3 Coding Agent Index) at a fraction of frontier cost; strong default for repo-touching work"},
+		Tiers: map[Tier]string{TierCheap: "composer-2.5", TierFrontier: "grok-4.7-xhigh"},
+		Note:  "cursor-agent on the Cursor plan: Grok 4.7 at the request's effort rung (grok-4.7-low to -high, -xhigh under /frontier), Cursor Composer 2.5 for cheap work; near-frontier agentic coding at a fraction of frontier cost; strong default for repo-touching work"},
+	{ID: LegCodex, Transport: TransportOpencode, Provider: "openai", Model: "gpt-6-sol-fast", AA: "gpt-6-sol",
+		Ctx: 1050000, Vision: true, Subscription: true, Prior: 8.4, Display: "Codex (captain · opencode, gpt-6-sol-fast)",
+		Tiers: map[Tier]string{TierCheap: "gpt-6-luna", TierFrontier: "gpt-6-astra"},
+		Note:  "GPT-6 Sol in fast mode on the ChatGPT sub (5h+weekly windows): OpenAI's quality tier (reads the GPT-5.6 Sol AA row, index 47 / coding 77.4, until AA scores 6 Sol) - real features, refactors and debugging below the frontier; directs as gpt-6-sol. The cheap OpenAI lane is luna, the frontier one codex-cli. gpt-5.3-codex-spark was refused for ChatGPT accounts from 2026-09-15"},
 	{ID: LegGrokMax, Transport: TransportOpencode, Provider: "xai", Model: "grok-4.7", AA: "grok-4-7",
 		PriceIn: 2, PriceOut: 6, Ctx: 500000, Vision: true, Frontier: true, Subscription: true, Prior: 8.7, Display: "Grok Max (captain · opencode, grok-4.7)",
-		Note: "grok-4.7, xAI's flagship reasoning model on the SuperGrok credential (falls back to the grok-4.6 AA row until the feed lists 4.7); frontier-class: 2× budget, hard reasoning and architecture, third in the /frontier failover; not for routine edits (that is the grok leg)"},
+		Note: "grok-4.7, xAI's flagship reasoning model on the SuperGrok credential (reads the grok-4.6 AA row when the feed lacks 4.7); frontier-class: 2× budget, hard reasoning and architecture, third in the /frontier failover; not for routine edits (that is the grok leg)"},
 	{ID: LegCodexCLI, Transport: TransportCodexCLI, Model: "gpt-6-astra", AA: "gpt-6-astra-xhigh",
 		Ctx: 1050000, Vision: true, Frontier: true, Subscription: true, Prior: 9.3, Display: "Codex CLI (captain · codex exec, gpt-6-astra)",
-		Note: "gpt-6-astra via the Codex CLI (reasoning effort follows the request: /frontier xhigh, /quality high, else the difficulty rating), ChatGPT sub quota (5h+weekly windows); frontier-class like claude and SLOW (minutes per turn, double time budget) - reserve for the hardest architecture/debugging/reasoning, never routine edits; a second frontier opinion with a different refusal profile than claude"},
-	{ID: LegClaude, Transport: TransportClaudeCLI, Model: "claude-fable", AA: "claude-fable-5-1",
+		Tiers: map[Tier]string{TierCheap: "gpt-6-sol"},
+		Note:  "gpt-6-astra via the Codex CLI (reasoning effort follows the request: /frontier xhigh, /quality high, else the difficulty rating), ChatGPT sub quota (5h+weekly windows); frontier-class like claude and SLOW (minutes per turn, double time budget) - reserve for the hardest architecture/debugging/reasoning, never routine edits; a second frontier opinion with a different refusal profile than claude"},
+	{ID: LegClaude, Transport: TransportClaudeCLI, Model: "claude-opus", AA: "claude-opus-5-5",
 		Ctx: 1000000, Vision: true, Subscription: true, Prior: 9.5, Display: "Claude (captain · claude -p)",
-		Note: "Claude Fable via Max sub (5h+weekly windows); strongest available (~95% SWE-bench Verified); architecture, gnarly debugging, escalation apex"},
+		Tiers: map[Tier]string{TierCheap: "sonnet", TierFrontier: "opus"},
+		Note:  "Claude Opus 5.5 via Max sub (the `opus` alias on Claude Code 2.1.280+; 5h+weekly windows, no extra-usage spend); Anthropic's go-to for long-running agentic coding, /frontier runs it at max effort (reads the Opus 5 AA row when the feed lacks 5.5; CAPTAIN_FRONTIER_MODEL=fable brings Fable 5.1 back); architecture, gnarly debugging, escalation apex"},
 }
 
 // specs is the ACTIVE registry (defaults + overlay), keyed by id; specOrder
@@ -328,6 +347,16 @@ func mergeSpec(base, o LegSpec) LegSpec {
 	}
 	if o.Disabled {
 		out.Disabled = true
+	}
+	if len(o.Tiers) > 0 {
+		merged := map[Tier]string{}
+		for t, m := range out.Tiers {
+			merged[t] = m
+		}
+		for t, m := range o.Tiers {
+			merged[t] = m
+		}
+		out.Tiers = merged
 	}
 	return out
 }

@@ -83,7 +83,7 @@ func shortSHA(c string) string {
 
 func skillsSync(args []string) {
 	fs := flag.NewFlagSet("skills sync", flag.ExitOnError)
-	source := fs.String("source", "anthropics/skills", "catalog to sync (anthropics/skills | openai/plugins)")
+	source := fs.String("source", "anthropics/skills", "catalog to sync ("+strings.Join(skillSourceNames(), " | ")+")")
 	commit := fs.String("commit", "", "the commit to pin; default is the source's current head, recorded in the lock")
 	only := fs.String("only", "", "comma-separated skill names to sync (default: every skill that passes vetting)")
 	scripts := fs.String("allow-scripts", "", "comma-separated skills whose scripts/ directory ships too - arbitrary code, allowlisted by name")
@@ -92,7 +92,7 @@ func skillsSync(args []string) {
 
 	src, ok := captaincode.FindSkillSource(*source)
 	if !ok {
-		fatal(fmt.Errorf("unknown source %q - captain reads first-party catalogs only (anthropics/skills, openai/plugins); community directories are not a supply captain can stand behind", *source))
+		fatal(fmt.Errorf("unknown source %q - captain reads first-party catalogs only (%s); community directories are not a supply captain can stand behind", *source, strings.Join(skillSourceNames(), ", ")))
 	}
 	if *commit != "" {
 		src.Commit = *commit
@@ -111,6 +111,16 @@ func skillsSync(args []string) {
 	if !*dry {
 		skillsLockLine()
 	}
+}
+
+// skillSourceNames lists the catalogs `--source` accepts, from the one table
+// that defines them, so the help and the refusal cannot drift from it.
+func skillSourceNames() []string {
+	var out []string
+	for _, s := range captaincode.SkillSources() {
+		out = append(out, s.Repo)
+	}
+	return out
 }
 
 func orHead(c string) string {
@@ -162,6 +172,10 @@ func skillsSelect(args []string) {
 		return
 	}
 	for _, p := range picks {
+		if p.Always {
+			fmt.Printf("  %-24s always  %s\n", p.Skill.Name, p.Why)
+			continue
+		}
 		fmt.Printf("  %-24s %.2f  matched: %s\n", p.Skill.Name, p.Score, p.Why)
 	}
 	fmt.Printf("%d of %d synced skill(s) would be stocked (cap %d)\n", len(picks), len(captaincode.Catalog()), captaincode.SkillCap())
@@ -208,6 +222,15 @@ func skillsUnstage(args []string) {
 	}
 	n := captaincode.UnstageSkills(d)
 	fmt.Printf("removed %d staged skill(s) from %s\n", n, d)
+	// What stayed under a catalog name is not captain's to judge: the user's
+	// own copy, or the residue of a brain from before the marker existed.
+	for _, s := range captaincode.Catalog() {
+		for _, rel := range []string{filepath.Join(".agents", "skills", s.Name), filepath.Join(".claude", "skills", s.Name)} {
+			if _, err := os.Lstat(filepath.Join(d, rel)); err == nil {
+				fmt.Printf("  left %s: captain did not stage it - remove it by hand only if it is not yours\n", rel)
+			}
+		}
+	}
 }
 
 func skillsReport(args []string) {

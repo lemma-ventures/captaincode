@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -108,8 +110,42 @@ func cmdPolicy(ledger *captaincode.Ledger, args []string) {
 	case "--json":
 		out, _ := json.MarshalIndent(ledger.RecentSnapshots(), "", "  ")
 		fmt.Println(string(out))
+	case "distill":
+		// Stage 5's export: the labelled routing history as one JSONL row
+		// per task, the features a small router would train on. Captain
+		// writes the rows; training one is a separate job that needs a few
+		// thousand of them, and the count printed here is the honest gate.
+		out := filepath.Join(captainHome(), "distill.jsonl")
+		if len(args) > 1 && args[1] != "" {
+			out = args[1]
+		}
+		hist := captaincode.RoutingHistory(ledger)
+		rows := captaincode.DistillRows(hist)
+		n, err := captaincode.WriteDistill(out, rows)
+		if err != nil {
+			fatal(err)
+		}
+		labeled := captaincode.LabeledCount(hist)
+		fmt.Printf("distill: %d labelled rows of %d tasks in the routing history → %s\n", n, len(hist), out)
+		by := map[string]int{}
+		for _, r := range rows {
+			by[r.DecidedBy]++
+		}
+		if len(by) > 0 {
+			keys := make([]string, 0, len(by))
+			for k := range by {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Printf("  decided by %-10s %d\n", k, by[k])
+			}
+		}
+		if labeled < captaincode.BanditMinLabeled() {
+			fmt.Printf("  the bandit gate needs %d labelled outcomes (CAPTAIN_BANDIT_MIN_LABELED); a distilled router wants a few thousand\n", captaincode.BanditMinLabeled())
+		}
 	default:
-		fatal(fmt.Errorf("unknown policy subcommand %q (snapshot|activate|accept|show|canary|promote|rollback)", args[0]))
+		fatal(fmt.Errorf("unknown policy subcommand %q (snapshot|activate|accept|show|canary|promote|rollback|distill)", args[0]))
 	}
 }
 

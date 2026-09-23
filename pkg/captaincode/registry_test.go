@@ -19,7 +19,7 @@ func TestRegistryDefaultsReproduceTheLadder(t *testing.T) {
 	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
 	_, err := LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
 	require.NoError(t, err)
-	assert.Equal(t, []Leg{LegJev, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
+	assert.Equal(t, []Leg{LegJev, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
 	assert.NotContains(t, Rungs, LegJev, "the decision leg is registered but never a worker rung")
 	assert.Equal(t, "openrouter", legModels[LegGLM].Provider)
 	assert.Equal(t, "z-ai/glm-5.3", legModels[LegGLM].Model)
@@ -146,7 +146,7 @@ func TestDomainPriorOverridesLoadBothFormats(t *testing.T) {
 
 func TestProposeDomainPriorsMapsIndices(t *testing.T) {
 	models := []AAModel{
-		{Slug: "claude-fable-5-1", Name: "Claude Fable 5.1", CodingIndex: 60, IntelligenceIndex: 80},
+		{Slug: "claude-opus-5-5", Name: "Claude Opus 5.5", CodingIndex: 60, IntelligenceIndex: 80},
 		{Slug: "gemini-3-7-flash", Name: "Gemini 3.7 Flash", CodingIndex: 45, IntelligenceIndex: 72},
 		{Slug: "grok-build-0-1", Name: "Grok Build", CodingIndex: 42, IntelligenceIndex: 0},
 	}
@@ -277,16 +277,21 @@ func TestMatchAAPrefersExactSlugThenBaseVariant(t *testing.T) {
 		{Slug: "gpt-6-astra-non-reasoning", Name: "GPT-6 Astra (Non-reasoning)", CodingIndex: 76.2, IntelligenceIndex: 45.2},
 		{Slug: "gpt-6-astra-xhigh", Name: "GPT-6 Astra (xhigh)", CodingIndex: 75.9, IntelligenceIndex: 52.5},
 		{Slug: "gpt-6-astra", Name: "GPT-6 Astra (max)", CodingIndex: 76.9, IntelligenceIndex: 52.8},
-		{Slug: "claude-fable-5", Name: "Claude Fable 5 (Max Effort, Opus 4.8 Fallback)", CodingIndex: 76.5, IntelligenceIndex: 49.7},
-		{Slug: "claude-fable-5-1", Name: "Claude Fable 5.1 (Max Effort, Default Fallback)", CodingIndex: 81.6, IntelligenceIndex: 53.4},
-		{Slug: "claude-fable-5-1-xhigh", Name: "Claude Fable 5.1 (Xhigh Effort, Default Fallback)", CodingIndex: 80.7, IntelligenceIndex: 53.2},
+		{Slug: "claude-opus-5", Name: "Claude Opus 5 (Adaptive Reasoning, Max Effort)", CodingIndex: 78, IntelligenceIndex: 50.7},
+		{Slug: "claude-opus-5-5", Name: "Claude Opus 5.5 (Adaptive Reasoning, Max Effort)", CodingIndex: 90, IntelligenceIndex: 60},
+		{Slug: "claude-opus-5-5-xhigh", Name: "Claude Opus 5.5 (Adaptive Reasoning, Xhigh Effort)", CodingIndex: 89, IntelligenceIndex: 59},
 	}
 	m, ok := MatchAA(models, LegCodexCLI)
 	require.True(t, ok)
 	assert.Equal(t, "gpt-6-astra-xhigh", m.Slug, "the registry's exact slug - the variant the leg actually runs")
 	m, ok = MatchAA(models, LegClaude)
 	require.True(t, ok)
-	assert.Equal(t, "claude-fable-5-1", m.Slug)
+	assert.Equal(t, "claude-opus-5-5", m.Slug)
+	// When the feed lacks Opus 5.5, claude reads the Opus 5 row (as grok-max
+	// reads grok-4.6 when 4.7 is missing) instead of dropping off the ranking.
+	m, ok = MatchAA(models[:4], LegClaude)
+	require.True(t, ok)
+	assert.Equal(t, "claude-opus-5", m.Slug, "the newest scored member of the family, base variant")
 	// Substring fallback: shortest slug is the base variant.
 	loose := []AAModel{
 		{Slug: "muse-spark-1-3-xhigh", Name: "Muse Spark 1.3 (xhigh)", CodingIndex: 76.5, IntelligenceIndex: 45.2},

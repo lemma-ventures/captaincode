@@ -182,6 +182,26 @@ func (w *superviseWatch) close(res captaincode.Result, err error) {
 		Stalled:     errors.Is(err, captaincode.ErrWorkerStalled) || errors.Is(err, captaincode.ErrWorkerTimeout),
 		Interrupted: errors.Is(err, captaincode.ErrInterrupted),
 	}
+	// The last sample's answers, kept for the verify sequence
+	// (brain_verify.go): whether this worker needs the user, or went off
+	// track, gates what a failed check may buy.
+	if last := rows[len(rows)-1]; last.Err == "" {
+		verdicts := map[string]float64{}
+		for point, a := range last.Answers {
+			verdicts[point] = a.Confidence
+			if a.Choice == "true" || a.Choice == "false" {
+				if a.Choice == "false" {
+					verdicts[point] = 1 - a.Confidence
+				}
+			}
+		}
+		w.b.smu.Lock()
+		if w.b.lastSupervise == nil {
+			w.b.lastSupervise = map[string]map[string]float64{}
+		}
+		w.b.lastSupervise[superviseKey(w.leg, w.task)] = verdicts
+		w.b.smu.Unlock()
+	}
 	w.b.mu.Lock()
 	for i := range rows {
 		captaincode.StampSupervise(&rows[i], out)
@@ -196,6 +216,20 @@ func (w *superviseWatch) close(res captaincode.Result, err error) {
 // repoGuidance is the project's own conventions file, for the drift question:
 // the head of AGENTS.md or CLAUDE.md, redacted. Absent, the question is not
 // asked at all rather than asked against nothing.
+// superviseKey names a running worker's verdict slot.
+func superviseKey(leg captaincode.Leg, task string) string {
+	return string(leg) + "\x00" + truncate(task, 120)
+}
+
+// superviseVerdicts is the supervisor's last answers for a worker on a
+// task: point → probability that the answer is "true". Empty when no
+// decision leg is configured or nothing was sampled.
+func (b *brain) superviseVerdicts(leg captaincode.Leg, task string) map[string]float64 {
+	b.smu.Lock()
+	defer b.smu.Unlock()
+	return b.lastSupervise[superviseKey(leg, task)]
+}
+
 func repoGuidance(dir string) string {
 	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
 		raw, err := os.ReadFile(filepath.Join(dir, name))

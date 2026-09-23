@@ -7,7 +7,9 @@ package main
 // `description` - the field the standard designs for exactly this - is
 // matched against it. Captain writes nothing into the prompt; it decides
 // which skills EXIST where the worker runs, and the worker's own runtime
-// does the rest.
+// does the rest. The one exception is the always-on security-audit skill,
+// which the security-first line names (securityContract, brain.go) because
+// no task's words would ever select it.
 //
 // Where the shelf goes depends on the path:
 //

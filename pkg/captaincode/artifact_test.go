@@ -354,10 +354,37 @@ func TestDiffWorktreeIncludesUntracked(t *testing.T) {
 	}
 }
 
+// outsideEvidenceRun clears the marker a parent test-evidence run leaves in
+// the environment. Captain's own verify step runs this suite under that
+// marker, so a capture test that inherits it gets nil back and fails.
+func outsideEvidenceRun(t *testing.T) {
+	t.Helper()
+	t.Setenv(testEvidenceDepthEnv, "")
+}
+
+// TestANestedCaptureReturnsNoSignal verifies the recursion guard: inside a
+// test-evidence run, a capture of a project that has tests returns nil
+// instead of forking the suite again.
+func TestANestedCaptureReturnsNoSignal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(testEvidenceDepthEnv, "1")
+	te, err := CaptureTestEvidence(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("CaptureTestEvidence: %v", err)
+	}
+	if te != nil {
+		t.Fatalf("expected no evidence inside a test-evidence run, got %+v", te)
+	}
+}
+
 // TestCaptureTestEvidenceGoModule verifies that the project's own test suite
 // is run in the worker's worktree and the result is captured as evidence
 // (M3.2: test evidence beyond the gate command).
 func TestCaptureTestEvidenceGoModule(t *testing.T) {
+	outsideEvidenceRun(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.21\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -393,6 +420,7 @@ func TestPass(t *testing.T) {
 // recognizable project manifest returns nil (no test suite to run, not a
 // failure).
 func TestCaptureTestEvidenceNoProject(t *testing.T) {
+	outsideEvidenceRun(t)
 	dir := t.TempDir()
 	te, err := CaptureTestEvidence(context.Background(), dir)
 	if err != nil {
@@ -406,6 +434,7 @@ func TestCaptureTestEvidenceNoProject(t *testing.T) {
 // TestCaptureTestEvidenceFailingTests verifies that a failing test suite
 // is captured as evidence with Passed=false and a non-zero exit code.
 func TestCaptureTestEvidenceFailingTests(t *testing.T) {
+	outsideEvidenceRun(t)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.21\n"), 0o644); err != nil {
 		t.Fatal(err)
