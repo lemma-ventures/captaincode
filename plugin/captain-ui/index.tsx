@@ -398,6 +398,8 @@ function View(props: { api: TuiPluginApi }) {
         </box>
       </Show>
 
+      <PromptsLink api={props.api} />
+
       <Show when={showQuit}>
         <QuitLink api={props.api} />
       </Show>
@@ -676,6 +678,19 @@ function quitTui(api: TuiPluginApi) {
 // tag stealing input (confirmed 2026-09-11: with the tag off, ctrl+c works
 // again), so it is hidden unless CAPTAIN_UI_QUIT_LINK=1 asks for it.
 const showQuit = (globalThis as any).process?.env?.CAPTAIN_UI_QUIT_LINK === "1"
+
+// The one place a mouse can reach prompt editing (see openPromptsDialog).
+// Unconditional: the quit link below it is behind CAPTAIN_UI_QUIT_LINK, and
+// a link nobody can see is the bug this fixes.
+function PromptsLink(props: { api: TuiPluginApi }) {
+  return (
+    <box>
+      <text fg={CAPTAIN_BLUE} attributes={TextAttributes.UNDERLINE} onMouseUp={() => openPromptsDialog(props.api, false, "prompts")}>
+        {"edit or delete a prompt ✎"}
+      </text>
+    </box>
+  )
+}
 
 function QuitLink(props: { api: TuiPluginApi }) {
   return (
@@ -956,7 +971,19 @@ const tui: TuiPlugin = async (api) => {
 // (stock revert is the one that also drops everything after it).
 type PromptRow = { id: string; partID?: string; text: string; queued: boolean; answered: boolean; when: string }
 
-function registerPromptCommands(api: TuiPluginApi) {
+// openPromptsDialog is the entry both the palette command and the sidebar
+// link use. It is a module function rather than a closure inside the command
+// registration precisely so the sidebar can open it: stock opencode's
+// right-click "Message Actions" is a FIXED list (revert / copy / fork) with
+// no plugin hook and no slot - verified in 1.18.31 and 1.18.32 - so captain's
+// own sidebar is the only place it can put "edit" and "delete" where a mouse
+// finds them ("I STILL CANNOT EDIT OR REMOVE a prompt", 2026-09-23, after
+// three attempts that only ever added a palette entry).
+export function openPromptsDialog(api: TuiPluginApi, onlyQueued: boolean, why: string) {
+  promptCommands(api).open(onlyQueued, why)
+}
+
+function promptCommands(api: TuiPluginApi) {
   const sessionID = () => {
     const cur = api.route.current as { name: string; params?: { sessionID?: string } }
     return cur?.name === "session" ? cur.params?.sessionID : undefined
@@ -1116,6 +1143,11 @@ function registerPromptCommands(api: TuiPluginApi) {
     }
     remove(sid, last)
   }
+  return { open: openPrompts, deleteLast }
+}
+
+function registerPromptCommands(api: TuiPluginApi) {
+  const { open: openPrompts, deleteLast } = promptCommands(api)
   api.keymap.registerLayer({
     commands: [
       { name: "captain.prompt.manage", title: "Prompts: edit or delete…", category: "Captain", namespace: "palette", run: () => openPrompts(false, "prompts") },
