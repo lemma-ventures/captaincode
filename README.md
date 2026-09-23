@@ -240,6 +240,7 @@ captain jev classify "fix the typo in README"   # see how it would triage a task
 | 🔀 [Workflow language](docs/WORKFLOW_LANGUAGE.md) | Script multi-step work |
 | 🧠 [Euclid](docs/EUCLID.md) | Per-repository project memory |
 | 🗺️ [Roadmap](docs/ROADMAP.md) | Milestones and what "done" means for each |
+| 🛠️ [Skills](skills/README.md) | Procedures other harnesses can load, taken from how Captain lands, verifies and checks claims |
 
 ## FAQ
 
