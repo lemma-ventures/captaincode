@@ -126,10 +126,15 @@ function View(props: { api: TuiPluginApi }) {
 
   const poll = async () => {
     try {
+      // Every poll is bounded. Without a signal these three hung forever
+      // against a brain that had stopped answering, and the panel opened a
+      // NEW connection a second until the client pool capped out - one TUI
+      // holding 256 sockets on a wedged brain (2026-09-23). A poll that is
+      // late is a poll to abandon: the next one is a second away.
       const [rs, ra, rw] = await Promise.all([
-        fetch(brainURL("/v1/stats")),
-        fetch(brainURL("/v1/activity")),
-        fetch(brainURL("/v1/workers")),
+        fetch(brainURL("/v1/stats"), { signal: AbortSignal.timeout(2500) }),
+        fetch(brainURL("/v1/activity"), { signal: AbortSignal.timeout(2500) }),
+        fetch(brainURL("/v1/workers"), { signal: AbortSignal.timeout(2500) }),
       ])
       if (!rs.ok) throw new Error(String(rs.status))
       const s = (await rs.json()) as Stats
