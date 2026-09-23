@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -21,8 +23,93 @@ const (
 	EffortLow    Effort = "low"
 	EffortMedium Effort = "medium"
 	EffortHigh   Effort = "high"
+	EffortXHigh  Effort = "xhigh"
 	EffortMax    Effort = "max"
 )
+
+// effortRungs is the escalation order an effort climbs on a second attempt.
+var effortRungs = []Effort{EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax}
+
+// EffortRank orders efforts; -1 for an unknown one.
+func EffortRank(e Effort) int {
+	for i, r := range effortRungs {
+		if r == e {
+			return i
+		}
+	}
+	return -1
+}
+
+// NextEffort is one rung up, or the same effort at the top. "" climbs to
+// medium: the transport's default is the floor, not a rung above it.
+func NextEffort(e Effort) Effort {
+	i := EffortRank(e)
+	if i < 0 {
+		return EffortMedium
+	}
+	if i+1 >= len(effortRungs) {
+		return e
+	}
+	return effortRungs[i+1]
+}
+
+// EffortCeiling is the strongest effort a bare (un-prefixed) request may
+// climb to on its own: /frontier alone reaches max. CAPTAIN_EFFORT_CEILING
+// overrides (default xhigh).
+func EffortCeiling() Effort {
+	if v := Effort(os.Getenv("CAPTAIN_EFFORT_CEILING")); EffortRank(v) >= 0 {
+		return v
+	}
+	return EffortXHigh
+}
+
+// DecideEffort is the per-task effort decision (ROUTING stage 3): a stated
+// preference wins outright; otherwise the class sets the base rung, frontier
+// work defaults to MEDIUM on a frontier-class leg (Anthropic's own curve:
+// medium gives up ~2 points at half the cost), irreversible work climbs one
+// rung, and every attempt after the first climbs one more - on the same
+// model first, which keeps the prompt cache warm (escalation.go). The climb
+// stops at EffortCeiling; only /frontier reaches max.
+//
+// /save on an open-weight leg is medium, not low: the cheap lane (lanes.go)
+// saves by running open models and runs each at its quality tier - its own
+// model rather than its flash sibling. /save on any other leg (no open one
+// was open, or CAPTAIN_LANES=0) stays low.
+func DecideEffort(prefer string, class Class, leg Leg, irreversible bool, attempt int) Effort {
+	switch prefer {
+	case "frontier":
+		return EffortMax
+	case "quality", "q", "best":
+		return EffortHigh
+	case "save", "cheap":
+		if LanesEnabled() && OpenWeights(leg) {
+			return EffortMedium
+		}
+		return EffortLow
+	case "speed", "fast":
+		return EffortLow
+	}
+	e := EffortMedium
+	switch class {
+	case ClassTrivial:
+		e = EffortLow
+	case ClassHigh:
+		e = EffortHigh
+		if leg == LegClaude || IsFrontierClass(leg) {
+			e = EffortMedium
+		}
+	}
+	if irreversible {
+		e = NextEffort(e)
+	}
+	for i := 1; i < attempt; i++ {
+		e = NextEffort(e)
+	}
+	if ceil := EffortCeiling(); EffortRank(e) > EffortRank(ceil) {
+		e = ceil
+	}
+	return e
+}
 
 // EffortFor maps the request to an effort: an explicit preference first
 // (/frontier → max, /quality → high, /speed and /save → low), else the
@@ -47,6 +134,27 @@ func EffortFor(prefer string, class Class) Effort {
 
 // ClaudeFlag is the value for claude -p --effort (low|medium|high|xhigh|max).
 func (e Effort) ClaudeFlag() string { return string(e) }
+
+// CostMultiplier scales a task's estimated spend by how hard the worker
+// thinks: reasoning tokens are output tokens. CAPTAIN_EFFORT_COST="l,m,h,x,max"
+// overrides (default 0.6,1,1.6,2.2,3).
+func (e Effort) CostMultiplier() float64 {
+	def := map[Effort]float64{EffortLow: 0.6, EffortMedium: 1, EffortHigh: 1.6, EffortXHigh: 2.2, EffortMax: 3}
+	if v := os.Getenv("CAPTAIN_EFFORT_COST"); v != "" {
+		f := strings.Split(v, ",")
+		if len(f) == len(effortRungs) {
+			for i, r := range effortRungs {
+				if x, err := strconv.ParseFloat(strings.TrimSpace(f[i]), 64); err == nil && x > 0 {
+					def[r] = x
+				}
+			}
+		}
+	}
+	if m, ok := def[e]; ok {
+		return m
+	}
+	return 1
+}
 
 // CodexFlag is the value for codex exec model_reasoning_effort: codex's top
 // is xhigh.

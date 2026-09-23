@@ -26,7 +26,7 @@ func TestRouteCallsAndTheWorkerShareOneTask(t *testing.T) {
 
 	b.chargeRoute(task)(captaincode.LegFree, "classify", captaincode.Result{Tokens: 400, DurationMs: 4200}, nil)
 	b.chargeRoute(task)(captaincode.LegGrok, "director", captaincode.Result{Tokens: 3000, DurationMs: 17500}, nil)
-	taskID, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.CallUsage(captaincode.LegClaude, 9000, 0.31, nil), 60000, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.CallUsage(captaincode.LegClaude, 9000, 0.31, nil), 60000, false, "")
 
 	labels := map[string]bool{}
 	for _, c := range captaincode.ChargeTree(b.ledger.Charges, taskID) {
@@ -51,7 +51,7 @@ func TestRouteCallsAndTheWorkerShareOneTask(t *testing.T) {
 // lazy precisely so it leaves no empty task row for a report to count.
 func TestRouteMintsNoTaskWhenItAsksNoModel(t *testing.T) {
 	b := teamBrain()
-	taskID, _ := b.chargeTurn(captaincode.LegFree, "fix typo in README", captaincode.CallUsage(captaincode.LegFree, 20, 0, nil), 900, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegFree, "fix typo in README", captaincode.CallUsage(captaincode.LegFree, 20, 0, nil), 900, false, "")
 	require.NotEmpty(t, taskID)
 	assert.Equal(t, 1, b.ledger.TaskTotals(taskID).Calls, "only the worker call")
 }
@@ -63,8 +63,8 @@ func TestRouteIdentityIsConsumedByTheTurnItRouted(t *testing.T) {
 	task := "review this"
 
 	b.chargeRoute(task)(captaincode.LegGrok, "director", captaincode.Result{Tokens: 2000}, nil)
-	first, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.Usage{}, 1000, false)
-	second, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.Usage{}, 1000, false)
+	first, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.Usage{}, 1000, false, "")
+	second, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.Usage{}, 1000, false, "")
 
 	assert.NotEqual(t, first, second, "a second turn of the same text is a second task")
 	assert.Equal(t, 2, b.ledger.TaskTotals(first).Calls, "the director call belongs to the turn it routed")
@@ -82,7 +82,7 @@ func TestStaleRouteIdentityIsNotAdopted(t *testing.T) {
 	b.routeTurns[truncate(task, 120)] = routeTurn{id: b.routeTurns[truncate(task, 120)].id, at: time.Now().Add(-2 * routeTurnTTL)}
 	b.rtmu.Unlock()
 
-	taskID, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.Usage{}, 1000, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.Usage{}, 1000, false, "")
 	assert.Equal(t, 1, b.ledger.TaskTotals(taskID).Calls, "a fresh turn does not inherit an hour-old plan")
 }
 
@@ -93,7 +93,7 @@ func TestFailedRouteCallIsStillCharged(t *testing.T) {
 	task := "plan this"
 	b.chargeRoute(task)(captaincode.LegGrok, "director", captaincode.Result{Tokens: 1200, DurationMs: 120000}, assert.AnError)
 
-	taskID, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.Usage{}, 1000, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.Usage{}, 1000, false, "")
 	assert.Equal(t, 2, b.ledger.TaskTotals(taskID).Calls, "a timed-out plan is a charge, not a silence")
 }
 
@@ -200,7 +200,7 @@ func TestOverheadCallsShareTheTurnsTask(t *testing.T) {
 	task := "rewrite the installer section"
 
 	b.chargeOverhead(task)(captaincode.LegGemini, "compaction", captaincode.Result{Tokens: 12000, DurationMs: 6400}, nil)
-	taskID, _ := b.chargeTurn(captaincode.LegClaude, task, captaincode.CallUsage(captaincode.LegClaude, 9000, 0.31, nil), 60000, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegClaude, task, captaincode.CallUsage(captaincode.LegClaude, 9000, 0.31, nil), 60000, false, "")
 
 	labels := map[string]bool{}
 	for _, c := range captaincode.ChargeTree(b.ledger.Charges, taskID) {
@@ -226,7 +226,7 @@ func TestFailedCompactionIsStillCharged(t *testing.T) {
 	b := teamBrain()
 	b.chargeOverhead("long session")(captaincode.LegGemini, "compaction",
 		captaincode.Result{Tokens: 8000, DurationMs: 90000}, errors.New("timeout"))
-	taskID, _ := b.chargeTurn(captaincode.LegClaude, "long session", captaincode.CallUsage(captaincode.LegClaude, 100, 0, nil), 1000, false)
+	taskID, _ := b.chargeTurn("", captaincode.LegClaude, "long session", captaincode.CallUsage(captaincode.LegClaude, 100, 0, nil), 1000, false, "")
 	assert.Equal(t, 2, b.ledger.TaskTotals(taskID).Calls)
 }
 

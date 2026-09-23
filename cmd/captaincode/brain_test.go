@@ -476,6 +476,7 @@ func TestRerouteTarget_ImageTaskGoesToVisionLeg(t *testing.T) {
 // of weighing glm/minimax/codex on merit (live 2026-07-19). The hint must be
 // the USER's preference (quality|speed|save) or nothing.
 func TestBrainRoute_PreferIsUsersNotLadderAnchor(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "0") // the director's hint; the quality lane asks no director
 	var gotPrefer string
 	b := &brain{
 		ledger: &captaincode.Ledger{Cooldowns: map[captaincode.Leg]time.Time{}},
@@ -550,6 +551,8 @@ func TestNarrationOnly(t *testing.T) {
 // binding prompt language alone let it rationalize the free leg off its
 // trivial-class average (live 2026-07-25).
 func TestBrainRoute_QualityConstrainsMenu(t *testing.T) {
+	// The director's menu; the lane over the same menu: brain_lanes_test.go.
+	t.Setenv("CAPTAIN_LANES", "0")
 	defer captaincode.SetDirector(captaincode.Director) // restore
 	captaincode.SetDirector(captaincode.LegClaude)      // production config: claude directs
 	var gotOpen []captaincode.Leg

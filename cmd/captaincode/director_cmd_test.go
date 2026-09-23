@@ -19,7 +19,7 @@ func TestRefusingAnAgentDirectorNamesTheHelmAndTheNearestJudge(t *testing.T) {
 	assert.Contains(t, msg, "cannot direct")
 	assert.Contains(t, msg, "The helm is unchanged")
 	assert.Contains(t, msg, "/captain codex`")
-	assert.Contains(t, msg, "gpt-5.5", "the twin's director model is named")
+	assert.Contains(t, msg, "directs as gpt-6-sol.", "the twin's director model is named - the standard twin, not the fast worker")
 
 	twin, ok := captaincode.JudgeTwin(captaincode.LegCodexCLI)
 	require.True(t, ok)

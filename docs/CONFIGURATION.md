@@ -30,6 +30,19 @@ is sent anywhere; all of it lives under your home directory.
 | `CAPTAIN_DIRECTOR_WINDOW` | `14d` | The trailing window `auto` measures usage over (`Nd`, `Nw`, or a Go duration). |
 | `CAPTAIN_DIRECTOR_AUTO_FLOOR` | `0.80` | `auto` only considers judges whose index is at least this fraction of the best judge's. |
 | `CAPTAIN_DIRECTOR_TIER_BAND` | `0.10` | `quality` treats judges within this fraction of the best as tier 1 and picks the best below it. |
+| `CAPTAIN_DIRECTOR_PICK` | on (`0` restores the plan) | On the director path the judge answers a **typed choice** over the value-ranked menu (`{"leg","class"}`) instead of writing a plan and a rationale: a few hundred prompt tokens, one call, no brief. Named legs (`/team`, "have grok and codex …") keep the plan path. |
+| `CAPTAIN_DIRECTOR_PICK_TIMEOUT` | `8s` | The pick's cap; past it the menu's first row runs and the decision says so (`director pick failed … → value #1`). |
+| `CAPTAIN_LANES` | on (`0` disables) | `/frontier`, `/quality` and `/save` spread their turns across the legs that qualify instead of the top row every time (see *Lanes* below). Off, `/frontier` is claude, `/quality` and `/save` go back to the director, and `/save` runs at low effort. |
+| `CAPTAIN_LANE_WINDOW` | `40` | How many of a lane's recent turns the balancer counts. |
+| `CAPTAIN_LANE_FLOOR` | `0.85` | A leg shares a lane when its score is at least this fraction of the lane's best (perf index on the frontier lane, blended quality on the others). |
+| `CAPTAIN_DIRECTOR_SELF` | on (`0` keeps it off) | A **high**-class task's menu includes the judge's own leg when it takes tasks and is open, so the hardest work can reach the best model even when that model directs. Trivial and medium menus never carry it. |
+| `CAPTAIN_ROUTING_POLICY` | `expected` | How the cheap path orders the eligible legs: `value` (quality − cost − latency), `expected` (cost per **successful** task over `(leg, effort)` arms, gated by `CAPTAIN_EXPECTED_MIN_LABELED`), or `bandit` (Thompson sampling over the same arms, gated by `CAPTAIN_BANDIT_MIN_LABELED`; falls back to `expected`, then `value`). Under a gate the arms are still scored and recorded on the decision; the value order runs. See *Learning* below. |
+| `CAPTAIN_EXPECTED_MIN_LABELED` | `50` | Settled outcomes the routing history must hold before the expected-cost order is allowed to run. |
+| `CAPTAIN_BANDIT_MIN_LABELED` | `200` | Settled outcomes before the bandit may act. |
+| `CAPTAIN_SUCCESS_FLOOR` | `0.30,0.45,0.55` | Least estimated P(success) an arm needs per class (trivial, medium, high) to be dispatched to on the expected path. |
+| `CAPTAIN_LATENCY_TOL` | `90s,10m,30m` | Per-class latency tolerance; an arm's observed duration past it scales its expected cost up. |
+| `CAPTAIN_WINDOW_ALLOWANCE` | `90m` | Worker wall-clock a subscription's 5h window is assumed to hold. The **burn rate** against it is the quota term (0 idle → 1 spent), replacing the rate-limit flag alone. |
+| `CAPTAIN_TRIAGE_SHADOW_RATE` | `0.2` | Share of confident tier-0 turns (above `CAPTAIN_TRIAGE_JEV_BELOW`) that ask jev beside the route, act on nothing, and record the comparison - the triage point had never been measured where the heuristic is surest. |
 
 ### The helm: choosing the director at runtime
 
@@ -45,6 +58,26 @@ is sent anywhere; all of it lives under your home directory.
 | `reset` | Back to `CAPTAIN_DIRECTOR` / the default. |
 
 A mode re-resolves once a minute against the live ranking and usage; `grok` and `grok-max` count as one judge (same model, same credential).
+
+### Routing mix
+
+`/captain more <axis>`, `/captain less <axis>` and `/captain <axis>=N% …` set a standing target for unprefixed turns. Axes: `frontier`, `quality`, `cheap`, `fast`, `oss`, `deterministic` (`speed`/`save`/`open`/`det` are aliases). The command saves the mix in `state.json` and prints the targets.
+
+Until one is set, the mix is `frontier=quality=cheap=fast=oss=20%`, `deterministic=0`, and that default does **not** move the ranking. A bare `more` or `less` moves 5 points. `more oss 20%` means 20% more than the current share (20% becomes 24%); the other axes fund the change so the mix still sums to 100. From 0, a percent is absolute, so `more deterministic 20%` leaves zero. Repeating compounds. `/captain targets` prints the mix; `/captain mix reset` clears it.
+
+The director then prefers legs that close the gap between recent routes and the target (open-weight for oss, ADI-green for deterministic, frontier-class for frontier, and the cheap / fast / quality bands for the rest). An explicit `/quality`, `/speed`, `/save`, `/frontier`, `/oss` or `/deterministic` on a turn still wins. `CAPTAIN_STEER=0` keeps a saved mix from moving the ranking.
+
+### Lanes: /frontier, /quality, /save
+
+A stated preference names a lane, not a leg. Each lane counts where its last `CAPTAIN_LANE_WINDOW` turns went (`lane_runs` in `state.json`, noted when the turn is dispatched) and sends the next to the leg furthest behind an equal share. Only legs scoring within `CAPTAIN_LANE_FLOOR` of the lane's best take part. A lower-ranked leg goes next only once it is a full run behind, so the best leg runs a lane's first turns and wins ties, and over a full window each leg has its share. A leg that keeps failing (two or more provider faults, a third of its runs) sits out unless every leg in the lane does.
+
+| Lane | Legs | Runs at |
+|---|---|---|
+| `frontier` | The frontier-class legs and claude, ranked by perf index (claude and codex-cli today; grok-max sits below the floor) | claude as the frontier pseudo-leg (pinned strongest model, max thinking); any other leg at max effort (codex-cli: its frontier model at `xhigh`) |
+| `quality` | The two best legs by blended quality, the director's own leg included when it is open | high effort |
+| `cheap` (`/save`) | Open-weight legs that clear the class's quality bar (`CAPTAIN_VALUE_TAU`) | medium effort: the leg's own model, not its flash sibling |
+
+With no open-weight leg open, `/save` routes over the whole ladder at low effort, as before lanes, and the feed says so. A forced leg (`/glm …`), legs named in the prompt, and a task-API plan that sends nothing are not counted or balanced. `/team`, workflows and a `/frontier` stage inside a workflow keep their own leg choice. The route's rationale names the lane, the leg and the tally (`frontier lane: codex-cli (under-used: 3 of the last 8, share 4.0; claude 5 · codex-cli 3)`).
 
 ### Minimal profile (Claude + Cursor only)
 
@@ -91,7 +124,8 @@ After edit: restart the brain so doctor and health report the new director. Use 
 | `CAPTAIN_REDACT` | `on` | Secrets on the wire (see [SECRETS.md](SECRETS.md)): credentials in tool output and request bodies become stable placeholders, the operator's home/name become stand-ins, private-key files are refused. `off`, `secrets` (no identity rewrite), `strict` (`.env` refused too). |
 | `CAPTAIN_PROXY_ADDR` | `127.0.0.1:14098` | The egress proxy the workers, claude -p and codex exec call providers through. `CAPTAIN_PROXY_CLAUDE=0` / `CAPTAIN_PROXY_CODEX=0` send that CLI direct. |
 | `TYPESAFE_API_KEY` | unset | TypeSafe key (console.typesafe.ai/settings/keys) - or, like `aa.env`, a `jev.env` file holding the console download's `API_KEY=…` line in `~/.config/captain/`, next to the captain source (`CAPTAIN_SRC`) or in the current directory; the variable wins over the file. With it the **jev** decision leg is ready (`captain doctor`), triage asks it first, and `captain jev` answers by hand. `CAPTAIN_JEV_MODEL` repins it (default `jev-latest`, the alias TypeSafe moves; pin `jev-1.13.0` to freeze a tuned confidence bar); `CAPTAIN_SYSTEMONE_URL` points the client at another System One-shaped endpoint - **with or without a key**, so an open backend needs no `TYPESAFE_API_KEY` at all. See [Decision legs](#decision-legs-jev) and [Open backends](#open-decision-leg-backends). |
-| `CAPTAIN_AA_API_KEY` | unset | Artificial Analysis key (or `aa.env` in `~/.config/captain/`). With it the brain refreshes the perf ranking daily from the live feed (cached in `~/.captaincode/perf.json`); without it the ranking is the snapshot compiled into the binary. The ranking orders the sidebar's Frontier and Models sections, the `/frontier` failover chain, and the ⇡ "newer model in this family" flags. |
+| `CAPTAIN_AA_API_KEY` | unset | Artificial Analysis key (or an `aa.env` file holding `API_KEY=…` in `~/.config/captain/`, next to the captain source, or in the current directory; the variable wins). With it the brain refreshes the perf ranking from the live feed every six hours (cached in `~/.captaincode/perf.json`), retrying hourly after a failed fetch; without it the ranking is the cache, then the snapshot compiled into the binary, and the brain says so once at startup and checks for a key hourly. Each refresh names what changed in the brain log and in every open TUI's Last Runs: models new to the feed, a leg whose row moved (grok-max read Grok 4.6 until 4.7 was listed), and legs newly flagged ⇡. Nothing retargets on its own: click the ⇡ or run `captain upgrade --models --apply`. `captain upgrade --models` reads today's feed when a key is present, and `captain doctor` reports the ranking's source, age and flagged legs. The ranking orders the sidebar's Frontier and Models sections, the `/frontier` failover chain, and the ⇡ "newer model in this family" flags. |
+| `CAPTAIN_PERF_REFRESH` | `6h` | How often the brain re-reads the Artificial Analysis feed (a duration, a minute at least). The key's free tier allows a thousand reads a day. |
 | `CAPTAIN_ROUTE_TIMEOUT_MS` | `12000` (set `30000` with a frontier director) | How long the terminal waits for a routing decision. A director that plans slower than this is bypassed entirely. |
 
 ### Decision legs: jev
@@ -271,14 +305,35 @@ however many outcomes settle.
 Agent Skills are procedures written down once - a directory with a `SKILL.md`
 whose frontmatter carries a `name` and a `description`. Every runtime captain
 drives already reads them and already does progressive disclosure, so captain
-writes **nothing** into the prompt: it decides which skills EXIST where the
-worker runs, and the worker's own runtime picks what to open.
+writes **nothing** into the prompt about the skills it picks: it decides which
+skills EXIST where the worker runs, and the worker's own runtime picks what to
+open.
 
 Nothing is synced by default. With an empty catalog there is no directory, no
 listing and no call - a run is byte-for-byte what it was before the feature
 existed.
 
+**One skill is always on: `security-audit`.** Cloudflare's security guidance
+and vulnerability-review skill
+([cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill),
+MIT, pinned in code to the commit reviewed for it) is stocked for every worker
+on every path - solo, team, workflow stage and `/frontier` - whatever the task
+says. Security is not a topic a task has to name to need: "add a login form"
+and "wire up this SDK" never say the word, and they are exactly the changes a
+security reviewer reads. It takes the first place on the shelf and counts
+toward both budgets below. It still has to be synced once, and `captain
+doctor` says so until it is. Every worker prompt also carries a security-first
+line (dependencies checked on the official registry, pinned, named in the
+answer - see [CLI](CLI.md#what-every-worker-prompt-carries)); with the skill
+synced, that line is the one place captain names a skill in the prompt,
+pointing the worker at it in guidance mode - the skill's own default. A full
+audit writes a report tree and fans out across many agents, so it runs only
+when you ask for one. The two validators it ships beside its `SKILL.md` are
+plain Node that reads the files it is pointed at: no network, no install, no
+child process.
+
 ```bash
+captain skills sync --source cloudflare/security-audit-skill   # the always-on security skill, at its reviewed commit
 captain skills sync --commit <full-40-char-sha>   # anthropics/skills, vetted and hashed
 captain skills                                    # what is on the shelf, and its provenance
 captain skills select "merge these PDFs"          # what a task would be handed, and why
@@ -289,6 +344,7 @@ captain skills report                             # stocked vs used vs graded
 |---|---|---|
 | `CAPTAIN_SKILLS_DIR` | `~/.captaincode/skills` | The synced catalog and its `skills.lock` |
 | `CAPTAIN_SKILLS_CAP` | `8` | How many skills may be stocked for one task |
+| `CAPTAIN_SKILLS_ALWAYS` | `security-audit` | Skills stocked for every task, first, whatever its words - comma-separated, replacing the default. `0`, `off`, `none` or `false` stocks none. A name the catalog does not hold is not stocked (always-on is a place on the shelf, not a fetch) |
 
 The cap is a context budget, not a preference: every stocked skill costs its
 name and description in every worker's startup listing, and codex truncates
@@ -305,7 +361,8 @@ Three refusals are worth knowing about:
   no less.
 - **Frontmatter outside the spec's set fails the skill**, rather than being
   ignored. That includes `allowed-tools`, which the spec marks experimental.
-- **First-party catalogs only.** `anthropics/skills` and `openai/plugins`,
+- **First-party catalogs only.** `anthropics/skills`, `openai/plugins` and
+  `cloudflare/security-audit-skill`, each a publisher shipping its own work,
   each at a named commit. Community directories are not read: a 2026 audit
   found prompt injection in 36% of tested community skills, and the standard
   offers no signing to lean on.
@@ -318,8 +375,15 @@ are never vendored into captain.
 Where the shelf lands depends on the path. A parallel worker gets it in its
 own worktree and it dies with the worktree; a solo worker gets it in your own
 directory for the turn, excluded from `git status` while it is there and
-removed when the turn ends. A skill you already have at that name is never
-overwritten and never deleted.
+removed when the turn ends. The exclusion names each staged path exactly, in
+the exclude file git actually reads (the one a linked worktree shares with its
+repository), so a worktree's diff never carries the shelf and a skill of yours
+beside it stays visible. Turns that overlap in one directory share one staged
+copy, and the last one out removes it. A skill you already have at that name
+is never overwritten and never deleted, by `captain skills unstage` either: it
+takes back only what carries captain's marker, and names what it leaves. A
+copy left behind by a brain that died mid-turn carries that marker, so the
+next turn takes it back.
 
 **What the shelf was worth.** When the director grades a run it also grades
 the shelf, in the same call: for each stocked skill, does the answer show that
@@ -348,7 +412,17 @@ An outcome now settles from evidence captain already holds, and records
 | A later regression | regressed | `regression` |
 | The task never reached delivery (`failed`, `exhausted`) | rejected | `lifecycle` |
 | Any task-linked check failed | rejected | `checks` - at once, no window |
+| A **commit** after the run touched the files the worker changed | accepted | `commit` - at once: the user kept the work |
+| The next prompt on that workspace, inside the window, was a **correction** ("no, …", "still broken", "revert") | rejected | `reprompt` - at once |
 | Every check passed, nothing came back for `CAPTAIN_OUTCOME_SETTLE` | accepted | `checks` |
+| Something was delivered (an answer, a diff), no check ran, nothing came back for the window | accepted | `silence` - the weakest honest acceptance, labelled so calibration weighs it under the others |
+
+Checks come from a workflow gate (`gate`), the director's grade of a solo
+run (`solo`), and - since the solo verification below - the repository's
+own test command run after a solo worker changed files (`tests`). Every
+outcome also records what was delivered and when (`delivered_at`,
+`delivered_chars`, `changed_files`), the effort and model of the
+delivering attempt, and the repair/escalation sequence when one ran.
 
 Two cases deliberately stay **pending**. A **cancelled** task is the user
 changing their mind about the question, not a verdict on the answer, and
@@ -363,8 +437,52 @@ captain outcomes <task-id>          # one task's evidence in full
 captain outcomes --settle           # settle everything whose evidence has decided it
 ```
 
-The brain sweeps on every turn it records; `--settle` exists so a window that
-has just elapsed can be applied now, and so the counts are visible.
+The brain sweeps on every turn it records (looking for follow-up commits
+first); `--settle` exists so a window that has just elapsed can be applied
+now, and so the counts are visible.
+
+### Learning: the routing journal, the estimator and the policies
+
+`state.json` keeps ring buffers - 500 events, 200 decisions, 200 outcomes -
+which is what a sidebar needs and less than what learning needs. Every
+decision that reached a task, every run event and every outcome that
+settled is therefore also appended, one line each, to
+`~/.captaincode/routing.jsonl` (`CAPTAIN_ROUTING_LOG=0` turns it off; a
+path names another file; `CAPTAIN_ROUTING_LOG_MAX_MB`, default 64, keeps
+the newest half past the cap). Each event now records the class that
+routed, who settled it (`heuristic`, `classify`, `jev`, `director`) and
+how sure, the effort, the model the leg ran as, the decision path, and the
+attempt number - the attribution the scorecards were missing.
+
+The **success estimator** reads that history: a task is hashed into a
+bag-of-tokens vector (no model, microseconds), its nearest labelled
+neighbours vote per `(leg, effort)`, observations from another model
+version count 0.3, other efforts 0.5, and a 30-day half-life ages them. A
+leg nobody has tried is scored by a **prior** read off the performance
+feed's per-effort rows (`claude-opus-5-5-medium`, …) and reported as one.
+jev's mid-tier answer, when asked, blends into a mid-tier leg's prior.
+
+The **expected-cost** policy scores every arm as `cost + (1 − P) · repair`
+(reasoning tokens scale cost by rung; a subscription window's burn rate is
+priced against `CAPTAIN_VALUE_COST_REF`; a redo one rung up is the repair),
+scales it past the class's latency tolerance, drops arms under the success
+floor, and runs the cheapest expected cost per successful task - once the
+history holds `CAPTAIN_EXPECTED_MIN_LABELED` settled outcomes. Below that
+the value order runs and the decision says why; the arms are recorded
+either way (`captain why` prints them).
+
+The **bandit** (`CAPTAIN_ROUTING_POLICY=bandit`) samples each arm's success
+probability from its Beta posterior and pulls the best sampled reward. It
+refuses below `CAPTAIN_BANDIT_MIN_LABELED` and says so.
+
+```bash
+captain policy distill [path]   # the labelled history as JSONL rows a small router would train on
+```
+
+The export is the honest gate for a distilled router: it prints how many
+labelled rows exist and by what they were decided. Training one is a
+separate job that wants a few thousand rows; captain does not pretend to
+have one before then.
 
 ### Shadow decisions: reading jev's calibration
 
@@ -442,6 +560,8 @@ dialog (`ctrl+x p`) before the running turn ends.
 | `CAPTAIN_WORKER_CLI_TOOL_TIMEOUT` | `2h` | How long a CLI leg may be silent while one of its tools runs (a benchmark, a long test): the CLI bounds its own tools, opencode's 10m bash cap does not apply. |
 | `CAPTAIN_WORKER_FIRST_EVENT_TIMEOUT` | `90s` | Nothing at all from a fresh worker ⇒ treat the leg as down. |
 | `CAPTAIN_WORKER_LOGS` | on (`0` disables) | Write `~/.captaincode/runs/<id>-<leg>.log`. |
+| `CAPTAIN_WORKER_CALLBACK` | on (`0` disables) | The line on every worker prompt that tells a worker to arm `captain send` for work that outlives its turn, instead of promising to report later ([CLI](CLI.md#what-every-worker-prompt-carries)). |
+| `CAPTAIN_WORKER_SECURITY` | on (`0` disables) | The security-first line on every worker prompt: prefer the standard library or an existing dependency, confirm a new package's exact name and publisher on the official registry, pin it, read install scripts, never weaken TLS/auth/sandbox checks, and name every dependency added or changed in the answer. Independent of `CAPTAIN_SKILLS_ALWAYS`, which governs the skill. |
 | `CAPTAIN_CWD` | process cwd | The terminal's workspace. The TUI names it on every brain call (`X-Captain-Cwd`). The brain itself only uses it for CLI commands (`captain euclid …`) and as the fallback for a caller that sent none. |
 | `CAPTAIN_WORKSPACE_ROOT` | `~/Gits` | Where linked repositories are looked for. |
 | `CAPTAIN_CLAUDE_PERMISSIONS` | `--dangerously-skip-permissions` | Flags passed to `claude -p`. See [SECURITY](../SECURITY.md) before changing. Workers also get `--add-dir` for the workspace root's siblings and the temp dirs, and `captain init` removes `permissions.blockReadsOutsideWorkingDirectories` from `~/.claude/settings.json` - under it a worker cannot run any shell command with a `$expansion`, redirect or computed path. |
@@ -462,39 +582,113 @@ Every leg takes `<PREFIX>_PROVIDER` and `<PREFIX>_MODEL`, where the prefix is
 `CAPTAIN_<ID>` uppercased with `-` as `_` (`CAPTAIN_DS_FLASH_MODEL`). This is how
 you survive a provider retiring a model: repoint the leg, keep its scorecard.
 
-Frontier legs additionally take `CAPTAIN_FRONTIER_MODEL` (default
-`claude-fable-5`), `CAPTAIN_CODEX_CLI_MODEL` (default `gpt-6-astra`) and
-`CAPTAIN_CODEX_CLI_SANDBOX`. Cursor under `/frontier` takes
-`CAPTAIN_CURSOR_FRONTIER_MODEL` (default `grok-4.7-xhigh`); the grok
-worker under `/frontier` uses the director pin (`grok-4.7`, shared with
-`/grok-max`).
+Frontier legs additionally take `CAPTAIN_FRONTIER_MODEL` (default `opus`,
+the alias Claude Code resolves to its newest Opus: Claude Opus 5.5 on Claude
+Code 2.1.280 and later, Opus 5 before it; `fable` brings Claude Fable 5.1
+back, a full name freezes a version), `CAPTAIN_CODEX_CLI_MODEL` (default
+`gpt-6-astra`) and `CAPTAIN_CODEX_CLI_SANDBOX`.
+
+#### Tiers: cheap, quality, frontier on every leg
+
+Each worker leg runs one of three models on its own credential, chosen by
+the request's effort. **Cheap** is low effort (`/save`, `/speed`, and bare
+trivial work). **Frontier** is max effort (`/frontier`). **Quality** is
+everything in between and is the leg's own model. A leg whose provider ships
+a single model runs it in all three bands, at that band's effort.
+
+| Leg | Cheap | Quality | Frontier |
+|---|---|---|---|
+| `claude` | `sonnet` (Sonnet 5) | Claude Code default (Opus 5.5) | `opus` at max |
+| `codex-cli` | `gpt-6-sol` | `gpt-6-astra` | `gpt-6-astra` at xhigh |
+| `codex` | `gpt-6-luna` | `gpt-6-sol-fast` | `gpt-6-astra` |
+| `cursor` | `composer-2.5` | `grok-4.7-<effort>` | `grok-4.7-xhigh` |
+| `grok` | `grok-build-0.1` | `grok-build-0.1` | `grok-4.7` |
+| `gemini` | `gemini-3.5-flash-lite` | `gemini-3.7-flash` | `gemini-3.8-flash` |
+| `deepseek` | `deepseek-v4-flash` | `deepseek-v4-pro` | `deepseek-v4-pro` |
+| `glm` | `glm-5.3-flash` | `glm-5.3` | `glm-5.3` |
+| `qwen` | `qwen3.6-35b-a3b` | `qwen3.5-397b-a17b` | `qwen3.5-397b-a17b` |
+| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `free` | one model | one model | one model |
+
+`<PREFIX>_CHEAP_MODEL` and `<PREFIX>_FRONTIER_MODEL` pin a band
+(`CAPTAIN_CODEX_CHEAP_MODEL`, `CAPTAIN_CURSOR_FRONTIER_MODEL`,
+`CAPTAIN_CLAUDE_FRONTIER_MODEL`); `<PREFIX>_MODEL` stays the quality model,
+and on claude it now pins `claude -p --model` too. A registry overlay entry
+sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
+`CAPTAIN_CHEAP_TIER=0` keeps every leg on its own model at low effort.
+`captain upgrade --check` prints the resolved table.
+
+The band follows the effort, not the prefix, so a verify climb from low to
+medium also moves from the cheap model to the leg's own. That second attempt
+starts a fresh prompt cache. Qwen has no frontier sibling here, because
+`qwen3.6-max-preview` is only served by endpoints that OpenRouter refuses
+under a zero-data-retention account setting.
+
+OpenAI's GPT-6 family covers three tiers on one ChatGPT login, as three legs:
+
+| Tier | Leg | Model | Override |
+|---|---|---|---|
+| Cheap | `luna` | `gpt-6-luna` | `CAPTAIN_LUNA_MODEL` |
+| Quality | `codex` | `gpt-6-sol-fast` (directs as `gpt-6-sol`) | `CAPTAIN_CODEX_MODEL` |
+| Frontier | `codex-cli` | `gpt-6-astra` through `codex exec` | `CAPTAIN_CODEX_CLI_MODEL` |
+
+All three draw on the same subscription windows. `codex` runs Sol in fast
+mode for interactive latency, which draws that quota at twice the rate;
+`CAPTAIN_CODEX_MODEL=gpt-6-sol` trades the speed back for quota. Until
+Artificial Analysis scores GPT-6 Sol and Luna, the ranking reads their GPT-5.6
+rows.
 
 ### Effort
 
-How hard a worker thinks is decided per request, not per leg: `/frontier`
-→ max, `/quality` → high, `/speed` and `/save` → low, a bare prompt → the
-task's difficulty rating (high → high, medium → medium, trivial → low). The
-model is picked separately, by the balanced ranking. Every transport with a
-knob gets it: claude -p `--effort`, codex exec `model_reasoning_effort`
-(max is codex's xhigh), an opencode worker's message `variant` fitted to
+How hard a worker thinks is decided per task, not per leg. A stated
+preference wins outright: `/frontier` → max, `/quality` → high, `/speed`
+and `/save` → low. A bare prompt gets the **per-task decision**
+(`DecideEffort`): the class sets the rung (trivial → low, medium → medium,
+high → high), **frontier-class work defaults to medium** on claude or a
+frontier-class leg (the published curve: medium gives up about two points
+at half the cost), **irreversible** work - a migration, a deletion, a
+deploy, a force-push, money moving, read by tier 0's patterns or by jev's
+calibrated answer - climbs one rung, and every attempt after the first
+climbs one more, on the same model first (see *Budgets, escalation* below).
+The climb stops at `CAPTAIN_EFFORT_CEILING` (default `xhigh`); only
+`/frontier` reaches max. The rungs are low, medium, high, xhigh, max.
+
+Under the `expected` routing policy the effort is chosen **with** the leg:
+each eligible leg is scored at its decided rung and one up, and a cheaper
+leg thinking harder can beat a dearer leg thinking less.
+
+Every transport with a knob gets the rung: claude -p `--effort`, codex exec
+`model_reasoning_effort` (max is codex's xhigh), cursor-agent a **pinned
+model rung** (below), an opencode worker's message `variant` fitted to
 what the model offers (glm: low/high/max; grok-4.7: low…xhigh; none for
-grok-build, kimi). The run's effort shows on its Last Runs line in the
-sidebar.
+grok-build, kimi). The run's effort and model show on its Last Runs line in
+the sidebar, on its ledger event, and in `captain why`.
+
+Cursor used to run whatever its own `auto` router chose, which captain
+could neither name nor attribute. It now pins a rung of one family:
+`CAPTAIN_CURSOR_MODEL` names the family (default `grok-4.7`, the family
+`/frontier` already pins), a listed family (`grok-4.7`, `cursor-grok-4.6`,
+`gpt-5.3-codex`) takes the rung the effort asks for, a full model name is
+used as is, and `auto` restores Cursor's router.
 
 `/frontier` alone is the pseudo-leg: claude at the ceiling. In front of a
 leg or a workflow it is a modifier - `/frontier /claude X > /grok >
 /codex-cli` runs claude, grok and codex-cli, each at its most performant
 settings (claude at max effort; grok upgrades from grok-build to grok-4.7;
 cursor pins `grok-4.7-xhigh`), and claude at max effort *is* the frontier
-configuration (the strongest alias, `--effort max`). When the frontier
-tier's own limit refuses such a run (the monthly spend cap, "your Fable
-limit"), the tier is benched, not claude, and the same turn reruns claude
-at standard settings.
+configuration (the `opus` alias, `--effort max`). When the frontier
+tier's own limit refuses such a run (the monthly spend cap, or a tier
+limit such as "your Fable limit" with the model pinned to `fable`), the
+tier is benched, not claude, and the same turn reruns claude at standard
+settings.
 
 | Variable | Default | Effect |
 |---|---|---|
 | `CAPTAIN_FRONTIER_EFFORT` | unset | Pin claude's `/frontier` effort (`xhigh` to get the pre-2026-09-13 second-to-best) |
+| `CAPTAIN_EFFORT_CEILING` | `xhigh` | The strongest rung a bare prompt may climb to (irreversible work, later attempts). |
+| `CAPTAIN_EFFORT_COST` | `0.6,1,1.6,2.2,3` | Cost multiplier per rung (low…max) the expected-cost ranking prices reasoning with. |
+| `CAPTAIN_CURSOR_MODEL` | `grok-4.7` | cursor-agent's family (rung chosen by effort), a full model name, or `auto` for Cursor's own router. |
 | `CAPTAIN_CURSOR_FRONTIER_MODEL` | `grok-4.7-xhigh` | cursor-agent `--model` when the request is `/frontier` |
+| `CAPTAIN_CHEAP_TIER` | on (`0` disables) | Run each leg's cheap-tier sibling at low effort (see *Tiers*). |
 | `CAPTAIN_CODEX_CLI_EFFORT` | unset | Pin codex exec's effort whatever the request |
 | `CAPTAIN_EFFORT_VARIANTS` | `1` | `0` sends opencode workers no variant (the model's default reasoning) |
 
@@ -517,14 +711,17 @@ at standard settings.
 | `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch. |
 | `CAPTAIN_STRICT` | off | When set with a cost cap, only cost-reporting adapters may run (see `captain budget`). |
 | `CAPTAIN_MAX_REPAIRS` | `1` | Same-leg objective-failure repairs before escalation. `0` = no repairs. |
+| `CAPTAIN_MAX_EFFORT_ESCALATIONS` | `1` | Between the repair and the leg escalation: the same leg one effort rung up (prompt cache and context survive). `0` = skip straight to the leg. |
 | `CAPTAIN_MAX_ESCALATIONS` | `1` | Moves to a stronger leg after repair exhausts. `0` = stop after repairs. |
+| `CAPTAIN_SOLO_VERIFY` | on (`0` disables) | After a **solo** worker changed files in a repository whose test command captain can detect (`go.mod`, `package.json`, `pyproject.toml`, `Cargo.toml`, `Makefile`), the tests run before the turn ends. A failure buys, in order and each bounded above and by the task's budget: a repair on the same leg with the failure output, the same leg one rung up, then the next stronger leg. Each attempt streams into the same answer and is its own event; the outcome carries the sequence. If a retry times out or yields no test verdict, verification is inconclusive and automatic retries stop. |
+| `CAPTAIN_SUPERVISE_BAR` | `0.7` | jev's supervisor answers gate the sequence: "needs a human" above the bar stops it (the failure is delivered, not retried); "off track" above it skips the repair - the same model at the same effort went the wrong way. |
 | `CAPTAIN_TASK_TOKEN` | unset | Bearer token for `/v1/task/*`. Unset ⇒ loopback-only. Set ⇒ every task HTTP request needs `Authorization: Bearer …`. |
 
 ### Miscellaneous
 
 `CAPTAIN_BRAIN_URL` (default `http://127.0.0.1:14097`), `CAPTAIN_SRC` (source
 checkout for `captain upgrade`), `CAPTAIN_REPEAT_MAX` (default `100`),
-`CAPTAIN_AA_API_KEY` (only for `captain priors sync`).
+`CAPTAIN_AA_API_KEY` (the perf ranking's feed and `captain priors sync`).
 
 ### TUI chrome
 

@@ -28,6 +28,7 @@ type doctorOpts struct {
 	opencodeAuth   string                                  // path to opencode's auth store
 	captainEnv     string                                  // path to ~/.config/captain/env
 	brain          func() (string, error)                  // one-line brain summary, or why not
+	aaKey          func() string                           // the Artificial Analysis key, stubbed in tests
 	runVersion     func(string, ...string) ([]byte, error) // stubbed in tests
 	runHelp        func(string, ...string) ([]byte, error) // stubbed in tests (capability probes)
 	self           captaincode.SelfProbe                   // captain's own build identity (ROADMAP M1.1)
@@ -35,6 +36,39 @@ type doctorOpts struct {
 	// serve; non-nil = use as-is (tests pass &ServeRoster{} so a local brain
 	// cannot flip a leg to ready).
 	serve *captaincode.ServeRoster
+}
+
+// rankingReport is the doctor's ranking line(s): the cache when there is one
+// (never installed here - doctor must not change the ranking a test or a
+// sibling command sees), else the compiled snapshot; then every leg the feed
+// flags ⇡. It reads the files, not the brain, so it answers with the brain down.
+func rankingReport(keyed bool) string {
+	models, src, asOf := captaincode.PerfModels()
+	if cached, at, ok := captaincode.PerfCache(); ok {
+		models, src, asOf = cached, "cache", at
+	}
+	var sb strings.Builder
+	age := ""
+	if t, err := time.Parse("2006-01-02", asOf); err == nil {
+		if days := int(time.Since(t).Hours() / 24); days >= 2 {
+			age = fmt.Sprintf(", %d days old", days)
+		}
+	}
+	switch src {
+	case "cache":
+		fmt.Fprintf(&sb, "ranking    live feed cached %s%s (%d models)", asOf, age, len(models))
+	default:
+		fmt.Fprintf(&sb, "ranking    compiled snapshot %s%s (%d models)", asOf, age, len(models))
+	}
+	if keyed {
+		fmt.Fprintf(&sb, " · the brain refreshes it every %s\n", perfRefreshInterval())
+	} else {
+		sb.WriteString(" · no Artificial Analysis key: set CAPTAIN_AA_API_KEY or API_KEY=… in ~/.config/captain/aa.env to keep it fresh\n")
+	}
+	for _, f := range captaincode.PerfFlags(models) {
+		fmt.Fprintf(&sb, "           ⇡ %-9s %s (%.0f) outscores %s (%.0f) · `captain upgrade --models`\n", f.Leg, f.Upgrade.Slug, f.Upgrade.Perf, f.Current.Slug, f.Current.Perf)
+	}
+	return sb.String()
 }
 
 // legTool maps a transport to the binary that drives it and how to get it.
@@ -146,6 +180,15 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		fmt.Fprintf(w, "brain      down (%v) - start it with `captain brain`\n", err)
 	}
 
+	// Ranking. The perf feed the sidebar, the /frontier chain and the ⇡ flags
+	// read: where it came from, how old it is, which pins it has flagged - so
+	// "a newer model is out" is one `captain doctor` away, not a sidebar
+	// glance (2026-09-22: a brain had read a five-day-old cache in silence).
+	if o.aaKey == nil {
+		o.aaKey = aaKey
+	}
+	fmt.Fprint(w, rankingReport(o.aaKey() != ""))
+
 	// Memory: the main brain and the local brain of the project doctor runs in.
 	fmt.Fprint(w, captaincode.RenderBrainChecks(captaincode.CheckBrains(euclidCwd())))
 
@@ -213,7 +256,8 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 	// Skills. A shelf is a pinned, hashed supply like an adapter pin, so it
 	// is reported like one - including drift, because a skill set captain
 	// cannot attest to is worse than none (M3.9).
-	if cat := captaincode.Catalog(); len(cat) > 0 {
+	cat, always := captaincode.Catalog(), captaincode.AlwaysSkills()
+	if len(cat) > 0 {
 		lock, _ := captaincode.ReadSkillLock()
 		pins := make([]string, 0, len(lock.Sources))
 		for _, src := range lock.Sources {
@@ -231,6 +275,17 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 			detail = fmt.Sprintf("%d file(s) no longer match the lock - re-run `captain skills sync`", len(drift))
 		}
 		fmt.Fprintf(w, "skills     %s %s\n", mark, detail)
+	} else if len(always) > 0 {
+		fmt.Fprintln(w, "skills     ✗ nothing synced")
+	}
+	// The always-on skills are a requirement, not a catalog nicety: every
+	// worker is meant to hold them (security-audit by default, 2026-09-22),
+	// so an empty catalog is no longer "nothing to report".
+	for _, l := range alwaysSkillLines(cat, always) {
+		fmt.Fprintln(w, l)
+	}
+	if os.Getenv("CAPTAIN_WORKER_SECURITY") == "0" {
+		fmt.Fprintln(w, "security   · worker line off (CAPTAIN_WORKER_SECURITY=0) - workers are not told to put security first")
 	}
 
 	probes := captaincode.ProbeToolchain(o.lookPath, o.runVersion)
@@ -386,6 +441,35 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		fmt.Fprintf(w, "\n⚠ CAPTAIN_DIRECTOR=%s (from env) is not ready (see legs ✗). The running brain will pick the first runnable instead (see startup log), but to stop the trap edit the env and restart the brain.\n  Suggested: CAPTAIN_DIRECTOR set to one of the ✓ legs above.\n", envDir)
 	}
 	return ready
+}
+
+// alwaysSkillLines reports each always-on skill: on every worker's shelf, or
+// missing with the command that fixes it. It names the publisher of the
+// security skill, because one name is one skill and the first sync wins - a
+// same-named skill from another catalog would otherwise ride every shelf
+// unannounced.
+func alwaysSkillLines(cat []captaincode.Skill, always []string) []string {
+	held := make(map[string]captaincode.Skill, len(cat))
+	for _, s := range cat {
+		held[s.Name] = s
+	}
+	var out []string
+	for _, name := range always {
+		s, ok := held[name]
+		switch {
+		case !ok && name == captaincode.SecuritySkill:
+			out = append(out, fmt.Sprintf("  ✗ %-15s always on, not synced - workers run without it: `captain skills sync --source %s`", name, captaincode.SecuritySkillSource))
+		case !ok:
+			out = append(out, fmt.Sprintf("  ✗ %-15s always on (%s), not synced - sync the catalog that ships it", name, captaincode.SkillsAlwaysEnv))
+		case captaincode.SkillCap() == 0:
+			out = append(out, fmt.Sprintf("  ✗ %-15s always on, but %s=0 stocks nothing", name, captaincode.SkillCapEnv))
+		case name == captaincode.SecuritySkill && s.Source != captaincode.SecuritySkillSource:
+			out = append(out, fmt.Sprintf("  ⚠ %-15s from %s, not %s - that catalog synced the name first", name, s.Source, captaincode.SecuritySkillSource))
+		default:
+			out = append(out, fmt.Sprintf("  ✓ %-15s on every worker's shelf · %s@%s", name, s.Source, shortSHA(s.Commit)))
+		}
+	}
+	return out
 }
 
 // presence renders "<path> ✓" or "<path> ✗ (<fix>)".

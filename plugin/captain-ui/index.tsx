@@ -69,7 +69,7 @@ type Stats = {
   last: LastRoute | null
   workers?: WorkerInfo[]
 }
-type Activity = { at: string; kind: "route" | "run" | "done"; leg: string; model: string; text: string; ms: number; effort?: string }
+type Activity = { at: string; kind: "route" | "run" | "done" | "feed"; leg: string; model: string; text: string; ms: number; effort?: string }
 // The roster (GET /v1/roster): each leg ranked by its perf index, its section
 // (Frontier / Models), and a newer family member when one outscores it - plus
 // the local agent CLIs with installed vs latest versions.
@@ -86,7 +86,7 @@ type RosterLeg = {
   open_weights?: boolean
 }
 type CliStatus = { name: string; installed: string; latest?: string; outdated: boolean; legs: string }
-type Roster = { perf_source: string; perf_as_of: string; legs: RosterLeg[]; cli: CliStatus[] }
+type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[] }
 // The shield (GET /v1/proxy/stats): what never left the machine - secrets
 // masked on the wire by the egress proxy and at the tool boundary.
 type Shield = { mode: string; requests: number; secrets: number; identity: number; boundary?: { secrets: number; today: number } }
@@ -251,6 +251,14 @@ function View(props: { api: TuiPluginApi }) {
   // Local agent CLIs with an update available; hidden when all are current.
   const staleCLIs = createMemo(() => (roster()?.cli ?? []).filter((c) => c.outdated))
   const upgrades = createMemo(() => allRows().filter((r) => r.ro?.upgrade).length)
+  // Where the ranking comes from, when it is not today's feed: the compiled
+  // snapshot, or a cache with its date - and whether it can get fresher.
+  const perfNote = () => {
+    const r = roster()
+    if (!r) return ""
+    const src = r.perf_source === "snapshot" ? " (snapshot)" : r.perf_source === "cache" ? ` (cache ${r.perf_as_of})` : ""
+    return src + (r.perf_key === false ? " · no AA key" : "")
+  }
   const fmtElapsed = (ms: number) => {
     const s = Math.round(ms / 1000)
     return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`
@@ -265,7 +273,7 @@ function View(props: { api: TuiPluginApi }) {
   const lastTeam = createMemo(() => stats()?.last?.workers)
 
   const kindColor = (k: Activity["kind"]) =>
-    k === "route" ? theme().accent : k === "done" ? theme().success : theme().text
+    k === "route" ? theme().accent : k === "done" ? theme().success : k === "feed" ? theme().warning : theme().text
 
   const statusColor = (status: WorkerStatus) => {
     if (status === "busy") return theme().accent
@@ -348,7 +356,7 @@ function View(props: { api: TuiPluginApi }) {
           <text> </text>
           <text fg={theme().text}>
             <b>Models</b>
-            <span style={{ fg: theme().textMuted }}> perf{roster()?.perf_source === "snapshot" ? " (snapshot)" : ""}</span>
+            <span style={{ fg: theme().textMuted }}> perf{perfNote()}</span>
             <Show when={upgrades() > 0}>
               <span style={{ fg: theme().warning }}> ⇡{upgrades()} newer</span>
             </Show>
@@ -455,7 +463,9 @@ function View(props: { api: TuiPluginApi }) {
                       ? "→"
                       : a.kind === "done"
                         ? "✓"
-                        : "▶"}{" "}
+                        : a.kind === "feed"
+                          ? "⇡"
+                          : "▶"}{" "}
                   {a.leg}
                 </text>
                 <Show when={a.effort}>
@@ -680,8 +690,6 @@ function quitTui(api: TuiPluginApi) {
 const showQuit = (globalThis as any).process?.env?.CAPTAIN_UI_QUIT_LINK === "1"
 
 // The one place a mouse can reach prompt editing (see openPromptsDialog).
-// Unconditional: the quit link below it is behind CAPTAIN_UI_QUIT_LINK, and
-// a link nobody can see is the bug this fixes.
 function PromptsLink(props: { api: TuiPluginApi }) {
   return (
     <box>
@@ -972,13 +980,12 @@ const tui: TuiPlugin = async (api) => {
 type PromptRow = { id: string; partID?: string; text: string; queued: boolean; answered: boolean; when: string }
 
 // openPromptsDialog is the entry both the palette command and the sidebar
-// link use. It is a module function rather than a closure inside the command
-// registration precisely so the sidebar can open it: stock opencode's
-// right-click "Message Actions" is a FIXED list (revert / copy / fork) with
-// no plugin hook and no slot - verified in 1.18.31 and 1.18.32 - so captain's
-// own sidebar is the only place it can put "edit" and "delete" where a mouse
-// finds them ("I STILL CANNOT EDIT OR REMOVE a prompt", 2026-09-23, after
-// three attempts that only ever added a palette entry).
+// link use. It is a module function, not a closure inside the command
+// registration, precisely so the sidebar can open it: stock opencode's
+// right-click "Message Actions" is a fixed list (revert / copy / fork) with
+// no plugin hook and no slot, in 1.18.31 and 1.18.32 alike - so the only
+// place captain can put "edit" and "delete" where a mouse finds them is its
+// own sidebar ("I STILL CANNOT EDIT OR REMOVE a prompt", 2026-09-23).
 export function openPromptsDialog(api: TuiPluginApi, onlyQueued: boolean, why: string) {
   promptCommands(api).open(onlyQueued, why)
 }

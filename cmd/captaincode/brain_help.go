@@ -20,12 +20,12 @@ import (
 const captainHelp = `### Captain Code - commands
 
 **Pick who runs it**
-- ` + "`/claude` `/grok` `/codex` `/cursor` `/gemini` `/deepseek` `/kimi` `/glm` `/minimax` `/qwen` `/free` `/codex-cli`" + ` - force one leg
+- ` + "`/claude` `/codex` `/codex-cli` `/luna` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds4-flash` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/free`" + ` - force one leg
 - ` + "`/team <task>`" + ` - director plans an ensemble · ` + "`/team /quality <task>`" + ` binds it to the best-rated legs
 - ` + "`/team /frontier <task>`" + ` (or ` + "`/team /codex-cli …`" + `, any leg) - that member is binding, the director fills the rest
-- ` + "`/frontier <task>`" + ` - claude at maximum effort
+- ` + "`/frontier <task>`" + ` - maximum effort; the frontier legs (claude and codex-cli today) take turns, the one behind its share of recent turns going next
 - ` + "`/codex-cli <task>`" + ` - gpt-6-astra at maximum effort via the Codex CLI (frontier-class, slow)
-- ` + "`/quality` `/speed` `/save`" + ` - preference, before or after a leg prefix
+- ` + "`/quality` `/speed` `/save`" + ` - preference, before or after a leg prefix · ` + "`/quality`" + ` takes turns across the two best legs at high effort, ` + "`/save`" + ` across the open-weight legs, each on its own model at medium effort
 - ` + "`/oss`" + ` - only open-weight models · ` + "`/deterministic`" + ` - only legs green in the Agentic Determinism Index, pinned to the measured serving tuple (` + "`captain adi`" + ` shows who qualifies); both compose with everything: ` + "`/oss /repeat 5 <task>`" + `, ` + "`/team /deterministic <task>`" + `
 
 **Chain work (Captain Workflow Language)**
@@ -48,7 +48,9 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/euclid status`" + ` · ` + "`/euclid distill [apply]`" + ` - Euclid memory: your brains, and register edits from the run journal (` + "`captain euclid init [--repo]`" + ` to start · ` + "`captain euclid link <repo>`" + ` / ` + "`links`" + ` for cross-repo memory)
 - ` + "`/captain director`" + ` - who directs, why, and how much each judge has worked lately
 - ` + "`/captain claude`" + ` (any judge leg) · ` + "`/captain frontier`" + ` best-ranked · ` + "`/captain quality`" + ` best of tier 2 · ` + "`/captain auto`" + ` least-used capable · ` + "`/captain reset`" + `
-- ` + "`/captain`" + ` - this list
+- ` + "`/captain more oss`" + ` (also cheap, quality, fast, frontier, deterministic) · ` + "`/captain less oss`" + ` · ` + "`/captain more oss 20%`" + ` · ` + "`/captain oss=20% frontier=30% …`" + ` - the routing mix; prints the targets. Unset, frontier=quality=cheap=fast=oss=20% and deterministic=0, and that default does not steer
+- ` + "`/captain targets`" + ` - print the mix · ` + "`/captain mix reset`" + ` - back to the default
+- ` + "`/captain`" + ` - this list · the full reference is docs/TUI.md
 
 **When a turn is streaming, the TUI QUEUES what you type** - no slash command can
 reach the brain until it ends. Press **Esc** to free the input, or use the shell:
@@ -74,6 +76,13 @@ func (b *brain) handleCaptainHelp(w http.ResponseWriter, req oaiChatReq, raw str
 		return false
 	}
 	word := strings.TrimSpace(strings.TrimPrefix(t, "/captain "))
+	if cmd, ok := captaincode.ParseSteerCommand(word); ok {
+		emit, _, finish := newCompletionWriter(w, req, "captain")
+		defer finish()
+		emit(b.applySteerCommand(cmd))
+		finish()
+		return true
+	}
 	if strings.ContainsAny(word, " \t") {
 		return false // "/captain do this and that" is a task, not a control word
 	}

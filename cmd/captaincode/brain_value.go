@@ -188,6 +188,7 @@ func (b *brain) valueCandidates(needVision bool) ([]captaincode.Leg, []captainco
 func (b *brain) valueLadder(c captaincode.Class, d captaincode.Domain, needVision bool) []captaincode.Scored {
 	open, excluded := b.valueCandidates(needVision)
 	rows := append(captaincode.ValueRank(c, d, open, b.ledger.Stats(), estTokensFor(c), b.pressure), excluded...)
+	rows = b.steerRows(rows)
 	return b.calibrateRows(c, d, rows)
 }
 
@@ -251,9 +252,12 @@ func (b *brain) wasExplored(task string) bool {
 
 // valueHints renders one line per leg for the director's menu: estimated $
 // for this task, window pressure, and the value rank for this class/domain.
-func (b *brain) valueHints(c captaincode.Class, d captaincode.Domain, legs []captaincode.Leg) map[captaincode.Leg]string {
+func (b *brain) valueHints(c captaincode.Class, d captaincode.Domain, legs []captaincode.Leg, steer bool) map[captaincode.Leg]string {
 	stats := b.ledger.Stats()
 	rows := captaincode.Eligible(captaincode.ValueRank(c, d, legs, stats, estTokensFor(c), b.pressure))
+	if steer {
+		rows = captaincode.Eligible(b.steerRows(rows))
+	}
 	rank := map[captaincode.Leg]int{}
 	for i, r := range rows {
 		rank[r.Leg] = i + 1

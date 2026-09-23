@@ -46,6 +46,7 @@ func jevFakeServer(t *testing.T, status int, want map[string]string, conf float6
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Questions map[string]struct {
+				Type     string            `json:"type"`
 				Criteria map[string]string `json:"criteria"`
 			} `json:"questions"`
 		}
@@ -64,6 +65,17 @@ func jevFakeServer(t *testing.T, status int, want map[string]string, conf float6
 		}
 		answers := map[string]any{}
 		for _, name := range names {
+			if req.Questions[name].Type == "noul" {
+				// The stage-2 triage answers (irreversible, mid-tier) and
+				// the supervisor's points are probabilities: low unless
+				// the test wants "true".
+				p := 0.2
+				if want[name] == "true" {
+					p = 0.9
+				}
+				answers[name] = map[string]any{"type": "noul", "noul": p, "confidence": conf}
+				continue
+			}
 			crit := req.Questions[name].Criteria
 			keys := make([]string, 0, len(crit))
 			for k := range crit {
@@ -117,14 +129,14 @@ func TestJevShadowRidesAlongWithTier1AndIsStampedOnTheDecision(t *testing.T) {
 	resp := routeBody(t, b, bandTask, nil)
 	assert.Equal(t, "medium", resp["class"])
 	require.Equal(t, 1, f.calls(), "one request: the shadow questions add no call")
-	assert.Equal(t, []string{"class", "domain", "leg", "shape"}, f.questions(0))
+	assert.Equal(t, []string{"class", "domain", "irreversible", "leg", "mid-tier", "shape"}, f.questions(0))
 	assert.Equal(t, 1, jevCharges(b), "charged once, as the classify it is")
 
 	d := decisionAfterRoute(t, b, bandTask)
 	require.NotNil(t, d.Shadow, "the shadow is on the decision record")
 	assert.Equal(t, "jev-1.13.0", d.Shadow.Model)
 	assert.Contains(t, d.Shadow.Menu, captaincode.LegCursor, "asked over the director's menu")
-	assert.Len(t, d.Shadow.Answers, 4)
+	assert.Len(t, d.Shadow.Answers, 6, "class, domain, shape, leg, and the two stage-2 answers")
 	class := d.Shadow.Answers[captaincode.PointClass]
 	assert.Equal(t, captaincode.DecidedByJev, class.By, "jev's own answer was taken: recorded as acted on, not as a comparison")
 	assert.True(t, class.Agree)
@@ -186,7 +198,7 @@ func TestJevShadowRunsBesideTheDirectorPlan(t *testing.T) {
 	resp := routeBody(t, b, task, nil)
 	assert.Equal(t, "glm", resp["modelID"])
 	require.Equal(t, 1, f.calls())
-	assert.Equal(t, []string{"class", "domain", "leg", "shape"}, f.questions(0))
+	assert.Equal(t, []string{"class", "domain", "irreversible", "leg", "mid-tier", "shape"}, f.questions(0))
 	assert.Equal(t, 1, jevCallsLabelled(b, "shadow"), "charged to the turn, as a shadow")
 	assert.Zero(t, jevCharges(b), "no classify: triage did not run")
 
@@ -247,6 +259,7 @@ func TestATeamPlanRecordsItsShapeAndTheShadowComparesByContainment(t *testing.T)
 // kept, marked, and left out of the agreement rate the bar is read from.
 func TestAPickThatWasNeverOnTheMenuIsNotCountedAgainstJev(t *testing.T) {
 	t.Setenv("CAPTAIN_TRIAGE", "0")
+	t.Setenv("CAPTAIN_DIRECTOR_SELF", "0") // the premise: the judge's leg is off the menu (its own test opts the join in)
 	b := teamBrain()
 	b.planFn = func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
 		require.NotContains(t, open, captaincode.LegGrok, "the director leg is not a rung")
@@ -291,7 +304,7 @@ func TestTheShadowCanBeTurnedOff(t *testing.T) {
 	resp := routeBody(t, b, bandTask, nil)
 	assert.Equal(t, "medium", resp["class"], "the triage answer is unaffected")
 	require.Equal(t, 1, f.calls())
-	assert.Equal(t, []string{"class", "domain"}, f.questions(0))
+	assert.Equal(t, []string{"class", "domain", "irreversible", "mid-tier"}, f.questions(0))
 	assert.Nil(t, decisionAfterRoute(t, b, bandTask).Shadow)
 
 	t.Setenv("CAPTAIN_TRIAGE", "0")

@@ -84,13 +84,14 @@ func initCommandEntry() map[string]any {
 
 func defaultCommands() map[string]any {
 	c := map[string]any{
-		"quality":       map[string]any{"description": "route to the strongest model (director constrained to the top legs, claude included)", "template": "/quality $ARGUMENTS"},
+		"quality":       map[string]any{"description": "the quality lane: the top legs by quality take turns, at high effort", "template": "/quality $ARGUMENTS"},
 		"best":          map[string]any{"description": "alias of /quality", "template": "/quality $ARGUMENTS"},
 		"speed":         map[string]any{"description": "route to the fastest capable leg", "template": "/speed $ARGUMENTS"},
-		"save":          map[string]any{"description": "route to the cheapest plausible leg", "template": "/save $ARGUMENTS"},
+		"save":          map[string]any{"description": "the cheap lane: open-weight legs take turns, each on its own model at medium effort", "template": "/save $ARGUMENTS"},
 		"claude":        map[string]any{"description": "force the claude leg (Max sub, claude -p)", "template": "/claude $ARGUMENTS"},
 		"grok":          map[string]any{"description": "force the grok leg (SuperGrok)", "template": "/grok $ARGUMENTS"},
-		"codex":         map[string]any{"description": "force the codex leg (ChatGPT sub)", "template": "/codex $ARGUMENTS"},
+		"codex":         map[string]any{"description": "force the codex leg (GPT-6 Sol, ChatGPT sub)", "template": "/codex $ARGUMENTS"},
+		"luna":          map[string]any{"description": "force GPT-6 Luna, OpenAI's cheap fast tier (ChatGPT sub)", "template": "/luna $ARGUMENTS"},
 		"cursor":        map[string]any{"description": "force the cursor leg (cursor-agent)", "template": "/cursor $ARGUMENTS"},
 		"glm":           map[string]any{"description": "force GLM-5.3 (OpenRouter, best open weights)", "template": "/glm $ARGUMENTS"},
 		"grok-max":      map[string]any{"description": "force grok-4.7, xAI's flagship (frontier-class, SuperGrok)", "template": "/grok-max $ARGUMENTS"},
@@ -99,7 +100,7 @@ func defaultCommands() map[string]any {
 		"team":          map[string]any{"description": "force an ensemble: director plans parallel workers", "template": "/team $ARGUMENTS"},
 		"frontier":      map[string]any{"description": "maximum effort: strongest model, strongest version, maxed thinking budget", "template": "/frontier $ARGUMENTS"},
 		"init":          initCommandEntry(),
-		"captain":       map[string]any{"description": "cheat sheet; the helm: /captain director | <leg> | frontier | quality | auto | reset", "template": "/captain $ARGUMENTS"},
+		"captain":       map[string]any{"description": "cheat sheet; the helm: /captain director | <leg> | frontier | quality | auto | reset; the mix: /captain more oss | less cheap | oss=40%", "template": "/captain $ARGUMENTS"},
 		"euclid":        map[string]any{"description": "Euclid memory: status, or distill the run journal into registers", "template": "/euclid $ARGUMENTS"},
 		"oss":           map[string]any{"description": "only open-weight models for this task (composes with /repeat, /team, /quality…)", "template": "/oss $ARGUMENTS"},
 		"deterministic": map[string]any{"description": "only legs green in the Agentic Determinism Index, pinned to the measured serving tuple; `captain adi` lists them", "template": "/deterministic $ARGUMENTS"},
@@ -135,7 +136,7 @@ func legCommandEntry(l Leg) map[string]any {
 func captainModelEntries() map[string]any {
 	m := map[string]any{
 		"team":     map[string]any{"name": "Team (captain · director-planned workers)"},
-		"frontier": map[string]any{"name": "Frontier (captain · claude max effort)"},
+		"frontier": map[string]any{"name": "Frontier (captain · the frontier legs take turns, max effort)"},
 		"workflow": map[string]any{"name": "Workflow (captain · your own topology)"},
 		// Every prompt without a forced prefix is sent as captain/auto: the
 		// brain routes inside the turn. opencode validates model ids against

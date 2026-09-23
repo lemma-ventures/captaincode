@@ -9,8 +9,9 @@ import "sort"
 // assessed quality overtakes them as scored runs accumulate (BlendedQuality).
 //
 // Sources (checked 2026-07-16):
-//   - claude (Claude Fable 5 via claude -p): ~95% SWE-bench Verified - the
-//     strongest available worker, full stop.
+//   - claude (Claude Opus 5.5 via claude -p, the `opus` alias since
+//     2026-09-22, Fable before it): Anthropic's go-to for long-running
+//     agentic coding, the anchor of this scale at 9.5.
 //   - cursor (Composer 2.5): ~79.8% SWE-bench Multilingual, #3 on the
 //     Artificial Analysis Coding Agent Index at ~1/10th frontier cost -
 //     near-frontier agentic coding, NOT a weak overflow lane.

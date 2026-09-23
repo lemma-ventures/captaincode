@@ -40,6 +40,11 @@ type EscalationPolicy struct {
 	Version        int `json:"version"`
 	MaxRepairs     int `json:"max_repairs"`     // retries on the same leg (0 = none)
 	MaxEscalations int `json:"max_escalations"` // moves to a stronger leg (0 = none)
+	// MaxEffortEscalations bounds the step BETWEEN a repair and a leg
+	// escalation (stage 4): the same model one effort rung up, which keeps
+	// the prompt cache and the leg's context and costs less than a fresh
+	// leg. CAPTAIN_MAX_EFFORT_ESCALATIONS, default 1.
+	MaxEffortEscalations int `json:"max_effort_escalations"`
 }
 
 // DefaultEscalationPolicy reads the environment for escalation limits.
@@ -47,10 +52,17 @@ type EscalationPolicy struct {
 // is final. The conservative default is one repair + one escalation.
 func DefaultEscalationPolicy() EscalationPolicy {
 	return EscalationPolicy{
-		Version:        EscalationVersion,
-		MaxRepairs:     envIntEscalation("CAPTAIN_MAX_REPAIRS", 1),
-		MaxEscalations: envIntEscalation("CAPTAIN_MAX_ESCALATIONS", 1),
+		Version:              EscalationVersion,
+		MaxRepairs:           envIntEscalation("CAPTAIN_MAX_REPAIRS", 1),
+		MaxEscalations:       envIntEscalation("CAPTAIN_MAX_ESCALATIONS", 1),
+		MaxEffortEscalations: envIntEscalation("CAPTAIN_MAX_EFFORT_ESCALATIONS", 1),
 	}
+}
+
+// CanEscalateEffort reports whether the same leg may be retried one effort
+// rung up. effortUsed is how many effort escalations this failure consumed.
+func (p EscalationPolicy) CanEscalateEffort(effortUsed int) bool {
+	return p.MaxEffortEscalations > 0 && effortUsed < p.MaxEffortEscalations
 }
 
 // CanRepair reports whether a repair (retry on the same leg) is still
@@ -106,6 +118,17 @@ type EscalationOutcome struct {
 	Escalated       bool `json:"escalated,omitempty"`
 	EscalatedTo     Leg  `json:"escalated_to,omitempty"`
 	ObjectiveMet    bool `json:"objective_met"`
+	// Stage 4: the effort step, the check that gated the sequence, and where
+	// the work finally landed - so `captain why` can say "failed go test on
+	// glm at medium, passed on glm at high" and role economics can price it.
+	EffortEscalations int      `json:"effort_escalations,omitempty"`
+	EscalatedEffort   Effort   `json:"escalated_effort,omitempty"`
+	Check             string   `json:"check,omitempty"`
+	From              Leg      `json:"from,omitempty"` // the leg whose check failed first
+	FinalLeg          Leg      `json:"final_leg,omitempty"`
+	FinalEffort       Effort   `json:"final_effort,omitempty"`
+	Attempts          int      `json:"attempts,omitempty"`
+	Steps             []string `json:"steps,omitempty"` // one line per attempt, for the record
 }
 
 // StopReasonFor returns the stopping reason for an escalation sequence that

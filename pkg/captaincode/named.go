@@ -43,7 +43,7 @@ var listGap = regexp.MustCompile(`(?i)^[\s,;]*(and|&|\+|/|or|then|and then|,\s*t
 // distinctiveLegs are names that are unambiguous in English prose. "free" is
 // excluded: it is an ordinary word, so it only counts when another leg is named
 // alongside it. "team"/"workflow" are modes, not legs.
-var distinctiveLegs = []Leg{LegClaude, LegGrok, LegGrokMax, LegCodex, LegCursor, LegGLM, LegMiniMax, LegQwen, LegFrontier, LegCodexCLI}
+var distinctiveLegs = []Leg{LegClaude, LegGrok, LegGrokMax, LegCodex, LegLuna, LegCursor, LegGLM, LegMiniMax, LegQwen, LegFrontier, LegCodexCLI}
 
 // sequenceCue marks a hand-off between named legs: "grok, codex and THEN
 // claude" is a pipeline, not a fan-out. /team has exactly one parallel stage and

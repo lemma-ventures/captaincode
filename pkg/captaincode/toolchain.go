@@ -87,10 +87,12 @@ func Toolchain() []ToolPin {
 		},
 		{
 			Bin: "claude", Transport: TransportClaudeCLI, VersionArgs: []string{"--version"}, Expect: "claude",
-			Tested: "2.1.270", Min: "2.0.0",
+			// 2.1.280: the `opus` alias resolves to Claude Opus 5.5, the /frontier
+			// model; an older CLI resolves it to Opus 5 (2026-09-22).
+			Tested: "2.1.280", Min: "2.0.0",
 			Install:  "npm i -g @anthropic-ai/claude-code",
 			Upgrade:  "npm i -g @anthropic-ai/claude-code@latest",
-			Rollback: "npm i -g @anthropic-ai/claude-code@2.1.270",
+			Rollback: "npm i -g @anthropic-ai/claude-code@2.1.280",
 		},
 		{
 			Bin: "codex", Transport: TransportCodexCLI, VersionArgs: []string{"--version"}, Expect: "codex",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +43,14 @@ type Manager struct {
 	// startup context they cost. Empty means no shelf, no question, and a
 	// prompt byte-for-byte what it was before skills existed.
 	Skills []SkillRef
+	// Timeout caps one director call; 0 means directorTimeout. The typed
+	// pick (Pick) runs under DirectorPickTimeout - a judge that answers a
+	// two-field question is not given a plan's two minutes.
+	Timeout time.Duration
+	// SteerNote is the standing routing mix, when the user has set one
+	// and this turn did not name a preference. Empty leaves the prompt
+	// as it was.
+	SteerNote string
 }
 
 // directorConstraint is prepended to every director prompt. Observed live:
@@ -78,11 +87,15 @@ func (m Manager) directorText(prompt string) (string, error) {
 }
 
 func (m Manager) directorRun(director Leg, prompt string) (Result, error) {
+	timeout := directorTimeout
+	if m.Timeout > 0 {
+		timeout = m.Timeout
+	}
 	if director == LegClaude {
 		// The director plans from the task and the scorecard, never from a
 		// repo: it runs in the brain's own cwd, so one project's CLAUDE.md
 		// cannot colour the routing of another.
-		return runClaudeTimeout("", prompt, directorTimeout)
+		return runClaudeTimeout("", prompt, timeout)
 	}
 	port := m.Port
 	if port == 0 {
@@ -92,8 +105,128 @@ func (m Manager) directorRun(director Leg, prompt string) (Result, error) {
 	d.Title = "director"
 	d.NoTools = true
 	d.AsDirector = true
-	d.Timeout = directorTimeout
+	d.Timeout = timeout
 	return d.Run(director, prompt)
+}
+
+// WorkerPick is the director's typed answer over a precomputed menu (the
+// first quick win): one leg off the value-ranked field, and its own reading
+// of the class. No brief - the task is the brief - and no prose rationale:
+// the ranking the menu came from IS the rationale, and a judge asked for a
+// sentence spends twenty seconds writing it. Measured on our own traffic
+// the plan path took 22.8s median to decide; a typed pick is a few hundred
+// tokens of prompt and a dozen of answer.
+type WorkerPick struct {
+	Leg   Leg   `json:"leg"`
+	Class Class `json:"class,omitempty"`
+}
+
+// DirectorPickTimeout caps the typed pick. CAPTAIN_DIRECTOR_PICK_TIMEOUT
+// (Go duration), default 8s; past it the menu's own first row runs.
+func DirectorPickTimeout() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(os.Getenv("CAPTAIN_DIRECTOR_PICK_TIMEOUT"))); err == nil && d > 0 {
+		return d
+	}
+	return 8 * time.Second
+}
+
+// pickTaskMax is how much of the task the pick prompt carries: enough to
+// judge scope, not the whole conversation.
+const pickTaskMax = 4000
+
+// BuildPickPrompt renders the typed-choice prompt: the task, the menu with
+// each row's numbers, and the one rule that matters - take the first row
+// that clears the bar unless the task itself says otherwise. self, when on
+// the menu, is the director's own leg, and the prompt says so: for a high
+// class task the best leg may be the judge, and refusing itself was how
+// the hardest work never reached claude when claude directed.
+func BuildPickPrompt(task string, class Class, prefer string, menu []Scored, self Leg, steer ...string) string {
+	var sb strings.Builder
+	sb.WriteString("You are Captain Code's director. Pick ONE worker for the task below from the menu. The menu is already ranked by value (quality against cost and latency for this task's class and domain); the numbers are live scorecards.\n\nTask:\n")
+	sb.WriteString(truncateStr(task, pickTaskMax))
+	sb.WriteString("\n\n")
+	if c, ok := ParseClass(string(class)); ok {
+		fmt.Fprintf(&sb, "Triage rated it %s. ", c)
+	}
+	switch prefer {
+	case "quality":
+		sb.WriteString("The user asked for maximum quality (/quality): take the strongest row whatever it costs. ")
+	case "speed":
+		sb.WriteString("The user asked for speed (/speed): take the fastest row that can do it. ")
+	case "save":
+		sb.WriteString("The user asked for savings (/save): take the cheapest row that can plausibly do it. ")
+	}
+	sb.WriteString("\n\nMenu (best value first):\n")
+	for i, r := range menu {
+		note := ""
+		if r.Unreliable {
+			note = " UNRELIABLE (failed a third of its runs)"
+		}
+		if r.Leg == self {
+			note += " (this is you - allowed for high-class work when you rank first)"
+		}
+		fmt.Fprintf(&sb, "%d. %s: value %+.2f, quality %.1f/10 (%d scored runs), est $%.3f, ~%ds, %s%s\n",
+			i+1, r.Leg, r.Value, r.Quality, r.ScoredRuns, r.CostUSD, r.LatencyMs/1000, legDescription(r.Leg), note)
+	}
+	if prefer == "" && len(steer) > 0 && steer[0] != "" {
+		sb.WriteString("\n")
+		sb.WriteString(steer[0])
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\nRules: take row 1 unless the task needs something a lower row has (a stronger model for architecture, security, concurrency or a hard bug; vision; a specific tool). Judge the task's real difficulty yourself and report it as class. Reply with STRICT JSON only: {\"leg\":\"<a leg from the menu>\",\"class\":\"<trivial|medium|high>\"}")
+	return sb.String()
+}
+
+// Pick asks the director for a typed choice over menu, within
+// DirectorPickTimeout, and validates it against the menu. One call, no
+// corrective retry: a judge that cannot answer a two-field question in one
+// go is not worth a second timeout, and the menu's first row is a sound
+// answer on its own.
+func (m Manager) Pick(task string, class Class, prefer string, menu []Scored, self Leg) (WorkerPick, error) {
+	if len(menu) == 0 {
+		return WorkerPick{}, fmt.Errorf("pick: empty menu")
+	}
+	if m.Timeout == 0 {
+		m.Timeout = DirectorPickTimeout()
+	}
+	if m.CallLabel == "" {
+		m.CallLabel = "pick"
+	}
+	note := ""
+	if prefer == "" {
+		note = m.SteerNote
+	}
+	text, err := m.directorText(directorConstraint + BuildPickPrompt(task, class, prefer, menu, self, note))
+	if err != nil {
+		return WorkerPick{}, err
+	}
+	return parsePick(text, menu)
+}
+
+// parsePick reads the director's typed answer and validates it against the
+// menu it was given.
+func parsePick(text string, menu []Scored) (WorkerPick, error) {
+	var p WorkerPick
+	if err := extractJSON(text, &p); err != nil {
+		return WorkerPick{}, fmt.Errorf("pick: no JSON in the director's reply: %.120s", text)
+	}
+	p.Leg = Leg(strings.ToLower(strings.TrimSpace(string(p.Leg))))
+	onMenu := false
+	for _, r := range menu {
+		if r.Leg == p.Leg {
+			onMenu = true
+			break
+		}
+	}
+	if !onMenu {
+		return WorkerPick{}, fmt.Errorf("pick: director named %q, not on the menu", p.Leg)
+	}
+	if c, ok := ParseClass(string(p.Class)); ok {
+		p.Class = c
+	} else {
+		p.Class = ""
+	}
+	return p, nil
 }
 
 // Worker is one manager assignment: a leg plus a standalone brief.
@@ -153,7 +286,11 @@ func (m Manager) Plan(task string, class Class, prefer string, open []Leg, stats
 	// class is an optional heuristic prior only. Empty means the director owns
 	// complexity assessment end-to-end (the normal managed path).
 	hint, hasHint := ParseClass(string(class))
-	prompt := buildPlanPromptHints(task, string(class), prefer, open, stats, teams, allowFanOut, m.Required, m.Hints)
+	note := ""
+	if prefer == "" {
+		note = m.SteerNote
+	}
+	prompt := buildPlanPromptHints(task, string(class), prefer, open, stats, teams, allowFanOut, m.Required, m.Hints, note)
 	if m.Memory != "" {
 		prompt += "\n" + m.Memory + "\nWhen a brief touches something the memory covers, carry the relevant decision or lesson into the brief verbatim; do not plan a step the FAILURES already record as failing.\n"
 	}
@@ -241,11 +378,11 @@ func classBreakdown(by map[Class]ClassStat) string {
 // required are legs the CALLER binds (a leg or /frontier named right after
 // /team, 2026-09-09) - merged ahead of the ones the prose names.
 func buildPlanPrompt(task, class, prefer string, open []Leg, stats map[Leg]LegStats, teams map[string]TeamStat, allowFanOut bool, required ...Leg) string {
-	return buildPlanPromptHints(task, class, prefer, open, stats, teams, allowFanOut, required, nil)
+	return buildPlanPromptHints(task, class, prefer, open, stats, teams, allowFanOut, required, nil, "")
 }
 
 // buildPlanPromptHints is buildPlanPrompt with per-leg numeric menu hints.
-func buildPlanPromptHints(task, class, prefer string, open []Leg, stats map[Leg]LegStats, teams map[string]TeamStat, allowFanOut bool, required []Leg, hints map[Leg]string) string {
+func buildPlanPromptHints(task, class, prefer string, open []Leg, stats map[Leg]LegStats, teams map[string]TeamStat, allowFanOut bool, required []Leg, hints map[Leg]string, steer string) string {
 	hint, hasHint := ParseClass(class)
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `You are Captain Code's router manager (director). First assess task complexity, then assign worker model(s) and write their brief(s).
@@ -262,6 +399,10 @@ Preference hint: %s.
 		sb.WriteString("The user explicitly requested speed (/speed): assign the fastest leg that can do the job; avoid slow frontier legs unless nothing else can.\n")
 	case "save":
 		sb.WriteString("The user explicitly requested savings (/save): assign the cheapest leg that can plausibly do the job, accepting quality risk.\n")
+	}
+	if steer != "" && prefer == "" {
+		sb.WriteString(steer)
+		sb.WriteString("\n")
 	}
 	if hasHint {
 		fmt.Fprintf(&sb, "Heuristic prior (optional, non-binding): class=%s - you may override.\n", hint)
@@ -323,7 +464,7 @@ Rules:
   - trivial: typo/rename/lint/docs/one-liner
   - medium: ordinary implementation or focused bugfix
   - high: architecture, concurrency/race, security, multi-file redesign, hard debugging
-- You are the director. You plan, direct, and assess - you never assign work to yourself; every task goes to one of the listed worker legs.
+- You are the director. You plan, direct, and assess. Trivial and medium work never goes to you; for HIGH class work you may assign yourself when you appear in the worker list above and rank strongest for it - the hardest task should reach the best leg, and that is sometimes the judge. Every worker you name must be on the list.
 - Optimize jointly for quality needed by THIS task, speed, and cost: prefer cheaper legs when they clear the quality bar, escalate to a stronger worker only when the task needs it.
 - Be fair: judge legs by their scorecards and task fit, not by family loyalty.
 - Each "brief" must be complete standalone instructions for that worker: it sees neither this planning call nor the other briefs. In the TUI wrapper it DOES see the user's conversation, so carry the user's OWN wording of every requirement through verbatim - never paraphrase away one that is anchored in the conversation ("in my writing style", "the file we discussed", "fix that bug"); a generic restatement makes the worker answer a question nobody asked.

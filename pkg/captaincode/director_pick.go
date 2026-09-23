@@ -71,7 +71,7 @@ func DirectorCapable(l Leg) bool {
 }
 
 // directorPerf ranks a leg by the model it directs with: legs with a director
-// override (grok → grok-4.7, codex → gpt-5.5) are scored on that model, found
+// override (grok → grok-4.7, codex → gpt-6-sol) are scored on that model, found
 // through whichever registry leg pins it, else by the override's name in the
 // feed; a leg without an override is scored as itself.
 func directorPerf(l Leg) (float64, string) {
@@ -88,6 +88,10 @@ func directorPerf(l Leg) (float64, string) {
 				return m.IntelligenceIndex, dm.Model
 			}
 		}
+		// Unlisted (a model released today): scored as the leg itself, but it
+		// still directs with the override - naming the worker model here told
+		// "/captain codex-cli" that codex directs as gpt-6-sol-fast (2026-09-22).
+		return perfOrPrior(l), dm.Model
 	}
 	spec, _ := Spec(l)
 	return perfOrPrior(l), spec.Model
@@ -124,7 +128,7 @@ func DirectorCandidates() []DirectorCandidate {
 
 // judgeTwins names, for each agent leg, the judge that runs the same
 // vendor's models on the same credential: codex exec is gpt-6-astra on the
-// ChatGPT subscription, and the codex leg directs as gpt-5.5 on that same
+// ChatGPT subscription, and the codex leg directs as gpt-6-sol on that same
 // subscription with tools off. Cursor's Composer is served nowhere else, so
 // it has no twin. Used to answer "/captain codex-cli" with the nearest thing
 // that CAN direct instead of a flat refusal (2026-09-22).
@@ -140,7 +144,7 @@ func JudgeTwin(l Leg) (Leg, bool) {
 }
 
 // DirectorModelOf is the model a leg would direct with, for messages that
-// name it ("codex directs as gpt-5.5").
+// name it ("codex directs as gpt-6-sol").
 func DirectorModelOf(l Leg) string {
 	_, m := directorPerf(l)
 	return m

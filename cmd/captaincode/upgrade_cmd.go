@@ -104,6 +104,8 @@ func runUpgrade(w io.Writer, opts upgradeOpts) {
 	fmt.Fprintln(w, "  claude:   claude -p (binary above) · frontier: "+frontierModelName())
 	fmt.Fprintln(w, "  codex-cli:    codex exec (binary above) · "+codexCLIModelName()+" at "+codexCLIEffortName()+" reasoning")
 	fmt.Fprintln(w, "")
+	printTiers(w)
+	fmt.Fprintln(w, "")
 
 	// captain itself: rebuild from source when we know where it lives.
 	src := captainSourceDir()
@@ -188,11 +190,10 @@ func cmdUpgrade(args []string) {
 	apply := fs.Bool("apply", false, "with --models: write the new pins to the registry overlay")
 	_ = fs.Parse(args)
 	if *models {
-		captaincode.LoadPerfCache()
 		if _, err := captaincode.LoadRegistry(""); err != nil {
 			fatal(err)
 		}
-		fmt.Println("model pins vs the ranking:")
+		fmt.Printf("model pins vs the ranking (%s):\n", refreshPerfNow())
 		upgradeModels(*apply)
 		return
 	}
@@ -200,6 +201,41 @@ func cmdUpgrade(args []string) {
 		checkOnly: *check, noRestart: *noRestart,
 		restart: restartServices, idle: brainIdle,
 	})
+}
+
+// refreshPerfNow reads today's feed when a key is configured - `captain
+// upgrade --models` exists to answer "is anything newer out", so it looks at
+// the list of the day, not the brain's last one - and caches it for the brain
+// and doctor. Without a key it reads the cache, then the compiled snapshot.
+func refreshPerfNow() string {
+	if key := aaKey(); key != "" {
+		models, err := fetchAAModels(aaModelsURL, key)
+		if err == nil {
+			if err := captaincode.SetPerfModels(models); err != nil {
+				fmt.Println("perf cache:", err)
+			}
+			return fmt.Sprintf("live feed, %d models", len(models))
+		}
+		fmt.Printf("perf feed: %v\n", err)
+	}
+	captaincode.LoadPerfCache()
+	_, src, asOf := captaincode.PerfModels()
+	return src + " from " + asOf
+}
+
+// printTiers lists the model each worker leg runs per band (tiers.go):
+// cheap at low effort (/save, trivial work), quality in between, frontier
+// under /frontier. A band that repeats the leg's own model has no sibling
+// on that credential.
+func printTiers(w io.Writer) {
+	fmt.Fprintln(w, "tiers - cheap · quality · frontier (<LEG>_CHEAP_MODEL / _MODEL / _FRONTIER_MODEL pin one):")
+	for _, s := range captaincode.Registry() {
+		if s.Disabled || !captaincode.ServesTasks(s.ID) {
+			continue
+		}
+		m := captaincode.TierModels(s.ID)
+		fmt.Fprintf(w, "  %-10s %s · %s · %s\n", s.ID+":", m[captaincode.TierCheap], m[captaincode.TierQuality], m[captaincode.TierFrontier])
+	}
 }
 
 func codexCLIModelName() string {
@@ -217,8 +253,5 @@ func codexCLIEffortName() string {
 }
 
 func frontierModelName() string {
-	if m := os.Getenv("CAPTAIN_FRONTIER_MODEL"); m != "" {
-		return m
-	}
-	return "claude-fable-5"
+	return captaincode.FrontierModel() // the `opus` alias unless CAPTAIN_FRONTIER_MODEL pins one
 }

@@ -42,7 +42,7 @@ func TestFrontierIsTheTopRankedJudge(t *testing.T) {
 	require.True(t, ok)
 	c := DirectorCandidates()
 	assert.Equal(t, c[0].Leg, pick.Leg)
-	assert.Equal(t, LegClaude, pick.Leg, "on the compiled snapshot claude-fable ranks first among judges")
+	assert.Equal(t, LegClaude, pick.Leg, "on the compiled snapshot claude (the Opus 5.5 row) ranks first among judges")
 	assert.Contains(t, pick.Reason, "ranks first")
 }
 

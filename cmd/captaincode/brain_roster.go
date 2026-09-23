@@ -8,13 +8,18 @@ package main
 // the live state from /v1/workers and the scorecards from /v1/stats.
 //
 // The perf feed refreshes in the background when an Artificial Analysis key
-// is configured (aaKey: env or aa.env), daily, and is cached across restarts;
-// without a key the ranking is the snapshot compiled into the binary.
+// is configured (aaKey: env or aa.env), every six hours, and is cached across
+// restarts; without a key the ranking is the cache, then the snapshot
+// compiled into the binary. Each refresh says what changed - a model new to
+// the feed, a leg whose row moved, a leg newly flagged ⇡ - in the log and in
+// every open TUI's Last Runs, so a release is heard the day it lands and
+// retargeting stays the operator's one click (brain_upgrade.go).
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -25,9 +30,26 @@ import (
 )
 
 const (
-	perfRefreshEvery = 24 * time.Hour
-	cliCheckEvery    = 6 * time.Hour
+	// The feed lists a model within a day of its release (Grok 4.7: released
+	// 2026-09-21, listed 09-22). Four reads a day is nothing against the
+	// key's 1000, and a daily read learned of it a day late.
+	perfRefreshEvery = 6 * time.Hour
+	// After a failed fetch, and while no key is configured: a key dropped
+	// into aa.env is found within the hour, no restart.
+	perfRetryEvery = time.Hour
+	cliCheckEvery  = 6 * time.Hour
 )
+
+// perfRefreshInterval is CAPTAIN_PERF_REFRESH (a duration: "1h", "12h";
+// a minute at least) or the default.
+func perfRefreshInterval() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_PERF_REFRESH")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= time.Minute {
+			return d
+		}
+	}
+	return perfRefreshEvery
+}
 
 type rosterLeg struct {
 	Leg        string               `json:"leg"`
@@ -67,6 +89,24 @@ type rosterState struct {
 	mu   sync.RWMutex
 	cli  []cliStatus
 	seen time.Time
+
+	key       func() string                                   // stubbed in tests; nil = aaKey
+	fetch     func(key string) ([]captaincode.AAModel, error) // stubbed in tests; nil = the live feed
+	keyWarned bool                                            // the missing-key line is said once per brain
+}
+
+func (rs *rosterState) aaKey() string {
+	if rs.key != nil {
+		return rs.key()
+	}
+	return aaKey()
+}
+
+func (rs *rosterState) fetchFeed(key string) ([]captaincode.AAModel, error) {
+	if rs.fetch != nil {
+		return rs.fetch(key)
+	}
+	return fetchAAModels(aaModelsURL, key)
 }
 
 // startRosterRefresh runs the perf feed and CLI version checks in the
@@ -78,8 +118,7 @@ func (b *brain) startRosterRefresh() {
 	}
 	go func() {
 		for {
-			b.refreshPerf()
-			time.Sleep(perfRefreshEvery)
+			time.Sleep(b.refreshPerf())
 		}
 	}()
 	go func() {
@@ -90,20 +129,76 @@ func (b *brain) startRosterRefresh() {
 	}()
 }
 
-func (b *brain) refreshPerf() {
-	key := aaKey()
+// refreshPerf fetches the feed once and returns how long to wait before the
+// next attempt: the refresh interval after a success, an hour after a failure
+// or while no key is configured. Silence was the failure mode before
+// 2026-09-22: a brain started without a key slept a day between checks and
+// never said its ranking was five days old.
+func (b *brain) refreshPerf() time.Duration {
+	key := b.roster.aaKey()
 	if key == "" {
-		return
+		if !b.roster.keyWarned {
+			b.roster.keyWarned = true
+			_, src, asOf := captaincode.PerfModels()
+			fmt.Printf("captain brain: perf feed: no Artificial Analysis key (CAPTAIN_AA_API_KEY, or API_KEY=… in ~/.config/captain/aa.env) - the ranking stays the %s from %s; checking for a key hourly\n", src, asOf)
+		}
+		return perfRetryEvery
 	}
-	models, err := fetchAAModels(aaModelsURL, key)
+	models, err := b.roster.fetchFeed(key)
 	if err != nil {
-		fmt.Printf("captain brain: perf feed: %v (keeping the %s ranking)\n", err, perfSourceLabel())
-		return
+		fmt.Printf("captain brain: perf feed: %v (keeping the %s ranking; retrying in %s)\n", err, perfSourceLabel(), perfRetryEvery)
+		return perfRetryEvery
 	}
+	prev, _, _ := captaincode.PerfModels()
+	news := captaincode.PerfDiff(prev, models)
 	if err := captaincode.SetPerfModels(models); err != nil {
 		fmt.Printf("captain brain: perf cache: %v\n", err)
 	}
-	fmt.Printf("captain brain: perf ranking refreshed from the live feed (%d models)\n", len(models))
+	fmt.Printf("captain brain: perf ranking refreshed from the live feed (%d models; next in %s)\n", len(models), perfRefreshInterval())
+	b.announcePerfNews(news)
+	return perfRefreshInterval()
+}
+
+// announcePerfNews says what a refresh changed, in the log and in every open
+// TUI's Last Runs (a machine-wide activity item), so the operator learns a
+// model landed without watching the ranking. It only speaks: retargeting a
+// pin stays a click on ⇡ or `captain upgrade --models --apply`.
+func (b *brain) announcePerfNews(n captaincode.PerfNews) {
+	for _, line := range perfNewsLines(n) {
+		fmt.Println("captain brain: perf feed: " + line)
+		b.pushActivity(activity{Kind: "feed", Leg: "ranking", Text: line})
+	}
+}
+
+// perfNewsLines renders the news: arrivals on one line (four names, then a
+// count), then each moved row, then each new ⇡ with what to do about it.
+func perfNewsLines(n captaincode.PerfNews) []string {
+	var out []string
+	if len(n.Arrivals) > 0 {
+		var names []string
+		for i, a := range n.Arrivals {
+			if i == 4 {
+				break
+			}
+			names = append(names, fmt.Sprintf("%s (%.0f)", a.Slug, a.Perf))
+		}
+		line := "new on the ranking: " + strings.Join(names, ", ")
+		if extra := len(n.Arrivals) - len(names); extra > 0 {
+			line += fmt.Sprintf(" +%d more", extra)
+		}
+		out = append(out, line)
+	}
+	for _, m := range n.Moved {
+		if m.From.Slug == "" {
+			out = append(out, fmt.Sprintf("%s is now listed: %s (%.0f)", m.Leg, m.To.Slug, m.To.Perf))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s now reads %s (%.0f), was %s (%.0f)", m.Leg, m.To.Slug, m.To.Perf, m.From.Slug, m.From.Perf))
+	}
+	for _, f := range n.Flagged {
+		out = append(out, fmt.Sprintf("⇡ %s: %s (%.0f) outscores %s (%.0f) - click ⇡ in the sidebar or `captain upgrade --models`", f.Leg, f.Upgrade.Slug, f.Upgrade.Perf, f.Current.Slug, f.Current.Perf))
+	}
+	return out
 }
 
 func perfSourceLabel() string {
@@ -237,7 +332,7 @@ func isOpenWeights(spec captaincode.LegSpec) bool {
 
 // GET /v1/roster
 func (b *brain) rosterHTTP(w http.ResponseWriter, r *http.Request) {
-	_, src, asOf := captaincode.PerfModels()
+	models, src, asOf := captaincode.PerfModels()
 	frontier := map[captaincode.Leg]bool{}
 	for _, l := range captaincode.FrontierLegs() {
 		frontier[l] = true
@@ -271,7 +366,8 @@ func (b *brain) rosterHTTP(w http.ResponseWriter, r *http.Request) {
 	cli := append([]cliStatus{}, b.roster.cli...)
 	b.roster.mu.RUnlock()
 	writeJSON(w, 200, map[string]any{
-		"perf_source": src, "perf_as_of": asOf,
-		"legs": legs, "cli": cli,
+		"perf_source": src, "perf_as_of": asOf, "perf_models": len(models),
+		"perf_key": b.roster.aaKey() != "", // false: the ranking cannot get fresher than its cache
+		"legs":     legs, "cli": cli,
 	})
 }

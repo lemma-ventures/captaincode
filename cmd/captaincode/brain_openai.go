@@ -106,7 +106,7 @@ func titlePrompt(text string) string {
 
 // titleLeg is the cheapest runnable leg for naming a session.
 func (b *brain) titleLeg() captaincode.Leg {
-	for _, l := range []captaincode.Leg{captaincode.LegFree, captaincode.LegGrok, captaincode.LegCodex} {
+	for _, l := range []captaincode.Leg{captaincode.LegFree, captaincode.LegGrok, captaincode.LegLuna, captaincode.LegCodex} {
 		if len(b.allowed) == 0 || b.allowed[l] {
 			return l
 		}
@@ -381,7 +381,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		if req.Model == "frontier" || captaincode.MidPromptFrontier(lastUserRaw(req.Messages)) {
 			prefer = "frontier"
 		}
-		req.ws.Effort = captaincode.EffortFor(prefer, captaincode.TriageTask(lastUserTurn(prompt)).Class)
+		tr0 := captaincode.TriageTask(lastUserTurn(prompt))
+		req.ws.Effort = captaincode.DecideEffort(prefer, tr0.Class, captaincode.Leg(req.Model), tr0.Irreversible, 1)
 		// /oss and /deterministic: which legs the turn may run on (pool.go).
 		req.ws.Pool = captaincode.MidPromptPool(lastUserRaw(req.Messages))
 	}
@@ -570,7 +571,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		prompt = titlePrompt(lastUserTurn(prompt))
 	} else {
 		prompt = b.fitPrompt(req.ws, leg, prompt, budget)
-		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg)
+		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg) + securityContract()
 	}
 	// One execution per (leg, task): the fork re-issues a turn's request, and a
 	// retry of an 8-minute run used to start a SECOND 8-minute run while the
@@ -585,6 +586,16 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer b.finishSolo(dedupeKey)
+	// The task identity is opened BEFORE the worker runs (stage 1): the
+	// budget and the checkpoints need it during the run, the verify
+	// sequence charges its attempts to it, and the next prompt on this
+	// workspace is read against what the last one delivered. A title is
+	// housekeeping and gets none of it.
+	taskID := ""
+	if !titleReq && !internal {
+		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt))
+		taskID = b.openTask(lastUserTurn(prompt))
+	}
 
 	// An answer produced for a client that had gone away (stall→reroute chains
 	// outlive TUI requests; a brain restart wipes the in-memory dedupe) is
@@ -629,9 +640,13 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !req.Stream {
-		ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, nil, nil, "")
+		ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, nil, nil, taskID)
 		if err == nil {
 			res = b.nudgeNarration(req.ws, ranLeg, prompt, res, nil, nil)
+		}
+		var esc *captaincode.EscalationOutcome
+		if err == nil && !titleReq {
+			ranLeg, req.ws, res, esc = b.verifyAndEscalate(req.ws, ranLeg, prompt, res, taskID, nil, nil)
 		}
 		// Partial salvage (parity with team/workflow): a capped run WITH real
 		// text is a degraded success, not 15 discarded minutes (live
@@ -665,9 +680,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				Abandoned: r.Context().Err() != nil, Logs: logPaths(res)})
 		}
 		fmt.Printf("captain brain: %s wrapper done in %s (%d chars)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
-		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: string(leg), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
+		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: captaincode.ModelIDAt(leg, req.ws.Effort), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
 		if !titleReq { // …and must not teach the router anything
-			go b.recordRun(leg, prompt, res, req.ws.Dir, stocked...) // learning loop: off the response path
+			go b.recordRunAt(leg, prompt, res, req.ws, taskID, escAttempts(esc), escFrom(esc, leg), "", stocked...) // learning loop: off the response path
 		}
 		writeJSON(w, 200, map[string]any{
 			"id": id, "object": "chat.completion", "created": created, "model": model,
@@ -767,10 +782,17 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		chunk(map[string]any{"content": d}, nil)
 	}
-	ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, answer, feed.note, "")
+	ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, answer, feed.note, taskID)
 	leg = ranLeg
 	if err == nil {
 		res = b.nudgeNarration(req.ws, leg, prompt, res, answer, feed.note)
+	}
+	// Stage 4: verify what changed against the repository's own tests, and
+	// buy a repair, an effort step and a leg step when they fail - each
+	// streamed into the same answer, each on the record.
+	var esc *captaincode.EscalationOutcome
+	if err == nil && !titleReq {
+		leg, req.ws, res, esc = b.verifyAndEscalate(req.ws, leg, prompt, res, taskID, answer, feed.note)
 	}
 	// Partial salvage, stream flavor: text already streamed gets a trailing
 	// marker in the success tail (prefixing res.Text would re-send nothing);
@@ -813,9 +835,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			Abandoned: r.Context().Err() != nil, Logs: logPaths(res)})
 	}
 	fmt.Printf("captain brain: %s wrapper done in %s (%d chars, streamed)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: string(leg), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
+	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: captaincode.ModelIDAt(leg, req.ws.Effort), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
 	if !titleReq { // …and must not teach the router anything
-		go b.recordRun(leg, prompt, res, req.ws.Dir, stocked...) // learning loop: off the response path
+		go b.recordRunAt(leg, prompt, res, req.ws, taskID, escAttempts(esc), escFrom(esc, leg), "", stocked...) // learning loop: off the response path
 	}
 	if first { // worker produced no deltas - emit the whole reply once
 		chunk(map[string]any{"role": "assistant", "content": res.Text}, nil)
@@ -828,6 +850,24 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if flush != nil {
 		flush.Flush()
 	}
+}
+
+// escAttempts is the attempt number the delivered result carries: 1, or
+// the escalation record's count.
+func escAttempts(e *captaincode.EscalationOutcome) int {
+	if e == nil || e.Attempts < 1 {
+		return 1
+	}
+	return e.Attempts
+}
+
+// escFrom names the leg a delivered escalation answered for: the one whose
+// check failed, when the sequence moved the work to another leg.
+func escFrom(e *captaincode.EscalationOutcome, final captaincode.Leg) captaincode.Leg {
+	if e == nil || !e.Escalated || e.EscalatedTo != final {
+		return ""
+	}
+	return e.From
 }
 
 // writeWorkerError returns an OpenAI-style error (not a 200 with the failure as

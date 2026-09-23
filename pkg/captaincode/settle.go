@@ -95,25 +95,41 @@ func (o OutcomeEvidence) settle(ts *TaskState, now time.Time) (AcceptanceStatus,
 	if ts != nil && (ts.State == StateFailed || ts.State == StateExhausted) {
 		return AcceptanceRejected, DecidedByLifecycle
 	}
-	if len(o.Checks) == 0 {
-		return AcceptancePending, ""
-	}
 	for _, c := range o.Checks {
 		if !c.Passed {
 			return AcceptanceRejected, DecidedByChecks
 		}
 	}
+	// Objective signals captain observes itself (stage 1). A commit that
+	// touched the worker's files is the user keeping the work: accepted at
+	// once, whatever else is on the record. A corrective re-prompt inside
+	// the window is the user sending it back: rejected at once.
+	if o.Commit != nil {
+		return AcceptanceAccepted, DecidedByCommit
+	}
+	if o.Reprompt != nil {
+		return AcceptanceRejected, DecidedByReprompt
+	}
 	if len(o.Corrections) > 0 {
-		// The checks passed and the user still spent minutes fixing it. The
-		// checks were not sufficient, which is a statement about the checks,
-		// not an acceptance - and not a rejection either, since the user kept
-		// the work. Left pending for a human to call.
+		// The checks passed (or there were none) and the user still spent
+		// minutes fixing it. The checks were not sufficient, which is a
+		// statement about the checks, not an acceptance - and not a
+		// rejection either, since the user kept the work. Left pending for a
+		// human to call.
 		return AcceptancePending, ""
 	}
-	if now.Sub(o.UpdatedAt) < OutcomeSettleWindow() {
+	if now.Sub(o.deliveredAt()) < OutcomeSettleWindow() {
 		return AcceptancePending, ""
 	}
-	return AcceptanceAccepted, DecidedByChecks
+	if len(o.Checks) > 0 {
+		return AcceptanceAccepted, DecidedByChecks
+	}
+	if o.Delivered() {
+		// Nothing was checked and nothing came back: the weakest honest
+		// acceptance, labelled so nobody reads it as a passed test.
+		return AcceptanceAccepted, DecidedBySilence
+	}
+	return AcceptancePending, ""
 }
 
 // SettleOutcomes sweeps every pending outcome and settles the ones their
@@ -139,6 +155,7 @@ func (l *Ledger) SettleOutcomes(now time.Time) int {
 			o.RejectedAt = now
 		}
 		changed++
+		l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: o.TaskID, Outcome: o})
 	}
 	return changed
 }

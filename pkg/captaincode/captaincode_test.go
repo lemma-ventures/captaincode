@@ -118,29 +118,29 @@ func TestStartRung(t *testing.T) {
 func TestDirectorExcludedFromWorkerLadder(t *testing.T) {
 	defer SetDirector(LegGrok) // restore default
 	SetDirector(LegGrok)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
 	assert.NotContains(t, Rungs, LegGrok)
 	SetDirector(LegClaude)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
 }
 
 func TestPickSkipsCooldownsAndFallsBack(t *testing.T) {
 	// Pin the director so the worker ladder is deterministic: claude director →
-	// Rungs = {free, qwen, step, gpt-oss, grok, codex, ds4-flash, minimax, deepseek, gemini, kimi, cursor, glm, grok-max, codex-cli}.
+	// Rungs = {free, qwen, step, gpt-oss, grok, luna, ds4-flash, minimax, deepseek, gemini, kimi, cursor, glm, codex, grok-max, codex-cli}.
 	defer SetDirector(LegGrok)
 	SetDirector(LegClaude)
 	now := time.Now()
-	cool := map[Leg]time.Time{LegCodex: now.Add(time.Hour)}
+	cool := map[Leg]time.Time{LegLuna: now.Add(time.Hour)}
 
-	got := Pick(5, cool, now) // start at codex rung (index 5)
-	assert.Equal(t, []Leg{LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegStep, LegQwen, LegFree}, got, "codex cooling: take ds4-flash above, then fall back down the ladder")
+	got := Pick(5, cool, now) // start at luna's rung (index 5)
+	assert.Equal(t, []Leg{LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegStep, LegQwen, LegFree}, got, "luna cooling: take ds4-flash above, then fall back down the ladder")
 
 	got = Pick(0, map[Leg]time.Time{}, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got)
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got)
 
 	expired := map[Leg]time.Time{LegFree: now.Add(-time.Minute)}
 	got = Pick(0, expired, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegCodex, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
 }
 
 func TestModelSpecQwenAndGLM(t *testing.T) {
@@ -228,9 +228,9 @@ func TestVisionLegsEnvOverride(t *testing.T) {
 // average was 9.0 (2026-07-25). TopQuality keeps only the strongest legs by
 // overall blended quality, so /quality structurally cannot land on a budget leg.
 func TestTopQuality(t *testing.T) {
-	order := []Leg{LegFree, LegGrok, LegCodex, LegMiniMax, LegGLM, LegCursor}
-	got := TopQuality(order, nil, 2) // no local stats → priors: glm 8.2, cursor 8.0
-	assert.Equal(t, []Leg{LegGLM, LegCursor}, got)
+	order := []Leg{LegFree, LegGrok, LegLuna, LegCodex, LegMiniMax, LegGLM, LegCursor}
+	got := TopQuality(order, nil, 2) // no local stats → priors: codex (GPT-6 Sol) 8.4, glm 8.2
+	assert.Equal(t, []Leg{LegCodex, LegGLM}, got)
 	assert.Equal(t, []Leg{LegCursor}, TopQuality([]Leg{LegCursor}, nil, 2), "fewer legs than n is fine")
 	assert.Empty(t, TopQuality(nil, nil, 2))
 

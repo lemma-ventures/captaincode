@@ -120,7 +120,9 @@ func ShareNote(cwd, kind, text, by string) (string, bool) {
 		return "", false
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "---\nat: %s\nhandle: %s\nby: %s\nkind: %s\n---\n%s\n", now.Format(time.RFC3339), handle, by, kind, text)
+	// at carries the author's offset, so the folded ledger line is dated by
+	// the author's day (as their own ledger is), not by UTC or the folder's.
+	fmt.Fprintf(&sb, "---\nat: %s\nhandle: %s\nby: %s\nkind: %s\n---\n%s\n", now.Local().Format(time.RFC3339), handle, by, kind, text)
 	p := filepath.Join(dir, name)
 	if err := os.WriteFile(p, []byte(sb.String()), 0o644); err != nil {
 		return "", false

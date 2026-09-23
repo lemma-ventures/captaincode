@@ -113,6 +113,8 @@ func TestUpgradeListsApiLegPins(t *testing.T) {
 	assert.Contains(t, out, "grok:")
 	assert.Contains(t, out, "xai/grok-build-0.1")
 	assert.Contains(t, out, "codex:")
-	assert.Contains(t, out, "openai/gpt-5.5-fast")
+	assert.Contains(t, out, "openai/gpt-6-sol-fast")
+	assert.Contains(t, out, "luna:")
+	assert.Contains(t, out, "openai/gpt-6-luna")
 	assert.Contains(t, out, "no binary to update")
 }

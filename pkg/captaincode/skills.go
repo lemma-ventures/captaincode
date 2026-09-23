@@ -30,8 +30,15 @@ package captaincode
 //     descriptions, degrading selection for every skill at once. An
 //     unfiltered catalog is worse than none.
 //   - the shelf dies with the worktree. Nothing appears in the user's
-//     repository: what is staged is removed, and while it is there a
-//     `.git/info/exclude` line keeps it out of `git status`.
+//     repository: what is staged is removed, and while it is there an
+//     exclude line naming exactly those paths - in the exclude file git
+//     actually reads, which for a linked worktree is the repository's -
+//     keeps it out of `git status`, out of a worker's `git add -A`, and out
+//     of an isolated worker's integration diff.
+//
+// One skill is stocked for every task rather than by selection:
+// security-audit (AlwaysSkills), because the changes a security reviewer
+// reads - a form, a dependency, a shell call - rarely say "security".
 //
 // Opt-in by construction, like Euclid: with nothing synced there is no
 // catalog, no directory, no listing, and a run is byte-for-byte what it is
@@ -39,16 +46,19 @@ package captaincode
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -61,6 +71,22 @@ const SkillsDirEnv = "CAPTAIN_SKILLS_DIR"
 
 // SkillCapEnv overrides how many skills may be stocked for one task.
 const SkillCapEnv = "CAPTAIN_SKILLS_CAP"
+
+// SkillsAlwaysEnv names the skills stocked for EVERY task, whatever the task
+// says - comma-separated, replacing the default. "0", "off" or "none" stocks
+// nothing unconditionally; selection by the task's words is unchanged
+// either way.
+const SkillsAlwaysEnv = "CAPTAIN_SKILLS_ALWAYS"
+
+// SecuritySkill is the always-on default. Security is not a topic a task
+// has to name to need: "add a login form" and "wire up this SDK" never say
+// the word, and they are exactly the changes a security reviewer reads.
+const SecuritySkill = "security-audit"
+
+// SecuritySkillSource is the catalog SecuritySkill is synced from. One name
+// is one skill and the first sync wins, so `captain doctor` names the
+// publisher of whatever holds the name rather than assume it.
+const SecuritySkillSource = "cloudflare/security-audit-skill"
 
 // skillCapDefault is the hard cap on a shelf. See the file comment: this is
 // a context budget, not a preference.
@@ -143,6 +169,51 @@ func SkillCap() int {
 		}
 	}
 	return skillCapDefault
+}
+
+// AlwaysSkills is the always-on list, in the order it is stocked. A name
+// the catalog does not hold is simply not stocked: always-on is a place on
+// the shelf, not a fetch.
+func AlwaysSkills() []string {
+	v := strings.TrimSpace(os.Getenv(SkillsAlwaysEnv))
+	switch strings.ToLower(v) {
+	case "":
+		return []string{SecuritySkill}
+	case "0", "off", "none", "false":
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, n := range strings.Split(v, ",") {
+		n = strings.ToLower(strings.TrimSpace(n))
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
+// AlwaysStocked reports whether a skill will be on every worker's shelf: on
+// the always-on list, synced, and the shelf not capped to nothing.
+func AlwaysStocked(name string) bool {
+	if SkillCap() <= 0 {
+		return false
+	}
+	listed := false
+	for _, n := range AlwaysSkills() {
+		listed = listed || n == name
+	}
+	if !listed {
+		return false
+	}
+	for _, s := range Catalog() {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ── the lock ────────────────────────────────────────────────────────────────
@@ -418,9 +489,10 @@ func sortedKeys(m map[string]bool) []string {
 // SkillPick is one selected skill and why it was picked, so `captain why`
 // and the report can say what the shelf was built from.
 type SkillPick struct {
-	Skill Skill
-	Score float64
-	Why   string
+	Skill  Skill
+	Score  float64
+	Why    string
+	Always bool // stocked by the always-on list, not by the task's words
 }
 
 // SelectSkills chooses the shelf for one task. Selection happens POST PROMPT,
@@ -431,21 +503,45 @@ type SkillPick struct {
 // The scorer is lexical on purpose. A model call to decide which procedures a
 // task might use would cost more than the procedures save, and would run on
 // the hot path of every spawn.
+//
+// The always-on skills (AlwaysSkills) go on first, whatever the task says,
+// and pay into the same two budgets as every other book.
 func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap int) []SkillPick {
 	if cap <= 0 || len(catalog) == 0 {
 		return nil
 	}
-	terms := skillTerms(task)
-	if len(terms) == 0 {
-		return nil
+	// Two budgets, and the tighter one wins: the count cap, and the bytes the
+	// listing costs in every worker's startup context.
+	out, budget := make([]SkillPick, 0, cap), 0
+	fits := func(s Skill) bool {
+		cost := len(s.Name) + len(s.Description)
+		if len(out) >= cap || budget+cost > skillListingBudget {
+			return false
+		}
+		budget += cost
+		return true
+	}
+	always := map[string]bool{}
+	for _, name := range AlwaysSkills() {
+		for _, s := range catalog {
+			if s.Name == name && !always[name] && fits(s) {
+				always[name] = true
+				out = append(out, SkillPick{Skill: s, Always: true, Why: "always stocked (" + SkillsAlwaysEnv + ")"})
+			}
+		}
 	}
 	var picks []SkillPick
-	for _, s := range catalog {
-		score, hits := skillScore(s, terms, class, domain)
-		if score <= 0 {
-			continue
+	if terms := skillTerms(task); len(terms) > 0 {
+		for _, s := range catalog {
+			if always[s.Name] {
+				continue
+			}
+			score, hits := skillScore(s, terms, class, domain)
+			if score <= 0 {
+				continue
+			}
+			picks = append(picks, SkillPick{Skill: s, Score: score, Why: strings.Join(hits, ", ")})
 		}
-		picks = append(picks, SkillPick{Skill: s, Score: score, Why: strings.Join(hits, ", ")})
 	}
 	sort.Slice(picks, func(i, j int) bool {
 		if picks[i].Score != picks[j].Score {
@@ -453,16 +549,14 @@ func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap 
 		}
 		return picks[i].Skill.Name < picks[j].Skill.Name
 	})
-	// Two budgets, and the tighter one wins: the count cap, and the bytes the
-	// listing costs in every worker's startup context.
-	out, budget := make([]SkillPick, 0, cap), 0
 	for _, p := range picks {
-		cost := len(p.Skill.Name) + len(p.Skill.Description)
-		if len(out) >= cap || budget+cost > skillListingBudget {
+		if !fits(p.Skill) {
 			break
 		}
-		budget += cost
 		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -550,9 +644,16 @@ func singularize(w string) string {
 
 // ── staging ─────────────────────────────────────────────────────────────────
 
-// excludeMarker heads the block captain adds to .git/info/exclude, so Remove
-// takes back exactly its own lines and never a line the user wrote.
+// excludeMarker heads the block captain adds to a repository's exclude file,
+// so captain takes back exactly its own lines and never a line the user
+// wrote.
 const excludeMarker = "# captain: staged skills (M3.9) - removed when the shelf is"
+
+// stagedMarker is dropped into every skill captain stages. A copy left behind
+// by a brain that died mid-turn carries it, so the next shelf knows that copy
+// for captain's own; a user's skill of the same name never does, so it is
+// never touched.
+const stagedMarker = ".captain-staged"
 
 // Shelf is what was staged into one worker's directory. Remove takes it back;
 // a Shelf that is never removed leaves the directory as the exclude line
@@ -562,10 +663,36 @@ type Shelf struct {
 	Dir     string
 	Stocked []SkillPick
 
-	staged []string // skill directories and symlinks this shelf wrote
-	dirs   []string // parent directories it had to create, shallowest first
-	wrote  bool     // …and whether it touched .git/info/exclude
+	held []string // the skills this shelf holds in its directory's yard
 }
+
+// yard is every live shelf in one directory. A directory often holds several
+// at once - a serialized stage's workers, a second session in the same
+// repository, the next stage staged while the last one's shelf is still up -
+// and with an always-on skill that is the ordinary case, not the rare one.
+// So staging is counted: a skill a live shelf already staged is SHARED, not
+// mistaken for the user's own, and only the last shelf holding it takes it
+// back. Without the count the first turn to finish would pull the skill, and
+// its exclude line, out from under a worker still running - whose `git add
+// -A` would then commit captain's shelf into the user's history.
+type yard struct {
+	holders int             // live shelves in this directory
+	skills  map[string]int  // staged skill → live shelves holding it
+	links   map[string]bool // …and whether its .claude symlink is captain's
+	dirs    []string        // parent directories captain created, shallowest first
+	exclude string          // the exclude file git reads here; "" outside a repository
+	prefix  string          // this directory's path from the repository root
+}
+
+var (
+	yardMu sync.Mutex
+	yards  = map[string]*yard{}
+	// excludeLines is every live exclude line, per exclude file. A
+	// repository's linked worktrees share ONE exclude file - git has no
+	// per-worktree one - so captain's block there is the union of every live
+	// shelf's lines, rewritten as shelves come and go.
+	excludeLines = map[string]map[string]int{}
+)
 
 // Refs is what the shelf costs in a worker's startup context, and what the
 // director is shown when it grades the shelf.
@@ -605,64 +732,254 @@ func StageSkills(dir string, picks []SkillPick) (*Shelf, error) {
 	if len(picks) == 0 {
 		return nil, nil
 	}
-	sh := &Shelf{Dir: dir}
+	yardMu.Lock()
+	defer yardMu.Unlock()
+	key := yardKey(dir)
 	agents := filepath.Join(dir, ".agents", "skills")
 	claude := filepath.Join(dir, ".claude", "skills")
-	for _, base := range []string{agents, claude} {
-		made, err := mkdirTrack(base)
-		if err != nil {
-			return nil, fmt.Errorf("skills: stage %s: %w", base, err)
+	y := yards[key]
+	fresh := y == nil
+	if fresh {
+		y = &yard{skills: map[string]int{}, links: map[string]bool{}}
+		for _, base := range []string{agents, claude} {
+			made, err := mkdirTrack(base)
+			if err != nil {
+				y.removeDirs()
+				return nil, fmt.Errorf("skills: stage %s: %w", base, err)
+			}
+			y.dirs = append(y.dirs, made...)
 		}
-		sh.dirs = append(sh.dirs, made...)
+		y.exclude, y.prefix = gitExcludeFile(dir)
 	}
+	sh := &Shelf{Dir: dir}
 	for _, p := range picks {
-		dst := filepath.Join(agents, p.Skill.Name)
-		if _, err := os.Stat(dst); err == nil {
-			continue // the user's own skill of that name wins; captain never overwrites it
-		}
-		if err := copySkill(p.Skill, dst); err != nil {
-			os.RemoveAll(dst)
+		if y.skills[p.Skill.Name] > 0 {
+			y.skills[p.Skill.Name]++ // a live shelf staged it: share, never re-copy under a running worker
+		} else if !y.stage(p.Skill, agents, claude) {
 			continue
 		}
-		sh.staged = append(sh.staged, dst)
-		link := filepath.Join(claude, p.Skill.Name)
-		if _, err := os.Lstat(link); err != nil {
-			rel, rerr := filepath.Rel(claude, dst)
-			if rerr != nil {
-				rel = dst
-			}
-			if err := os.Symlink(rel, link); err == nil {
-				sh.staged = append(sh.staged, link)
-			}
-		}
+		sh.held = append(sh.held, p.Skill.Name)
 		sh.Stocked = append(sh.Stocked, p)
 	}
 	if len(sh.Stocked) == 0 {
-		sh.Remove()
+		if fresh {
+			y.removeDirs()
+		}
 		return nil, nil
 	}
-	sh.wrote = addGitExclude(dir)
+	y.holders++
+	yards[key] = y
+	writeExclude(y.exclude)
 	return sh, nil
 }
 
-// Remove takes back exactly what this shelf staged: the skills it copied,
-// then the directories it had to create, deepest first. A created directory
-// is removed only when it is EMPTY - a user file that landed in
-// `.agents/skills` while the worker ran is not captain's to delete.
+// stage copies one skill into the directory. A directory already at that
+// name is the user's own and wins - unless it carries captain's marker, in
+// which case it is a shelf a dead brain never took down, refreshed here and
+// counted as this yard's.
+func (y *yard) stage(s Skill, agents, claude string) bool {
+	dst := filepath.Join(agents, s.Name)
+	if _, err := os.Lstat(dst); err == nil {
+		if _, err := os.Stat(filepath.Join(dst, stagedMarker)); err != nil {
+			return false // the user's own skill of that name wins; captain never overwrites it
+		}
+		os.RemoveAll(dst)
+	}
+	if err := copySkill(s, dst); err != nil {
+		os.RemoveAll(dst)
+		return false
+	}
+	os.WriteFile(filepath.Join(dst, stagedMarker), []byte("staged by captain for one worker turn; removed when the turn ends\n"), 0o644)
+	link := filepath.Join(claude, s.Name)
+	rel, err := filepath.Rel(claude, dst)
+	if err != nil {
+		rel = dst
+	}
+	if t, err := os.Readlink(link); err == nil && t == rel {
+		y.links[s.Name] = true // captain's own, left behind with the copy above
+	} else if _, err := os.Lstat(link); err != nil {
+		y.links[s.Name] = os.Symlink(rel, link) == nil
+	}
+	y.skills[s.Name] = 1
+	y.countLines(s.Name, 1)
+	return true
+}
+
+// Remove gives this shelf's skills back to the yard. A skill another live
+// shelf still holds stays; the last holder takes it out, then the
+// directories captain created, deepest first. A created directory is removed
+// only when it is EMPTY - a user file that landed in `.agents/skills` while
+// the worker ran is not captain's to delete.
 func (s *Shelf) Remove() {
-	if s == nil {
+	if s == nil || len(s.held) == 0 {
 		return
 	}
-	for _, p := range s.staged {
-		os.RemoveAll(p)
+	yardMu.Lock()
+	defer yardMu.Unlock()
+	key := yardKey(s.Dir)
+	if y := yards[key]; y != nil {
+		for _, name := range s.held {
+			if y.skills[name]--; y.skills[name] > 0 {
+				continue
+			}
+			y.countLines(name, -1)
+			os.RemoveAll(filepath.Join(s.Dir, ".agents", "skills", name))
+			if y.links[name] {
+				os.Remove(filepath.Join(s.Dir, ".claude", "skills", name))
+			}
+			delete(y.skills, name)
+			delete(y.links, name)
+		}
+		if y.holders--; y.holders <= 0 {
+			y.removeDirs()
+			delete(yards, key)
+		}
+		writeExclude(y.exclude)
 	}
-	for i := len(s.dirs) - 1; i >= 0; i-- {
-		os.Remove(s.dirs[i]) // fails harmlessly when something else is in there
+	s.held, s.Stocked = nil, nil
+}
+
+func yardKey(dir string) string {
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
 	}
-	if s.wrote {
-		removeGitExclude(s.Dir)
+	return filepath.Clean(dir)
+}
+
+// removeDirs takes back the directories captain created, deepest first.
+func (y *yard) removeDirs() {
+	for i := len(y.dirs) - 1; i >= 0; i-- {
+		os.Remove(y.dirs[i]) // fails harmlessly when something else is in there
 	}
-	s.staged, s.dirs, s.Stocked = nil, nil, nil
+	y.dirs = nil
+}
+
+// shelfLines are the exclude lines one staged skill needs, anchored at the
+// repository root: the tree, and the claude symlink when it is captain's.
+// Exactly those paths and no wider - a whole-directory line would also hide
+// the skill a user asked a worker to WRITE, and a worker's `git add -A` would
+// then leave it out of the commit it reports.
+func (y *yard) shelfLines(name string) []string {
+	out := []string{"/" + y.prefix + ".agents/skills/" + name}
+	if y.links[name] {
+		out = append(out, "/"+y.prefix+".claude/skills/"+name)
+	}
+	return out
+}
+
+func (y *yard) countLines(name string, delta int) {
+	if y.exclude == "" {
+		return
+	}
+	m := excludeLines[y.exclude]
+	if m == nil {
+		m = map[string]int{}
+		excludeLines[y.exclude] = m
+	}
+	for _, l := range y.shelfLines(name) {
+		if m[l] += delta; m[l] <= 0 {
+			delete(m, l)
+		}
+	}
+}
+
+// gitExcludeFile is the exclude file git reads for dir, and dir's path from
+// the repository root. Both matter. A linked worktree has no exclude file of
+// its own - git reads the repository's shared one - so a write to the
+// worktree's `.git/info/exclude` (a `.git` FILE there) never happened, and
+// an isolated worker's shelf showed as new files in its integration diff:
+// every worker the same new files, which integration reads as a conflict.
+// And a pattern is anchored at the root, so a shelf staged in a subdirectory
+// needs the subdirectory in its line. Outside a repository there is nothing
+// to exclude.
+func gitExcludeFile(dir string) (file, prefix string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--git-common-dir", "--show-prefix")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", ""
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	common := strings.TrimSpace(lines[0])
+	if common == "" {
+		return "", ""
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(dir, common)
+	}
+	if len(lines) > 1 {
+		prefix = lines[1]
+	}
+	// A directory name is matched as itself, not as a glob.
+	return filepath.Join(common, "info", "exclude"), strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`).Replace(prefix)
+}
+
+// writeExclude rewrites captain's block in one exclude file to the lines live
+// shelves hold, and takes the block out when none do. The write goes through
+// a rename: git reads this file on every status, and a worker's git must
+// never see half of it.
+func writeExclude(file string) {
+	if file == "" {
+		return
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		return
+	}
+	body := stripExcludeBlock(string(raw))
+	live := make([]string, 0, len(excludeLines[file]))
+	for l := range excludeLines[file] {
+		live = append(live, l)
+	}
+	if len(live) == 0 {
+		delete(excludeLines, file)
+	} else {
+		sort.Strings(live)
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		body += excludeMarker + "\n" + strings.Join(live, "\n") + "\n"
+	}
+	if body == string(raw) {
+		return
+	}
+	if os.MkdirAll(filepath.Dir(file), 0o755) != nil {
+		return
+	}
+	tmp := file + ".captain.tmp"
+	if os.WriteFile(tmp, []byte(body), 0o644) != nil || os.Rename(tmp, file) != nil {
+		os.Remove(tmp)
+	}
+}
+
+// stripExcludeBlock takes captain's block out of an exclude file's text -
+// this format, and the two whole-directory lines the first one wrote - and
+// leaves every other line as it was.
+func stripExcludeBlock(body string) string {
+	lines := strings.Split(body, "\n")
+	out := make([]string, 0, len(lines))
+	in := false
+	for _, l := range lines {
+		if strings.HasPrefix(l, excludeMarker) {
+			in = true
+			continue
+		}
+		if in && isShelfLine(l) {
+			continue
+		}
+		in = false
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
+}
+
+func isShelfLine(l string) bool {
+	if l == ".agents/skills/" || l == ".claude/skills/" {
+		return true
+	}
+	return strings.HasPrefix(l, "/") && (strings.Contains(l, ".agents/skills/") || strings.Contains(l, ".claude/skills/"))
 }
 
 // mkdirTrack creates dir and returns the directories it actually made, so
@@ -729,50 +1046,6 @@ func copySkill(s Skill, dst string) error {
 	})
 }
 
-// addGitExclude keeps a staged shelf out of `git status` while it is there.
-// Returns whether it wrote, so Remove takes the block back.
-func addGitExclude(dir string) bool {
-	p := filepath.Join(dir, ".git", "info", "exclude")
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		return false // not a repo, or a worktree whose .git is a file: nothing to exclude
-	}
-	if strings.Contains(string(raw), excludeMarker) {
-		return true
-	}
-	body := string(raw)
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	body += excludeMarker + "\n.agents/skills/\n.claude/skills/\n"
-	return os.WriteFile(p, []byte(body), 0o644) == nil
-}
-
-// removeGitExclude takes back captain's block and nothing else.
-func removeGitExclude(dir string) {
-	p := filepath.Join(dir, ".git", "info", "exclude")
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		return
-	}
-	lines := strings.Split(string(raw), "\n")
-	out := make([]string, 0, len(lines))
-	skip := 0
-	for _, l := range lines {
-		if strings.HasPrefix(l, excludeMarker) {
-			skip = 2 // the two directory lines captain wrote under the marker
-			continue
-		}
-		if skip > 0 && (l == ".agents/skills/" || l == ".claude/skills/") {
-			skip--
-			continue
-		}
-		skip = 0
-		out = append(out, l)
-	}
-	os.WriteFile(p, []byte(strings.Join(out, "\n")), 0o644)
-}
-
 // ── reporting ───────────────────────────────────────────────────────────────
 
 // FormatCatalog renders the shelf for `captain skills`.
@@ -780,8 +1053,15 @@ func FormatCatalog(cat []Skill) string {
 	if len(cat) == 0 {
 		return "no skills synced - `captain skills sync` stages a pinned set; with none, a run is byte-for-byte what it is today\n"
 	}
+	// The source column fits the longest source: a fixed width pushed every
+	// column after cloudflare/security-audit-skill out of line.
+	srcW, sourceAvailable := len("SOURCE"), false
+	for _, s := range cat {
+		srcW = max(srcW, len(s.Source))
+		sourceAvailable = sourceAvailable || !s.Redistribute
+	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-24s %-26s %-18s %-9s %s\n", "SKILL", "SOURCE", "LICENSE", "SCRIPTS", "DESCRIPTION")
+	fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %s\n", "SKILL", srcW, "SOURCE", "LICENSE", "SCRIPTS", "DESCRIPTION")
 	for _, s := range cat {
 		scripts := "-"
 		if s.HasScripts && s.Scripts {
@@ -796,11 +1076,13 @@ func FormatCatalog(cat []Skill) string {
 		if !s.Redistribute {
 			lic += "*"
 		}
-		fmt.Fprintf(&sb, "%-24s %-26s %-18s %-9s %s\n",
-			s.Name, s.Source, lic, scripts, truncateStr(oneLine(s.Description), 60))
+		fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %s\n",
+			s.Name, srcW, s.Source, lic, scripts, truncateStr(oneLine(s.Description), 60))
 	}
 	fmt.Fprintf(&sb, "\n%d skills · cap %d per task\n", len(cat), SkillCap())
-	sb.WriteString("* source-available, not open source: fetched at your request, never vendored into captain.\n")
+	if sourceAvailable {
+		sb.WriteString("* source-available, not open source: fetched at your request, never vendored into captain.\n")
+	}
 	return sb.String()
 }
 
@@ -810,38 +1092,61 @@ func oneLine(s string) string {
 
 // UnstageSkills removes a shelf from a directory without a Shelf handle: the
 // hand-staged case, and the residue a crashed brain left behind. It removes
-// only skill directories the catalog knows by name - a skill the user wrote
-// themselves, or vendored into their own repository, is never captain's to
-// delete.
+// what captain staged and nothing else: a copy carrying captain's marker, and
+// the claude symlink to that copy, which the first pass leaves dangling. A
+// name alone proves nothing - security-audit is on every shelf, and
+// Cloudflare's own instructions install it into the repository, so a
+// same-named skill the user vendored is the likely case, not the odd one;
+// nor does a link's shape, since a user who shares `.agents/skills` with
+// Claude Code writes exactly the link captain does. It returns how many
+// skills it took out.
 func UnstageSkills(dir string) int {
 	known := map[string]bool{}
 	for _, s := range Catalog() {
 		known[s.Name] = true
 	}
-	n := 0
-	for _, base := range []string{
-		filepath.Join(dir, ".agents", "skills"),
-		filepath.Join(dir, ".claude", "skills"),
-	} {
-		entries, err := os.ReadDir(base)
-		if err != nil {
-			continue
-		}
-		left := 0
+	agents := filepath.Join(dir, ".agents", "skills")
+	claude := filepath.Join(dir, ".claude", "skills")
+	removed := map[string]bool{}
+	left := 0
+	if entries, err := os.ReadDir(agents); err == nil {
 		for _, e := range entries {
-			if !known[e.Name()] {
+			dst := filepath.Join(agents, e.Name())
+			if _, err := os.Stat(filepath.Join(dst, stagedMarker)); !known[e.Name()] || err != nil || os.RemoveAll(dst) != nil {
 				left++
 				continue
 			}
-			if os.RemoveAll(filepath.Join(base, e.Name())) == nil {
-				n++
-			}
+			removed[e.Name()] = true
 		}
 		if left == 0 {
-			os.Remove(base)
-			os.Remove(filepath.Dir(base))
+			os.Remove(agents)
+			os.Remove(filepath.Dir(agents)) // fails harmlessly when anything else is in there
 		}
 	}
-	removeGitExclude(dir)
-	return n
+	left = 0
+	if entries, err := os.ReadDir(claude); err == nil {
+		for _, e := range entries {
+			link := filepath.Join(claude, e.Name())
+			rel, _ := filepath.Rel(claude, filepath.Join(agents, e.Name()))
+			t, err := os.Readlink(link)
+			_, resolves := os.Stat(link)
+			if !known[e.Name()] || err != nil || t != rel || resolves == nil || os.Remove(link) != nil {
+				left++
+				continue
+			}
+			removed[e.Name()] = true
+		}
+		if left == 0 {
+			os.Remove(claude)
+			os.Remove(filepath.Dir(claude))
+		}
+	}
+	// The block is rewritten to what live shelves in THIS process hold: from
+	// the CLI that is nothing, so captain's lines go and the user's stay.
+	if file, _ := gitExcludeFile(dir); file != "" {
+		yardMu.Lock()
+		writeExclude(file)
+		yardMu.Unlock()
+	}
+	return len(removed)
 }

@@ -37,7 +37,15 @@ type Ledger struct {
 	// "" means the env/default director. Set by /captain <word>, kept across
 	// brain restarts.
 	DirectorMode string `json:"director_mode,omitempty"`
-	path         string
+	// Steer is the standing routing mix (steer.go). Set by /captain more|less
+	// and by an assignment (`oss=20% …`). Empty means the default, which
+	// does not bias the ranking.
+	Steer SteerMix `json:"steer,omitempty"`
+	// LaneRuns is where /frontier, /quality and /save sent their recent
+	// turns (lanes.go): the count the balancer evens out. Capped at
+	// maxLaneRuns, merged across processes like the other logs.
+	LaneRuns []LaneRun `json:"lane_runs,omitempty"`
+	path     string
 }
 
 // ThreadRef is a persisted opencode session identity for one leg in one
@@ -95,6 +103,20 @@ type Event struct {
 	TaskID     string      `json:"task_id,omitempty"`
 	AttemptID  string      `json:"attempt_id,omitempty"`
 	CostStatus UsageStatus `json:"cost_status,omitempty"`
+	// Routing attribution (stage 1). Class above is the class that ROUTED,
+	// not the old keyword classifier's; the rest is what the scorecards
+	// could never learn from because it was never written down: who settled
+	// the class and how sure, the effort the worker was asked for, the model
+	// it ran as, the path that chose it, and which attempt of the task this
+	// run was - a repair or an escalation is 2+ and names the leg whose
+	// objective failure it answers.
+	ClassBy       string  `json:"class_by,omitempty"`
+	Confidence    float64 `json:"confidence,omitempty"`
+	Effort        Effort  `json:"effort,omitempty"`
+	Model         string  `json:"model,omitempty"`
+	Path          string  `json:"path,omitempty"`
+	Attempt       int     `json:"attempt,omitempty"`
+	EscalatedFrom Leg     `json:"escalated_from,omitempty"`
 }
 
 // LegStats is the 3-axis scorecard (performance, quality, cost) per leg,
@@ -405,6 +427,13 @@ func (l *Ledger) Save() error {
 	if len(l.Budgets) > maxBudgets {
 		l.Budgets = l.Budgets[len(l.Budgets)-maxBudgets:]
 	}
+	// The balancer reads the lane log from its tail, so rows merged in from
+	// disk (appended after this process's own) go back into time order
+	// before the oldest are dropped.
+	sort.SliceStable(l.LaneRuns, func(i, j int) bool { return l.LaneRuns[i].At.Before(l.LaneRuns[j].At) })
+	if len(l.LaneRuns) > maxLaneRuns {
+		l.LaneRuns = l.LaneRuns[len(l.LaneRuns)-maxLaneRuns:]
+	}
 	data, err := json.MarshalIndent(l, "", "  ")
 	if err != nil {
 		return err
@@ -438,6 +467,7 @@ func (l *Ledger) mergeFromDisk() {
 	l.Snapshots = mergeByKey(l.Snapshots, disk.Snapshots, func(s PolicySnapshot) string { return s.ID })
 	l.Canaries = mergeByKey(l.Canaries, disk.Canaries, func(c Canary) string { return c.ID })
 	l.Events = mergeByKey(l.Events, disk.Events, jsonKey)
+	l.LaneRuns = mergeByKey(l.LaneRuns, disk.LaneRuns, jsonKey)
 }
 
 // mergeByKey appends rows from disk whose identity is not already in memory.
@@ -471,7 +501,11 @@ func jsonKey[T any](v T) string {
 func (l *Ledger) Record(e Event) {
 	e.At = time.Now()
 	stampDomain(&e) // per-domain priors need every event tagged (analysis I5)
+	if e.Model == "" && e.Leg != "" {
+		e.Model = ModelIDAt(e.Leg, e.Effort) // the version the run is attributed to
+	}
 	l.Events = append(l.Events, e)
+	l.journal(RoutingRecord{Kind: RoutingKindEvent, TaskID: e.TaskID, Event: &e})
 }
 
 // Cooldown marks a leg rate-limited. Windows differ per provider (Claude 5h,

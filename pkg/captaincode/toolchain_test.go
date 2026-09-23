@@ -74,7 +74,7 @@ func TestProbeToolStates(t *testing.T) {
 	if s := probe(t, "claude", map[string]string{}, nil); s.State != ToolMissing || !s.Blocked() {
 		t.Errorf("absent claude: %+v", s)
 	}
-	if s := probe(t, "claude", map[string]string{"claude": "2.1.270 (Claude Code)"}, nil); s.State != ToolOK || s.Version != "2.1.270" {
+	if s := probe(t, "claude", map[string]string{"claude": "2.1.280 (Claude Code)"}, nil); s.State != ToolOK || s.Version != "2.1.280" {
 		t.Errorf("tested claude: %+v", s)
 	}
 	if s := probe(t, "claude", map[string]string{"claude": "1.9.0 (Claude Code)"}, nil); s.State != ToolOld || !s.Blocked() {
@@ -83,7 +83,7 @@ func TestProbeToolStates(t *testing.T) {
 	// Newer than tested is usable but named, so an evidence run cannot quote
 	// the manifest's version while running another.
 	s := probe(t, "claude", map[string]string{"claude": "9.9.9 (Claude Code)"}, nil)
-	if s.State != ToolNewer || s.Blocked() || !strings.Contains(s.Detail, "2.1.270") {
+	if s.State != ToolNewer || s.Blocked() || !strings.Contains(s.Detail, "2.1.280") {
 		t.Errorf("newer than tested: %+v", s)
 	}
 	// A binary called codex that is not codex is blocked, not trusted.

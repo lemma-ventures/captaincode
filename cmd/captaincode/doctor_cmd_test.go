@@ -414,3 +414,34 @@ func TestDoctorReportsTheDecisionLegByItsKey(t *testing.T) {
 	assert.Regexp(t, `(?m)^\s*✓\s+jev\s+system-one\s+typesafe/jev-latest.*decision leg`, sb.String(),
 		"ready by its key, outside the worker allowlist, and named for what it is")
 }
+
+func TestDoctorReportsTheRankingsAgeAndFlaggedLegs(t *testing.T) {
+	dir := t.TempDir()
+	fakeBin(t, dir, "opencode")
+	t.Setenv("PATH", dir)
+	t.Setenv("CAPTAIN_LEGS", "")
+	t.Setenv("HOME", t.TempDir()) // no perf cache: the compiled snapshot
+	t.Setenv("CAPTAIN_PERF_REFRESH", "")
+	clearProviderKeys(t)
+
+	var sb strings.Builder
+	runDoctor(&sb, doctorOpts{
+		opencodeConfig: opencodeConfigWith(t, "xai"),
+		brain:          func() (string, error) { return "ok · director claude · idle", nil },
+		serve:          noServe(),
+		aaKey:          func() string { return "" },
+	})
+	out := sb.String()
+	assert.Contains(t, out, "ranking    compiled snapshot 2026-09-22", "where the ranking comes from")
+	assert.Contains(t, out, "no Artificial Analysis key", "and that it cannot get fresher until a key is set")
+	assert.Contains(t, out, "⇡ gemini    gemini-3-8-flash (41) outscores gemini-3-7-flash (39)", "the pins the feed has flagged")
+
+	sb.Reset()
+	runDoctor(&sb, doctorOpts{
+		opencodeConfig: opencodeConfigWith(t, "xai"),
+		brain:          func() (string, error) { return "ok", nil },
+		serve:          noServe(),
+		aaKey:          func() string { return "k" },
+	})
+	assert.Contains(t, sb.String(), "the brain refreshes it every 6h0m0s")
+}

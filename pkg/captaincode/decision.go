@@ -34,6 +34,10 @@ const (
 	PathNamedSeq = "named-sequence"  // the user named legs in order; compiled to a workflow
 	PathWorkflow = "workflow-intent" // a workflow control word, not a routing choice
 	PathReroute  = "reroute"         // a provider fault moved the work
+	PathPick     = "pick"            // tier 2: the director answered a typed choice over the value menu
+	PathExpected = "expected"        // ranked by expected cost per successful task (expected.go)
+	PathBandit   = "bandit"          // Thompson sampling over (leg, effort) arms (bandit.go)
+	PathLane     = "lane"            // a /frontier, /quality or /save lane evened out its recent turns (lanes.go)
 )
 
 // Policy is the tunable state a ranking was produced under. Recorded with the
@@ -94,6 +98,21 @@ type Decision struct {
 	Policy     Policy   `json:"policy"`
 	Candidates []Scored `json:"candidates,omitempty"` // eligible first, then exclusions with their reasons
 
+	// Stage 1 attribution: who settled the class and how sure, the effort
+	// the worker was asked for, and the two extra triage answers (stage 2).
+	// Attempt is 1 for the first try; the repair and escalation attempts
+	// re-record the decision with the leg and effort they moved to.
+	TriageBy     string  `json:"triage_by,omitempty"`
+	Confidence   float64 `json:"confidence,omitempty"`
+	Effort       Effort  `json:"effort,omitempty"`
+	Irreversible bool    `json:"irreversible,omitempty"`
+	MidTierP     float64 `json:"mid_tier_p,omitempty"`
+	Attempt      int     `json:"attempt,omitempty"`
+	// Expected is the (leg, effort) field when the expected-cost policy or
+	// the bandit ranked it (expected.go, bandit.go); Candidates keeps the
+	// value terms beside it so `captain why` can show both readings.
+	Expected []ExpectedRow `json:"expected,omitempty"`
+
 	// Shadow is what the decision leg answered at the same points, recorded
 	// beside what actually decided and never acted on (shadow.go).
 	Shadow *Shadow `json:"shadow,omitempty"`
@@ -123,6 +142,7 @@ func (l *Ledger) RecordDecision(d Decision) {
 		d.At = time.Now()
 	}
 	if d.TaskID != "" {
+		defer l.journal(RoutingRecord{Kind: RoutingKindDecision, TaskID: d.TaskID, Decision: &d})
 		for i := range l.Decisions {
 			if l.Decisions[i].TaskID == d.TaskID {
 				l.Decisions[i] = d
