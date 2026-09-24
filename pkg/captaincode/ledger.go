@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -46,6 +47,10 @@ type Ledger struct {
 	// maxLaneRuns, merged across processes like the other logs.
 	LaneRuns []LaneRun `json:"lane_runs,omitempty"`
 	path     string
+	// The size and mtime this process last wrote, so a save can tell that no
+	// other writer has touched the file and skip re-reading it (Save).
+	wroteSize int64
+	wroteAt   time.Time
 }
 
 // ThreadRef is a persisted opencode session identity for one leg in one
@@ -367,6 +372,20 @@ func (l *Ledger) Stats() map[Leg]LegStats {
 	return out
 }
 
+// The lifecycle collections used to grow without a cap. On this machine
+// state.json reached 11.4 MB - 5.2 MB of it attempt_states, 694 rows - and
+// Save() re-read, merged, re-marshalled and rewrote the whole file under the
+// brain's global lock on every worker completion, route decision and shadow.
+// At ~0.15s a save, with three sidebar polls a second per TUI queued behind
+// the same lock, the brain saturated and stopped answering (2026-09-24).
+// A finished attempt is history: the recent ones are kept for `captain
+// outcomes`/`task inspect`, the rest are dropped. Anything NOT terminal is
+// always kept - recovery reads it.
+const (
+	maxTaskStates    = 300
+	maxAttemptStates = 400
+)
+
 const maxEvents = 500
 
 func LoadLedger() (*Ledger, error) {
@@ -427,6 +446,10 @@ func (l *Ledger) Save() error {
 	if len(l.Budgets) > maxBudgets {
 		l.Budgets = l.Budgets[len(l.Budgets)-maxBudgets:]
 	}
+	l.AttemptStates = trimLifecycle(l.AttemptStates, maxAttemptStates, func(a AttemptState) bool { return a.State.IsTerminal() })
+	l.TaskStates = trimLifecycle(l.TaskStates, maxTaskStates, func(t TaskState) bool { return t.State.IsTerminal() })
+	l.Handoffs = trimLifecycle(l.Handoffs, maxHandoffs, func(HandoffBrief) bool { return true })
+	l.Outcomes = trimLifecycle(l.Outcomes, maxOutcomes, func(OutcomeEvidence) bool { return true })
 	// The balancer reads the lane log from its tail, so rows merged in from
 	// disk (appended after this process's own) go back into time order
 	// before the oldest are dropped.
@@ -442,12 +465,52 @@ func (l *Ledger) Save() error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, l.path)
+	if err := os.Rename(tmp, l.path); err != nil {
+		return err
+	}
+	// Remember what we wrote, so the next save's merge can tell "nobody else
+	// touched it" from "someone appended rows".
+	if st, err := os.Stat(l.path); err == nil {
+		l.wroteSize, l.wroteAt = st.Size(), st.ModTime()
+	}
+	return nil
+}
+
+// mergeReads counts the full re-reads mergeFromDisk performed; tests assert
+// that a save with no other writer does none.
+var mergeReads atomic.Int64
+
+// trimLifecycle keeps every row the caller calls live, plus the newest
+// `keep` of the rest, in order. A slice shorter than the cap is untouched.
+func trimLifecycle[T any](rows []T, keep int, droppable func(T) bool) []T {
+	if len(rows) <= keep {
+		return rows
+	}
+	live := make([]T, 0, len(rows))
+	var old []T
+	for _, r := range rows {
+		if droppable(r) {
+			old = append(old, r)
+		} else {
+			live = append(live, r)
+		}
+	}
+	if len(old) > keep {
+		old = old[len(old)-keep:]
+	}
+	return append(live, old...)
 }
 
 // mergeFromDisk unions the file's append-only rows into this ledger, keyed so
 // a row already held in memory wins (memory carries this process's updates).
+// It is skipped when the file is byte-for-byte the one this process last
+// wrote: the merge exists for OTHER writers, and reading and parsing several
+// megabytes to find nothing is what makes a save expensive.
 func (l *Ledger) mergeFromDisk() {
+	if st, err := os.Stat(l.path); err == nil && l.wroteSize == st.Size() && l.wroteAt.Equal(st.ModTime()) {
+		return
+	}
+	mergeReads.Add(1)
 	data, err := os.ReadFile(l.path)
 	if err != nil {
 		return
