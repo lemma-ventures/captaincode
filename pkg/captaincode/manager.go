@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -559,15 +560,44 @@ func (m Manager) Arbitrate(task string, contenders map[string]Contender) (Ruling
 	return checkRuling(r, contenders)
 }
 
+// landParallelSkill is the published land-parallel-agent-work skill
+// (skills/ at the repository root), copied here so it can be embedded;
+// TestLandParallelSkillMatchesThePublishedOne keeps the two identical. The
+// director cannot open a skill - it is one JSON call with no working
+// directory - so the step it performs is handed to it as prompt text.
+//
+//go:embed skills/land_parallel_agent_work.md
+var landParallelSkill string
+
+// arbitrationStep is the one step of that skill the director performs:
+// section 5, picking one whole winner per conflict group.
+var arbitrationStep = skillSection(landParallelSkill, "## 5.")
+
+// skillSection returns a markdown section from its heading up to the next
+// "## " heading.
+func skillSection(md, heading string) string {
+	i := strings.Index(md, "\n"+heading)
+	if i < 0 {
+		return ""
+	}
+	body := md[i+1:]
+	if j := strings.Index(body[len(heading):], "\n## "); j >= 0 {
+		body = body[:len(heading)+j]
+	}
+	return strings.TrimSpace(body)
+}
+
 // arbitrationPrompt lays the contenders out in a stable order.
 func arbitrationPrompt(task string, contenders map[string]Contender) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, `You are Captain Code's director. Parallel workers changed the SAME files for this task, and only one worker's changes can land: their edits are not merged. Decide whose changes land.
+	fmt.Fprintf(&sb, `You are Captain Code's director. Parallel workers changed the SAME files for this task, and only one worker's changes can land: their edits are not merged. Decide whose changes land. You are the decider in this step of the land-parallel-agent-work procedure:
+
+%s
 
 Task:
 %s
 
-`, truncateStr(task, 2000))
+`, arbitrationStep, truncateStr(task, 2000))
 	for _, id := range contenderIDs(contenders) {
 		c := contenders[id]
 		fmt.Fprintf(&sb, "--- worker %q (leg=%s) ---\nchanged: %s\n", id, c.Leg, truncateStr(strings.Join(c.Files, ", "), 600))
@@ -576,8 +606,7 @@ Task:
 		}
 		fmt.Fprintf(&sb, "report:\n%s\n\n", truncateStr(c.Text, 3000))
 	}
-	sb.WriteString(`Judge on correctness first, then how completely the changes do what the task asks, then how little they touch beyond it. Objective evidence (a passing gate or test suite) outranks a confident report. Judge the work, not which model did it.
-Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>"}`)
+	sb.WriteString(`Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>"}`)
 	return sb.String()
 }
 
