@@ -14,9 +14,9 @@ configuration or running brain.
 the latest passes all 18 checks, including request-scoped tool-secret restoration.**
 
 Team runs on the experimental OpenRouter lanes are reported separately under
-[Team results](#team-results): 127 of 134 sandboxed tasks passed in seven runs,
-and all seven integrated patches were verified in a fresh sandbox. The last five
-runs record the clean build they ran from.
+[Team results](#team-results): 211 of 222 sandboxed tasks passed in eleven runs,
+and all eleven integrated patches were verified in a fresh sandbox. The last
+nine runs record the clean build they ran from.
 
 The [tool-secret result](results/2026-09-30-tool-secrets.json) on 30 September
 2026 completed **1 task from 1 worker attempt**, with zero tool errors. Shield
@@ -269,8 +269,8 @@ for the MicroVM socket path.
 
 ### Team results
 
-On 30 September 2026, the example teams ran seven times on the OpenRouter lanes
-for `openai/gpt-oss-120b`: `fixture-12` twice and `fixture-both-lanes` five
+On 30 September 2026, the example teams ran eleven times on the OpenRouter lanes
+for `openai/gpt-oss-120b`: `fixture-12` twice and `fixture-both-lanes` nine
 times, with one repair attempt allowed per task. They used the patched MicroVM
 driver on one Apple M3 Max (16 cores, 128 GB). These lanes are experimental, and
 these results are separate from the NIM results above.
@@ -278,10 +278,14 @@ these results are separate from the NIM results above.
 The first two runs predate the provenance record in `run.json`. Their binaries'
 build stamps, read afterwards, show Captain built from `186868f` and Shield from
 `5bea2e2`, both from checkouts with uncommitted changes, so no commit names the
-code they ran. The next two ran from clean builds of `22eccb6`. The last three
-ran Captain from a clean build of `7925bff` and Shield from `22eccb6`; `7925bff`
-changed only the file times in the worker's payload and was later reverted
-(see below). Their `run.json` records all of that.
+code they ran. The next two ran from clean builds of `22eccb6`. The three after
+that ran Captain from a clean build of `7925bff` and Shield from `22eccb6`;
+`7925bff` changed only the file times in the worker's payload and was later
+reverted (see below). The last four ran Captain and Shield from a clean build
+of `6108154`, which lists sandbox files in path order and sends tool-call IDs
+in first-use order. Their `run.json` records all of that. One more run, built
+from `73a1a4c`, is not counted: the shell that launched it was killed during
+the director's rulings.
 
 | | [fixture-12](results/2026-09-30-team.json) | [fixture-both-lanes](results/2026-09-30-both-lanes.json) | [fixture-12](results/2026-09-30-team-22eccb6.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-22eccb6.json) |
 | --- | ---: | ---: | ---: | ---: |
@@ -311,13 +315,27 @@ changed only the file times in the worker's payload and was later reverted
 | Model requests through Shield | 159 | 167 | 168 |
 | Integrated verification in a fresh sandbox | 11 files, 23.7 s | 11 files, 22.9 s | 11 files, 23.5 s |
 
-All seven runs passed. On the host, every exported patch matched its report's
+| | [fixture-both-lanes](results/2026-09-30-both-lanes-6108154-1.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-6108154-2.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-6108154-3.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-6108154-4.json) |
+| --- | ---: | ---: | ---: | ---: |
+| Built from | `6108154`, clean | `6108154`, clean | `6108154`, clean | `6108154`, clean |
+| Tasks; sandboxes at once | 22; 8 | 22; 8 | 22; 8 | 22; 8 |
+| Passed in their sandbox | 21 | 21 | 21 | 21 |
+| Landed / dropped by ruling / failed | 11 / 10 / 1 | 11 / 10 / 1 | 11 / 10 / 1 | 11 / 10 / 1 |
+| Wall time | 235.3 s | 230.6 s | 224.9 s | 231.6 s |
+| Sum of task times | 1,091.0 s | 1,116.3 s | 1,072.5 s | 1,113.2 s |
+| Task, median (max) | 46.8 s (70.6) | 52.5 s (60.8) | 43.1 s (74.3) | 49.1 s (63.0) |
+| Sandbox creation, median (max) | 22.0 s (28.5) | 23.8 s (29.0) | 20.6 s (28.9) | 22.5 s (28.4) |
+| Worker, median (max) | 9.6 s (18.6) | 9.0 s (16.0) | 9.4 s (22.4) | 9.6 s (16.3) |
+| Model requests through Shield | 160 | 160 | 160 | 160 |
+| Integrated verification in a fresh sandbox | 11 files, 22.9 s | 11 files, 23.6 s | 11 files, 23.7 s | 11 files, 23.7 s |
+
+All eleven runs passed. On the host, every exported patch matched its report's
 SHA-256. Applying each `integrated.patch` to a fresh clone reproduced the tree
 the fresh sandbox verified (`5b249cf`, `ee80834`, `12a8efa`, `deefbc0`,
-`c407b0d`, `bb4faaa` and `da6eaf8`).
+`c407b0d`, `bb4faaa`, `da6eaf8`, then `acb0151` and `57a9000` twice each).
 
 Most of a task's time is the boundary, not the model. The worker's median was
-10-13 seconds of a 45-58-second task. The rest is gateway readiness, sandbox
+9-13 seconds of a 43-58-second task. The rest is gateway readiness, sandbox
 creation, the denial and cancellation tests (which stop and restart the VM),
 the Shield-down refusal and the restart before export. The lone integrated
 verification sandbox was created in 13.2-13.8 seconds. The medians were
@@ -325,19 +343,19 @@ verification sandbox was created in 13.2-13.8 seconds. The medians were
 20-27% of the summed task time. The second `7925bff` run took 374 seconds
 because one worker waited out four HTTP 429 responses (below).
 
-Seven tasks failed, all on the SambaNova lane. Six failed `sandbox_verify` after
-two attempts. `csvline` in the first run raised `SyntaxError` both times.
-`interval` failed in all five `fixture-both-lanes` runs the same way: its only
+Eleven tasks failed, all on the SambaNova lane. Ten failed `sandbox_verify`
+after two attempts. `csvline` in the first run raised `SyntaxError` both times.
+`interval` failed in all nine `fixture-both-lanes` runs the same way: its only
 edit, identical each time, added a docstring to `merge` and changed no code, and
 the repair attempt edited nothing. The three tests that fail before any edit
 still failed, and `merge([(8, 10), (1, 3), (2, 6)])` still returned
-`[(8, 10)]`. `interval` passed on Cerebras all seven times, and `csvline` passed
-on SambaNova in the other six runs. Of the 127 tasks that passed, 125 passed on
-their first attempt. The repair budget rescued two, both `humanize` on Cerebras,
-in the second `fixture-12` run and the second `7925bff` run. The failed states
-were kept for inspection.
+`[(8, 10)]`. `interval` passed on Cerebras all eleven times, and `csvline`
+passed on SambaNova in the other ten runs. Of the 211 tasks that passed, 209
+passed on their first attempt. The repair budget rescued two, both `humanize`
+on Cerebras, in the second `fixture-12` run and the second `7925bff` run. The
+failed states were kept for inspection.
 
-The seventh, `duration` in the first `7925bff` run, never got an answer.
+The other, `duration` in the first `7925bff` run, never got an answer.
 OpenCode opens a session with two requests. Shield passed the first, and then
 the TLS link between the sandbox and Shield's middleware failed
 (`SSLV3_ALERT_BAD_RECORD_MAC`, then `TSI_DATA_CORRUPTED`). The sandbox refused
@@ -356,23 +374,24 @@ none of 12 did, and each ran faster than its paired default run (22.5 seconds
 against 26.1 on average). At 20 cycles on 2 threads, neither setting corrupted
 any of 30 runs. TLS and the token checks are unchanged.
 
-All 1,009 model requests crossed Shield with the pinned model and provider
-policy, and none were blocked. The lane's pinned provider completed 987 with
+All 1,649 model requests crossed Shield with the pinned model and provider
+policy, and none were blocked. The lane's pinned provider completed 1,626 with
 HTTP 200, and no successful response came from another provider. HTTP 429 came
 back 15 times, 11 on Cerebras and 4 on SambaNova, and Shield delivered each as
 a provider error with no fallback. After the three in the first two runs,
 OpenCode sent its next request about 60 seconds later, and those tasks had the
 three slowest workers of those runs (66-71 seconds). In the second `7925bff`
-run, `roman` on Cerebras got four, and its worker ran 249 seconds. Seven
-requests have no response record and were not blocked. Each was one of the two
-requests OpenCode opens when a session starts. Four got HTTP 200 headers but no
-completed response. Three got nothing: `duration`'s two (above) and one in the
-first run, whose task passed and whose logs were not kept. Task mode plants no
-secrets, so nothing was masked.
+run, `roman` on Cerebras got four, and its worker ran 249 seconds. The four
+`6108154` runs got none. Eight requests have no response record and were not
+blocked. Each was one of the two requests OpenCode opens when a session starts.
+Five got HTTP 200 headers but no completed response. Three got nothing:
+`duration`'s two (above) and one in the first run, whose task passed and whose
+logs were not kept. Task mode plants no secrets, so nothing was masked.
 
-The tool-less director made 51 rulings, and none failed. The 22 in the first
+The tool-less director made 91 rulings, and none failed. The 22 in the first
 four runs mostly preferred the smaller change, and eight of them were checked
-by reading the patches (the 29 in the `7925bff` runs were not):
+by reading the patches. Of the 69 later rulings, only `csvline` in the
+`6108154` runs was checked (below):
 
 - `hexcolor`: the dropped patch checks digits with `int(x, 16)`, which accepts
   a sign or a space: `parse_hex("#-12345")` returns `(-1, 35, 69)`. This holds,
@@ -393,12 +412,12 @@ by reading the patches (the 29 in the `7925bff` runs were not):
 A ruling chooses among candidates that already passed their own tests; it is
 not verification.
 
-Repeats show where two runs of one task part. Each task ran five or seven
-times on its lane with the same prompt: 352 pairs of the same task on the same
-lane. Of these, 27 involved a repair attempt and 20 opened with different
-requests, which leaves 305 compared step by step. OpenCode gives every tool
-call a random ID and sends it back in the next request, so no two repeats sent
-the same request bytes after their first tool call. Apart from those IDs,
+Repeats show where two runs of one task part. Before `6108154`, each task ran
+five or seven times on its lane with the same prompt: 352 pairs of the same
+task on the same lane. Of these, 27 involved a repair attempt and 20 opened
+with different requests, which leaves 305 compared step by step. OpenCode gives
+every tool call a random ID and sends it back in the next request, so no two
+repeats sent the same request bytes after their first tool call. Apart from those IDs,
 whenever two workers had seen the same history (prompt, tool calls and tool
 outputs), they gave the same answer: 1,197 of 1,197 steps, on both lanes.
 Every split started outside the model. In 138 pairs it was the first `glob`,
@@ -406,15 +425,41 @@ whose file list OpenCode returns in the order ripgrep's parallel walk finds the
 files. In 11 it was a test run whose output differed only in its numbers, such
 as timings. The 156 pairs that saw the same tool outputs throughout produced
 byte-identical patches, and 25 of the 149 that split still converged on the
-same patch. Failures repeat too: `interval` on SambaNova made the same edit in
-all five runs.
+same patch.
 
 `7925bff` assumed OpenCode lists `glob` results newest first, and gave each
-payload file its own modification time. OpenCode does not sort them: in the
-three runs built from it, the first `glob` still split 31 of 59 compared pairs,
-so it was reverted. The order has to come from ripgrep itself (`--sort=path` in
-the sandbox image). This is an observation on one fixture, not a determinism
-test; the lanes stay separate.
+payload file its own modification time. OpenCode 1.18.32 does not sort them:
+its glob tool prints `rg --no-config --files` output in the order ripgrep
+writes it. In the three runs built from `7925bff`, the first `glob` still split
+31 of 59 compared pairs, so it was reverted. `--no-config` also rules out a
+ripgrep config file, so `f4efeaa` puts a wrapper ahead of `/usr/bin/rg` in the
+sandbox image that adds `--sort=path`. The worker gate checks that the listing
+is in path order before any model call.
+
+`6108154` also renames the tool-call IDs in each upstream request to `call_1`,
+`call_2`... in order of first use, one-to-one within the request; responses
+keep the provider's IDs. In the four runs built from it, there were 132 pairs.
+The six of `interval` on SambaNova involved a repair attempt, and 120 of the
+other 126 matched step for step from the first request to the patch. While two
+histories matched, all 642 requests after the opening pair were byte-identical,
+and in all 768 steps with byte-identical requests the answers matched. That is
+the question [ADI](../../docs/ADI.md) asks of one call, asked inside the agent
+loop. The body hash in Shield's audit now identifies a trajectory. The other six
+pairs split at step 5, a unittest run whose output differed only in its elapsed
+time (`0.000s` against `0.001s`): `semver` on Cerebras in the fourth run, which
+still produced the same patch, and `wrap` on SambaNova in the third, which did
+not (the director dropped SambaNova's `wrap` in every run). Failures repeat too:
+`interval` on SambaNova made the same edit in all nine runs.
+
+What still varies is the director. Each lane wrote the same `csvline` patch and
+the same report in all four runs, so the director got the same prompt four
+times. The two patches differ only in the docstring, comments and one error
+message. Each time it called their logic identical. Twice it preferred
+SambaNova's error message; twice it broke the tie "by stable id order" and
+landed Cerebras's. Its other nine rulings were the same in all four runs, so the
+integrated tree followed `csvline`: `acb0151` in the first and third runs,
+`57a9000` in the second and fourth. This is an observation on one fixture, not
+a determinism test; the lanes stay separate.
 
 Limits:
 
@@ -422,13 +467,14 @@ Limits:
   files, mode changes or binaries.
 - There is one winner per conflict group; overlapping patches are never merged.
 - The director sees each patch truncated to 2,000 characters and the worker's
-  unverified report.
+  unverified report. Its ruling is a model call, and the same prompt can get a
+  different ruling.
 - A change that breaks another landed task through a different file is caught
   only by the integrated verification. That failure fails the run; Captain does
   not retry without the culprit.
 - The integrated tree has no ref, so `git gc` may prune it; the patch is the
   durable result.
-- These are 134 tasks on one small fixture and one host. They exercise the
+- These are 222 tasks on one small fixture and one host. They exercise the
   harness at 6 and 8 sandboxes at once; they are not a task-success rate or a
   provider ranking.
 
