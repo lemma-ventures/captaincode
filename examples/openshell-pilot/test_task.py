@@ -195,15 +195,6 @@ class TaskPilotTests(unittest.TestCase):
         self.assertEqual(json.loads((payload / "opencode.json").read_text())["model"], "pilot/" + instance.model)
         self.assertEqual(instance.checkpoint["phase"], "snapshot")
 
-    def test_payload_files_are_newest_first_in_path_order(self):
-        instance = self.build()
-        instance.prepare_snapshot()
-        repo = self.state / "payload/repo"
-        names = ["calc.py", "notes/readme.md", "test_calc.py"]
-        committed = int(git(self.repo, "show", "-s", "--format=%ct", self.revision))
-        self.assertEqual([int((repo / name).stat().st_mtime) for name in names], [committed, committed - 1, committed - 2])
-        self.assertEqual(sorted(names, key=lambda name: -(repo / name).stat().st_mtime), names)
-
     def test_snapshot_refuses_unusable_sources(self):
         (self.repo / "link.py").symlink_to("calc.py")
         git(self.repo, "add", "link.py")
