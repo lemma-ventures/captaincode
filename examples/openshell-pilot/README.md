@@ -238,9 +238,11 @@ commit and returns what holds up as one verified patch:
    commit or ref. A verify-mode sandbox then runs every landed task's verify
    command against that tree, or the team's own `verify` when it names one.
 7. `run.json`, the patches and each task's evidence go to
-   `~/.captaincode/openshell/<run>/`. A passing task's state is deleted and a
-   failed one's is kept. Captain never writes your working tree; apply
-   `integrated.patch` yourself.
+   `~/.captaincode/openshell/<run>/`. `run.json` also records what ran: the
+   revisions Captain and Shield were built from, whether either checkout had
+   uncommitted changes, and the SHA-256 of every pilot script and prepared
+   binary. A passing task's state is deleted and a failed one's is kept.
+   Captain never writes your working tree; apply `integrated.patch` yourself.
 
 The example team works on `team/repo`: 11 small Python modules, each with a
 planted bug and a unittest file that fails at the base revision. `team.json`

@@ -181,8 +181,13 @@ func printOpenShellRun(run *captaincode.OpenShellRun, dir string) {
 		fmt.Printf(" (%.2f tasks/min)", float64(passed)/minutes)
 	}
 	fmt.Printf("; median task %.1fs, median sandbox startup %.1fs\n", median(taskSeconds), median(startup))
-	fmt.Printf("Shield: %d model request(s), %d blocked, %d secret(s) and %d identit(ies) masked\n",
+	// The pilot summarizes Shield only in the report of a task that passed; a
+	// failed task's requests are in its evidence directory's shield-audit.jsonl.
+	fmt.Printf("Shield, tasks that passed: %d model request(s), %d blocked, %d secret(s) and %d identit(ies) masked\n",
 		shield.Requests, shield.Blocked, shield.SecretsMasked, shield.IdentitiesMasked)
+	if p := run.Provenance; p != nil {
+		fmt.Printf("built from: captain %s, shield %s\n", describeBuild(p.Captain), describeBuild(p.Shield))
+	}
 	for _, ru := range run.Rulings {
 		if ru.Winner != "" {
 			fmt.Printf("ruling on %s: %s lands, %s dropped - %s\n", strings.Join(ru.Files, ", "), ru.Winner,
@@ -207,6 +212,19 @@ func printOpenShellRun(run *captaincode.OpenShellRun, dir string) {
 	if run.Verdict == "pass" && run.Integrated != nil {
 		fmt.Printf("apply with: git -C %s apply %s\n", run.Repo, run.Integrated.Patch)
 	}
+}
+
+// describeBuild names the commit a binary was built from, and says when that
+// commit does not name the code because the checkout had uncommitted changes.
+func describeBuild(b captaincode.OpenShellBuild) string {
+	rev := terminalSafe(b.Revision[:min(12, len(b.Revision))], 12)
+	switch {
+	case rev == "":
+		return "an unknown revision"
+	case b.Modified:
+		return rev + " with uncommitted changes"
+	}
+	return rev
 }
 
 func median(values []float64) float64 {

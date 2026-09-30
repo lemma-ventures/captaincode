@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strconv"
@@ -343,6 +345,7 @@ type OpenShellRun struct {
 	Runtime     string                `json:"runtime"`
 	Director    string                `json:"director"`
 	Concurrency int                   `json:"concurrency"`
+	Provenance  *OpenShellProvenance  `json:"provenance,omitempty"`
 	StartedAt   time.Time             `json:"started_at"`
 	Seconds     float64               `json:"seconds"`
 	Verdict     string                `json:"verdict"`
@@ -352,6 +355,24 @@ type OpenShellRun struct {
 	Rulings     []OpenShellRuling     `json:"rulings,omitempty"`
 	Landed      *IntegrationCandidate `json:"landed,omitempty"`
 	Integrated  *OpenShellIntegrated  `json:"integrated,omitempty"`
+}
+
+// OpenShellProvenance names the code a run executed, so its record can be
+// tied to a commit: Captain's build, the Shield build prepare.py made, and the
+// SHA-256 of every pilot script and prepared file as the run found them.
+type OpenShellProvenance struct {
+	Captain OpenShellBuild    `json:"captain"`
+	Shield  OpenShellBuild    `json:"shield"`
+	Files   map[string]string `json:"files"`
+}
+
+// OpenShellBuild is what a Go binary records about its own build. Revision is
+// empty for a build made outside a Git checkout; Modified marks one made from
+// a checkout with uncommitted changes, whose revision does not name the code.
+type OpenShellBuild struct {
+	GoVersion string `json:"go_version,omitempty"`
+	Revision  string `json:"revision,omitempty"`
+	Modified  bool   `json:"modified"`
 }
 
 // OpenShellDirector picks one winner among tasks that changed the same files.
@@ -417,6 +438,60 @@ func (r *OpenShellRunner) check(ctx context.Context) error {
 	return nil
 }
 
+// provenance hashes what the run is about to execute: the pilot's scripts
+// (not its tests), the Shield binary, the OpenShell binaries and the generated
+// protocol modules. The builds come from the stamps go build leaves in a
+// binary; a release's BuildRevision stands in for Captain's, as it does for
+// the release checks.
+func (r *OpenShellRunner) provenance() (*OpenShellProvenance, error) {
+	p := &OpenShellProvenance{Files: map[string]string{}}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		p.Captain = openShellBuild(info)
+	}
+	if BuildRevision != "" {
+		p.Captain.Revision, p.Captain.Modified = BuildRevision, false
+	}
+	if info, err := buildinfo.ReadFile(filepath.Join(r.Prepared, "shield")); err == nil {
+		p.Shield = openShellBuild(info)
+	}
+	for _, set := range []struct{ name, root, pattern string }{
+		{"pilot", r.Pilot, "*.py"},
+		{"prepared", r.Prepared, "shield"},
+		{"prepared", r.Prepared, "bin/*"},
+		{"prepared", r.Prepared, "generated/*.py"},
+	} {
+		files, _ := filepath.Glob(filepath.Join(set.root, set.pattern)) // constant patterns
+		for _, file := range files {
+			if set.name == "pilot" && strings.HasPrefix(filepath.Base(file), "test_") {
+				continue
+			}
+			if info, err := os.Stat(file); err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			sum, err := fileSHA256(file)
+			if err != nil {
+				return nil, fmt.Errorf("openshell: provenance: %w", err)
+			}
+			rel, _ := filepath.Rel(set.root, file)
+			p.Files[set.name+"/"+filepath.ToSlash(rel)] = sum
+		}
+	}
+	return p, nil
+}
+
+func openShellBuild(info *debug.BuildInfo) OpenShellBuild {
+	b := OpenShellBuild{GoVersion: info.GoVersion}
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			b.Revision = s.Value
+		case "vcs.modified":
+			b.Modified = s.Value == "true"
+		}
+	}
+	return b
+}
+
 // RunTeam runs every task in its own sandbox, at most Concurrency at once,
 // lands the tasks whose exports hold up, and verifies the integrated tree in
 // a fresh sandbox. The record is written to RunDir/run.json either way.
@@ -442,6 +517,11 @@ func (r *OpenShellRunner) runTeam(ctx context.Context, team OpenShellTeam, run *
 	if err := r.check(ctx); err != nil {
 		return err
 	}
+	provenance, err := r.provenance()
+	if err != nil {
+		return err
+	}
+	run.Provenance = provenance
 	// Tasks start in spec order, at most Concurrency at once.
 	run.Tasks = make([]*OpenShellResult, len(team.Tasks))
 	next := make(chan int)
