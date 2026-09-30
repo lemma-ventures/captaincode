@@ -282,14 +282,19 @@ class TaskPilotTests(unittest.TestCase):
 
     def test_worker_tools_must_see_every_named_file(self):
         instance = self.build()
-        for output, code, passed in [(b"calc.py\ntest_calc.py\nnotes/readme.md\n", 0, True), (b"calc.py\n", 0, False),
-                                     (b"calc.py\ntest_calc.py\n", 1, False)]:
-            with self.subTest(output=output, code=code), patch.object(instance, "remote", return_value=result(output, code)):
+        for output, code, rg, passed in [(b"calc.py\nnotes/readme.md\ntest_calc.py\n", 0, b"/usr/local/bin/rg\n", True),
+                                         (b"calc.py\ntest_calc.py\nnotes/readme.md\n", 0, b"/usr/local/bin/rg\n", False),
+                                         (b"calc.py\nnotes/readme.md\ntest_calc.py\n", 0, b"/usr/bin/rg\n", False),
+                                         (b"calc.py\n", 0, b"/usr/local/bin/rg\n", False),
+                                         (b"calc.py\ntest_calc.py\n", 1, b"/usr/local/bin/rg\n", False)]:
+            with (self.subTest(output=output, code=code, rg=rg),
+                  patch.object(instance, "remote", side_effect=[result(output, code), result(rg)]) as remote):
                 if passed:
                     instance.check_worker_tools()
                 else:
                     with self.assertRaisesRegex(AssertionError, "worker_tools"):
                         instance.check_worker_tools()
+                self.assertEqual(remote.call_args_list[1].args, ("sh", "-c", "command -v rg"))
 
     def audit(self, rows):
         with (self.state / "shield-audit.jsonl").open("w") as stream:

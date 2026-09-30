@@ -106,7 +106,7 @@ def prepare(args):
     download(assets[f"opencode-linux-{arch}"], state / "opencode.tgz")
     extract_binary(state / "opencode.tgz", "opencode", build / "opencode")
     shutil.copyfile(HERE / "Dockerfile", build / "Dockerfile")
-    run("docker", "build", "--tag", "captain-openshell-pilot:1", build)
+    run("docker", "build", "--tag", "captain-openshell-pilot:2", build)
     print("Prepared pinned OpenShell, OpenCode, Shield and optional middleware dependencies.")
 
 

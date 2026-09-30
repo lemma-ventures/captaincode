@@ -122,6 +122,15 @@ def available_port():
         return sock.getsockname()[1]
 
 
+def sorted_search(resolved, listed):
+    """The image's rg wrapper answered, and OpenCode listed files in ripgrep's --sort=path order.
+
+    OpenCode sorts search results newest first. Snapshot files share one mtime,
+    so an unsorted parallel walk would decide the order the model sees.
+    """
+    return resolved.strip() == b"/usr/local/bin/rg" and listed == sorted(listed, key=lambda line: line.split(b"/"))
+
+
 def network_denial_confirmed(exit_code, events):
     return exit_code not in (0, 28) and any(
         b"DENIED" in line and b"example.com:443" in line
@@ -242,7 +251,7 @@ class Pilot:
         started = time.monotonic()
         probe = "import ctypes,json,os; lib=ctypes.CDLL(None,use_errno=True); abi=lib.syscall(444,0,0,1); print(json.dumps({'landlock_abi':abi,'errno':ctypes.get_errno(),'kernel':os.uname().release}))"
         result = command(["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
-                          "--security-opt", "no-new-privileges", "captain-openshell-pilot:1", "python", "-c", probe])
+                          "--security-opt", "no-new-privileges", "captain-openshell-pilot:2", "python", "-c", probe])
         facts = json.loads(result.stdout)
         self.report["runtime"] = facts
         self.report["timings_seconds"]["landlock_probe"] = round(time.monotonic() - started, 3)
@@ -334,7 +343,7 @@ class Pilot:
             driver_config = f'''[openshell.drivers.vm]
 state_dir = {q(self.state / 'vm')}
 driver_dir = {q(self.state / 'bin')}
-default_image = "captain-openshell-pilot:1"
+default_image = "captain-openshell-pilot:2"
 bootstrap_image = "python:3.12-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e"
 grpc_endpoint = "https://{host}:{self.checkpoint['gateway_port']}"
 vcpus = 2
@@ -426,7 +435,7 @@ timeout = "5s"
         (self.state / "policy.yaml").write_text(policy)
         self.report["policy_sha256"] = hashlib.sha256(policy.encode()).hexdigest()
         start = time.monotonic()
-        result = self.cli_run("sandbox", "create", "--name", self.checkpoint["name"], "--from", "captain-openshell-pilot:1",
+        result = self.cli_run("sandbox", "create", "--name", self.checkpoint["name"], "--from", "captain-openshell-pilot:2",
                              "--policy", self.state / "policy.yaml", "--provider", "captain-inference", "--no-auto-providers",
                              *[arg for key, value in WORKER_ENV.items() for arg in ["--env", f"{key}={value}"]],
                              "--approval-mode", "manual", "--no-tty", "--detach", "--", "sleep", "infinity",
@@ -496,9 +505,11 @@ timeout = "5s"
                 row["entry"]["path"] == "slugify.py" and "def slugify" in row["text"] for row in rows)
         except (ValueError, TypeError, KeyError):
             found = False
+        resolved = self.remote("sh", "-c", "command -v rg", timeout=30, check=False)
+        listed = files.stdout.splitlines()
         self.check("worker_tools", files.returncode == 0 and search.returncode == 0 and found
-                   and {b"slugify.py", b"test_slugify.py"}.issubset(files.stdout.splitlines()),
-                   "OpenCode glob and content search must work under policy before any model call.")
+                   and {b"slugify.py", b"test_slugify.py"}.issubset(listed) and sorted_search(resolved.stdout, listed),
+                   "OpenCode glob and content search must work under policy, in path order, before any model call.")
 
     def run_worker(self):
         result = self.edit_and_verify()

@@ -206,9 +206,12 @@ class TaskPilot(pilot.Pilot):
     def check_worker_tools(self):
         files = self.remote("opencode", "--print-logs", "--log-level", "ERROR", "debug", "rg", "files", timeout=30, check=False)
         (self.state / "worker-files.log").write_bytes(files.stdout)
+        resolved = self.remote("sh", "-c", "command -v rg", timeout=30, check=False)
+        listed = files.stdout.splitlines()
         wanted = {path.encode() for path in self.task["allowed"] + self.task["protected"]}
-        self.check("worker_tools", files.returncode == 0 and wanted <= set(files.stdout.splitlines()),
-                   "OpenCode's file search must list every file the task names before any model call.")
+        self.check("worker_tools", files.returncode == 0 and wanted <= set(listed)
+                   and pilot.sorted_search(resolved.stdout, listed),
+                   "OpenCode's file search must list every file the task names, in path order, before any model call.")
 
     def check_baseline(self):
         result = self.remote(*self.task["verify"], timeout=self.task["verify_seconds"], check=False)

@@ -439,10 +439,10 @@ func (r *OpenShellRunner) check(ctx context.Context) error {
 }
 
 // provenance hashes what the run is about to execute: the pilot's scripts
-// (not its tests), the Shield binary, the OpenShell binaries and the generated
-// protocol modules. The builds come from the stamps go build leaves in a
-// binary; a release's BuildRevision stands in for Captain's, as it does for
-// the release checks.
+// (not its tests), the Dockerfile its worker image is built from, the Shield
+// binary, the OpenShell binaries and the generated protocol modules. The
+// builds come from the stamps go build leaves in a binary; a release's
+// BuildRevision stands in for Captain's, as it does for the release checks.
 func (r *OpenShellRunner) provenance() (*OpenShellProvenance, error) {
 	p := &OpenShellProvenance{Files: map[string]string{}}
 	if info, ok := debug.ReadBuildInfo(); ok {
@@ -456,6 +456,7 @@ func (r *OpenShellRunner) provenance() (*OpenShellProvenance, error) {
 	}
 	for _, set := range []struct{ name, root, pattern string }{
 		{"pilot", r.Pilot, "*.py"},
+		{"pilot", r.Pilot, "Dockerfile"},
 		{"prepared", r.Prepared, "shield"},
 		{"prepared", r.Prepared, "bin/*"},
 		{"prepared", r.Prepared, "generated/*.py"},
