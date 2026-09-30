@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import tempfile
@@ -131,6 +132,7 @@ class ShieldTests(unittest.TestCase):
                 wrong_provider = self.response_body(json.dumps({"provider": other, "model": self.service.model}).encode())
                 result = list(self.service.Evaluate(iter([head, wrong_provider]), self.context()))
                 self.assertTrue(result[1].body_result.HasField("block_delivery"))
+                self.assertEqual(json.loads(self.service.audit.read_text().splitlines()[-1])["stage"], "provider")
                 request.context.request_id = "confirmed"
                 self.assertEqual(self.service.EvaluateHttpRequest(request, self.context()).decision, 1)
                 head.preflight.context.request_id = "confirmed"
@@ -228,6 +230,48 @@ class ShieldTests(unittest.TestCase):
         self.assertEqual(results[0].preflight_result.WhichOneof("action"), "block_delivery")
         with self.assertRaises(Rejected):
             list(self.service.Evaluate(iter([self.response_body()]), self.context()))
+
+    def test_blocked_response_records_stage_and_error_class_without_content(self):
+        arguments = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "identity-1", "tool_calls": [
+            {"type": "function", "id": "call-1", "function": {"name": "bash", "arguments": "{"}}]},
+            "finish_reason": "tool_calls"}]}
+        cases = [(self.response_body(sequence=2), "unit", "ValueError"),
+                 (self.response_body(b"invalid"), "restore", "JSONDecodeError"),
+                 (self.response_body(json.dumps(arguments).encode()), "restore", "JSONDecodeError")]
+        for body, stage, error in cases:
+            with self.subTest(stage=stage, error=error):
+                head = self.response_head()
+                results = list(self.service.Evaluate(iter([head, body]), self.context()))
+                self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
+                row = json.loads(self.service.audit.read_text().splitlines()[-1])
+                self.assertEqual(set(row), {"at", "sandbox_id", "request_id", "phase", "status", "stage",
+                                            "error", "upstream_body_sha256", "bytes"})
+                self.assertEqual((row["phase"], row["status"], row["stage"], row["error"]),
+                                 ("response_blocked", 200, stage, error))
+                self.assertEqual(row["request_id"], head.preflight.context.request_id)
+                self.assertEqual(row["upstream_body_sha256"], hashlib.sha256(body.body.data).hexdigest())
+                self.assertEqual(row["bytes"], len(body.body.data))
+        head = self.response_head()
+        with patch("middleware.subprocess.run", side_effect=OSError("unavailable")):
+            results = list(self.service.Evaluate(iter([head, self.response_body()]), self.context()))
+        self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
+        row = json.loads(self.service.audit.read_text().splitlines()[-1])
+        self.assertEqual((row["stage"], row["error"]), ("restore", "OSError"))
+        audit = self.service.audit.read_text()
+        for content in ["identity-1", "[[secret:", "Pilot Person", "unavailable", "invalid", "Expecting"]:
+            self.assertNotIn(content, audit)
+
+    def test_blocked_response_is_refused_even_when_audit_cannot_be_written(self):
+        head = self.response_head()
+
+        def events():
+            yield head
+            self.service.audit = self.path
+            yield self.response_body(b"invalid")
+
+        results = list(self.service.Evaluate(events(), self.context()))
+        self.assertEqual(results[0].preflight_result.WhichOneof("action"), "inspect")
+        self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
 
     def test_server_accepts_supervisor_keepalive_pings(self):
         options = dict(m.OPTIONS)
