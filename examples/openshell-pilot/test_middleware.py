@@ -31,10 +31,12 @@ class ShieldTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name)
+        self.next_request = 0
         self.signer = Ed25519PrivateKey.generate()
         self.service = m.Shield(os.environ["PILOT_SHIELD_BIN"], self.signer.public_key(),
                                self.path / "audit.jsonl", "test-model")
-        self.environment = patch.dict(os.environ, {"HOME": str(self.path), "CAPTAIN_REDACT": "off"})
+        self.environment = patch.dict(os.environ, {"HOME": str(self.path), "CAPTAIN_REDACT": "off",
+                                                  "CAPTAIN_REDACT_IDENTITY": "Pilot Person 7d84"})
         self.environment.start()
         self.addCleanup(self.environment.stop)
 
@@ -110,6 +112,99 @@ class ShieldTests(unittest.TestCase):
         request.gateway.required_capabilities.append("unknown")
         with self.assertRaises(Rejected):
             self.service.Describe(request, self.context(caller_kind="gateway"))
+
+    def response_head(self, **overrides):
+        request = self.request()
+        self.next_request += 1
+        request.context.request_id = f"response-{self.next_request}"
+        value = json.loads(request.body)
+        value["stream"] = True
+        value["stream_options"] = {"include_usage": True}
+        request.body = json.dumps(value).encode()
+        result = self.service.EvaluateHttpRequest(request, self.context())
+        self.assertEqual(result.decision, 1)
+        self.assertFalse(json.loads(result.body)["stream"])
+        self.assertNotIn("stream_options", json.loads(result.body))
+        values = {"context": request.context, "target": request.target,
+                  "status_code": 200, "max_payload_bytes": m.LIMIT, "permitted_body_modes": [1, 2, 3],
+                  "headers": [m.pb.HttpHeader(name="content-type", value="application/json")]}
+        values.update(overrides)
+        return m.pb.HttpResponseEvent(preflight=m.pb.HttpResponsePreflight(**values))
+
+    def response_body(self, data=None, **overrides):
+        if data is None:
+            data = json.dumps({"id": "chat-1", "choices": [{"index": 0, "message": {
+                "role": "assistant", "content": "identity-1 [[secret:nvidia:123456]]"},
+                "finish_reason": "stop"}]}).encode()
+        return m.pb.HttpResponseEvent(body=m.pb.HttpResponseBodyUnit(
+            **dict({"sequence": 1, "data": data, "end_of_stream": True}, **overrides)))
+
+    def test_response_restores_identity_with_real_shield_and_keeps_secrets_masked(self):
+        events = [self.response_head(), self.response_body(),
+                  m.pb.HttpResponseEvent(trailers=m.pb.HttpResponseTrailers()),
+                  m.pb.HttpResponseEvent(session_end=m.pb.MiddlewareSessionEnd())]
+        results = list(self.service.Evaluate(iter(events), self.context()))
+        self.assertEqual(results[0].preflight_result.inspect.body_mode, 2)
+        self.assertEqual(results[0].preflight_result.inspect.header_mutations[0].write.value, "text/event-stream")
+        body = results[1].body_result.transform.data
+        self.assertIn(b"Pilot Person 7d84", body)
+        self.assertIn(b"[[secret:nvidia:123456]]", body)
+        self.assertEqual(results[2].WhichOneof("result"), "trailers_result")
+        audit = self.service.audit.read_text()
+        self.assertEqual(json.loads(audit.splitlines()[-1])["identities"], 1)
+        self.assertNotIn("Pilot Person", audit)
+        self.assertNotIn("[[secret:", audit)
+
+    def test_response_authentication_is_bound_to_sandbox(self):
+        for overrides in [{"sandbox_id": "s-2"}, {"caller_kind": "gateway"}, {"exp": 1}]:
+            with self.subTest(overrides=overrides), self.assertRaises(Rejected):
+                list(self.service.Evaluate(iter([self.response_head()]), self.context(**overrides)))
+
+    def test_response_refuses_uninspectable_or_wrong_scope_heads(self):
+        for overrides in [{"permitted_body_modes": [1, 3]}, {"max_payload_bytes": 0},
+                          {"headers": []}, {"headers": [m.pb.HttpHeader(name="content-type", value="text/html")]},
+                          {"target": m.pb.HttpRequestTarget(scheme="https", host="example.com")}]:
+            with self.subTest(overrides=overrides):
+                results = list(self.service.Evaluate(iter([self.response_head(**overrides)]), self.context()))
+                self.assertEqual(results[0].preflight_result.WhichOneof("action"), "block_delivery")
+
+    def test_response_malformed_sequences_and_restoration_failures_are_closed(self):
+        for body in [self.response_body(sequence=2), self.response_body(end_of_stream=False),
+                     self.response_body(b"invalid"), self.response_body(b"x" * (m.LIMIT + 1))]:
+            with self.subTest(body_size=len(body.body.data)):
+                results = list(self.service.Evaluate(iter([self.response_head(), body]), self.context()))
+                self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
+        head = self.response_head()
+        with patch("middleware.subprocess.run", side_effect=OSError("unavailable")):
+            results = list(self.service.Evaluate(iter([head, self.response_body()]), self.context()))
+            self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
+        head = self.response_head()
+        self.service.audit = self.path
+        results = list(self.service.Evaluate(iter([head, self.response_body()]), self.context()))
+        self.assertEqual(results[0].preflight_result.WhichOneof("action"), "block_delivery")
+        with self.assertRaises(Rejected):
+            list(self.service.Evaluate(iter([self.response_body()]), self.context()))
+
+    def test_missing_expired_or_replayed_request_state_refuses_delivery(self):
+        for mode in ("missing", "expired", "replayed"):
+            head = self.response_head()
+            key = (head.preflight.context.sandbox_id, head.preflight.context.request_id)
+            if mode == "missing":
+                self.service.pending.clear()
+            elif mode == "expired":
+                self.service.pending[key] = (time.monotonic() - 601, True)
+            else:
+                list(self.service.Evaluate(iter([head, self.response_body()]), self.context()))
+            results = list(self.service.Evaluate(iter([head]), self.context()))
+            self.assertEqual(results[0].preflight_result.WhichOneof("action"), "block_delivery")
+
+    def test_error_status_keeps_json_and_request_capacity_is_bounded(self):
+        head = self.response_head(status_code=429)
+        results = list(self.service.Evaluate(iter([head, self.response_body(b'{"error":{"message":"limit"}}')]), self.context()))
+        self.assertEqual(list(results[0].preflight_result.inspect.header_mutations), [])
+        self.assertEqual(json.loads(results[1].body_result.transform.data), {"error": {"message": "limit"}})
+        self.service.pending = {("s-1", str(i)): (time.monotonic(), True) for i in range(128)}
+        self.assertEqual(self.service.EvaluateHttpRequest(self.request(), self.context()).decision, 2)
 
 
 if __name__ == "__main__":
