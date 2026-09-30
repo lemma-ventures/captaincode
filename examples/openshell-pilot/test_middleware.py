@@ -229,6 +229,11 @@ class ShieldTests(unittest.TestCase):
         with self.assertRaises(Rejected):
             list(self.service.Evaluate(iter([self.response_body()]), self.context()))
 
+    def test_server_accepts_supervisor_keepalive_pings(self):
+        options = dict(m.OPTIONS)
+        self.assertLessEqual(options["grpc.http2.min_ping_interval_without_data_ms"], 10000)
+        self.assertEqual(options["grpc.keepalive_permit_without_calls"], 1)
+
     def test_missing_expired_or_replayed_request_state_refuses_delivery(self):
         for mode in ("missing", "expired", "replayed"):
             head = self.response_head()

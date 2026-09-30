@@ -20,6 +20,9 @@ LIMIT = 4 * 1024 * 1024
 AUDIENCE = "urn:openshell:extension:middleware:captain-shield"
 CAPABILITY = "openshell.supervisor-middleware.contract"
 CANARY = "nvapi-" + "captainpilot0123456789" * 2
+OPTIONS = [("grpc.max_receive_message_length", LIMIT + 131072),
+           ("grpc.http2.min_ping_interval_without_data_ms", 5000),
+           ("grpc.keepalive_permit_without_calls", 1)]
 
 
 class Shield(rpc.SupervisorMiddlewareServicer):
@@ -227,8 +230,7 @@ def main():
     parser.add_argument("--profile", choices=PROFILES, default="nim")
     args = parser.parse_args()
     certs = args.state / "certs"
-    server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=2),
-                         options=[("grpc.max_receive_message_length", LIMIT + 131072)])
+    server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=2), options=OPTIONS)
     service = Shield(args.state / "shield", (certs / "jwt/public.pem").read_text(),
                      args.state / "shield-audit.jsonl", args.model, args.profile)
     rpc.add_SupervisorMiddlewareServicer_to_server(service, server)
