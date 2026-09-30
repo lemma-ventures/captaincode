@@ -1,0 +1,71 @@
+{
+  "openshell": "0.1.2",
+  "openshell_commit": "6648bd0c290efbc41ba131ee9831ee45cd431f94",
+  "opencode": "1.18.32",
+  "assets": {
+    "openshell-aarch64-apple-darwin.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-aarch64-apple-darwin.tar.gz",
+      "sha256": "cdde7e92bd7eac664031cf171cfe80d29e7f122a6674917b25a4ce0bcbc33466"
+    },
+    "openshell-gateway-aarch64-apple-darwin.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-gateway-aarch64-apple-darwin.tar.gz",
+      "sha256": "640068efa16e446d5f4f9ffaec0af769dbab04d686473d2a7bd6bafeb4ef7f45"
+    },
+    "openshell-prover-aarch64-apple-darwin.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-prover-aarch64-apple-darwin.tar.gz",
+      "sha256": "77f624498e1110abd0da26e926a71c834b5e58f8baa5a33252d59d7ab4629a53"
+    },
+    "extension.proto": {
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/6648bd0c290efbc41ba131ee9831ee45cd431f94/proto/extension.proto",
+      "sha256": "60f28ee9dc846d41152f4db7e82a439c78d024786efaceb464900d1d1ad129ad"
+    },
+    "supervisor_middleware.proto": {
+      "url": "https://raw.githubusercontent.com/NVIDIA/OpenShell/6648bd0c290efbc41ba131ee9831ee45cd431f94/proto/supervisor_middleware.proto",
+      "sha256": "bee96ac940303d8a7530e6e2283a98077bb428a05ef610b51d018ea18377bebd"
+    },
+    "opencode-linux-arm64": {
+      "url": "https://registry.npmjs.org/opencode-linux-arm64/-/opencode-linux-arm64-1.18.32.tgz",
+      "integrity": "sha512-SDMw716oYxxJ9CWDO5roCpziw98ANwPZSz6L8evUOHkFCq6OU31xZGQwv/T1ROJnoPNJKWODmm1vzS6s6uEgUA=="
+    },
+    "opencode-linux-x64": {
+      "url": "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.18.32.tgz",
+      "integrity": "sha512-CIatvoyi8V5a56xyw6ZUnsKxB9wqYIZqfNeqUNWhBBY4aENAm907LP0xXAwL6tR0cYbqNl2+Dvx8mOqXIxbDeQ=="
+    },
+    "openshell-aarch64-unknown-linux-musl.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "9880c5776688231d5242deb046cdee361734f94901b9123949a0baf29fdadd9e"
+    },
+    "openshell-gateway-aarch64-unknown-linux-gnu.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-gateway-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "8ec1b6ca5b71ef5085fa51f3244d719a541e8f0d58cc569c7a0d6705b6204397"
+    },
+    "openshell-gateway-x86_64-unknown-linux-gnu.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-gateway-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "218d887845b3a020ab7535c9985eb9c666d6938f144044957f8b82b42892aadb"
+    },
+    "openshell-prover-aarch64-unknown-linux-musl.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-prover-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "0b6a0ba530b713b4f0afab2850903f6cbb24dd3ec4b4c25b7ee265911444099d"
+    },
+    "openshell-prover-x86_64-unknown-linux-musl.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-prover-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "e1c9db66ae459850cab43765d7ad569effe2ac0a338c902a1b895d0cc361fbb0"
+    },
+    "openshell-x86_64-unknown-linux-musl.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "7eb6917285331a09e3300266a0558616481a5e9927cae2612ea07c4045b6dd6f"
+    },
+    "openshell-driver-vm-aarch64-apple-darwin.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-driver-vm-aarch64-apple-darwin.tar.gz",
+      "sha256": "01de38811a2c74e8a61c7b275067fc616f5dcc63b73e3b75d92f3c99d852016a"
+    },
+    "openshell-driver-vm-aarch64-unknown-linux-gnu.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-driver-vm-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "44412163b2775fb07dce9c00a498e3e6957dc7c73216172d6c357a474621c803"
+    },
+    "openshell-driver-vm-x86_64-unknown-linux-gnu.tar.gz": {
+      "url": "https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell-driver-vm-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "042e2d5a7b5a1f3d112ef346c45a113f331c2e39c90644d3d5001820a2a9aa12"
+    }
+  }
+}
