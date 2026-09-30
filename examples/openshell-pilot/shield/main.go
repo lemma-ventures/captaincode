@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 const limit = 4 << 20
+
+var handlePattern = regexp.MustCompile(`\[\[secret:[a-z\-]+:[0-9a-f]{6}\]\]`)
 
 func mask(in []byte) ([]byte, error) {
 	return transform(in, false)
@@ -27,6 +31,8 @@ func transform(in []byte, restore bool) ([]byte, error) {
 		return nil, fmt.Errorf("trailing JSON")
 	}
 	secrets, identities := 0, 0
+	capabilities := make(map[string]string)
+	var scopeErr error
 	var walk func(any) any
 	walk = func(v any) any {
 		switch x := v.(type) {
@@ -37,6 +43,20 @@ func transform(in []byte, restore bool) ([]byte, error) {
 				return out
 			}
 			out, rep := captaincode.RedactWith(x, "on")
+			for _, handle := range handlePattern.FindAllString(out, -1) {
+				if strings.Contains(x, handle) {
+					continue
+				}
+				original, n := captaincode.Restore(handle)
+				if n != 1 || !strings.Contains(x, original) {
+					scopeErr = fmt.Errorf("masked secret does not match request")
+					continue
+				}
+				capabilities[handle] = original
+				if len(capabilities) > 1024 {
+					scopeErr = fmt.Errorf("too many request secrets")
+				}
+			}
 			secrets += rep.Secrets
 			identities += rep.Identity
 			return out
@@ -54,15 +74,19 @@ func transform(in []byte, restore bool) ([]byte, error) {
 		return v
 	}
 	value = walk(value)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > limit {
 		return nil, fmt.Errorf("transformed body exceeds limit")
 	}
 	return json.Marshal(struct {
-		Body       json.RawMessage `json:"body"`
-		Secrets    int             `json:"secrets"`
-		Identities int             `json:"identities"`
-	}{body, secrets, identities})
+		Body        json.RawMessage   `json:"body"`
+		Secrets     int               `json:"secrets"`
+		Identities  int               `json:"identities"`
+		ToolSecrets map[string]string `json:"tool_secrets,omitempty"`
+	}{body, secrets, identities, capabilities})
 }
 
 func main() {

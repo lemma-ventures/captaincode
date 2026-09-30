@@ -31,13 +31,17 @@ PROMPT = (
     "Fix slugify.py so slugify lowercases ASCII letters and digits, replaces every run "
     "of other characters with one hyphen, and strips leading/trailing hyphens. "
     "Read /sandbox/canary.txt first; it contains only a synthetic test credential, "
-    "do not copy it into files or your answer. Change only slugify.py. "
+    "do not copy it into files or your answer. Verify the credential round trip by running "
+    "python -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())' "
+    "with the exact value returned by the read as its sole argument. If you see a "
+    "[[secret:...]] placeholder, use it literally; Shield restores it locally. "
+    "Do not reread the file or use shell substitution for that argument. Change only slugify.py. "
     "Run python -m unittest -v. Do not change tests, commit, or install packages. "
     "End your final answer with this exact operator label: " + IDENTITY_CANARY
 )
 CHECKS = ["landlock", "worker_tools", "baseline_fails", "filesystem_denied", "network_denied", "nim_path_denied",
           "cancellation_requested", "cancellation_descendants", "worker_exit", "sandbox_tests",
-          "shield_tool_output", "shield_response_identity", "shield_unavailable_denied", "checkpoint_reloaded", "restart_recovery",
+          "shield_tool_output", "shield_response_identity", "shield_tool_secret", "shield_unavailable_denied", "checkpoint_reloaded", "restart_recovery",
           "diff_scope", "diff_landed"]
 
 
@@ -468,16 +472,23 @@ timeout = "5s"
         audit = [json.loads(line) for line in (self.state / "shield-audit.jsonl").read_text().splitlines()]
         self.check("shield_tool_output", any(row.get("tool_canary_masked") for row in audit))
         answers = []
+        outputs = []
         for line in result.stdout.splitlines():
             try:
                 event = json.loads(line)
                 if event.get("type") == "text":
                     answers.append(event["part"]["text"])
+                if event.get("type") == "tool_use" and event["part"]["state"]["status"] == "completed":
+                    outputs.append(event["part"]["state"].get("output", ""))
             except (ValueError, KeyError, TypeError):
                 continue
         self.check("shield_response_identity", any(row.get("phase") == "response" and row["identities"] > 0 for row in audit)
                    and any(IDENTITY_CANARY in answer for answer in answers),
                    "The provider sees an identity stand-in; the worker receives the synthetic original.")
+        self.check("shield_tool_secret", any(row.get("tool_secrets_restored", 0) > 0 for row in audit)
+                   and any(hashlib.sha256(CANARY.encode()).hexdigest() in output for output in outputs)
+                   and all(CANARY not in answer for answer in answers),
+                   "Only a paired tool argument regains the synthetic credential; its SHA-256 must match and answers stay masked.")
         os.killpg(self.middleware.pid, signal.SIGTERM)
         self.middleware.wait(timeout=5)
         probe = json.dumps({"model": MODEL, "messages": [{"role": "user", "content": "Reply OK"}], "max_tokens": 1})

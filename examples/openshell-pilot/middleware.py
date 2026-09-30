@@ -116,7 +116,9 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                     stream.write(json.dumps(event) + "\n")
                     stream.flush()
                     os.fsync(stream.fileno())
-                self.pending[key] = (now, stream_response)
+                offered = {tool["function"]["name"] for tool in original.get("tools", []) if tool.get("type") == "function"}
+                offered.update(function["name"] for function in original.get("functions", []))
+                self.pending[key] = (now, stream_response, masked.get("tool_secrets", {}), offered)
             return pb.HttpRequestResult(decision=1, has_body=True, body=body)
         except (ValueError, TypeError, AttributeError, KeyError, OSError, subprocess.SubprocessError):
             return pb.HttpRequestResult(decision=2, reason_code="shield_failed")
@@ -183,10 +185,12 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                     if unit.sequence != 1 or not unit.end_of_stream or unit.WhichOneof("payload") != "data":
                         raise ValueError("invalid whole response unit")
                     with self.lock:
-                        body, identities = restore_response(unit.data, self.restore, limit, stream_response)
+                        body, identities, restored_count = restore_response(
+                            unit.data, self.restore, limit, stream_response,
+                            tool_secrets=pending[2] if 200 <= preflight.status_code < 300 else None, allowed_tools=pending[3])
                         audit = {"at": time.time(), "sandbox_id": preflight.context.sandbox_id,
                                  "request_id": preflight.context.request_id, "phase": "response",
-                                 "identities": identities, "bytes": len(body), "mode": "whole_body"}
+                                 "identities": identities, "tool_secrets_restored": restored_count, "bytes": len(body), "mode": "whole_body"}
                         with self.audit.open("a") as stream:
                             stream.write(json.dumps(audit) + "\n")
                             stream.flush()

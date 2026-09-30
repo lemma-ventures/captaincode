@@ -1,4 +1,7 @@
 import json
+import re
+
+HANDLE = re.compile(r"\[\[secret:[a-z\-]+:[0-9a-f]{6}\]\]")
 
 
 def encode(value):
@@ -11,10 +14,12 @@ def functions(value):
         if message.get("function_call"):
             yield message["function_call"]
         for call in message.get("tool_calls") or []:
+            if call.get("type") != "function":
+                raise ValueError("unsupported tool call type")
             yield call["function"]
 
 
-def restore_response(body, restore, limit, stream=False):
+def restore_response(body, restore, limit, stream=False, tool_secrets=None, allowed_tools=None):
     if len(body) > limit:
         raise ValueError("response exceeds limit")
     value = json.loads(body)
@@ -27,13 +32,45 @@ def restore_response(body, restore, limit, stream=False):
                 raise TypeError("tool arguments must be an object")
             function["arguments"] = arguments
     restored, count = restore(value)
+    restored_count = 0
+    expanded_bytes = 0
+
+    def replace(match):
+        nonlocal restored_count, expanded_bytes
+        if match[0] not in tool_secrets:
+            raise ValueError("tool secret was not masked in this request")
+        restored_count += 1
+        expanded_bytes += len(tool_secrets[match[0]].encode())
+        if expanded_bytes > limit:
+            raise ValueError("restored tool secrets exceed limit")
+        return tool_secrets[match[0]]
+
+    def walk(item):
+        if isinstance(item, str):
+            return HANDLE.sub(replace, item)
+        if isinstance(item, list):
+            return [walk(child) for child in item]
+        if isinstance(item, dict):
+            output = {}
+            for key, child in item.items():
+                key = walk(key)
+                if key in output:
+                    raise ValueError("restored tool keys collide")
+                output[key] = walk(child)
+            return output
+        return item
+
     for function in functions(restored):
         if isinstance(function.get("arguments"), dict):
+            if tool_secrets is not None and HANDLE.search(encode(function["arguments"]).decode()):
+                if function.get("name") not in (allowed_tools or set()):
+                    raise ValueError("tool was not offered in this request")
+                function["arguments"] = walk(function["arguments"])
             function["arguments"] = encode(function["arguments"]).decode()
     output = completion_events(restored) if stream else encode(restored)
     if len(output) > limit:
         raise ValueError("restored response exceeds limit")
-    return output, count
+    return output, count, restored_count
 
 
 def completion_events(value):

@@ -206,6 +206,66 @@ class ShieldTests(unittest.TestCase):
         self.service.pending = {("s-1", str(i)): (time.monotonic(), True) for i in range(128)}
         self.assertEqual(self.service.EvaluateHttpRequest(self.request(), self.context()).decision, 2)
 
+    def test_tool_secret_round_trip_is_scoped_to_masked_request(self):
+        request = self.request()
+        value = json.loads(request.body)
+        value["tools"] = [{"type": "function", "function": {"name": "bash"}}]
+        request.body = json.dumps(value).encode()
+        result = self.service.EvaluateHttpRequest(request, self.context())
+        self.assertEqual(result.decision, 1)
+        handle = json.loads(result.body)["messages"][0]["content"]
+        value = {"choices": [{"index": 0, "message": {"role": "assistant", "content": handle,
+                 "reasoning_content": handle, "tool_calls": [{"type": "function", "id": "call-1",
+                 "function": {"name": "bash", "arguments": json.dumps({"command": handle})}}]},
+                 "finish_reason": "tool_calls"}]}
+
+        def deliver(request, context):
+            head = m.pb.HttpResponseEvent(preflight=m.pb.HttpResponsePreflight(
+                context=request.context, target=request.target, status_code=200,
+                max_payload_bytes=m.LIMIT, permitted_body_modes=[2],
+                headers=[m.pb.HttpHeader(name="content-type", value="application/json")]))
+            return list(self.service.Evaluate(iter([head, self.response_body(json.dumps(value).encode())]), context))
+
+        results = deliver(request, self.context())
+        message = json.loads(results[1].body_result.transform.data)["choices"][0]["message"]
+        self.assertEqual(message["content"], handle)
+        self.assertEqual(message["reasoning_content"], handle)
+        self.assertEqual(json.loads(message["tool_calls"][0]["function"]["arguments"]), {"command": m.CANARY})
+        self.assertEqual(json.loads(self.service.audit.read_text().splitlines()[-1])["tool_secrets_restored"], 1)
+        self.assertNotIn(m.CANARY, self.service.audit.read_text())
+        self.assertNotIn(handle, self.service.audit.read_text())
+
+        returned = self.request()
+        returned.context.request_id = "returned-tool-arguments"
+        conversation = json.loads(returned.body)
+        conversation["messages"] = [message]
+        returned.body = json.dumps(conversation).encode()
+        masked_again = self.service.EvaluateHttpRequest(returned, self.context())
+        self.assertEqual(masked_again.decision, 1)
+        self.assertNotIn(m.CANARY.encode(), masked_again.body)
+        self.assertIn(handle.encode(), masked_again.body)
+
+        for sandbox in ["s-1", "s-2"]:
+            request.context.request_id = "forged-" + sandbox
+            request.context.sandbox_id = sandbox
+            forged = json.loads(request.body)
+            forged["messages"][0]["content"] = handle
+            request.body = json.dumps(forged).encode()
+            context = self.context(sandbox_id=sandbox)
+            self.assertEqual(self.service.EvaluateHttpRequest(request, context).decision, 1)
+            results = deliver(request, context)
+            self.assertEqual(results[1].body_result.WhichOneof("action"), "block_delivery")
+
+    def test_provider_error_cannot_trigger_tool_secret_restoration(self):
+        head = self.response_head(status_code=429)
+        key = (head.preflight.context.sandbox_id, head.preflight.context.request_id)
+        handle = next(iter(self.service.pending[key][2]))
+        value = {"choices": [{"message": {"function_call": {
+            "name": "bash", "arguments": json.dumps({"command": handle})}}}]}
+        results = list(self.service.Evaluate(iter([head, self.response_body(json.dumps(value).encode())]), self.context()))
+        self.assertIn(handle.encode(), results[1].body_result.transform.data)
+        self.assertNotIn(m.CANARY.encode(), results[1].body_result.transform.data)
+
 
 if __name__ == "__main__":
     unittest.main()
