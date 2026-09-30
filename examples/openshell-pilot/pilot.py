@@ -194,6 +194,8 @@ class Pilot:
         self.report["model"] = self.model
         self.report["output_token_limit"] = self.profile["output"]
         saved_repairs = self.checkpoint.get("repair_attempts", 0)
+        if type(saved_repairs) is not int or saved_repairs not in (0, 1):
+            raise ValueError("invalid checkpoint repair budget")
         if existing_checkpoint and repair_attempts is not None and repair_attempts != saved_repairs:
             raise RuntimeError("cannot change repair budget for an existing checkpoint")
         self.repair_attempts = saved_repairs if existing_checkpoint else (repair_attempts or 0)
