@@ -41,11 +41,11 @@ func TestModelForDirectorOverride(t *testing.T) {
 	// Codex as director must use the full-effort model, never the fast lane:
 	// the latency-optimized variant is too weak to plan/assess (see
 	// directorModels). 2026-09-22: GPT-6 Sol replaced gpt-5.5; the pair is
-	// gpt-6-sol-fast / gpt-6-sol now.
+	// gpt-6.1-sol-fast / gpt-6.1-sol now.
 	codexWorker, _ := modelFor(LegCodex, false)
 	codexDirector, _ := modelFor(LegCodex, true)
-	assert.Equal(t, "gpt-6-sol-fast", codexWorker.Model, "worker leg keeps the fast variant")
-	assert.Equal(t, "gpt-6-sol", codexDirector.Model, "director path runs standard speed")
+	assert.Equal(t, "gpt-6.1-sol-fast", codexWorker.Model, "worker leg keeps the fast variant")
+	assert.Equal(t, "gpt-6.1-sol", codexDirector.Model, "director path runs standard speed")
 	codexFrontier, _ := modelForEffort(LegCodex, false, EffortMax)
 	assert.Equal(t, "gpt-6-astra", codexFrontier.Model, "/frontier /codex takes the frontier tier, not the director's twin")
 	lunaWorker, _ := modelFor(LegLuna, false)

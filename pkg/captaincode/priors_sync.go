@@ -33,14 +33,14 @@ type AAModel struct {
 // legAAPatterns maps each leg to ordered lowercase substrings matched against
 // an AA model's slug+name. Order matters: the first pattern that hits wins,
 // so a leg's own model comes before the predecessor it reads until the feed
-// scores it (codex: GPT-6 Sol, then 5.6 Sol). Legs with no pattern hit keep their
+// scores it (codex: GPT-6.1 Sol, then 6 Sol, then 5.6 Sol). Legs with no pattern hit keep their
 // hand-written prior (cursor's Composer and grok-build are rarely listed).
 var legAAPatterns = map[Leg][]string{
 	// Family fallbacks (substring, shortest slug wins) for when the exact
 	// registry slug is absent from the feed - a renamed snapshot must not
 	// silently drop a leg's prior.
-	LegCodex:    {"gpt-6-sol", "gpt-5-6-sol"},   // fast mode shares Sol's score; reads 5.6 Sol until AA scores GPT-6 Sol
-	LegLuna:     {"gpt-6-luna", "gpt-5-6-luna"}, // likewise 5.6 Luna until GPT-6 Luna is scored
+	LegCodex:    {"gpt-6-1-sol", "gpt-6-sol", "gpt-5-6-sol"}, // fast mode shares Sol's score; reads the previous Sol until AA scores GPT-6.1 Sol
+	LegLuna:     {"gpt-6-luna", "gpt-5-6-luna"},              // likewise 5.6 Luna until GPT-6 Luna is scored
 	LegGrok:     {"grok-build", "grok build"},
 	LegGrokMax:  {"grok-4-7", "grok-4-6"},
 	LegClaude:   {"claude-opus-5"}, // the Opus 5 row when the feed lacks 5.5 or lists it unscored, as grok-max reads 4.6 until 4.7 is scored
