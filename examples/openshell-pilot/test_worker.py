@@ -23,25 +23,30 @@ class WorkerTests(unittest.TestCase):
 
     def tool_results(self):
         return [self.result(b"slugify.py\ntest_slugify.py\n"),
-                self.result(json.dumps([{"entry": {"path": "slugify.py"}, "text": "def slugify(text):\n"}]).encode())]
+                self.result(json.dumps([{"entry": {"path": "slugify.py"}, "text": "def slugify(text):\n"}]).encode()),
+                self.result(b"/usr/local/bin/rg\n")]
 
     def test_tools_are_exercised_through_opencode_without_model_calls(self):
         with patch.object(self.instance, "remote", side_effect=self.tool_results()) as remote:
             self.instance.check_worker_tools()
         self.assertEqual(self.instance.report["checks"]["worker_tools"]["verdict"], "pass")
         self.assertEqual(self.instance.report["worker_attempts"], 0)
-        self.assertEqual([call.args[4:7] for call in remote.call_args_list],
+        self.assertEqual([call.args[4:7] for call in remote.call_args_list[:2]],
                          [("debug", "rg", "files"), ("debug", "rg", "search")])
+        self.assertEqual(remote.call_args_list[2].args, ("sh", "-c", "command -v rg"))
         self.assertEqual((self.instance.state / "worker-files.log").read_bytes(), self.tool_results()[0].stdout)
 
     def test_missing_search_tool_or_invalid_results_stop_before_worker(self):
         valid = self.tool_results()
-        for results in [[self.result(b"ripgrep execution failed", 1), valid[1]],
-                        [self.result(b"unrelated.py\n"), valid[1]],
-                        [valid[0], self.result(b"ripgrep execution failed", 1)],
-                        [valid[0], self.result(b"not JSON")],
-                        [valid[0], self.result(b"[]")],
-                        [valid[0], self.result(b'[{"entry":{"path":"elsewhere.py"},"text":"def slugify"}]')]]:
+        for results in [[self.result(b"ripgrep execution failed", 1), valid[1], valid[2]],
+                        [self.result(b"unrelated.py\n"), valid[1], valid[2]],
+                        [self.result(b"test_slugify.py\nslugify.py\n"), valid[1], valid[2]],
+                        [valid[0], self.result(b"ripgrep execution failed", 1), valid[2]],
+                        [valid[0], self.result(b"not JSON"), valid[2]],
+                        [valid[0], self.result(b"[]"), valid[2]],
+                        [valid[0], self.result(b'[{"entry":{"path":"elsewhere.py"},"text":"def slugify"}]'), valid[2]],
+                        [valid[0], valid[1], self.result(b"/usr/bin/rg\n")],
+                        [valid[0], valid[1], self.result(b"", 1)]]:
             with (self.subTest(results=results), patch.object(self.instance, "remote", side_effect=results),
                   self.assertRaisesRegex(AssertionError, "worker_tools")):
                 self.instance.check_worker_tools()

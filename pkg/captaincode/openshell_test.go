@@ -552,6 +552,7 @@ func TestOpenShellRunRecordsProvenance(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(r.Prepared, "shield"), binary, 0o700), "a Go binary, so its build stamp can be read")
 	require.NoError(t, os.WriteFile(filepath.Join(r.Pilot, "test_task.py"), []byte("x"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Pilot, "Dockerfile"), []byte("x"), 0o600))
 	run, err := r.RunTeam(context.Background(), OpenShellTeam{Schema: 1, ID: "demo", Tasks: []OpenShellTask{
 		fakeOpenShellTask("t1", "cerebras", `{"write":{"a.txt":"a1\n"}}`, "a", "a.txt")}})
 	require.NoError(t, err)
@@ -562,8 +563,9 @@ func TestOpenShellRunRecordsProvenance(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"pilot/task.py": hex.EncodeToString(x[:]), "pilot/pilot.py": hex.EncodeToString(x[:]),
+		"pilot/Dockerfile": hex.EncodeToString(x[:]), "prepared/shield": selfSum,
 		"prepared/bin/openshell": hex.EncodeToString(x[:]), "prepared/bin/openshell-gateway": hex.EncodeToString(x[:]),
-		"prepared/generated/shield_pb2.py": hex.EncodeToString(x[:]), "prepared/shield": selfSum,
+		"prepared/generated/shield_pb2.py": hex.EncodeToString(x[:]),
 	}, run.Provenance.Files, "what runs is hashed; the pilot's tests are not")
 	assert.Equal(t, runtime.Version(), run.Provenance.Shield.GoVersion, "Shield's build stamp is read from the binary")
 	assert.Equal(t, runtime.Version(), run.Provenance.Captain.GoVersion)
