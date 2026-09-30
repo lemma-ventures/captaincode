@@ -193,8 +193,11 @@ responses. For OpenCode's streaming requests, it explicitly requests
 `stream: false` from NIM, removes `stream_options`, restores the complete JSON,
 and returns equivalent SSE content/tool, finish, usage and `[DONE]` events to
 OpenCode. Tool arguments are decoded before restoration and encoded again, so
-quotes in an original identity do not corrupt the tool's JSON. Secret
-placeholders in prose, reasoning and error responses remain masked.
+quotes in an original identity do not corrupt the tool's JSON. Arguments that do
+not decode to a JSON object are delivered as text and never regain secrets;
+OpenCode reports them to the model as an invalid tool call instead of the run
+failing. Secret placeholders in prose, reasoning and error responses remain
+masked.
 Only structured arguments for a tool offered in the paired request can regain
 secrets that Shield actually masked in that request. A placeholder alone never
 authorizes a vault lookup. Invented handles, handles from a different request
