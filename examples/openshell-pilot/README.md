@@ -7,10 +7,30 @@ change Captain's routing, scope declarations, configuration or running brain.
 
 ## Current result
 
-**Three bounded MicroVM runs passed with a locally patched OpenShell driver;
-the latest worker timed out. Expansion remains gated.**
+**Four bounded MicroVM runs passed with a locally patched OpenShell driver;
+the latest passes all 16 checks. Expansion remains gated.**
 
-The [controller ownership run](results/2026-09-30-controller.json) on 30 September
+The [worker search result](results/2026-09-30-search.json) on 30 September 2026
+completed **1 task from 1 worker attempt**, with zero tool errors. OpenCode's
+glob and content search now work with networking disabled and under the live
+MicroVM policy. The image includes `ripgrep`; previously, OpenCode tried to
+download it and the network policy correctly denied the request. This removes
+that tool failure, without establishing that provider latency is resolved.
+
+| Latest measurement | Seconds |
+| --- | ---: |
+| Gateway readiness | 0.856 |
+| Sandbox creation, prepared image | 13.678 |
+| Worker edit and test | 145.684 |
+| Recovery gateway readiness | 0.725 |
+| Sandbox restart | 2.246 |
+
+File and network denials, cancellation, outbound Shield masking and refusal
+when Shield is down, restart recovery and exact diff landing all passed. The
+completed sandbox was deleted and the pilot services exited. The sanitized
+report records the image and harness hashes alongside the driver hash.
+
+The earlier [controller ownership run](results/2026-09-30-controller.json) on 30 September
 2026 refused competing execution and preparation processes without changing the
 active state. Gateway readiness took 0.754 seconds and sandbox creation took
 13.200 seconds. The worker did not exit within 600 seconds: **0 completed tasks
@@ -44,7 +64,7 @@ This run, the [previous repeat](results/2026-09-30-vm.json), and the
 **1 task from 1 worker attempt** each. The latest completed landing was also
 resumed twice in fresh processes without an API key or further model requests.
 Earlier development attempts failed at runtime setup, environment configuration,
-and acceptance checks. Three passing smoke tests are not a task-success-rate estimate.
+and acceptance checks. These smoke tests are not a task-success-rate estimate.
 There is no automatic routing integration or expansion to other leg families.
 
 The original Docker attempt remains in
@@ -89,6 +109,10 @@ The middleware only implements outbound request masking. It does not yet
 provide Captain's response identity restoration or tool-argument secret
 restoration. The fixture uses synthetic secrets and paths under `/sandbox`.
 This is not a claim that the complete Shield contract works in OpenShell.
+OpenShell 0.1.2's streamed response contract forbids holding input across body
+units, while identity stand-ins can span both transport chunks and model
+deltas. Restoring each chunk independently would corrupt those split values;
+that boundary remains unresolved before general repository use.
 
 No prompts, bodies or credentials are written to the middleware audit. It
 records request/sandbox IDs, masking counts, hashes, and synthetic-canary
@@ -124,6 +148,10 @@ two pinned NVIDIA proto files, builds the Shield adapter, and builds the worker
 image. It does not run downloaded install scripts or modify the host's PATH.
 The image's Debian packages are installed by apt from its signed repositories;
 the base image and OpenCode binary are pinned in the Dockerfile and artifact lock.
+The image also includes a pinned Debian `ripgrep` package. OpenCode otherwise
+tries to download that tool on its first glob or content search, which the
+network policy denies. Both searches run through OpenCode inside the sandbox
+before the first model request; missing tools or incorrect results stop the run.
 
 For the MicroVM backend, pass `--runtime vm` to both commands, and pass the
 locally built driver to `prepare.py --vm-driver`. The bootstrap signs that
@@ -160,8 +188,9 @@ with the first controller's gateway, middleware or landing operation.
 
 ## Acceptance gates
 
-1. Qualify the Docker kernel and verify the unmodified fixture has three failing
-   tests. This proves the task is not vacuous.
+1. Qualify the runtime kernel, exercise OpenCode's glob and content search without
+   a model call, and verify the unmodified fixture has three failing tests.
+   This proves the worker tools function under policy and the task is not vacuous.
 2. Require explicit permission errors for reads and writes under `/outside`.
    The canary is world-readable and its directory world-writable in the image,
    so ordinary Unix permissions cannot account for those denials.
@@ -214,8 +243,11 @@ estimate. Expansion remains gated on all live checks passing.
 name, base revision and snapshot/test hashes. `snapshot.tar`, `result.patch`,
 `recovered-slugify.py`, the disposable `landing/` repository, worker output,
 test logs, Shield audit and gateway/sandbox logs remain in the private state.
-The report returns `inconclusive` for infrastructure errors and `fail` for an
-observed acceptance failure. The process exits nonzero for either.
+The report returns `inconclusive` for infrastructure errors or worker/transport
+deadlines and `fail` for an observed acceptance failure. Expired workers retain
+their captured output and elapsed time, stop the sandbox, and skip verification
+and landing; tool-reported test success does not count as completion. The process
+exits nonzero for either verdict.
 
 ```sh
 go test ./examples/openshell-pilot/shield
@@ -235,6 +267,8 @@ fresh process, and preservation of user edits. Controller regressions cover
 competing entrypoints, lock release after exceptions and process death, unsafe
 lock files, and preparation over an existing checkpoint. CI runs the controller,
 landing and diff tests on Linux and macOS without model calls or OpenShell.
+Worker regressions cover missing or broken search tools, refusal to submit a
+model task after a failed gate, and deadline verdicts with retained partial output.
 Python lint runs with
 `ruff check examples/openshell-pilot`; Go checks use `go vet ./...` and the
 Shield test command above.
@@ -249,6 +283,8 @@ or the Dockerfile:
 - OpenCode: 1.18.32 (MIT), downloaded as its platform binary without npm scripts.
 - Python image: 3.12 slim Bookworm, pinned by image digest; Git, curl and CA
   certificates are installed inside that image.
+- ripgrep: Debian Bookworm `13.0.0-4+b2`, from the signed Debian archive,
+  maintained by Debian Rust Maintainers (MIT/Unlicense; completion files BSD-3-Clause).
 - Python wheels: grpcio 1.84.0, grpcio-tools 1.84.0, protobuf 7.36.2,
   PyJWT 2.15.1, cryptography 50.0.1, cffi 2.1.1, pycparser 3.0,
   setuptools 84.0.0 and typing-extensions 4.16.0.
