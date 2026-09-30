@@ -99,6 +99,47 @@ class ShieldTests(unittest.TestCase):
         self.service.audit = self.path
         self.assertEqual(self.service.EvaluateHttpRequest(self.request(), self.context()).decision, 2)
 
+    def test_cerebras_scope_masking_and_pinning_are_enforced_together(self):
+        from profiles import profile
+        self.service = m.Shield(self.service.binary, self.signer.public_key(),
+                               self.path / "audit.jsonl", profile("cerebras")["model"], "cerebras")
+        request = self.request()
+        self.assertEqual(self.service.EvaluateHttpRequest(request, self.context()).decision, 2)
+        request.target.host = "openrouter.ai"
+        request.target.path = "/api/v1/chat/completions"
+        request.body = json.dumps({"model": self.service.model, "stream": True,
+                                  "provider": {"allow_fallbacks": True, "zdr": False},
+                                  "messages": [{"role": "tool", "content": m.CANARY}]}).encode()
+        result = self.service.EvaluateHttpRequest(request, self.context())
+        self.assertEqual(result.decision, 1)
+        body = json.loads(result.body)
+        self.assertEqual(body["provider"]["only"], ["cerebras"])
+        self.assertFalse(body["provider"]["allow_fallbacks"])
+        self.assertTrue(body["provider"]["zdr"])
+        self.assertEqual(body["temperature"], 0)
+        self.assertNotIn(m.CANARY, result.body.decode())
+        self.assertEqual(result.header_mutations[0].write.name, "accept-encoding")
+        self.assertEqual(result.header_mutations[0].write.value, "identity")
+        self.assertEqual(result.header_mutations[0].write.on_existing, 2)
+        head = m.pb.HttpResponseEvent(preflight=m.pb.HttpResponsePreflight(
+            context=request.context, target=request.target, status_code=200,
+            max_payload_bytes=m.LIMIT, permitted_body_modes=[2],
+            headers=[m.pb.HttpHeader(name="content-type", value="application/json")]))
+        wrong_provider = self.response_body(json.dumps({"provider": "Other", "model": self.service.model}).encode())
+        result = list(self.service.Evaluate(iter([head, wrong_provider]), self.context()))
+        self.assertTrue(result[1].body_result.HasField("block_delivery"))
+        request.context.request_id = "confirmed"
+        self.assertEqual(self.service.EvaluateHttpRequest(request, self.context()).decision, 1)
+        head.preflight.context.request_id = "confirmed"
+        valid = self.response_body(json.dumps({"provider": "Cerebras", "model": self.service.model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "done"},
+                         "finish_reason": "stop"}]}).encode())
+        results = list(self.service.Evaluate(iter([head, valid]), self.context()))
+        self.assertTrue(results[1].body_result.HasField("transform"))
+        last = json.loads(self.service.audit.read_text().splitlines()[-1])
+        self.assertEqual(last["provider"], "Cerebras")
+        self.assertEqual(len(last["upstream_body_sha256"]), 64)
+
     def test_protocol_negotiation(self):
         request = m.pb.MiddlewareDescribeRequest(gateway=m.extension.PeerMetadata(
             protocol_version=m.extension.ProtocolVersion(major=1),

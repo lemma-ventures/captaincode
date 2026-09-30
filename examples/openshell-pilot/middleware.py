@@ -13,6 +13,7 @@ import grpc
 import jwt
 import supervisor_middleware_pb2 as pb
 import supervisor_middleware_pb2_grpc as rpc
+from profiles import PROFILES, pin_request, profile, response_provider
 from response import encode, restore_response
 
 LIMIT = 4 * 1024 * 1024
@@ -22,11 +23,13 @@ CANARY = "nvapi-" + "captainpilot0123456789" * 2
 
 
 class Shield(rpc.SupervisorMiddlewareServicer):
-    def __init__(self, binary, key, audit, model):
+    def __init__(self, binary, key, audit, model, inference="nim"):
         self.binary = str(binary)
         self.key = key
         self.audit = audit
         self.model = model
+        self.inference = inference
+        self.profile = profile(inference)
         self.lock = threading.Lock()
         self.pending = {}
 
@@ -76,8 +79,8 @@ class Shield(rpc.SupervisorMiddlewareServicer):
         self.authenticate(context, request.context.sandbox_id)
         target = request.target
         if (request.phase != 1 or target.scheme != "https"
-                or target.host != "integrate.api.nvidia.com" or target.port != 443
-                or target.method != "POST" or target.path != "/v1/chat/completions"
+                or target.host != self.profile["host"] or target.port != 443
+                or target.method != "POST" or target.path != self.profile["base_path"] + "/chat/completions"
                 or target.query or len(request.body) > LIMIT):
             return pb.HttpRequestResult(decision=2, reason_code="outside_pilot_scope")
         try:
@@ -92,7 +95,7 @@ class Shield(rpc.SupervisorMiddlewareServicer):
             stream_response = original.get("stream", False)
             if type(stream_response) is not bool or not request.context.request_id:
                 raise ValueError()
-            upstream = dict(original, stream=False)
+            upstream = pin_request(dict(original, stream=False), self.inference)
             upstream.pop("stream_options", None)
             with self.lock:
                 now = time.monotonic()
@@ -107,7 +110,8 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                 if len(body) > LIMIT or CANARY.encode() in body:
                     raise ValueError()
                 event = {"at": time.time(), "sandbox_id": request.context.sandbox_id,
-                         "request_id": request.context.request_id, "secrets": masked["secrets"],
+                         "request_id": request.context.request_id, "inference": self.inference, "model": self.model,
+                         "provider_policy": upstream.get("provider"), "secrets": masked["secrets"],
                          "identities": masked["identities"], "body_sha256": hashlib.sha256(body).hexdigest(),
                          "canary_masked": CANARY.encode() in request.body,
                          "tool_canary_masked": any(m.get("role") == "tool" and CANARY in json.dumps(m)
@@ -119,7 +123,9 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                 offered = {tool["function"]["name"] for tool in original.get("tools", []) if tool.get("type") == "function"}
                 offered.update(function["name"] for function in original.get("functions", []))
                 self.pending[key] = (now, stream_response, masked.get("tool_secrets", {}), offered)
-            return pb.HttpRequestResult(decision=1, has_body=True, body=body)
+            return pb.HttpRequestResult(decision=1, has_body=True, body=body,
+                header_mutations=[pb.HeaderMutation(write=pb.WriteHeader(
+                    name="accept-encoding", value="identity", on_existing=2))])
         except (ValueError, TypeError, AttributeError, KeyError, OSError, subprocess.SubprocessError):
             return pb.HttpRequestResult(decision=2, reason_code="shield_failed")
 
@@ -147,9 +153,9 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                 target = preflight.target
                 types = [h.value.split(";", 1)[0].strip().lower() for h in preflight.headers
                          if h.name.lower() == "content-type"]
-                target_allowed = (target.scheme == "https" and target.host == "integrate.api.nvidia.com"
+                target_allowed = (target.scheme == "https" and target.host == self.profile["host"]
                                   and target.port == 443 and target.method == "POST"
-                                  and target.path == "/v1/chat/completions" and not target.query)
+                                  and target.path == self.profile["base_path"] + "/chat/completions" and not target.query)
                 type_allowed = len(types) == 1 and types[0] == "application/json"
                 inspectable = 2 in preflight.permitted_body_modes and preflight.max_payload_bytes > 0
                 with self.lock:
@@ -184,12 +190,14 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                 try:
                     if unit.sequence != 1 or not unit.end_of_stream or unit.WhichOneof("payload") != "data":
                         raise ValueError("invalid whole response unit")
+                    observed_provider = response_provider(unit.data, self.inference, preflight.status_code)
                     with self.lock:
                         body, identities, restored_count = restore_response(
                             unit.data, self.restore, limit, stream_response,
                             tool_secrets=pending[2] if 200 <= preflight.status_code < 300 else None, allowed_tools=pending[3])
                         audit = {"at": time.time(), "sandbox_id": preflight.context.sandbox_id,
                                  "request_id": preflight.context.request_id, "phase": "response",
+                                 "provider": observed_provider, "upstream_body_sha256": hashlib.sha256(unit.data).hexdigest(),
                                  "identities": identities, "tool_secrets_restored": restored_count, "bytes": len(body), "mode": "whole_body"}
                         with self.audit.open("a") as stream:
                             stream.write(json.dumps(audit) + "\n")
@@ -216,12 +224,13 @@ def main():
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--profile", choices=PROFILES, default="nim")
     args = parser.parse_args()
     certs = args.state / "certs"
     server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=2),
                          options=[("grpc.max_receive_message_length", LIMIT + 131072)])
     service = Shield(args.state / "shield", (certs / "jwt/public.pem").read_text(),
-                     args.state / "shield-audit.jsonl", args.model)
+                     args.state / "shield-audit.jsonl", args.model, args.profile)
     rpc.add_SupervisorMiddlewareServicer_to_server(service, server)
     rpc.add_HttpResponsePreReturnServicer_to_server(service, server)
     credentials = grpc.ssl_server_credentials([((certs / "server/tls.key").read_bytes(),

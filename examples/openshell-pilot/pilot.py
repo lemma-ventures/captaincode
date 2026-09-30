@@ -15,6 +15,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from profiles import PROFILES, profile
+
 HERE = Path(__file__).resolve().parent
 MODEL = "z-ai/glm-5.3-flash"
 WORKER_ENV = {
@@ -141,7 +143,7 @@ def validate_patch(patch, repo, index_env=None):
 
 
 class Pilot:
-    def __init__(self, state, runtime=None):
+    def __init__(self, state, runtime=None, inference=None):
         self.state = state.resolve()
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.state.chmod(0o700)
@@ -158,7 +160,8 @@ class Pilot:
                        "verdict": "inconclusive", "checks": {name: {"verdict": "inconclusive", "detail": "not run"} for name in CHECKS}, "timings_seconds": {},
                        "worker_attempts": 0, "task_successes": 0}
         saved = self.state / "checkpoint.json"
-        if saved.exists():
+        existing_checkpoint = saved.exists()
+        if existing_checkpoint:
             self.checkpoint = json.loads(saved.read_text())
             previous_runtime = self.checkpoint.get("runtime", "docker")
             if runtime is not None and runtime != previous_runtime:
@@ -170,11 +173,23 @@ class Pilot:
         else:
             runtime = runtime or "docker"
             self.checkpoint = {"name": "cc-" + os.urandom(5).hex(), "phase": "new", "runtime": runtime,
+                               "inference": inference or "nim",
                                "host": "127.0.0.1" if runtime == "vm" else host_address(),
                                "gateway_port": available_port(), "middleware_port": available_port()}
             write_json(saved, self.checkpoint)
         if runtime not in ["docker", "vm"]:
             raise RuntimeError("unsupported runtime")
+        saved_inference = self.checkpoint.get("inference", "nim")
+        if existing_checkpoint and inference is not None and inference != saved_inference:
+            raise RuntimeError("cannot change inference profile for an existing checkpoint")
+        self.inference = inference or saved_inference
+        self.profile = profile(self.inference)
+        self.model = self.profile["model"]
+        self.base_url = "https://" + self.profile["host"] + self.profile["base_path"]
+        self.checkpoint["inference"] = self.inference
+        self.report["inference"] = self.inference
+        self.report["model"] = self.model
+        self.report["output_token_limit"] = self.profile["output"]
         self.runtime = runtime
         self.report["compute_driver"] = runtime
         self.env["OPENSHELL_GATEWAY_ENDPOINT"] = f"https://{self.checkpoint['host']}:{self.checkpoint['gateway_port']}"
@@ -255,7 +270,7 @@ class Pilot:
                           CAPTAIN_REDACT_IDENTITY=IDENTITY_CANARY)
         (self.state / "shield-home").mkdir(exist_ok=True)
         self.middleware = self.spawn([self.state / "venv/bin/python", HERE / "middleware.py", "--state", self.state,
-                                      "--port", str(self.checkpoint["middleware_port"]), "--model", MODEL],
+                                      "--port", str(self.checkpoint["middleware_port"]), "--model", self.model, "--profile", self.inference],
                                      "middleware.log", shader_env)
         for _ in range(50):
             if self.middleware.poll() is not None:
@@ -362,23 +377,27 @@ timeout = "5s"
         (payload / "home").mkdir()
         (payload / "canary.txt").write_text(CANARY + "\n")
         write_json(payload / "opencode.json", {
-            "$schema": "https://opencode.ai/config.json", "model": "nim/" + MODEL,
+            "$schema": "https://opencode.ai/config.json", "model": "pilot/" + self.model,
             "share": "disabled", "autoupdate": False,
             "permission": {"*": "allow", "external_directory": "allow"},
-            "provider": {"nim": {"npm": "@ai-sdk/openai-compatible", "name": "NIM",
-                "options": {"baseURL": "https://integrate.api.nvidia.com/v1", "apiKey": "{env:NVIDIA_API_KEY}"},
-                "models": {MODEL: {"name": MODEL, "limit": {"context": 131072, "output": 4096}}}}}})
+            "provider": {"pilot": {"npm": "@ai-sdk/openai-compatible", "name": self.inference,
+                "options": {"baseURL": self.base_url, "apiKey": "{env:" + self.profile["key_env"] + "}"},
+                "models": {self.model: {"name": self.model, "limit": {"context": 131072, "output": self.profile["output"]}}}}}})
         self.save("snapshot")
 
     def create_sandbox(self):
-        if not os.environ.get("NVIDIA_API_KEY"):
-            raise RuntimeError("NVIDIA_API_KEY is required; it is never put in the snapshot or worker environment")
-        self.cli_run("profile", "import", "--file", HERE / "nvidia.yaml")
-        provider_env = dict(self.env, NVIDIA_API_KEY=os.environ["NVIDIA_API_KEY"])
-        self.cli_run("provider", "create", "--name", "captain-nim", "--type", "captain-nim-pilot", "--from-existing", env=provider_env)
+        key_env = self.profile["key_env"]
+        if not os.environ.get(key_env):
+            raise RuntimeError(key_env + " is required; it is never put in the snapshot or worker environment")
+        self.cli_run("profile", "import", "--file", HERE / self.profile["file"])
+        provider_env = dict(self.env, **{key_env: os.environ[key_env]})
+        self.cli_run("provider", "create", "--name", "captain-inference", "--type", "captain-" + self.inference + "-pilot", "--from-existing", env=provider_env)
+        policy = (HERE / "policy.yaml").read_text().replace("integrate.api.nvidia.com", self.profile["host"])
+        (self.state / "policy.yaml").write_text(policy)
+        self.report["policy_sha256"] = hashlib.sha256(policy.encode()).hexdigest()
         start = time.monotonic()
         result = self.cli_run("sandbox", "create", "--name", self.checkpoint["name"], "--from", "captain-openshell-pilot:1",
-                             "--policy", HERE / "policy.yaml", "--provider", "captain-nim", "--no-auto-providers",
+                             "--policy", self.state / "policy.yaml", "--provider", "captain-inference", "--no-auto-providers",
                              *[arg for key, value in WORKER_ENV.items() for arg in ["--env", f"{key}={value}"]],
                              "--approval-mode", "manual", "--no-tty", "--detach", "--", "sleep", "infinity",
                              timeout=300, check=False)
@@ -418,7 +437,7 @@ timeout = "5s"
         (self.state / "network-denial-events.log").write_bytes(events)
         self.check("network_denied", network_denial_confirmed(denied.returncode, events),
                    "Requires a failed connection and its matching policy denial event; a timeout does not pass.")
-        denied = self.remote("curl", "-sS", "--fail", "--max-time", "10", "https://integrate.api.nvidia.com/v1/models", check=False)
+        denied = self.remote("curl", "-sS", "--fail", "--max-time", "10", self.base_url + "/models", check=False)
         self.check("nim_path_denied", denied.returncode != 0 and b"403" in denied.stdout)
         boot = self.remote("cat", "/proc/sys/kernel/random/boot_id").stdout.strip()
         cancellation = "import os,subprocess,json; from pathlib import Path; p=subprocess.Popen(['sleep','600']); Path('/sandbox/cancel-pids.json').write_text(json.dumps([os.getpid(),p.pid])); os.sync(); p.wait()"
@@ -453,7 +472,7 @@ timeout = "5s"
         self.save("worker_started")
         start = time.monotonic()
         try:
-            result = self.remote("opencode", "--print-logs", "--log-level", "ERROR", "run", "--format", "json", "--model", "nim/" + MODEL, PROMPT,
+            result = self.remote("opencode", "--print-logs", "--log-level", "ERROR", "run", "--format", "json", "--model", "pilot/" + self.model, PROMPT,
                                  timeout=600, check=False)
         except subprocess.TimeoutExpired as error:
             result = subprocess.CompletedProcess([], 124, error.output or b"")
@@ -491,9 +510,9 @@ timeout = "5s"
                    "Only a paired tool argument regains the synthetic credential; its SHA-256 must match and answers stay masked.")
         os.killpg(self.middleware.pid, signal.SIGTERM)
         self.middleware.wait(timeout=5)
-        probe = json.dumps({"model": MODEL, "messages": [{"role": "user", "content": "Reply OK"}], "max_tokens": 1})
+        probe = json.dumps({"model": self.model, "messages": [{"role": "user", "content": "Reply OK"}], "max_tokens": 1})
         denied = self.remote("curl", "-sS", "--fail", "--max-time", "15", "-H", "content-type: application/json",
-                             "--data", probe, "https://integrate.api.nvidia.com/v1/chat/completions", check=False)
+                             "--data", probe, self.base_url + "/chat/completions", check=False)
         self.check("shield_unavailable_denied", denied.returncode != 0 and any(code in denied.stdout for code in [b"403", b"502", b"503"]))
         revision = self.checkpoint["worker_revision"]
         if len(revision) not in (40, 64) or any(char not in "0123456789abcdef" for char in revision):
@@ -608,7 +627,7 @@ timeout = "5s"
 
 
 def run_controller(args):
-    pilot = Pilot(args.state, runtime=args.runtime)
+    pilot = Pilot(args.state, runtime=args.runtime, inference=getattr(args, "profile", None))
     if args.resume:
         if pilot.checkpoint["phase"] not in ["export_pending", "landing_pending", "complete"]:
             raise RuntimeError("resume requires a completed worker with a saved export or landing")
@@ -647,6 +666,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--profile", choices=PROFILES)
     parser.add_argument("--runtime", choices=["docker", "vm"])
     args = parser.parse_args()
     def interrupt(signum, frame):
