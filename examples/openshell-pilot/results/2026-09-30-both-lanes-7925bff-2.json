@@ -1,0 +1,1198 @@
+{
+  "schema": 1,
+  "kind": "team",
+  "team": "fixture-both-lanes",
+  "fixture": "examples/openshell-pilot/team",
+  "base_tree": "ccfbfae36f4a8343efc52e1ee87a3bf54c4553db",
+  "openshell": "0.1.2",
+  "vm_driver": {
+    "version": "openshell-driver-vm 0.1.3-dev.31+ga6d87cbf4",
+    "sha256": "4b172df1fd669b0ddd49487baa3807f4688ccf53ce4cb20b105bd5513f24aa7e"
+  },
+  "opencode": "1.18.32",
+  "model": "openai/gpt-oss-120b",
+  "runtime": "vm",
+  "guest": {
+    "landlock_abi": 6,
+    "errno": 0,
+    "kernel": "6.12.76"
+  },
+  "concurrency": 8,
+  "director": "claude, tool-less (--tools \"\", empty working directory, no session)",
+  "built_from": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "revision": "7925bff0cdf40ac7d11c2789efce6e42a0228c0a",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "22eccb60d5b26654935e52daba3b5deafa167654",
+      "modified": false
+    }
+  },
+  "started_at": "2026-09-30T16:56:28+00:00",
+  "wall_seconds": 374.197,
+  "verdict": "pass",
+  "summary": {
+    "tasks": 22,
+    "passed_in_sandbox": 21,
+    "landed": 11,
+    "dropped_by_ruling": 10,
+    "failed": 1,
+    "passed_first_attempt": 20,
+    "passed_after_repair": 1,
+    "worker_attempts": 24,
+    "model_requests": 167,
+    "model_responses": 167,
+    "blocked": 0,
+    "unanswered": 0,
+    "upstream_status": {
+      "200": 162,
+      "429": 5
+    },
+    "sum_task_seconds": 1374.198
+  },
+  "tasks": [
+    {
+      "task": "roman.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 297.594,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 248.501,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 10,
+        "responses": 10,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6,
+          "429": 4
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 10.523,
+        "sandbox_create_attempt": 26.942,
+        "sandbox_create": 26.942,
+        "worker": 248.765,
+        "gateway_ready_recovery": 0.718,
+        "sandbox_restart": 2.23
+      },
+      "changed_files": [
+        "roman.py"
+      ],
+      "patch_sha256": "929bd284940af6f0a5b54afecd14acaab10ad7d3df15ad473caf33443a049852",
+      "failed_checks": []
+    },
+    {
+      "task": "roman.sambanova",
+      "profile": "sambanova",
+      "outcome": "dropped",
+      "seconds": 64.604,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 17.371,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 9.802,
+        "sandbox_create_attempt": 25.253,
+        "sandbox_create": 25.253,
+        "worker": 17.655,
+        "gateway_ready_recovery": 0.845,
+        "sandbox_restart": 2.416
+      },
+      "changed_files": [
+        "roman.py"
+      ],
+      "patch_sha256": "395cb368a8b29ac743d5df6ec26b43eb10085eceadedcbef45ca1a7dfec2f1b1",
+      "failed_checks": []
+    },
+    {
+      "task": "wrap.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 56.04,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 6.401,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 9.566,
+        "sandbox_create_attempt": 28.275,
+        "sandbox_create": 28.275,
+        "worker": 6.666,
+        "gateway_ready_recovery": 0.837,
+        "sandbox_restart": 2.266
+      },
+      "changed_files": [
+        "wrap.py"
+      ],
+      "patch_sha256": "28f4272ab87bf3898c9c157b60979c7c94fc0bd69b7a41e864e362587aa45db3",
+      "failed_checks": []
+    },
+    {
+      "task": "wrap.sambanova",
+      "profile": "sambanova",
+      "outcome": "dropped",
+      "seconds": 74.654,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 21.989,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 9,
+        "responses": 9,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 9
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 10.276,
+        "sandbox_create_attempt": 29.666,
+        "sandbox_create": 29.666,
+        "worker": 22.287,
+        "gateway_ready_recovery": 0.842,
+        "sandbox_restart": 2.571
+      },
+      "changed_files": [
+        "wrap.py"
+      ],
+      "patch_sha256": "40879fe6855273f1bbd5bd88ee567f258405a58bc50327dff1d266abbb4dac75",
+      "failed_checks": []
+    },
+    {
+      "task": "interval.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 59.861,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 9.424,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 9,
+        "responses": 9,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 9
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 10.756,
+        "sandbox_create_attempt": 27.783,
+        "sandbox_create": 27.783,
+        "worker": 9.694,
+        "gateway_ready_recovery": 0.728,
+        "sandbox_restart": 2.304
+      },
+      "changed_files": [
+        "interval.py"
+      ],
+      "patch_sha256": "782be5c3385f44ff521ea5bff33cef5f0a90c87e17925102ebbd5a18a1c6e8f0",
+      "failed_checks": []
+    },
+    {
+      "task": "interval.sambanova",
+      "profile": "sambanova",
+      "outcome": "failed",
+      "seconds": 65.936,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 2,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "fail",
+          "worker_seconds": 13.63,
+          "test_exit_code": 1
+        },
+        {
+          "attempt": 2,
+          "verdict": "fail",
+          "worker_seconds": 4.177,
+          "test_exit_code": 1
+        }
+      ],
+      "shield": {
+        "requests": 9,
+        "responses": 9,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 9
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 10.037,
+        "sandbox_create_attempt": 29.638,
+        "sandbox_create": 29.638,
+        "worker": 18.386
+      },
+      "changed_files": [],
+      "patch_sha256": null,
+      "failed_checks": [
+        "sandbox_verify"
+      ],
+      "error": "pilot verdict fail: sandbox_verify"
+    },
+    {
+      "task": "csvline.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 57.975,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 7.232,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 10.99,
+        "sandbox_create_attempt": 27.834,
+        "sandbox_create": 27.834,
+        "worker": 7.501,
+        "gateway_ready_recovery": 0.836,
+        "sandbox_restart": 2.278
+      },
+      "changed_files": [
+        "csvline.py"
+      ],
+      "patch_sha256": "75579d46c0405f28a81e97c90b7ff1aa846ff425ed44088070462e79bd9669ff",
+      "failed_checks": []
+    },
+    {
+      "task": "csvline.sambanova",
+      "profile": "sambanova",
+      "outcome": "dropped",
+      "seconds": 66.171,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 15.684,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 11.233,
+        "sandbox_create_attempt": 27.013,
+        "sandbox_create": 27.013,
+        "worker": 15.972,
+        "gateway_ready_recovery": 0.832,
+        "sandbox_restart": 2.409
+      },
+      "changed_files": [
+        "csvline.py"
+      ],
+      "patch_sha256": "6afc36115cfca63bc636cdf9ead642a378579c7ec18a8f84dadba80264932e96",
+      "failed_checks": []
+    },
+    {
+      "task": "duration.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 94.841,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 65.057,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6,
+          "429": 1
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.783,
+        "sandbox_create_attempt": 16.482,
+        "sandbox_create": 16.482,
+        "worker": 65.331,
+        "gateway_ready_recovery": 0.734,
+        "sandbox_restart": 2.269
+      },
+      "changed_files": [
+        "duration.py"
+      ],
+      "patch_sha256": "a9bb4aefb9f08afb649e29b82076cf3e906e22438eed893561f77062d87492f3",
+      "failed_checks": []
+    },
+    {
+      "task": "duration.sambanova",
+      "profile": "sambanova",
+      "outcome": "dropped",
+      "seconds": 39.518,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 9.14,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.827,
+        "sandbox_create_attempt": 16.928,
+        "sandbox_create": 16.928,
+        "worker": 9.413,
+        "gateway_ready_recovery": 0.832,
+        "sandbox_restart": 2.29
+      },
+      "changed_files": [
+        "duration.py"
+      ],
+      "patch_sha256": "7fb7e47be820377b53ae1128dbb94b56f44e978bd4a72fc33ec68af8e63e79bf",
+      "failed_checks": []
+    },
+    {
+      "task": "semver.cerebras",
+      "profile": "cerebras",
+      "outcome": "dropped",
+      "seconds": 37.932,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 6.187,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.79,
+        "sandbox_create_attempt": 18.425,
+        "sandbox_create": 18.425,
+        "worker": 6.463,
+        "gateway_ready_recovery": 0.83,
+        "sandbox_restart": 2.303
+      },
+      "changed_files": [
+        "semver.py"
+      ],
+      "patch_sha256": "09551f67069e38f3469e37125cda5f35f14cc0eb88200d367426b579d295a767",
+      "failed_checks": []
+    },
+    {
+      "task": "semver.sambanova",
+      "profile": "sambanova",
+      "outcome": "landed",
+      "seconds": 49.955,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 17.158,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 8,
+        "responses": 8,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 8
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.194,
+        "sandbox_create_attempt": 18.819,
+        "sandbox_create": 18.819,
+        "worker": 17.439,
+        "gateway_ready_recovery": 0.829,
+        "sandbox_restart": 2.329
+      },
+      "changed_files": [
+        "semver.py"
+      ],
+      "patch_sha256": "e6ffaa42b4e6152c1b91a5394e29fae6593b61b0b72f9bbf01d06aec1ea4d972",
+      "failed_checks": []
+    },
+    {
+      "task": "rle.cerebras",
+      "profile": "cerebras",
+      "outcome": "dropped",
+      "seconds": 40.973,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 7.222,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.872,
+        "sandbox_create_attempt": 18.99,
+        "sandbox_create": 18.99,
+        "worker": 7.512,
+        "gateway_ready_recovery": 0.826,
+        "sandbox_restart": 2.359
+      },
+      "changed_files": [
+        "rle.py"
+      ],
+      "patch_sha256": "3ce9a71414c5df78a749cda5051a6182fe71be60c638a21b79aa067d240b92ef",
+      "failed_checks": []
+    },
+    {
+      "task": "rle.sambanova",
+      "profile": "sambanova",
+      "outcome": "landed",
+      "seconds": 49.833,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 16.2,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 7
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.865,
+        "sandbox_create_attempt": 19.009,
+        "sandbox_create": 19.009,
+        "worker": 16.466,
+        "gateway_ready_recovery": 0.726,
+        "sandbox_restart": 2.386
+      },
+      "changed_files": [
+        "rle.py"
+      ],
+      "patch_sha256": "f1c8e8fdc622e781dfae2f7a82fd3738273f84be8af1c6d2a57edb3a90c141d2",
+      "failed_checks": []
+    },
+    {
+      "task": "camel.cerebras",
+      "profile": "cerebras",
+      "outcome": "dropped",
+      "seconds": 36.909,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 7.18,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.861,
+        "sandbox_create_attempt": 16.072,
+        "sandbox_create": 16.072,
+        "worker": 7.472,
+        "gateway_ready_recovery": 0.826,
+        "sandbox_restart": 2.367
+      },
+      "changed_files": [
+        "camel.py"
+      ],
+      "patch_sha256": "f4d286f1306e818a53b23e8d19992bb82105f8e70339b4024bfe601c4cf09dea",
+      "failed_checks": []
+    },
+    {
+      "task": "camel.sambanova",
+      "profile": "sambanova",
+      "outcome": "landed",
+      "seconds": 41.964,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 11.684,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.784,
+        "sandbox_create_attempt": 15.753,
+        "sandbox_create": 15.753,
+        "worker": 11.955,
+        "gateway_ready_recovery": 0.717,
+        "sandbox_restart": 2.385
+      },
+      "changed_files": [
+        "camel.py"
+      ],
+      "patch_sha256": "93f285f85e12ae1cb58458dbefdf78ec5ba1f8a389945675adc7c06b33ea4894",
+      "failed_checks": []
+    },
+    {
+      "task": "hexcolor.cerebras",
+      "profile": "cerebras",
+      "outcome": "landed",
+      "seconds": 36.639,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 5.708,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.69,
+        "sandbox_create_attempt": 16.592,
+        "sandbox_create": 16.592,
+        "worker": 5.992,
+        "gateway_ready_recovery": 0.836,
+        "sandbox_restart": 2.308
+      },
+      "changed_files": [
+        "hexcolor.py"
+      ],
+      "patch_sha256": "41df9251d261b00cbe991b2a1b59badb199907e020bade4a14191aeb277fb654",
+      "failed_checks": []
+    },
+    {
+      "task": "hexcolor.sambanova",
+      "profile": "sambanova",
+      "outcome": "dropped",
+      "seconds": 38.605,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 8.918,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.797,
+        "sandbox_create_attempt": 16.263,
+        "sandbox_create": 16.263,
+        "worker": 9.212,
+        "gateway_ready_recovery": 0.823,
+        "sandbox_restart": 2.339
+      },
+      "changed_files": [
+        "hexcolor.py"
+      ],
+      "patch_sha256": "1297e07b629357b3f20c1b9b6860b00e36a0411c06d9ca954d9ca2592236ff06",
+      "failed_checks": []
+    },
+    {
+      "task": "humanize.cerebras",
+      "profile": "cerebras",
+      "outcome": "dropped",
+      "seconds": 42.981,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 2,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "fail",
+          "worker_seconds": 7.761,
+          "test_exit_code": 1
+        },
+        {
+          "attempt": 2,
+          "verdict": "pass",
+          "worker_seconds": 5.493,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 11,
+        "responses": 11,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 11
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.824,
+        "sandbox_create_attempt": 16.165,
+        "sandbox_create": 16.165,
+        "worker": 13.795,
+        "gateway_ready_recovery": 0.726,
+        "sandbox_restart": 2.279
+      },
+      "changed_files": [
+        "humanize.py"
+      ],
+      "patch_sha256": "470e75e54e247bde94a2bdffdb2ac85cde32496bd7fe202999dca5e451b4717a",
+      "failed_checks": []
+    },
+    {
+      "task": "humanize.sambanova",
+      "profile": "sambanova",
+      "outcome": "landed",
+      "seconds": 44.887,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 14.28,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.416,
+        "sandbox_create_attempt": 16.651,
+        "sandbox_create": 16.651,
+        "worker": 14.543,
+        "gateway_ready_recovery": 0.721,
+        "sandbox_restart": 2.27
+      },
+      "changed_files": [
+        "humanize.py"
+      ],
+      "patch_sha256": "b3c31c551d157c46106aabf943f49ae97fe874fbbfe2ff499b4d8d7e4f286111",
+      "failed_checks": []
+    },
+    {
+      "task": "ordinal.cerebras",
+      "profile": "cerebras",
+      "outcome": "dropped",
+      "seconds": 40.773,
+      "served_by": [
+        "Cerebras"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 10.08,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 13,
+        "responses": 13,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 13
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.396,
+        "sandbox_create_attempt": 16.731,
+        "sandbox_create": 16.731,
+        "worker": 10.346,
+        "gateway_ready_recovery": 0.733,
+        "sandbox_restart": 2.266
+      },
+      "changed_files": [
+        "ordinal.py"
+      ],
+      "patch_sha256": "7dfdb69e5870552a823bc8856b3660664acfc53af0d666858135e771e7ab1d17",
+      "failed_checks": []
+    },
+    {
+      "task": "ordinal.sambanova",
+      "profile": "sambanova",
+      "outcome": "landed",
+      "seconds": 35.553,
+      "served_by": [
+        "SambaNova"
+      ],
+      "worker_attempts": 1,
+      "max_worker_attempts": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "verdict": "pass",
+          "worker_seconds": 8.34,
+          "test_exit_code": 0
+        }
+      ],
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "unanswered": 0,
+        "upstream_status": {
+          "200": 6
+        },
+        "secrets_masked": 0,
+        "identities_masked": 0
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.001,
+        "sandbox_create_attempt": 13.819,
+        "sandbox_create": 13.819,
+        "worker": 8.604,
+        "gateway_ready_recovery": 0.735,
+        "sandbox_restart": 2.251
+      },
+      "changed_files": [
+        "ordinal.py"
+      ],
+      "patch_sha256": "e12c79db16c4e9fab60e16f77e3d170315b8373dc0dac2b8a9887ac8dc67c4df",
+      "failed_checks": []
+    }
+  ],
+  "rulings": [
+    {
+      "contenders": [
+        "roman.cerebras",
+        "roman.sambanova"
+      ],
+      "files": [
+        "roman.py"
+      ],
+      "winner": "roman.cerebras",
+      "reason": "Both pass and are correct; cerebras does exactly what was asked with fewer changes, no extra isinstance check.",
+      "dropped": [
+        "roman.sambanova"
+      ]
+    },
+    {
+      "contenders": [
+        "wrap.cerebras",
+        "wrap.sambanova"
+      ],
+      "files": [
+        "wrap.py"
+      ],
+      "winner": "wrap.cerebras",
+      "reason": "Both pass tests and look correct; cerebras is smaller and lacks sambanova's docstring that wrongly says the width ignores spaces.",
+      "dropped": [
+        "wrap.sambanova"
+      ]
+    },
+    {
+      "contenders": [
+        "csvline.cerebras",
+        "csvline.sambanova"
+      ],
+      "files": [
+        "csvline.py"
+      ],
+      "winner": "csvline.cerebras",
+      "reason": "Both pass tests and behave identically; cerebras does the same RFC 4180 parsing with a slightly smaller change.",
+      "dropped": [
+        "csvline.sambanova"
+      ]
+    },
+    {
+      "contenders": [
+        "duration.cerebras",
+        "duration.sambanova"
+      ],
+      "files": [
+        "duration.py"
+      ],
+      "winner": "duration.cerebras",
+      "reason": "Both pass tests and meet all ValueError cases; cerebras's anchored regex is equally correct with a smaller change.",
+      "dropped": [
+        "duration.sambanova"
+      ]
+    },
+    {
+      "contenders": [
+        "semver.cerebras",
+        "semver.sambanova"
+      ],
+      "files": [
+        "semver.py"
+      ],
+      "winner": "semver.sambanova",
+      "reason": "Both pass tests; sambanova also rejects leading-zero numeric pre-release ids per SemVer 2.0.0, so it is more correct.",
+      "dropped": [
+        "semver.cerebras"
+      ]
+    },
+    {
+      "contenders": [
+        "rle.cerebras",
+        "rle.sambanova"
+      ],
+      "files": [
+        "rle.py"
+      ],
+      "winner": "rle.sambanova",
+      "reason": "Both pass checks and are correct; sambanova fixes decode with minimal edits instead of rewriting it.",
+      "dropped": [
+        "rle.cerebras"
+      ]
+    },
+    {
+      "contenders": [
+        "camel.cerebras",
+        "camel.sambanova"
+      ],
+      "files": [
+        "camel.py"
+      ],
+      "winner": "camel.sambanova",
+      "reason": "Both pass and behave identically; sambanova avoids the redundant lstrip and the trailing blank line.",
+      "dropped": [
+        "camel.cerebras"
+      ]
+    },
+    {
+      "contenders": [
+        "hexcolor.cerebras",
+        "hexcolor.sambanova"
+      ],
+      "files": [
+        "hexcolor.py"
+      ],
+      "winner": "hexcolor.cerebras",
+      "reason": "Both pass and behave identically on all inputs; cerebras's change is slightly smaller (no docstring added), so it wins the tiebreak.",
+      "dropped": [
+        "hexcolor.sambanova"
+      ]
+    },
+    {
+      "contenders": [
+        "humanize.cerebras",
+        "humanize.sambanova"
+      ],
+      "files": [
+        "humanize.py"
+      ],
+      "winner": "humanize.sambanova",
+      "reason": "Both pass tests with equivalent correct logic; sambanova is cleaner with no dead unit_index==0 branch, and passed first try",
+      "dropped": [
+        "humanize.cerebras"
+      ]
+    },
+    {
+      "contenders": [
+        "ordinal.cerebras",
+        "ordinal.sambanova"
+      ],
+      "files": [
+        "ordinal.py"
+      ],
+      "winner": "ordinal.sambanova",
+      "reason": "Both correct and verified; sambanova's patch is identical logic without the stray blank lines cerebras added.",
+      "dropped": [
+        "ordinal.cerebras"
+      ]
+    }
+  ],
+  "integrated": {
+    "changed_files": [
+      "camel.py",
+      "csvline.py",
+      "duration.py",
+      "hexcolor.py",
+      "humanize.py",
+      "interval.py",
+      "ordinal.py",
+      "rle.py",
+      "roman.py",
+      "semver.py",
+      "wrap.py"
+    ],
+    "patch_sha256": "69edbfcc654da83d596a9f2d3670567e488705bf792e5586fdee9072625c4921",
+    "tree": "bb4faaa3da6c6e8c1e9eae951cbb2d3220fdce4d",
+    "verify": [
+      "sh",
+      "-c",
+      "set -e; python -m unittest -q test_roman; python -m unittest -q test_wrap; python -m unittest -q test_interval; python -m unittest -q test_csvline; python -m unittest -q test_duration; python -m unittest -q test_semver; python -m unittest -q test_rle; python -m unittest -q test_camel; python -m unittest -q test_hexcolor; python -m unittest -q test_humanize; python -m unittest -q test_ordinal"
+    ],
+    "passed": true,
+    "seconds": 22.857,
+    "timings_seconds": {
+      "gateway_ready": 1.655,
+      "sandbox_create": 13.186,
+      "sandbox_create_attempt": 13.186
+    },
+    "checks": {
+      "baseline": "pass",
+      "cancellation_descendants": "pass",
+      "cancellation_requested": "pass",
+      "filesystem_denied": "pass",
+      "landlock": "pass",
+      "network_denied": "pass",
+      "provider_path_denied": "pass",
+      "worker_tools": "pass"
+    }
+  }
+}

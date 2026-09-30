@@ -14,8 +14,8 @@ configuration or running brain.
 the latest passes all 18 checks, including request-scoped tool-secret restoration.**
 
 Team runs on the experimental OpenRouter lanes are reported separately under
-[Team results](#team-results): 65 of 68 sandboxed tasks passed in four runs,
-and all four integrated patches were verified in a fresh sandbox. The last two
+[Team results](#team-results): 127 of 134 sandboxed tasks passed in seven runs,
+and all seven integrated patches were verified in a fresh sandbox. The last five
 runs record the clean build they ran from.
 
 The [tool-secret result](results/2026-09-30-tool-secrets.json) on 30 September
@@ -269,16 +269,19 @@ for the MicroVM socket path.
 
 ### Team results
 
-On 30 September 2026, each example team ran twice on the OpenRouter lanes for
-`openai/gpt-oss-120b`, with one repair attempt allowed per task. They used the
-patched MicroVM driver on one Apple M3 Max (16 cores, 128 GB). These lanes are
-experimental, and these results are separate from the NIM results above.
+On 30 September 2026, the example teams ran seven times on the OpenRouter lanes
+for `openai/gpt-oss-120b`: `fixture-12` twice and `fixture-both-lanes` five
+times, with one repair attempt allowed per task. They used the patched MicroVM
+driver on one Apple M3 Max (16 cores, 128 GB). These lanes are experimental, and
+these results are separate from the NIM results above.
 
 The first two runs predate the provenance record in `run.json`. Their binaries'
 build stamps, read afterwards, show Captain built from `186868f` and Shield from
 `5bea2e2`, both from checkouts with uncommitted changes, so no commit names the
-code they ran. The last two ran from clean builds of `22eccb6`, and their
-`run.json` records that.
+code they ran. The next two ran from clean builds of `22eccb6`. The last three
+ran Captain from a clean build of `7925bff` and Shield from `22eccb6`; `7925bff`
+changed only the file times in the worker's payload and was later reverted
+(see below). Their `run.json` records all of that.
 
 | | [fixture-12](results/2026-09-30-team.json) | [fixture-both-lanes](results/2026-09-30-both-lanes.json) | [fixture-12](results/2026-09-30-team-22eccb6.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-22eccb6.json) |
 | --- | ---: | ---: | ---: | ---: |
@@ -294,42 +297,82 @@ code they ran. The last two ran from clean builds of `22eccb6`, and their
 | Model requests through Shield | 91 | 168 | 91 | 165 |
 | Integrated verification in a fresh sandbox | 10 files, 23.8 s | 11 files, 23.6 s | 11 files, 23.0 s | 11 files, 23.8 s |
 
-All four runs passed. On the host, every exported patch matched its report's
+| | [fixture-both-lanes](results/2026-09-30-both-lanes-7925bff-1.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-7925bff-2.json) | [fixture-both-lanes](results/2026-09-30-both-lanes-7925bff-3.json) |
+| --- | ---: | ---: | ---: |
+| Built from | `7925bff`, clean | `7925bff`, clean | `7925bff`, clean |
+| Tasks; sandboxes at once | 22; 8 | 22; 8 | 22; 8 |
+| Passed in their sandbox | 20 | 21 | 21 |
+| Landed / dropped by ruling / failed | 11 / 9 / 2 | 11 / 10 / 1 | 11 / 10 / 1 |
+| Wall time | 238.5 s | 374.2 s | 238.8 s |
+| Sum of task times | 1,168.9 s | 1,374.2 s | 1,118.8 s |
+| Task, median (max) | 57.5 s (65.6) | 47.4 s (297.6) | 45.3 s (79.6) |
+| Sandbox creation, median (max) | 23.1 s (28.8) | 18.6 s (29.7) | 20.6 s (28.1) |
+| Worker, median (max) | 12.6 s (25.7) | 11.2 s (248.8) | 10.4 s (31.0) |
+| Model requests through Shield | 159 | 167 | 168 |
+| Integrated verification in a fresh sandbox | 11 files, 23.7 s | 11 files, 22.9 s | 11 files, 23.5 s |
+
+All seven runs passed. On the host, every exported patch matched its report's
 SHA-256. Applying each `integrated.patch` to a fresh clone reproduced the tree
-the fresh sandbox verified (`5b249cf`, `ee80834`, `12a8efa` and `deefbc0`).
+the fresh sandbox verified (`5b249cf`, `ee80834`, `12a8efa`, `deefbc0`,
+`c407b0d`, `bb4faaa` and `da6eaf8`).
 
 Most of a task's time is the boundary, not the model. The worker's median was
-10-13 seconds of a 49-58-second task. The rest is gateway readiness, sandbox
+10-13 seconds of a 45-58-second task. The rest is gateway readiness, sandbox
 creation, the denial and cancellation tests (which stop and restart the VM),
 the Shield-down refusal and the restart before export. The lone integrated
-verification sandbox was created in 13.3-13.8 seconds. The medians were
-22.1-22.6 seconds with 6 sandboxes at once and 23.2-24.9 with 8. Wall time was
-21-26% of the summed task time.
+verification sandbox was created in 13.2-13.8 seconds. The medians were
+22.1-22.6 seconds with 6 sandboxes at once and 18.6-24.9 with 8. Wall time was
+20-27% of the summed task time. The second `7925bff` run took 374 seconds
+because one worker waited out four HTTP 429 responses (below).
 
-Three tasks failed, all on the SambaNova lane and all on `sandbox_verify` after
+Seven tasks failed, all on the SambaNova lane. Six failed `sandbox_verify` after
 two attempts. `csvline` in the first run raised `SyntaxError` both times.
-`interval` failed in both `fixture-both-lanes` runs with 3 of its 7 tests
-failing; the second time, `merge([(8, 10), (1, 3), (2, 6)])` returned
-`[(8, 10)]`. `interval` passed on Cerebras all four times, and `csvline` passed
-on SambaNova in the other three runs. Of the 65 tasks that passed, 64 passed on
-their first attempt. The repair budget rescued one: `humanize` on Cerebras in
-the second `fixture-12` run failed its first verification and passed after the
-repair. The failed states were kept for inspection.
+`interval` failed in all five `fixture-both-lanes` runs the same way: its only
+edit, identical each time, added a docstring to `merge` and changed no code, and
+the repair attempt edited nothing. The three tests that fail before any edit
+still failed, and `merge([(8, 10), (1, 3), (2, 6)])` still returned
+`[(8, 10)]`. `interval` passed on Cerebras all seven times, and `csvline` passed
+on SambaNova in the other six runs. Of the 127 tasks that passed, 125 passed on
+their first attempt. The repair budget rescued two, both `humanize` on Cerebras,
+in the second `fixture-12` run and the second `7925bff` run. The failed states
+were kept for inspection.
 
-All 515 model requests crossed Shield with the pinned model and provider
-policy, and none were blocked. The lane's pinned provider completed 508 with
-HTTP 200, and no successful response came from another provider. The Cerebras
-lane returned HTTP 429 four times, and Shield delivered each as a provider
-error with no fallback. After the three in the first two runs, OpenCode sent
-its next request about 60 seconds later, and those tasks had the three slowest
-workers (66-71 seconds). After the fourth, it sent its next request 2.2 seconds
-later. Three requests have no response record and were not blocked, one in each
-run except the second. In the clean runs, each was one of the two requests
-OpenCode opens at once when a session starts, and it got HTTP 200 headers but
-no completed response. Task mode plants no secrets, so nothing was masked.
+The seventh, `duration` in the first `7925bff` run, never got an answer.
+OpenCode opens a session with two requests. Shield passed the first, and then
+the TLS link between the sandbox and Shield's middleware failed
+(`SSLV3_ALERT_BAD_RECORD_MAC`, then `TSI_DATA_CORRUPTED`). The sandbox refused
+the second with `403 middleware_failed` and logged a middleware-failure finding.
+The worker stopped on that error after 2.3 seconds, before the first was
+answered. The middleware forks a Shield process
+for every request and response while gRPC serves TLS on other threads. By
+default grpcio 1.84.0 hooks every fork; twice in the 300 milliseconds before the
+corruption it logged that other threads were calling into gRPC and skipped its
+fork handlers. The forked child only runs Shield and never uses gRPC, so the
+middleware now starts with `GRPC_ENABLE_FORK_SUPPORT=0`. A stress test on the
+host drove the real middleware and Shield with 300 request and response cycles
+from 4 threads, each cycle on a new TLS connection. With the default, 8 of 12
+runs logged corruption and 11 of their 3,600 cycles failed. With the setting,
+none of 12 did, and each ran faster than its paired default run (22.5 seconds
+against 26.1 on average). At 20 cycles on 2 threads, neither setting corrupted
+any of 30 runs. TLS and the token checks are unchanged.
 
-The tool-less director made 22 rulings, and none failed. It mostly preferred
-the smaller change. Eight of its rulings were checked by reading the patches:
+All 1,009 model requests crossed Shield with the pinned model and provider
+policy, and none were blocked. The lane's pinned provider completed 987 with
+HTTP 200, and no successful response came from another provider. HTTP 429 came
+back 15 times, 11 on Cerebras and 4 on SambaNova, and Shield delivered each as
+a provider error with no fallback. After the three in the first two runs,
+OpenCode sent its next request about 60 seconds later, and those tasks had the
+three slowest workers of those runs (66-71 seconds). In the second `7925bff`
+run, `roman` on Cerebras got four, and its worker ran 249 seconds. Seven
+requests have no response record and were not blocked. Each was one of the two
+requests OpenCode opens when a session starts. Four got HTTP 200 headers but no
+completed response. Three got nothing: `duration`'s two (above) and one in the
+first run, whose task passed and whose logs were not kept. Task mode plants no
+secrets, so nothing was masked.
+
+The tool-less director made 51 rulings, and none failed. The 22 in the first
+four runs mostly preferred the smaller change, and eight of them were checked
+by reading the patches (the 29 in the `7925bff` runs were not):
 
 - `hexcolor`: the dropped patch checks digits with `int(x, 16)`, which accepts
   a sign or a space: `parse_hex("#-12345")` returns `(-1, 35, 69)`. This holds,
@@ -350,13 +393,28 @@ the smaller change. Eight of its rulings were checked by reading the patches:
 A ruling chooses among candidates that already passed their own tests; it is
 not verification.
 
-With identical prompts on the same lane, 49 of the 78 pairs of passing patches
-across the four runs were byte-identical: SambaNova 33 of 37, Cerebras 16 of
-41. SambaNova returned the same patch in all four runs for `hexcolor`,
-`ordinal`, `rle`, `semver` and `wrap`. No Cerebras and SambaNova patch for the
-same module matched. Every repeat opened with byte-identical requests, but no
-two repeats sent the same sequence of requests, even when they produced the same
-patch. This is an observation, not a determinism test; the lanes stay separate.
+Repeats show where two runs of one task part. Each task ran five or seven
+times on its lane with the same prompt: 352 pairs of the same task on the same
+lane. Of these, 27 involved a repair attempt and 20 opened with different
+requests, which leaves 305 compared step by step. OpenCode gives every tool
+call a random ID and sends it back in the next request, so no two repeats sent
+the same request bytes after their first tool call. Apart from those IDs,
+whenever two workers had seen the same history (prompt, tool calls and tool
+outputs), they gave the same answer: 1,197 of 1,197 steps, on both lanes.
+Every split started outside the model. In 138 pairs it was the first `glob`,
+whose file list OpenCode returns in the order ripgrep's parallel walk finds the
+files. In 11 it was a test run whose output differed only in its numbers, such
+as timings. The 156 pairs that saw the same tool outputs throughout produced
+byte-identical patches, and 25 of the 149 that split still converged on the
+same patch. Failures repeat too: `interval` on SambaNova made the same edit in
+all five runs.
+
+`7925bff` assumed OpenCode lists `glob` results newest first, and gave each
+payload file its own modification time. OpenCode does not sort them: in the
+three runs built from it, the first `glob` still split 31 of 59 compared pairs,
+so it was reverted. The order has to come from ripgrep itself (`--sort=path` in
+the sandbox image). This is an observation on one fixture, not a determinism
+test; the lanes stay separate.
 
 Limits:
 
@@ -370,7 +428,7 @@ Limits:
   not retry without the culprit.
 - The integrated tree has no ref, so `git gc` may prune it; the patch is the
   durable result.
-- These are 68 tasks on one small fixture and one host. They exercise the
+- These are 134 tasks on one small fixture and one host. They exercise the
   harness at 6 and 8 sandboxes at once; they are not a task-success rate or a
   provider ranking.
 
@@ -593,8 +651,9 @@ PYTHONPATH="$pilot_state/generated" PILOT_SHIELD_BIN="$pilot_state/shield" \
 
 Adapter tests cover cancellation on both remote and local deadlines, real Captain masking, malformed input, credential identity,
 JWT expiry/audience/signature, protocol negotiation, closed request/response scope,
-redactor/audit failure, patch validation and checkpoint persistence. These are
-not substitutes for live OpenShell enforcement tests.
+redactor/audit failure, patch validation, checkpoint persistence and a
+middleware started without gRPC fork handlers. These are not substitutes for
+live OpenShell enforcement tests.
 
 Landing regressions cover mismatched exports without modifying the checkout,
 interruptions on either side of atomic replacement, repeated completion in a
