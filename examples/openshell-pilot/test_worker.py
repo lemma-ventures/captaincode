@@ -1,6 +1,9 @@
 import argparse
+import hashlib
 import json
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -79,6 +82,77 @@ class WorkerTests(unittest.TestCase):
               self.assertRaisesRegex(AssertionError, "worker_exit")):
             self.instance.run_worker()
         self.assertEqual(self.instance.report["checks"]["worker_exit"]["verdict"], "fail")
+
+    def test_repair_requires_real_failure_and_preserves_first_attempt(self):
+        self.instance.repair_attempts = 1
+        repo = self.instance.state / "fixture"
+        shutil.copytree(pilot.HERE / "fixture", repo)
+        self.instance.checkpoint["tests_sha256"] = hashlib.sha256((repo / "test_slugify.py").read_bytes()).hexdigest()
+        prompts = []
+
+        def remote(*args, **kwargs):
+            if args[0] == "opencode":
+                prompts.append(args[-1])
+                if len(prompts) == 2:
+                    (repo / "slugify.py").write_text("import re\ndef slugify(text):\n    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')\n")
+                return self.result(b'{"type":"text","part":{"text":"claims success"}}\n')
+            return subprocess.run([sys.executable, *args[1:]], cwd=repo,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=kwargs.get("check", True))
+
+        with patch.object(self.instance, "remote", side_effect=remote):
+            self.instance.edit_and_verify()
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("FAILED (failures=3)", prompts[1])
+        self.assertEqual([row["verdict"] for row in self.instance.report["attempts"]], ["fail", "pass"])
+        self.assertEqual(self.instance.report["worker_attempts"], 2)
+        self.assertEqual(self.instance.report["task_successes"], 0)
+        self.assertEqual(self.instance.checkpoint["phase"], "worker_started")
+        self.assertIn(b"FAILED", (self.instance.state / "sandbox-tests-1.log").read_bytes())
+        self.assertIn(b"OK", (self.instance.state / "sandbox-tests-2.log").read_bytes())
+        for row in self.instance.report["attempts"]:
+            self.assertEqual(row["worker_sha256"], hashlib.sha256((self.instance.state / f'worker-{row["attempt"]}.jsonl').read_bytes()).hexdigest())
+
+    def test_repair_is_opt_in_bounded_and_not_triggered_by_inconclusive_checks(self):
+        self.instance.checkpoint["tests_sha256"] = "0" * 64
+        for budget, code, calls in [(0, 1, 3), (1, 1, 6), (1, 124, 3), (1, 2, 3)]:
+            self.instance.repair_attempts = budget
+            results = [self.result(b"claim\n"), self.result(), self.result(b"FAILED", code)] * 2
+            with (self.subTest(budget=budget, code=code),
+                  patch.object(self.instance, "remote", side_effect=results) as remote,
+                  self.assertRaises((AssertionError, RuntimeError))):
+                self.instance.edit_and_verify()
+            self.assertEqual(remote.call_count, calls)
+
+    def test_changed_tests_do_not_trigger_repair(self):
+        self.instance.repair_attempts = 1
+        self.instance.checkpoint["tests_sha256"] = "0" * 64
+        with (patch.object(self.instance, "remote", side_effect=[self.result(), subprocess.CalledProcessError(1, "hash check")]) as remote,
+              self.assertRaises(subprocess.CalledProcessError)):
+            self.instance.edit_and_verify()
+        self.assertEqual(remote.call_count, 2)
+        self.assertEqual(self.instance.report["worker_attempts"], 1)
+
+    def test_exhausted_budget_does_not_restart_a_fresh_deadline(self):
+        self.instance.repair_attempts = 1
+        self.instance.checkpoint["tests_sha256"] = "0" * 64
+        with (patch.object(self.instance, "remote", side_effect=[self.result(), self.result(), self.result(b"FAILED", 1)]) as remote,
+              patch.object(pilot.time, "monotonic", side_effect=[0, 0, 0, 600, 601, 601]),
+              self.assertRaisesRegex(RuntimeError, "deadline exhausted")):
+            self.instance.edit_and_verify()
+        self.assertEqual(remote.call_count, 3)
+        self.assertEqual(self.instance.report["worker_attempts"], 1)
+
+    def test_repair_budget_is_pinned_across_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            first = pilot.Pilot(state, runtime="vm", repair_attempts=1)
+            first.save()
+            self.assertEqual(pilot.Pilot(state).repair_attempts, 1)
+            with self.assertRaisesRegex(RuntimeError, "repair budget"):
+                pilot.Pilot(state, repair_attempts=0)
+        for value in [-1, 2, True, "1"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                pilot.Pilot(self.instance.state, repair_attempts=value)
 
 
 if __name__ == "__main__":

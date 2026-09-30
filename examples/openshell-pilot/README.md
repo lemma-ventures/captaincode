@@ -141,6 +141,23 @@ credentials stay out of these audit records.
 This profile is experimental. Its live qualification and scale measurements
 must be reported separately from the earlier NIM results above.
 
+### Bounded verification feedback
+
+`--repair-attempts 1` permits one fresh worker invocation after independent
+fixture tests return exit code 1. The default remains zero repairs. Captain
+passes the bounded test output back as evidence, using the same sandbox, model,
+Shield and policy. The second invocation gets only the time left in the original
+600-second worker budget. Tests are hashed before every verification; changed
+tests, worker errors, deadlines and isolation failures do not trigger repairs.
+The task still needs all 18 gates, export recovery and exact landing to pass.
+
+Each invocation records its own transcript and independent test output, hashes,
+exit codes and verdict in `report.json.attempts`. `worker_attempts` includes the
+repair; `worker.jsonl` retains both transcripts. Reports must distinguish tasks
+that passed first try from tasks that needed repair. A later pass does not erase
+an earlier failure. The repair budget is pinned in the checkpoint; resume only
+recovers completed artifacts and never submits an interrupted model call again.
+
 ## Boundary
 
 | Component | Location and authority |
