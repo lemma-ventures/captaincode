@@ -190,14 +190,18 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                     inspect=pb.HttpResponsePreflightInspect(body_mode=2, header_mutations=mutations)))
             elif event == "body" and preflight is not None and not complete:
                 unit = request.body
+                stage = "unit"
                 try:
                     if unit.sequence != 1 or not unit.end_of_stream or unit.WhichOneof("payload") != "data":
                         raise ValueError("invalid whole response unit")
+                    stage = "provider"
                     observed_provider = response_provider(unit.data, self.inference, preflight.status_code)
                     with self.lock:
+                        stage = "restore"
                         body, identities, restored_count = restore_response(
                             unit.data, self.restore, limit, stream_response,
                             tool_secrets=pending[2] if 200 <= preflight.status_code < 300 else None, allowed_tools=pending[3])
+                        stage = "audit"
                         audit = {"at": time.time(), "sandbox_id": preflight.context.sandbox_id,
                                  "request_id": preflight.context.request_id, "phase": "response",
                                  "provider": observed_provider, "upstream_body_sha256": hashlib.sha256(unit.data).hexdigest(),
@@ -210,7 +214,18 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                     yield pb.HttpResponseEventResult(body_result=pb.HttpResponseBodyResult(
                         sequence=unit.sequence, transform=pb.HttpResponseBodyTransform(data=body)))
                 except (ValueError, TypeError, AttributeError, KeyError, OSError,
-                        RecursionError, subprocess.SubprocessError):
+                        RecursionError, subprocess.SubprocessError) as error:
+                    blocked = {"at": time.time(), "sandbox_id": preflight.context.sandbox_id,
+                               "request_id": preflight.context.request_id, "phase": "response_blocked",
+                               "status": preflight.status_code, "stage": stage, "error": type(error).__name__,
+                               "upstream_body_sha256": hashlib.sha256(unit.data).hexdigest(), "bytes": len(unit.data)}
+                    try:
+                        with self.lock, self.audit.open("a") as stream:
+                            stream.write(json.dumps(blocked) + "\n")
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                    except OSError:
+                        pass
                     yield pb.HttpResponseEventResult(body_result=pb.HttpResponseBodyResult(
                         sequence=unit.sequence, block_delivery=pb.HttpResponseBlockDelivery(),
                         reason_code="shield_response_failed"))
