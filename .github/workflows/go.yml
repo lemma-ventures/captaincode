@@ -42,7 +42,7 @@ jobs:
           python-version: '3.12'
       - name: Controller and artifact recovery
         working-directory: examples/openshell-pilot
-        run: python -m unittest test_controller test_pilot test_landing test_worker test_response test_tool_secrets test_profiles -v
+        run: python -m unittest test_controller test_pilot test_landing test_worker test_response test_tool_secrets test_profiles test_task -v
 
   secrets:
     runs-on: ubuntu-latest
