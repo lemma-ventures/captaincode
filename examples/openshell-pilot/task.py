@@ -129,6 +129,26 @@ def extract(archive, target):
         raise RuntimeError("snapshot holds an entry the sandbox payload refuses: " + type(error).__name__) from error
 
 
+def settle_mtimes(root):
+    """Give each regular file its own mtime, newest first in path order.
+
+    git archive stamps every file with the commit time. OpenCode's glob lists
+    files newest first, so the tie fell to ripgrep's parallel walk and the
+    worker's first look at the repository changed from run to run. Upload
+    keeps mtimes, so one second per file fixes the order the worker sees.
+    """
+    files = []
+    for top, _, names in os.walk(root):
+        for name in names:
+            path = Path(top, name)
+            if path.is_file() and not path.is_symlink():
+                files.append(path)
+    files.sort(key=lambda path: path.relative_to(root).as_posix())
+    newest = max((int(path.stat().st_mtime) for path in files), default=0)
+    for rank, path in enumerate(files):
+        os.utime(path, (newest - rank, newest - rank), follow_symlinks=False)
+
+
 def git_commit(repo, message):
     pilot.command(["git", "-c", "user.name=Pilot", "-c", "user.email=pilot@example.invalid", "-c", "commit.gpgsign=false",
                    "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-qm", message], cwd=repo)
@@ -199,6 +219,7 @@ class TaskPilot(pilot.Pilot):
         payload = self.state / "payload"
         (payload / "repo").mkdir(parents=True)
         extract(archive, payload / "repo")
+        settle_mtimes(payload / "repo")
         (payload / "home").mkdir()
         pilot.write_json(payload / "opencode.json", self.opencode_config())
         self.save("snapshot")
