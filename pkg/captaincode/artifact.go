@@ -590,17 +590,58 @@ func changedFilesInWorktree(ctx context.Context, dir, revision string) ([]string
 
 // diffWorktree captures the full unified diff of all changes relative to the
 // base revision, including untracked (new) files. Untracked files are staged
-// as intent-to-add so git diff includes them as additions, then unstaged so
-// the worktree's index is unchanged. The diff is what ApplyIntegrationCandidate
-// replays into the user's workspace.
+// as intent-to-add so git diff includes them as additions - in a scratch copy
+// of the index, never the directory's own. A solo turn captures the user's
+// workspace, and unstaging with `git reset` there threw away whatever the user
+// had staged. The diff is what ApplyIntegrationCandidate replays into the
+// user's workspace.
 func diffWorktree(ctx context.Context, dir, revision string) ([]byte, error) {
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	exec.CommandContext(c, "git", "-C", dir, "add", "-N", ".").Run()
-	defer exec.CommandContext(c, "git", "-C", dir, "reset", "--quiet", "--").Run()
+	index, err := scratchIndex(c, dir)
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(filepath.Dir(index))
+	env := append(os.Environ(), "GIT_INDEX_FILE="+index)
+	add := exec.CommandContext(c, "git", "-C", dir, "add", "-N", ".")
+	add.Env = env
+	if out, err := add.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("git add -N: %v: %s", err, strings.TrimSpace(string(out)))
+	}
 	cmd := exec.CommandContext(c, "git", "-C", dir, "diff", "--binary", "--no-renames", revision, "--")
-	cmd.Dir = dir
+	cmd.Env = env
 	return cmd.Output()
+}
+
+// scratchIndex copies dir's index into a new private temporary directory and
+// returns the copy's path; the caller removes that directory. With no index
+// yet (nothing ever staged) the copy starts empty, as git would.
+func scratchIndex(ctx context.Context, dir string) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--git-path", "index").Output()
+	if err != nil {
+		return "", fmt.Errorf("locate index: %w", err)
+	}
+	src := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(dir, src)
+	}
+	tmp, err := os.MkdirTemp("", "captain-index-")
+	if err != nil {
+		return "", err
+	}
+	index := filepath.Join(tmp, "index")
+	data, err := os.ReadFile(src)
+	if err == nil {
+		err = os.WriteFile(index, data, 0o600)
+	} else if os.IsNotExist(err) {
+		err = nil
+	}
+	if err != nil {
+		os.RemoveAll(tmp)
+		return "", fmt.Errorf("copy index: %w", err)
+	}
+	return index, nil
 }
 
 // CaptureSoloArtifact captures what a solo worker changed in the user's
