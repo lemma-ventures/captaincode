@@ -90,12 +90,13 @@ class ResponseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.events(value)
 
-    def test_invalid_tool_arguments_are_refused(self):
-        for arguments in ["{", "[]", "null"]:
+    def test_invalid_tool_arguments_are_delivered_as_text(self):
+        for arguments in ["{", "[]", "null", '{"path":"a"}{}', '{"path":"\\w"}']:
             value = self.completion()
             value["choices"][0]["message"]["function_call"] = {"name": "read", "arguments": arguments}
-            with self.subTest(arguments=arguments), self.assertRaises((ValueError, TypeError)):
-                self.events(value)
+            with self.subTest(arguments=arguments):
+                rows, _ = self.events(value)
+                self.assertEqual(rows[0]["choices"][0]["delta"]["function_call"]["arguments"], arguments)
 
     def test_input_and_expanded_output_caps_are_enforced(self):
         for size in [5, 22]:

@@ -232,12 +232,12 @@ class ShieldTests(unittest.TestCase):
             list(self.service.Evaluate(iter([self.response_body()]), self.context()))
 
     def test_blocked_response_records_stage_and_error_class_without_content(self):
-        arguments = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "identity-1", "tool_calls": [
-            {"type": "function", "id": "call-1", "function": {"name": "bash", "arguments": "{"}}]},
+        unsupported = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "identity-1", "tool_calls": [
+            {"type": "custom", "id": "call-1", "custom": {"name": "bash", "input": "ls"}}]},
             "finish_reason": "tool_calls"}]}
         cases = [(self.response_body(sequence=2), "unit", "ValueError"),
                  (self.response_body(b"invalid"), "restore", "JSONDecodeError"),
-                 (self.response_body(json.dumps(arguments).encode()), "restore", "JSONDecodeError")]
+                 (self.response_body(json.dumps(unsupported).encode()), "restore", "ValueError")]
         for body, stage, error in cases:
             with self.subTest(stage=stage, error=error):
                 head = self.response_head()
@@ -260,6 +260,21 @@ class ShieldTests(unittest.TestCase):
         audit = self.service.audit.read_text()
         for content in ["identity-1", "[[secret:", "Pilot Person", "unavailable", "invalid", "Expecting"]:
             self.assertNotIn(content, audit)
+
+    def test_unparseable_tool_arguments_are_delivered_without_secrets(self):
+        head = self.response_head()
+        key = (head.preflight.context.sandbox_id, head.preflight.context.request_id)
+        arguments = '{"command": "' + next(iter(self.service.pending[key][2]))
+        value = {"choices": [{"index": 0, "message": {"role": "assistant", "content": "identity-1", "tool_calls": [
+            {"type": "function", "id": "call-1", "function": {"name": "bash", "arguments": arguments}}]},
+            "finish_reason": "tool_calls"}]}
+        results = list(self.service.Evaluate(iter([head, self.response_body(json.dumps(value).encode())]), self.context()))
+        body = results[1].body_result.transform.data
+        delta = json.loads(body.splitlines()[0][6:])["choices"][0]["delta"]
+        self.assertEqual(delta["tool_calls"][0]["function"]["arguments"], arguments)
+        self.assertEqual(delta["content"], "Pilot Person 7d84")
+        self.assertNotIn(m.CANARY.encode(), body)
+        self.assertEqual(json.loads(self.service.audit.read_text().splitlines()[-1])["tool_secrets_restored"], 0)
 
     def test_blocked_response_is_refused_even_when_audit_cannot_be_written(self):
         head = self.response_head()

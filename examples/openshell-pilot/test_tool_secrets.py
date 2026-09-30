@@ -39,6 +39,16 @@ class ToolSecretTests(unittest.TestCase):
         self.assertEqual(json.loads(args), {"command": self.canary})
         self.assertEqual(restored_count, 1)
 
+    def test_unparseable_tool_arguments_never_regain_secrets(self):
+        for arguments in ['{"command": "' + self.handle, encode([self.handle]).decode()]:
+            value = self.completion()
+            value["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = arguments
+            with self.subTest(arguments=arguments):
+                body, _, restored_count = self.restore(value)
+                message = json.loads(body)["choices"][0]["message"]
+                self.assertEqual(message["tool_calls"][0]["function"]["arguments"], arguments)
+                self.assertEqual(restored_count, 0)
+
     def test_unknown_handle_or_unoffered_tool_blocks_delivery(self):
         for options in [{"tool_secrets": {}}, {"tool_secrets": {"[[secret:nvidia:000000]]": self.canary}},
                         {"allowed_tools": {"read"}}, {"allowed_tools": set()}]:

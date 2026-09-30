@@ -27,10 +27,12 @@ def restore_response(body, restore, limit, stream=False, tool_secrets=None, allo
         raise TypeError("expected JSON response")
     for function in functions(value):
         if function.get("arguments"):
-            arguments = json.loads(function["arguments"])
-            if not isinstance(arguments, dict):
-                raise TypeError("tool arguments must be an object")
-            function["arguments"] = arguments
+            try:
+                arguments = json.loads(function["arguments"])
+            except ValueError:
+                continue
+            if isinstance(arguments, dict):
+                function["arguments"] = arguments
     restored, count = restore(value)
     restored_count = 0
     expanded_bytes = 0
