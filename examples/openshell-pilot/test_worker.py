@@ -153,6 +153,10 @@ class WorkerTests(unittest.TestCase):
         for value in [-1, 2, True, "1"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 pilot.Pilot(self.instance.state, repair_attempts=value)
+            self.instance.checkpoint["repair_attempts"] = value
+            self.instance.save()
+            with self.subTest(saved=value), self.assertRaisesRegex(ValueError, "checkpoint repair budget"):
+                pilot.Pilot(self.instance.state)
 
 
 if __name__ == "__main__":
