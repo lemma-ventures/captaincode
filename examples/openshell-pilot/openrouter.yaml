@@ -1,5 +1,5 @@
-id: captain-cerebras-pilot
-display_name: Captain Cerebras pilot
+id: captain-openrouter-pilot
+display_name: Captain OpenRouter pilot
 category: inference
 inference_capable: true
 credentials:

@@ -402,7 +402,7 @@ timeout = "5s"
             raise RuntimeError(key_env + " is required; it is never put in the snapshot or worker environment")
         self.cli_run("profile", "import", "--file", HERE / self.profile["file"])
         provider_env = dict(self.env, **{key_env: os.environ[key_env]})
-        self.cli_run("provider", "create", "--name", "captain-inference", "--type", "captain-" + self.inference + "-pilot", "--from-existing", env=provider_env)
+        self.cli_run("provider", "create", "--name", "captain-inference", "--type", self.profile["type"], "--from-existing", env=provider_env)
         policy = (HERE / "policy.yaml").read_text().replace("integrate.api.nvidia.com", self.profile["host"])
         (self.state / "policy.yaml").write_text(policy)
         self.report["policy_sha256"] = hashlib.sha256(policy.encode()).hexdigest()

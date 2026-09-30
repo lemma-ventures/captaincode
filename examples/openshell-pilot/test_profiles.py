@@ -1,10 +1,13 @@
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pilot
-from profiles import pin_request, profile, response_provider
+from profiles import PROFILES, pin_request, profile, response_provider
 
 
 class ProfileTests(unittest.TestCase):
@@ -36,6 +39,47 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(response_provider(json.dumps({"model": profile("cerebras")["model"],
                          "provider": "Cerebras"}), "cerebras", 200), "Cerebras")
         self.assertIsNone(response_provider(b'{"error":{}}', "cerebras", 503))
+
+    def test_each_lane_pins_one_provider_behind_the_same_openshell_endpoint(self):
+        lanes = {name: profile(name) for name in PROFILES if name != "nim"}
+        self.assertEqual({lane["route"] for lane in lanes.values()},
+                         {"cerebras", "sambanova", "together", "deepinfra/bf16", "crusoe/bf16", "parasail/fp4"})
+        for name, lane in lanes.items():
+            with self.subTest(lane=name):
+                self.assertEqual([lane[key] for key in ("model", "host", "key_env", "file", "type")],
+                                 ["openai/gpt-oss-120b", "openrouter.ai", "OPENROUTER_API_KEY",
+                                  "openrouter.yaml", "captain-openrouter-pilot"])
+                pinned = pin_request({"model": lane["model"], "provider": {"only": ["cerebras", "groq"]}}, name)
+                self.assertEqual(pinned["provider"], {"only": [lane["route"]], "order": [lane["route"]],
+                                 "allow_fallbacks": False, "zdr": True, "data_collection": "deny"})
+                served = json.dumps({"model": lane["model"], "provider": lane["served_by"]})
+                self.assertEqual(response_provider(served, name, 200), lane["served_by"])
+                for other in lanes.values():
+                    if other["served_by"] != lane["served_by"]:
+                        with self.assertRaises(ValueError):
+                            response_provider(json.dumps({"model": lane["model"], "provider": other["served_by"]}),
+                                              name, 200)
+        self.assertEqual(pin_request({"model": "any", "temperature": 1}, "nim"), {"model": "any", "temperature": 1})
+        self.assertIsNone(response_provider(b"not json", "nim", 200))
+        with self.assertRaises(ValueError):
+            pin_request({}, "unlisted")
+
+    def test_lane_sandbox_uses_the_shared_provider_type_without_exposing_the_key(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            instance = pilot.Pilot(Path(temporary), runtime="vm", inference="sambanova")
+            failed = subprocess.CompletedProcess([], 1, b"")
+            with (patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-placeholder"}),
+                  patch.object(instance, "cli_run", return_value=failed) as cli,
+                  self.assertRaisesRegex(RuntimeError, "sandbox creation failed")):
+                instance.create_sandbox()
+            calls = [call.args for call in cli.call_args_list]
+            self.assertEqual(calls[0][-1], pilot.HERE / "openrouter.yaml")
+            self.assertEqual(calls[1][calls[1].index("--type") + 1], "captain-openrouter-pilot")
+            self.assertEqual(cli.call_args_list[1].kwargs["env"]["OPENROUTER_API_KEY"], "test-placeholder")
+            self.assertFalse(any("test-placeholder" in str(arg) for args in calls for arg in args))
+            policy = (instance.state / "policy.yaml").read_text()
+            self.assertIn("openrouter.ai", policy)
+            self.assertNotIn("integrate.api.nvidia.com", policy)
 
     def test_resume_pins_profile_and_snapshot_has_only_placeholder_credentials(self):
         with tempfile.TemporaryDirectory() as temporary:
