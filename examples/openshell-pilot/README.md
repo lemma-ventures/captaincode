@@ -2,13 +2,20 @@
 
 Experimental acceptance harness for one API-backed OpenCode worker, one Git
 snapshot, one OpenShell sandbox, and one edit, test, export and landing cycle.
-It operates on the small `fixture/` repository, not your checkout. It does not
-change Captain's routing, scope declarations, configuration or running brain.
+The fixture pilot operates on the small `fixture/` repository, not your checkout.
+[Task mode](#task-mode-and-captain-openshell) applies the same boundary to a
+task spec, and `captain openshell` runs a team of such sandboxes and returns one
+verified patch. Neither changes Captain's routing, scope declarations,
+configuration or running brain.
 
 ## Current result
 
 **Six bounded MicroVM runs passed with a locally patched OpenShell driver;
 the latest passes all 18 checks, including request-scoped tool-secret restoration.**
+
+Team runs on the experimental OpenRouter lanes are reported separately under
+[Team results](#team-results): 32 of 34 sandboxed tasks passed, and both
+integrated patches were verified in a fresh sandbox.
 
 The [tool-secret result](results/2026-09-30-tool-secrets.json) on 30 September
 2026 completed **1 task from 1 worker attempt**, with zero tool errors. Shield
@@ -169,6 +176,176 @@ repair; `worker.jsonl` retains both transcripts. Reports must distinguish tasks
 that passed first try from tasks that needed repair. A later pass does not erase
 an earlier failure. The repair budget is pinned in the checkpoint; resume only
 recovers completed artifacts and never submits an interrupted model call again.
+
+## Task mode and `captain openshell`
+
+`task.py` applies the pilot's boundary to a task instead of the planted fixture
+bug. A task names a repository revision, a prompt, a verify command, the files
+the worker may change and the files it must leave unchanged. The pilot snapshots
+the revision, runs one worker in one sandbox, and stops at a restart-recovered,
+scope-checked patch with its evidence. It never writes the source repository.
+
+| Field | Rule |
+| --- | --- |
+| `id` | 1-64 letters, digits, dots, dashes or underscores |
+| `repo`, `revision` | The top of a Git worktree and a full commit id; `captain openshell` pins both |
+| `prompt` | 1-16,384 characters; the pilot appends the scope rules and the verify command |
+| `verify` | An argv list of 1-32 arguments, run in the sandbox |
+| `allowed` | 1-64 existing regular files the worker may change |
+| `protected` | Up to 256 existing regular files whose hashes must not change |
+| `baseline` | What `verify` must do at the base revision: `fail` (default), `pass` or `any` |
+| `deadline_seconds`, `verify_seconds` | Worker budget 60-3,600 (default 600); each verification 10-900 (default 120) |
+
+The snapshot is the revision's `git archive`, up to 32 MiB. Its tree must
+reproduce the revision's tree id, so submodules, export attributes and
+case-colliding paths are refused. Edit mode runs 17 checks. The fixture's
+runtime, denial, cancellation, Shield-down and restart gates are unchanged.
+`worker_tools` requires OpenCode's search to list every named file, and
+`protected_unchanged` rehashes protected files before each verification.
+`shield_mediated` requires every model call to cross Shield on the pinned model
+and, on an OpenRouter lane, the pinned provider. `diff_scope` accepts only text
+edits to allowed files that apply to the base revision. Task mode plants no
+synthetic secret, so the fixture's masking and restoration gates do not apply.
+Verify mode starts no worker and makes no model call: it runs the first eight
+checks and the verify command against a tree.
+
+`captain openshell` runs a team of task-mode sandboxes against one pinned
+commit and returns what holds up as one verified patch:
+
+1. It validates the team spec on the host with `task.py`'s rules; unknown fields
+   are errors. Each task adds a `profile` (its lane) and `repair_attempts`
+   (0 or 1) to the fields above; `repo` and `revision` come from the command.
+2. Each task gets a fresh private state with its own copies of the prepared
+   OpenShell binaries and Shield. Up to `--concurrency` (1-8) pilots run at
+   once, each with a minimal environment and a bounded time budget. On SIGINT
+   or SIGTERM, Captain sends every pilot one SIGTERM and gives it three minutes
+   to delete its sandbox.
+3. Captain re-checks every export on the host instead of trusting the sandbox.
+   The report must be this task's, with all 17 checks passed. The patch must
+   match the report's SHA-256, contain only text edits to allowed files, and
+   apply cleanly to the pinned revision. Nothing in the patch runs on the host.
+4. Each surviving patch is applied in its own worktree of the pinned revision
+   and recorded as a manifest: changed files, diff digest and the sandbox's
+   verification. The manifests form one integration candidate, the same path a
+   host worker's diff takes.
+5. Tasks that changed the same files form a conflict group. With
+   `--director none`, nothing in a group lands. With `--director claude`, a
+   tool-less `claude -p` picks one winner per group. It runs in an empty
+   directory with no tools, MCP servers or session persistence, and its reply
+   can only name a contender.
+6. The survivors are replayed into a fresh worktree to produce
+   `integrated.patch`. Its tree is written through a temporary index, with no
+   commit or ref. A verify-mode sandbox then runs every landed task's verify
+   command against that tree, or the team's own `verify` when it names one.
+7. `run.json`, the patches and each task's evidence go to
+   `~/.captaincode/openshell/<run>/`. A passing task's state is deleted and a
+   failed one's is kept. Captain never writes your working tree; apply
+   `integrated.patch` yourself.
+
+The example team works on `team/repo`: 11 small Python modules, each with a
+planted bug and a unittest file that fails at the base revision. `team.json`
+has 12 tasks: one per module on the Cerebras or SambaNova lane, and `semver` on
+both, so its two patches collide. `both-lanes.json` runs every module on both
+lanes: 22 tasks and up to 11 conflict groups. From the repository root, with
+`$pilot_state` prepared as in [Run](#run) with `--runtime vm`, and
+`OPENROUTER_API_KEY` in the environment:
+
+```sh
+demo=$(mktemp -d /tmp/cc-team.XXXXXX)
+cp -R examples/openshell-pilot/team/repo/. "$demo"
+git -C "$demo" init -q
+git -C "$demo" add -A
+git -C "$demo" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
+captain openshell --team examples/openshell-pilot/team/team.json \
+  --pilot "$PWD/examples/openshell-pilot" --prepared "$pilot_state" \
+  --repo "$demo" --concurrency 6 --director claude
+```
+
+Per-task states go under `--state-root` (default `/tmp`), which must stay short
+for the MicroVM socket path.
+
+### Team results
+
+On 30 September 2026, both example teams ran on the OpenRouter lanes for
+`openai/gpt-oss-120b`, with one repair attempt allowed per task. They used the
+patched MicroVM driver on one Apple M3 Max (16 cores, 128 GB). These lanes are
+experimental, and these results are separate from the NIM results above.
+
+| | [fixture-12](results/2026-09-30-team.json) | [fixture-both-lanes](results/2026-09-30-both-lanes.json) |
+| --- | ---: | ---: |
+| Tasks; sandboxes at once | 12; 6 | 22; 8 |
+| Passed in their sandbox | 11 | 21 |
+| Landed / dropped by ruling / failed | 10 / 1 / 1 | 11 / 10 / 1 |
+| Wall time | 186.8 s | 263.4 s |
+| Sum of task times | 712.1 s | 1,227.9 s |
+| Task, median (max) | 50.7 s (104.0) | 58.1 s (115.8) |
+| Sandbox creation, median (max) | 22.6 s (24.6) | 24.9 s (30.7) |
+| Worker, median (max) | 12.7 s (67.1) | 11.0 s (70.7) |
+| Model requests through Shield | 91 | 168 |
+| Integrated verification in a fresh sandbox | 10 files, 23.8 s | 11 files, 23.6 s |
+
+Both runs passed. On the host, every exported patch matched its report's
+SHA-256. Applying `integrated.patch` to a fresh clone reproduced the verified
+tree (`5b249cf` and `ee80834`), and the landed modules' tests passed.
+
+Most of a task's time is the boundary, not the model. The worker's median was
+11-13 seconds of a 51-58-second task. The rest is gateway readiness, sandbox
+creation, the denial and cancellation tests (which stop and restart the VM),
+the Shield-down refusal and the restart before export. The lone integrated
+verification sandbox was created in 13.7 seconds. The medians were 22.6 seconds
+with 6 sandboxes at once and 24.9 with 8. Wall time was 26% and 21% of the
+summed task time.
+
+Two tasks failed, both on the SambaNova lane and both on `sandbox_verify` after
+two attempts. `csvline` in the first run raised `SyntaxError` both times.
+`interval` in the second run ended with 3 of its 7 tests failing. Each prompt
+passed elsewhere: `csvline` on the same lane in the second run, `interval` on
+Cerebras in both runs. All 32 passing tasks passed on their first attempt, so
+the repair budget rescued none. Both failed states were kept for inspection.
+
+All 259 model requests crossed Shield with the pinned model and provider
+policy, and none were blocked. The lane's pinned provider answered 255 with
+HTTP 200. The Cerebras lane returned HTTP 429 three times: twice at 6 sandboxes
+and once at 8. Shield delivered these as provider errors with no fallback, and
+OpenCode sent its next request about 60 seconds later. Those three tasks had
+the three slowest workers (66-71 seconds). One request in the first run has no
+response record and was not blocked. Task mode plants no secrets, so nothing
+was masked.
+
+The tool-less director made 11 rulings, and none failed. It mostly preferred
+the smaller change. Three of its claims were checked by reading the patches:
+
+- `csvline`: the dropped patch opens quoting at a quote in the middle of a field
+  and can swallow commas. This holds, and the tests do not cover it.
+- `roman`: the dropped patch refuses inputs the original accepted. This holds:
+  `4.0` is now refused.
+- `camel`: it kept the leading underscore of `_fooBar`, although the prompt
+  says the result never starts with one. This was a judgment call.
+
+A ruling chooses among candidates that already passed their own tests; it is
+not verification.
+
+With identical prompts on the same lane, 7 of the 11 pairs that passed in both
+runs produced byte-identical patches: SambaNova 5 of 5, Cerebras 2 of 6.
+No Cerebras and SambaNova patch for the same module matched. Shield's request
+hashes differ between the runs, so this is an observation, not a determinism
+test; the lanes stay separate.
+
+Limits:
+
+- Only text edits to existing regular files land: no new, deleted or renamed
+  files, mode changes or binaries.
+- There is one winner per conflict group; overlapping patches are never merged.
+- The director sees each patch truncated to 2,000 characters and the worker's
+  unverified report.
+- A change that breaks another landed task through a different file is caught
+  only by the integrated verification. That failure fails the run; Captain does
+  not retry without the culprit.
+- The integrated tree has no ref, so `git gc` may prune it; the patch is the
+  durable result.
+- These are 34 tasks on one small fixture and one host. They exercise the
+  harness at 6 and 8 sandboxes at once; they are not a task-success rate or a
+  provider ranking.
 
 ## Boundary
 
@@ -409,6 +586,15 @@ refusal, offered-tool restrictions, JSON escaping, colliding keys, bounded
 expansion, and keeping secrets out of prose, reasoning, errors and audits.
 The standard-library
 response tests also run in CI.
+
+Task-mode regressions cover spec validation and bounds, patch scope, snapshot
+pinning and refused sources, protected files, baseline expectations, worker-tool
+visibility, Shield mediation on the pinned model and provider, the repair loop,
+recovery export and verify mode. They also check that every example team task
+is valid and fails at the base revision; these tests run in CI. Captain's side,
+`go test ./pkg/captaincode -run 'OpenShell|ShellJoin|ToolLessClaude'`, drives a
+fake pilot through landing, conflicts with and without a director, a failing
+integrated tree, cancellation and refused setups.
 Python lint runs with
 `ruff check examples/openshell-pilot`; Go checks use `go vet ./...` and the
 Shield test command above.

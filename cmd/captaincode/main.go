@@ -211,6 +211,9 @@ func main() {
 		case "release":
 			cmdRelease(args[1:])
 			return
+		case "openshell": // sandboxed team runs (openshell_cmd.go)
+			cmdOpenShell(args[1:])
+			return
 		}
 	}
 
