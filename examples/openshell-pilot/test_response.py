@@ -28,7 +28,7 @@ class ResponseTests(unittest.TestCase):
                 "usage": {"total_tokens": 9007199254740993}}
 
     def events(self, value):
-        output, count = restore_response(encode(value), self.restore, 1 << 20, stream=True)
+        output, count, _ = restore_response(encode(value), self.restore, 1 << 20, stream=True)
         self.assertTrue(output.endswith(b"data: [DONE]\n\n"))
         return [json.loads(line[6:]) for line in output.splitlines()
                 if line.startswith(b"data: ") and line != b"data: [DONE]"], count
@@ -66,7 +66,7 @@ class ResponseTests(unittest.TestCase):
     def test_json_and_legacy_function_arguments_are_restored_without_stream_bridge(self):
         value = self.completion()
         value["choices"][0]["message"]["function_call"] = {"name": "read", "arguments": '{"name":"identity-1"}'}
-        output, count = restore_response(encode(value), self.restore, 1 << 20)
+        output, count, _ = restore_response(encode(value), self.restore, 1 << 20)
         restored = json.loads(output)
         self.assertEqual(count, 3)
         self.assertEqual(restored["object"], "chat.completion")
@@ -74,7 +74,7 @@ class ResponseTests(unittest.TestCase):
 
     def test_provider_errors_remain_json_with_secret_placeholders(self):
         value = {"error": {"message": "identity-1 [[secret:nvidia:123456]]"}}
-        output, count = restore_response(encode(value), self.restore, 1024)
+        output, count, _ = restore_response(encode(value), self.restore, 1024)
         self.assertEqual(count, 1)
         self.assertEqual(json.loads(output)["error"]["message"], 'Pilot "Person" 7d84 [[secret:nvidia:123456]]')
 
