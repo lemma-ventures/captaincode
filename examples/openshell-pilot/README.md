@@ -109,8 +109,9 @@ unavailable kernel feature stops the pilot without reducing enforcement.
 
 ## Pinned provider comparison
 
-The optional `--profile cerebras` selects `openai/gpt-oss-120b` through
-OpenRouter using `OPENROUTER_API_KEY`. The default remains `--profile nim`.
+The optional OpenRouter lanes select `openai/gpt-oss-120b` using
+`OPENROUTER_API_KEY`: `--profile cerebras`, `sambanova`, `together`,
+`deepinfra`, `crusoe` or `parasail`. The default remains `--profile nim`.
 It uses the identical fixture, deadline, Shield and 18 acceptance checks.
 The output cap is 16,384 tokens for this reasoning model, compared with 4,096
 for the NIM profile; reports record that difference. Shield bounds the request
@@ -118,19 +119,22 @@ limit even when the worker asks for more.
 Select the profile on the initial `pilot.py` invocation; resume recovers it from
 the checkpoint and refuses a different profile.
 
-For Cerebras, Shield replaces caller-supplied routing with `only` and `order`
-set to `cerebras`, `allow_fallbacks: false`, `data_collection: deny`, `zdr: true`
-and `temperature: 0`. Alternate model-routing fields are refused. A successful
-response must identify both the expected model and `Cerebras`, or Shield blocks
-its delivery. These are enforced routing requirements and provider-reported
-metadata, not independent proof of the provider's retention or determinism.
+Each lane pins one upstream provider. Shield replaces caller-supplied routing
+with `only` and `order` set to the lane's provider (`cerebras`, `sambanova`,
+`together`, `deepinfra/bf16`, `crusoe/bf16` or `parasail/fp4`),
+`allow_fallbacks: false`, `data_collection: deny`, `zdr: true` and
+`temperature: 0`. Alternate model-routing fields are refused. A successful
+response must identify both the expected model and the lane's provider name,
+or Shield blocks its delivery. These are enforced routing requirements and
+provider-reported metadata, not independent proof of the provider's retention
+or determinism.
 The pilot does not claim ADI green status or reproducible agent trajectories.
 
 Shield requests `Accept-Encoding: identity` so bounded response inspection can
 run. A provider that still sends an unsupported compressed response is refused.
 
 Only POSTs to `/api/v1/chat/completions` on `openrouter.ai` are permitted for
-this profile; NIM egress is absent. The provider secret remains in OpenShell's
+these lanes; NIM egress is absent. The provider secret remains in OpenShell's
 credential store. The historical report key `nim_path_denied` now records the
 selected provider's forbidden `/models` path, preserving existing consumers.
 Reports bind the profile, model and generated policy hash. Each Shield request
@@ -138,7 +142,15 @@ audit records the enforced provider policy and exact masked request hash; paired
 responses record the upstream body hash and confirmed provider. Payloads and
 credentials stay out of these audit records.
 
-This profile is experimental. Its live qualification and scale measurements
+All lanes share one OpenShell provider profile, `captain-openrouter-pilot`:
+the same credential, host and path rule. OpenShell enforces the endpoint;
+Shield decides which provider behind it may serve the request. A controller can
+therefore spread concurrent sandboxes across providers instead of queueing them
+behind one provider's rate limit. Each lane is a different serving path, with
+its own hardware, quantization and stack, so reports and audits keep the lane
+for every task. Results from different lanes are not pooled as one serving tuple.
+
+These lanes are experimental. Their live qualification and scale measurements
 must be reported separately from the earlier NIM results above.
 
 ### Bounded verification feedback
