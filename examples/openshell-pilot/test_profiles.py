@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pilot
-from profiles import PROFILES, pin_request, profile, response_provider
+from profiles import PROFILES, canonical_calls, pin_request, profile, response_provider
 
 
 class ProfileTests(unittest.TestCase):
@@ -26,6 +26,48 @@ class ProfileTests(unittest.TestCase):
                 pin_request(dict(request, max_tokens=limit), "cerebras")
         with self.assertRaises(ValueError):
             pin_request(dict(request, max_completion_tokens=999999), "cerebras")
+
+    def test_tool_call_ids_are_renamed_in_first_use_order(self):
+        def history(first, second):
+            return {"model": "m", "messages": [
+                {"role": "user", "content": "go"},
+                {"role": "assistant", "content": None, "tool_calls": [
+                    {"id": first, "type": "function", "function": {"name": "glob", "arguments": "{}"}},
+                    {"id": second, "type": "function", "function": {"name": "read", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": second, "content": "b"},
+                {"role": "tool", "tool_call_id": first, "content": "a"}]}
+        original = history("call_x9Qa", "toolu_77")
+        renamed, count = canonical_calls(original)
+        self.assertEqual(count, 2)
+        self.assertEqual(json.dumps(renamed), json.dumps(canonical_calls(history("call_2", "call_1"))[0]))
+        self.assertEqual([call["id"] for call in renamed["messages"][1]["tool_calls"]], ["call_1", "call_2"])
+        self.assertEqual([message["tool_call_id"] for message in renamed["messages"][2:]], ["call_2", "call_1"])
+        self.assertEqual(original["messages"][1]["tool_calls"][0]["id"], "call_x9Qa")
+        self.assertEqual(canonical_calls(renamed), (renamed, 2))
+
+    def test_reused_call_ids_stay_equal_and_bodies_without_calls_are_unchanged(self):
+        call = {"id": "functions.read:0", "type": "function", "function": {"name": "read", "arguments": "{}"}}
+        reused = {"messages": [{"role": "assistant", "tool_calls": [call]},
+                               {"role": "tool", "tool_call_id": "functions.read:0", "content": "a"},
+                               {"role": "assistant", "tool_calls": [call]},
+                               {"role": "tool", "tool_call_id": "functions.read:0", "content": "b"}]}
+        renamed, count = canonical_calls(reused)
+        self.assertEqual(count, 1)
+        self.assertEqual({message.get("tool_call_id") or message["tool_calls"][0]["id"]
+                          for message in renamed["messages"]}, {"call_1"})
+        plain = {"model": "m", "messages": [{"role": "user", "content": "go"},
+                                            {"role": "assistant", "content": "done", "tool_calls": None}]}
+        self.assertEqual(canonical_calls(plain), (plain, 0))
+        self.assertEqual(canonical_calls({"model": "m"}), ({"model": "m"}, 0))
+
+    def test_malformed_tool_calls_are_refused(self):
+        for messages in [{"role": "user"}, [{"role": "assistant", "tool_calls": {"id": "a"}}],
+                         [{"role": "assistant", "tool_calls": ["a"]}],
+                         [{"role": "assistant", "tool_calls": [{"id": 7, "type": "function"}]}],
+                         [{"role": "assistant", "tool_calls": [{"id": None, "type": "function"}]}],
+                         [{"role": "tool", "tool_call_id": ["a"], "content": "x"}]]:
+            with self.subTest(messages=messages), self.assertRaises(ValueError):
+                canonical_calls({"model": "m", "messages": messages})
 
     def test_alternate_model_paths_and_unconfirmed_serving_tuple_are_refused(self):
         for request in [{"model": "other"}, {"model": profile("cerebras")["model"], "models": []},

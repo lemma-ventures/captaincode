@@ -42,6 +42,38 @@ def pin_request(body, name):
     return body
 
 
+def canonical_calls(body):
+    """Rename tool-call IDs to call_1, call_2... in order of first use.
+
+    Workers and providers mint random IDs, so two runs with the same history
+    would otherwise send different bytes from the second request on. Renaming
+    is one-to-one within the request, so each result stays paired with its call.
+    """
+    if "messages" not in body:
+        return body, 0
+    if type(body["messages"]) is not list:
+        raise ValueError("messages must be a list")
+    names = {}
+
+    def rename(value):
+        if type(value) is not str:
+            raise ValueError("tool call IDs must be strings")
+        return names.setdefault(value, f"call_{len(names) + 1}")
+
+    messages = []
+    for message in body["messages"]:
+        if type(message) is dict and message.get("tool_calls") is not None:
+            calls = message["tool_calls"]
+            if type(calls) is not list or any(type(call) is not dict for call in calls):
+                raise ValueError("tool calls must be a list of objects")
+            message = dict(message, tool_calls=[dict(call, id=rename(call["id"])) if "id" in call else call
+                                                for call in calls])
+        if type(message) is dict and "tool_call_id" in message:
+            message = dict(message, tool_call_id=rename(message["tool_call_id"]))
+        messages.append(message)
+    return dict(body, messages=messages), len(names)
+
+
 def response_provider(data, name, status):
     selected = profile(name)
     if "served_by" not in selected or not 200 <= status < 300:

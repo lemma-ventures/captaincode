@@ -13,7 +13,7 @@ import grpc
 import jwt
 import supervisor_middleware_pb2 as pb
 import supervisor_middleware_pb2_grpc as rpc
-from profiles import PROFILES, pin_request, profile, response_provider
+from profiles import PROFILES, canonical_calls, pin_request, profile, response_provider
 from response import encode, restore_response
 
 LIMIT = 4 * 1024 * 1024
@@ -98,7 +98,7 @@ class Shield(rpc.SupervisorMiddlewareServicer):
             stream_response = original.get("stream", False)
             if type(stream_response) is not bool or not request.context.request_id:
                 raise ValueError()
-            upstream = pin_request(dict(original, stream=False), self.inference)
+            upstream, call_ids = canonical_calls(pin_request(dict(original, stream=False), self.inference))
             upstream.pop("stream_options", None)
             with self.lock:
                 now = time.monotonic()
@@ -115,7 +115,8 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                 event = {"at": time.time(), "sandbox_id": request.context.sandbox_id,
                          "request_id": request.context.request_id, "inference": self.inference, "model": self.model,
                          "provider_policy": upstream.get("provider"), "secrets": masked["secrets"],
-                         "identities": masked["identities"], "body_sha256": hashlib.sha256(body).hexdigest(),
+                         "identities": masked["identities"], "call_ids": call_ids,
+                         "body_sha256": hashlib.sha256(body).hexdigest(),
                          "canary_masked": CANARY.encode() in request.body,
                          "tool_canary_masked": any(m.get("role") == "tool" and CANARY in json.dumps(m)
                                                   for m in original.get("messages", []))}

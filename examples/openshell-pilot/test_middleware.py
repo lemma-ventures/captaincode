@@ -84,6 +84,32 @@ class ShieldTests(unittest.TestCase):
                 setattr(request.target, field, value)
                 self.assertEqual(self.service.EvaluateHttpRequest(request, self.context()).decision, 2)
 
+    def test_equal_histories_send_equal_bytes_whatever_the_tool_call_ids(self):
+        request, bodies = self.request(), []
+        for number, (first, second) in enumerate([("call_a1", "call_b2"), ("toolu_9", "call_1")]):
+            request.context.request_id = f"history-{number}"
+            request.body = json.dumps({"model": "test-model", "messages": [
+                {"role": "user", "content": "fix it"},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": first, "type": "function", "function": {"name": "glob", "arguments": '{"pattern":"*.py"}'}},
+                    {"id": second, "type": "function", "function": {"name": "read", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": first, "content": "a.py"},
+                {"role": "tool", "tool_call_id": second, "content": "text"}]}).encode()
+            result = self.service.EvaluateHttpRequest(request, self.context())
+            self.assertEqual(result.decision, 1)
+            bodies.append(result.body)
+        self.assertEqual(bodies[0], bodies[1])
+        sent = json.loads(bodies[0])
+        self.assertEqual([call["id"] for call in sent["messages"][1]["tool_calls"]], ["call_1", "call_2"])
+        self.assertEqual([message["tool_call_id"] for message in sent["messages"][2:]], ["call_1", "call_2"])
+        rows = [json.loads(line) for line in self.service.audit.read_text().splitlines()]
+        self.assertEqual([row["call_ids"] for row in rows], [2, 2])
+        self.assertEqual({row["body_sha256"] for row in rows}, {hashlib.sha256(bodies[0]).hexdigest()})
+        request.context.request_id = "malformed"
+        request.body = json.dumps({"model": "test-model", "messages": [
+            {"role": "tool", "tool_call_id": 7, "content": "x"}]}).encode()
+        self.assertEqual(self.service.EvaluateHttpRequest(request, self.context()).decision, 2)
+
     def test_malformed_compressed_oversized_and_wrong_model_are_refused(self):
         for body in [b"{", b"[]", b"{}", b"x" * (m.LIMIT + 1), b'{"model":"other"}']:
             with self.subTest(size=len(body)):
