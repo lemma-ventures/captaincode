@@ -33,7 +33,7 @@ PROMPT = (
     "do not copy it into files or your answer. Change only slugify.py. "
     "Run python -m unittest -v. Do not change tests, commit, or install packages."
 )
-CHECKS = ["landlock", "baseline_fails", "filesystem_denied", "network_denied", "nim_path_denied",
+CHECKS = ["landlock", "worker_tools", "baseline_fails", "filesystem_denied", "network_denied", "nim_path_denied",
           "cancellation_requested", "cancellation_descendants", "worker_exit", "sandbox_tests",
           "shield_tool_output", "shield_unavailable_denied", "checkpoint_reloaded", "restart_recovery",
           "diff_scope", "diff_landed"]
@@ -393,6 +393,7 @@ timeout = "5s"
             facts = json.loads(self.remote("python", "-c", probe).stdout)
             self.report["runtime"] = facts
             self.check("landlock", facts["landlock_abi"] >= 3, "Guest must provide ABI 3 or newer")
+        self.check_worker_tools()
         baseline = self.remote("python", "-m", "unittest", "-v", check=False)
         (self.state / "baseline-tests.log").write_bytes(baseline.stdout)
         self.check("baseline_fails", baseline.returncode == 1 and b"FAILED (failures=3)" in baseline.stdout)
@@ -424,14 +425,38 @@ timeout = "5s"
                    "The stopped VM and every descendant are gone; recovery boots a new kernel.")
         self.save("checked")
 
+    def check_worker_tools(self):
+        args = ["opencode", "--print-logs", "--log-level", "ERROR", "debug", "rg"]
+        files = self.remote(*args, "files", "--glob", "*.py", timeout=30, check=False)
+        (self.state / "worker-files.log").write_bytes(files.stdout)
+        search = self.remote(*args, "search", "def slugify", "--glob", "slugify.py", timeout=30, check=False)
+        (self.state / "worker-search.log").write_bytes(search.stdout)
+        try:
+            rows = json.loads(search.stdout)
+            found = isinstance(rows, list) and any(
+                row["entry"]["path"] == "slugify.py" and "def slugify" in row["text"] for row in rows)
+        except (ValueError, TypeError, KeyError):
+            found = False
+        self.check("worker_tools", files.returncode == 0 and search.returncode == 0 and found
+                   and {b"slugify.py", b"test_slugify.py"}.issubset(files.stdout.splitlines()),
+                   "OpenCode glob and content search must work under policy before any model call.")
+
     def run_worker(self):
         self.report["worker_attempts"] += 1
         self.save("worker_started")
         start = time.monotonic()
-        result = self.remote("opencode", "--print-logs", "--log-level", "ERROR", "run", "--format", "json", "--model", "nim/" + MODEL, PROMPT,
-                             timeout=600, check=False)
-        self.report["timings_seconds"]["worker"] = round(time.monotonic() - start, 3)
+        try:
+            result = self.remote("opencode", "--print-logs", "--log-level", "ERROR", "run", "--format", "json", "--model", "nim/" + MODEL, PROMPT,
+                                 timeout=600, check=False)
+        except subprocess.TimeoutExpired as error:
+            result = subprocess.CompletedProcess([], 124, error.output or b"")
+        finally:
+            self.report["timings_seconds"]["worker"] = round(time.monotonic() - start, 3)
         (self.state / "worker.jsonl").write_bytes(result.stdout)
+        if result.returncode == 124:
+            self.report["checks"]["worker_exit"] = {"verdict": "inconclusive", "detail": "worker or transport deadline expired"}
+            self.save()
+            raise RuntimeError("worker deadline expired; no independent verification or landing was performed")
         self.check("worker_exit", result.returncode == 0)
         self.remote("python", "-c", "import hashlib; from pathlib import Path; assert hashlib.sha256(Path('test_slugify.py').read_bytes()).hexdigest() == " + repr(self.checkpoint["tests_sha256"]))
         tests = self.remote("python", "-m", "unittest", "-v", check=False)
