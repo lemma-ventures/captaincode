@@ -1,6 +1,6 @@
 # OpenShell pilot
 
-Experimental acceptance harness for one NIM-backed OpenCode worker, one Git
+Experimental acceptance harness for one API-backed OpenCode worker, one Git
 snapshot, one OpenShell sandbox, and one edit, test, export and landing cycle.
 It operates on the small `fixture/` repository, not your checkout. It does not
 change Captain's routing, scope declarations, configuration or running brain.
@@ -107,6 +107,40 @@ driver is an explicit local build, not a replacement downloaded automatically.
 The Docker backend still requires working Landlock ABI 3 or newer; an
 unavailable kernel feature stops the pilot without reducing enforcement.
 
+## Pinned provider comparison
+
+The optional `--profile cerebras` selects `openai/gpt-oss-120b` through
+OpenRouter using `OPENROUTER_API_KEY`. The default remains `--profile nim`.
+It uses the identical fixture, deadline, Shield and 18 acceptance checks.
+The output cap is 16,384 tokens for this reasoning model, compared with 4,096
+for the NIM profile; reports record that difference. Shield bounds the request
+limit even when the worker asks for more.
+Select the profile on the initial `pilot.py` invocation; resume recovers it from
+the checkpoint and refuses a different profile.
+
+For Cerebras, Shield replaces caller-supplied routing with `only` and `order`
+set to `cerebras`, `allow_fallbacks: false`, `data_collection: deny`, `zdr: true`
+and `temperature: 0`. Alternate model-routing fields are refused. A successful
+response must identify both the expected model and `Cerebras`, or Shield blocks
+its delivery. These are enforced routing requirements and provider-reported
+metadata, not independent proof of the provider's retention or determinism.
+The pilot does not claim ADI green status or reproducible agent trajectories.
+
+Shield requests `Accept-Encoding: identity` so bounded response inspection can
+run. A provider that still sends an unsupported compressed response is refused.
+
+Only POSTs to `/api/v1/chat/completions` on `openrouter.ai` are permitted for
+this profile; NIM egress is absent. The provider secret remains in OpenShell's
+credential store. The historical report key `nim_path_denied` now records the
+selected provider's forbidden `/models` path, preserving existing consumers.
+Reports bind the profile, model and generated policy hash. Each Shield request
+audit records the enforced provider policy and exact masked request hash; paired
+responses record the upstream body hash and confirmed provider. Payloads and
+credentials stay out of these audit records.
+
+This profile is experimental. Its live qualification and scale measurements
+must be reported separately from the earlier NIM results above.
+
 ## Boundary
 
 | Component | Location and authority |
@@ -115,7 +149,7 @@ unavailable kernel feature stops the pilot without reducing enforcement.
 | Worker and tests | OpenShell sandbox; fresh OpenCode process, no shared host server |
 | NIM credential | OpenShell's encrypted credential store; workload receives a placeholder |
 | Shield | Host middleware; authenticates gateway/supervisor JWTs over verified TLS, calls Captain's existing redaction engine |
-| Network | Only approved binaries may POST to NVIDIA's chat-completions path; all other destinations are denied |
+| Network | Only approved binaries may POST to the selected provider's chat-completions path; all other destinations are denied |
 | Files | `/sandbox` and runtime scratch paths are writable; system paths have explicit read access; `/outside` is excluded |
 | Landing | Only the bounded text edit to the fixture's existing `slugify.py` is accepted |
 

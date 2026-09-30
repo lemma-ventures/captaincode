@@ -1,0 +1,22 @@
+id: captain-cerebras-pilot
+display_name: Captain Cerebras pilot
+category: inference
+inference_capable: true
+credentials:
+  - name: api_key
+    env_vars: [OPENROUTER_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: openrouter.ai
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    rules:
+      - allow:
+          method: POST
+          path: /api/v1/chat/completions
+binaries: [/usr/local/bin/opencode, /usr/bin/curl]
