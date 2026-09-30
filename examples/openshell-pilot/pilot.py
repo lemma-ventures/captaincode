@@ -291,8 +291,10 @@ class Pilot:
         client_dir.mkdir(parents=True, exist_ok=True)
         for source, name in [("ca.crt", "ca.crt"), ("client/tls.crt", "tls.crt"), ("client/tls.key", "tls.key")]:
             shutil.copyfile(certs / source, client_dir / name)
+        # The middleware forks Shield while gRPC serves TLS on other threads. With gRPC's fork
+        # handlers on (the default), records sometimes corrupted (BAD_RECORD_MAC); the child only execs.
         shader_env = dict(self.env, PYTHONPATH=str(self.state / "generated"), HOME=str(self.state / "shield-home"),
-                          CAPTAIN_REDACT_IDENTITY=IDENTITY_CANARY)
+                          CAPTAIN_REDACT_IDENTITY=IDENTITY_CANARY, GRPC_ENABLE_FORK_SUPPORT="0")
         (self.state / "shield-home").mkdir(exist_ok=True)
         self.middleware = self.spawn([self.state / "venv/bin/python", HERE / "middleware.py", "--state", self.state,
                                       "--port", str(self.checkpoint["middleware_port"]), "--model", self.model, "--profile", self.inference],
