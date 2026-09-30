@@ -107,6 +107,18 @@ class PilotTests(unittest.TestCase):
             instance.preflight()
         run.assert_not_called()
 
+    def test_middleware_runs_without_grpc_fork_handlers(self):
+        instance = pilot.Pilot(self.repo / "vm", runtime="vm")
+        for name in ["ca.crt", "server/tls.crt", "client/tls.crt", "client/tls.key"]:
+            path = instance.state / "certs" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("test\n")
+        with patch.object(instance, "spawn", side_effect=RuntimeError("stop")) as spawn, self.assertRaisesRegex(RuntimeError, "stop"):
+            instance.start_services()
+        argv, log, env = spawn.call_args.args
+        self.assertEqual((Path(argv[1]).name, log), ("middleware.py", "middleware.log"))
+        self.assertEqual(env["GRPC_ENABLE_FORK_SUPPORT"], "0")
+
 
 if __name__ == "__main__":
     unittest.main()
