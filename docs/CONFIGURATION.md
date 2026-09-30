@@ -604,7 +604,7 @@ a single model runs it in all three bands, at that band's effort.
 |---|---|---|---|
 | `claude` | `sonnet` (Sonnet 5) | Claude Code default (Opus 5.5) | `opus` at max |
 | `codex-cli` | `gpt-6-sol` | `gpt-6-astra` | `gpt-6-astra` at xhigh |
-| `codex` | `gpt-6-luna` | `gpt-6-sol-fast` | `gpt-6-astra` |
+| `codex` | `gpt-6-luna` | `gpt-6.1-sol-fast` | `gpt-6-astra` |
 | `cursor` | `composer-2.5` | `grok-4.7-<effort>` | `grok-4.7-xhigh` |
 | `grok` | `grok-build-0.1` | `grok-build-0.1` | `grok-4.7` |
 | `gemini` | `gemini-3.5-flash-lite` | `gemini-3.7-flash` | `gemini-3.8-flash` |
@@ -632,14 +632,17 @@ OpenAI's GPT-6 family covers three tiers on one ChatGPT login, as three legs:
 | Tier | Leg | Model | Override |
 |---|---|---|---|
 | Cheap | `luna` | `gpt-6-luna` | `CAPTAIN_LUNA_MODEL` |
-| Quality | `codex` | `gpt-6-sol-fast` (directs as `gpt-6-sol`) | `CAPTAIN_CODEX_MODEL` |
+| Quality | `codex` | `gpt-6.1-sol-fast` (directs as `gpt-6.1-sol`) | `CAPTAIN_CODEX_MODEL` |
 | Frontier | `codex-cli` | `gpt-6-astra` through `codex exec` | `CAPTAIN_CODEX_CLI_MODEL` |
 
 All three draw on the same subscription windows. `codex` runs Sol in fast
 mode for interactive latency, which draws that quota at twice the rate;
-`CAPTAIN_CODEX_MODEL=gpt-6-sol` trades the speed back for quota. Until
-Artificial Analysis scores GPT-6 Sol and Luna, the ranking reads their GPT-5.6
-rows.
+`CAPTAIN_CODEX_MODEL=gpt-6.1-sol` trades the speed back for quota. Until
+Artificial Analysis scores GPT-6.1 Sol, the ranking reads the GPT-6 Sol row.
+
+`codex-cli` stays on Astra. On 2026-09-30, `codex exec` refused `gpt-6.1-sol`
+for ChatGPT accounts ("not supported when using Codex with a ChatGPT
+account"), while opencode, which the `codex` leg runs through, served it.
 
 ### Effort
 

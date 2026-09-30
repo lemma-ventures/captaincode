@@ -332,10 +332,10 @@ func applyLegModelEnv() {
 // cursorFrontierModel().
 var directorModels = map[Leg]struct{ Provider, Model string }{
 	LegGrok: {"xai", "grok-4.7"},
-	// gpt-6-sol, the standard-speed twin of the worker's gpt-6-sol-fast: a
-	// judge answers in one short turn, so fast mode would only double the
-	// quota it draws (2026-09-22; gpt-5.5 before).
-	LegCodex: {"openai", "gpt-6-sol"},
+	// gpt-6.1-sol, the standard-speed twin of the worker's gpt-6.1-sol-fast:
+	// a judge answers in one short turn, so fast mode would only double the
+	// quota it draws (2026-09-30; gpt-6-sol from 2026-09-22, gpt-5.5 before).
+	LegCodex: {"openai", "gpt-6.1-sol"},
 }
 
 // ModelSpec returns the opencode provider/model a worker leg runs, so a
