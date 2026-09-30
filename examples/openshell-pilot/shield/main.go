@@ -13,6 +13,10 @@ import (
 const limit = 4 << 20
 
 func mask(in []byte) ([]byte, error) {
+	return transform(in, false)
+}
+
+func transform(in []byte, restore bool) ([]byte, error) {
 	dec := json.NewDecoder(bytes.NewReader(in))
 	dec.UseNumber()
 	var value any
@@ -27,6 +31,11 @@ func mask(in []byte) ([]byte, error) {
 	walk = func(v any) any {
 		switch x := v.(type) {
 		case string:
+			if restore {
+				out, n := captaincode.RestoreIdentity(x)
+				identities += n
+				return out
+			}
 			out, rep := captaincode.RedactWith(x, "on")
 			secrets += rep.Secrets
 			identities += rep.Identity
@@ -47,7 +56,7 @@ func mask(in []byte) ([]byte, error) {
 	value = walk(value)
 	body, err := json.Marshal(value)
 	if err != nil || len(body) > limit {
-		return nil, fmt.Errorf("masked body exceeds limit")
+		return nil, fmt.Errorf("transformed body exceeds limit")
 	}
 	return json.Marshal(struct {
 		Body       json.RawMessage `json:"body"`
@@ -62,7 +71,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Shield input exceeds limit")
 		os.Exit(1)
 	}
-	out, err := mask(data)
+	restore := len(os.Args) == 2 && os.Args[1] == "restore-identity"
+	if len(os.Args) > 1 && !restore {
+		fmt.Fprintln(os.Stderr, "unsupported Shield operation")
+		os.Exit(1)
+	}
+	if restore {
+		_ = os.Setenv("CAPTAIN_REDACT", "on")
+	}
+	out, err := transform(data, restore)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

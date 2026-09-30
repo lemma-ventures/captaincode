@@ -7,28 +7,37 @@ change Captain's routing, scope declarations, configuration or running brain.
 
 ## Current result
 
-**Four bounded MicroVM runs passed with a locally patched OpenShell driver;
-the latest passes all 16 checks. Expansion remains gated.**
+**Five bounded MicroVM runs passed with a locally patched OpenShell driver;
+the latest passes all 17 checks, including response identity restoration.**
 
-The [worker search result](results/2026-09-30-search.json) on 30 September 2026
-completed **1 task from 1 worker attempt**, with zero tool errors. OpenCode's
-glob and content search now work with networking disabled and under the live
-MicroVM policy. The image includes `ripgrep`; previously, OpenCode tried to
-download it and the network policy correctly denied the request. This removes
-that tool failure, without establishing that provider latency is resolved.
+The [response restoration result](results/2026-09-30-response.json) on
+30 September 2026 completed **1 task from 1 worker attempt**, with zero tool
+errors. Shield masked the synthetic secret in tool output and restored the
+synthetic operator identity in the worker's final answer. Six complete model
+responses passed through the JSON-to-SSE adapter. Secret placeholders stayed
+masked; live routing remains unchanged.
 
 | Latest measurement | Seconds |
 | --- | ---: |
-| Gateway readiness | 0.856 |
-| Sandbox creation, prepared image | 13.678 |
-| Worker edit and test | 145.684 |
-| Recovery gateway readiness | 0.725 |
-| Sandbox restart | 2.246 |
+| Gateway readiness | 2.678 |
+| Sandbox creation, prepared image | 13.547 |
+| Worker edit and test | 257.311 |
+| Recovery gateway readiness | 0.738 |
+| Sandbox restart | 2.254 |
 
-File and network denials, cancellation, outbound Shield masking and refusal
-when Shield is down, restart recovery and exact diff landing all passed. The
-completed sandbox was deleted and the pilot services exited. The sanitized
-report records the image and harness hashes alongside the driver hash.
+File and network denials, cancellation, refusal when Shield is down, restart
+recovery and exact diff landing all passed. The completed sandbox was deleted
+and the pilot services exited. The report records image, driver and harness
+hashes. It also records two earlier unsuccessful development attempts: native
+SSE whole-body inspection was refused by OpenShell, with no changes landed.
+These attempts are not hidden by the successful adapter run.
+
+The preceding [worker search result](results/2026-09-30-search.json) passed
+16 checks with one completed task and zero tool errors. Its sandbox creation
+took 13.678 seconds and its worker took 145.684 seconds. OpenCode's glob and
+content search work under the policy with bundled `ripgrep`; the old lazy
+download was correctly denied. These isolated samples do not establish either
+a task-success rate or the response adapter's latency impact.
 
 The earlier [controller ownership run](results/2026-09-30-controller.json) on 30 September
 2026 refused competing execution and preparation processes without changing the
@@ -105,14 +114,40 @@ tool output. Masking remains enabled even if `CAPTAIN_REDACT=off` is inherited.
 Malformed, compressed, oversized, wrong-model or out-of-scope requests are
 refused. Redactor or audit-write failures also deny the request.
 
-The middleware only implements outbound request masking. It does not yet
-provide Captain's response identity restoration or tool-argument secret
-restoration. The fixture uses synthetic secrets and paths under `/sandbox`.
-This is not a claim that the complete Shield contract works in OpenShell.
-OpenShell 0.1.2's streamed response contract forbids holding input across body
-units, while identity stand-ins can span both transport chunks and model
-deltas. Restoring each chunk independently would corrupt those split values;
-that boundary remains unresolved before general repository use.
+The middleware masks outbound requests and restores identities in complete JSON
+responses. For OpenCode's streaming requests, it explicitly requests
+`stream: false` from NIM, removes `stream_options`, restores the complete JSON,
+and returns equivalent SSE content/tool, finish, usage and `[DONE]` events to
+OpenCode. Tool arguments are decoded before restoration and encoded again, so
+quotes in an original identity do not corrupt the tool's JSON. Secret
+placeholders remain masked. The worker receives no partial answer before the
+complete response is checked.
+
+Both response input and replacement must fit 4 MiB. OpenShell bounds whole-body
+collection after response headers to two minutes; the worker still has its
+overall ten-minute deadline. Unsupported, compressed, partial, `no-transform`,
+malformed or oversized responses are refused, as are restoration or audit-write
+failures. There is no fallback to uninspected responses. Provider error statuses
+keep their JSON format rather than being converted into successful SSE events.
+
+The request/response association is keyed by authenticated sandbox and request
+IDs, limited to 128 pending entries, and expires after ten minutes. Missing,
+replayed or expired associations refuse response delivery. Restarting middleware
+during inference loses this transient association and fails closed; it does not
+resume an in-flight model call. Completed-worker artifact recovery is unchanged.
+
+The fixture uses synthetic secrets, a synthetic operator identity, and paths
+under `/sandbox`. The live gate requires both a response restoration audit event
+and the original synthetic identity in the worker's final answer. Tool-argument
+secret restoration is still absent. General repository use remains gated on that
+boundary and broader qualification.
+
+OpenShell 0.1.2 excludes `text/event-stream` and `multipart/x-mixed-replace` from
+`WHOLE_BODY_BYTES`, even for responses within the size cap. Its `STREAM_BYTES`
+mode forbids holding input across units. A native SSE-buffering attempt was
+therefore refused at preflight, with no changes landed. The JSON-to-SSE adapter
+uses the existing supported response modes; low-latency streaming restoration
+remains unresolved.
 
 No prompts, bodies or credentials are written to the middleware audit. It
 records request/sandbox IDs, masking counts, hashes, and synthetic-canary
@@ -202,7 +237,8 @@ with the first controller's gateway, middleware or landing operation.
    therefore cancels the whole sandbox on remote or local transport deadlines;
    it never treats disconnection as cancellation.
 5. Run one OpenCode worker; require the unchanged fixture tests to pass. Require
-   an audit observation that Shield masked the synthetic secret from tool output.
+   audit observations that Shield masked the synthetic secret from tool output
+   and restored the synthetic operator identity in the worker's final answer.
 6. Stop Shield and require the next otherwise valid model request to be refused.
 7. Flush the completed snapshot and export with `sync`, save the pending-export
    checkpoint, stop the first controller's services, and
@@ -257,7 +293,7 @@ PYTHONPATH="$pilot_state/generated" PILOT_SHIELD_BIN="$pilot_state/shield" \
 ```
 
 Adapter tests cover cancellation on both remote and local deadlines, real Captain masking, malformed input, credential identity,
-JWT expiry/audience/signature, protocol negotiation, closed request scope,
+JWT expiry/audience/signature, protocol negotiation, closed request/response scope,
 redactor/audit failure, patch validation and checkpoint persistence. These are
 not substitutes for live OpenShell enforcement tests.
 
@@ -269,6 +305,11 @@ lock files, and preparation over an existing checkpoint. CI runs the controller,
 landing and diff tests on Linux and macOS without model calls or OpenShell.
 Worker regressions cover missing or broken search tools, refusal to submit a
 model task after a failed gate, and deadline verdicts with retained partial output.
+Response regressions cover completion-to-SSE conversion, separate choices/tool
+calls and reasoning, escaped identities in tool arguments, legacy function calls,
+large integers, preserved secret placeholders, input/output caps, request pairing,
+provider errors, and fail-closed service or audit errors. The standard-library
+response tests also run in CI.
 Python lint runs with
 `ruff check examples/openshell-pilot`; Go checks use `go vet ./...` and the
 Shield test command above.
