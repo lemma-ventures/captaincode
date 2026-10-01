@@ -930,7 +930,13 @@ func writeInlineFailure(w http.ResponseWriter, text string) {
 
 func writeWorkerError(w http.ResponseWriter, leg captaincode.Leg, err error) {
 	if streamCommitted(w) {
-		writeInlineFailure(w, fmt.Sprintf("\n[captain] %s failed: %s\n", leg, err.Error()))
+		hint := ""
+		if errors.Is(err, captaincode.ErrContextOverflow) {
+			// /frontier streams its lane note first, so an overflow lands here,
+			// not in the 400 below - and the fix has to travel with it.
+			hint = "[captain] this conversation is too large for the " + string(leg) + " leg even after truncation - start a new session (/new) or switch to a larger-context model\n"
+		}
+		writeInlineFailure(w, fmt.Sprintf("\n[captain] %s failed: %s\n%s", leg, err.Error(), hint))
 		return
 	}
 	code, etype := http.StatusBadGateway, "worker_error"

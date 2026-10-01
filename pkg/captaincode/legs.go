@@ -2646,6 +2646,11 @@ func classifyClaudeFailure(msg string) error {
 	if transientProviderError(msg) {
 		return fmt.Errorf("claude: %w: %s", ErrProviderDown, truncateStr(msg, 160))
 	}
+	if strings.Contains(strings.ToLower(msg), "prompt is too long") {
+		// The input, not the leg: retrying it overflows again. A bare
+		// "claude error" told the user nothing they could act on (2026-10-01).
+		return fmt.Errorf("claude: %w: %s", ErrContextOverflow, msg)
+	}
 	return fmt.Errorf("claude error: %s", msg)
 }
 

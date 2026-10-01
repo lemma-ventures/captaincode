@@ -555,6 +555,14 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	status(pick.Reason + "\n")
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
 	t0 := time.Now()
+	// Fit the replay before the contracts go on, like every other path. The
+	// frontier path replayed the whole conversation untouched: after a
+	// 10-round /repeat it was 591k chars, under claude's 700k registry budget
+	// but past what `claude -p --model opus` accepts, and every /frontier
+	// turn in that session failed in 1.4s with "Prompt is too long"
+	// (2026-10-01). The 400k cap is the one team members, /frontier among
+	// them, already run under.
+	prompt = b.fitPrompt(req.ws, lead, prompt, minInt(promptBudget(lead), 400_000))
 	// The standing contracts every other worker prompt carries. The frontier
 	// path went without them, so the callback line never reached the path of
 	// the very turn that motivated it (a frontier turn, 2026-09-22), and a
