@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -75,6 +76,41 @@ func (b *brain) soloCheck(ctx context.Context, ws captaincode.Workspace) verifyR
 	return verifyResult{ran: true, passed: ce.Passed, command: strings.Join(ce.Command, " "), output: ce.Output, timedOut: ce.TimedOut}
 }
 
+// noteVerifyBase records the working tree's dirty files as the turn's
+// worker starts.
+func (b *brain) noteVerifyBase(taskID, dir string) {
+	if taskID == "" || dir == "" || !soloVerifyEnabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	state := captaincode.DirtyState(ctx, dir)
+	b.baseMu.Lock()
+	defer b.baseMu.Unlock()
+	// A turn that fails before verification never collects its baseline;
+	// the map is dropped wholesale rather than left to grow.
+	if b.verifyBase == nil || len(b.verifyBase) > 64 {
+		b.verifyBase = map[string]map[string]string{}
+	}
+	b.verifyBase[taskID] = state
+}
+
+// turnChanged reports whether the turn's worker changed the working tree.
+// Uncommitted work it found there is not its own: a turn that signed off
+// commits in another repository was "verified" against 199 lines of
+// someone else's work in progress, failed, and bought a high-effort repair
+// of that work (2026-10-01). Without a baseline, any dirty file counts.
+func (b *brain) turnChanged(ctx context.Context, taskID, dir string) bool {
+	b.baseMu.Lock()
+	before, ok := b.verifyBase[taskID]
+	delete(b.verifyBase, taskID)
+	b.baseMu.Unlock()
+	if !ok {
+		return true
+	}
+	return !maps.Equal(before, captaincode.DirtyState(ctx, dir))
+}
+
 // captureTest is CaptureTestEvidence behind the test seam the workflow
 // path already uses.
 func (b *brain) captureTest(ctx context.Context, dir string) (*captaincode.CheckEvidence, error) {
@@ -101,6 +137,9 @@ func (b *brain) verifyAndEscalate(ws captaincode.Workspace, leg captaincode.Leg,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
+	if !b.turnChanged(ctx, taskID, ws.Dir) {
+		return leg, ws, res, nil
+	}
 	note("verifying: running the repository's tests on what changed")
 	check := b.soloCheck(ctx, ws)
 	if !check.ran {
