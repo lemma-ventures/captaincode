@@ -159,6 +159,18 @@ func (b *brain) repeatState() map[string]*repeatThread {
 	return b.repeats
 }
 
+// runningRepeat is the live thread already running this task in dir, if any.
+func (b *brain) runningRepeat(dir, task string, count int) *repeatThread {
+	b.rmu.Lock()
+	defer b.rmu.Unlock()
+	for _, th := range b.repeatState() {
+		if th.dir == dir && th.task == task && th.target == count && !th.finished && !th.stopped {
+			return th
+		}
+	}
+	return nil
+}
+
 // repeatControl recognizes "<word>", "<word> <thread-id|last|all>" and nothing
 // else. Anything wordier is a task, not a command.
 func repeatControl(rest string) (word, arg string, ok bool) {
@@ -241,10 +253,37 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 		return true
 	}
 
-	th := b.startRepeat(req, rest, count)
+	// A retried request joins the thread its first copy started: one
+	// /repeat whose reply failed started three threads on 27 September,
+	// each re-doing the same plan (2026-10-01).
+	th := b.runningRepeat(req.ws.Dir, rest, count)
+	joined := th != nil
+	if !joined {
+		th = b.startRepeat(req, rest, count)
+	}
 	horizon := fmt.Sprintf("%d rounds", th.target)
 	if th.target == 0 {
 		horizon = fmt.Sprintf("until stopped (hard cap %d)", repeatHardCap())
+	}
+	if joined {
+		emit(fmt.Sprintf("**repeat thread %s is already running this task** - not starting a second one.\n\n", th.id))
+	}
+	// Queued behind other prompts, the loop runs detached and the queue
+	// moves on: watching it held every later prompt for all its rounds -
+	// the prompt typed after it waited behind five /frontier rounds
+	// (2026-10-01).
+	if ctx.Value(queuedKey{}) != nil {
+		if !joined {
+			emit(fmt.Sprintf("**repeat thread %s started** - %s, in the background\n\nTask: %s\n\n`/repeat watch %s` follows it, `/repeat finish` ends it after the current round.\n",
+				th.id, horizon, promptPeek(rest), th.id))
+		}
+		finish()
+		return true
+	}
+	if joined {
+		b.repeatWatch(ctx, emit, status, req.ws.Dir, th.id)
+		finish()
+		return true
 	}
 	// The launching turn STAYS OPEN and streams the rounds. Requiring a second
 	// command was the wrong call: someone who starts a loop expects to see it,
