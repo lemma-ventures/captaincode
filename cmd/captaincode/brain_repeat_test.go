@@ -504,3 +504,63 @@ func TestRepeatOnAutoIsNotRoutedAsATask(t *testing.T) {
 	assert.Equal(t, 0, directorCalls, "a control word never reaches the director")
 	require.Eventually(t, func() bool { return frontierRuns.Load() == 2 }, 30*time.Second, 100*time.Millisecond, "two frontier rounds (got %d)", frontierRuns.Load())
 }
+
+// A queued /repeat starts its thread and the queue moves on: the prompt
+// typed after it waited behind five /frontier rounds (2026-10-01).
+func TestQueuedRepeatDoesNotHoldTheQueue(t *testing.T) {
+	b := teamBrain()
+	b.roundSummaryFn = func(text string) string { return text }
+	gate := make(chan struct{})
+	var after atomic.Bool
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		if strings.Contains(lastUserTurn(prompt), "loop task") {
+			<-gate
+		} else {
+			after.Store(true)
+		}
+		return leg, captaincode.Result{Text: "ok", DurationMs: 5}, nil
+	}
+	defer close(gate)
+	body, _ := json.Marshal(map[string]any{"model": "cursor", "stream": false, "messages": []map[string]string{
+		{"role": "user", "content": "/repeat 3 /cursor loop task"},
+		{"role": "user", "content": "/cursor the prompt typed after it"},
+	}})
+	done := make(chan *httptest.ResponseRecorder)
+	go func() {
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+		done <- rec
+	}()
+	select {
+	case rec := <-done:
+		require.Equal(t, 200, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), "in the background")
+	case <-time.After(20 * time.Second):
+		t.Fatal("the queue waited on the /repeat thread")
+	}
+	assert.True(t, after.Load(), "the next prompt ran while the loop runs")
+	b.repeatStop("", "all")
+}
+
+// A retried /repeat joins the thread its first copy started: one /repeat
+// whose reply failed started three threads on 27 September (2026-10-01).
+func TestRetriedRepeatJoinsTheRunningThread(t *testing.T) {
+	b := teamBrain()
+	b.roundSummaryFn = func(text string) string { return text }
+	gate := make(chan struct{})
+	defer close(gate)
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		<-gate
+		return leg, captaincode.Result{Text: "ok", DurationMs: 5}, nil
+	}
+	// Queued copies do not watch, so the calls return.
+	ctx := context.WithValue(context.Background(), queuedKey{}, true)
+	first, retry := httptest.NewRecorder(), httptest.NewRecorder()
+	b.chatCompletions(first, repeatReq("/repeat 5 /cursor address this plan").WithContext(ctx))
+	b.chatCompletions(retry, repeatReq("/repeat 5 /cursor address this plan").WithContext(ctx))
+	assert.Contains(t, retry.Body.String(), "already running this task")
+	b.rmu.Lock()
+	assert.Len(t, b.repeatState(), 1, "one thread, not two")
+	b.rmu.Unlock()
+	b.repeatStop("", "all")
+}
