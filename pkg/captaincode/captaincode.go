@@ -27,7 +27,7 @@ const (
 	LegGPTOSS  Leg = "gpt-oss" // opencode serve -> gpt-oss-120b via OpenRouter, pinned to Cerebras: the ADI-green open-weight leg (adi.go)
 	LegGrok    Leg = "grok"    // opencode serve -> SuperGrok OAuth (burn-first sub: daily reset)
 	LegCodex   Leg = "codex"   // opencode serve -> ChatGPT-subscription OAuth
-	LegGLM     Leg = "glm"     // opencode serve -> GLM-5.3 via OpenRouter (best open-weights leg; NIM only carries the flash variant)
+	LegGLM     Leg = "glm"     // opencode serve -> GLM-5.3 via NVIDIA NIM (free; cheap tier GLM-5.3 Flash)
 	LegMiniMax Leg = "minimax" // opencode serve -> MiniMax M3 via OpenRouter (NIM retired it 2026-09-09)
 	LegClaude  Leg = "claude"  // claude -p headless (Claude Max)
 	LegCursor  Leg = "cursor"  // cursor-agent -p headless (Cursor subscription)
@@ -39,6 +39,7 @@ const (
 	// Providers router; join the /oss pool. Same credential (HF_TOKEN).
 	LegStep     Leg = "step"      // opencode serve -> Step 3.5 Flash via Hugging Face
 	LegDS4Flash Leg = "ds4-flash" // opencode serve -> DeepSeek V4 Flash via Hugging Face
+	LegDSFlash  Leg = "ds-flash"  // opencode serve -> DeepSeek V4.1 Flash via NVIDIA NIM (free)
 	// Frontier-class (2026-09-09): the Codex CLI driving gpt-6-astra at xhigh
 	// reasoning on the ChatGPT subscription - see codex-cli.go. NOT the codex leg.
 	LegCodexCLI Leg = "codex-cli" // codex exec headless (Codex CLI, ~/.codex/auth.json)

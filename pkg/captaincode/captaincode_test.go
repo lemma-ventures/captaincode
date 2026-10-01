@@ -2,6 +2,7 @@ package captaincode
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -118,32 +119,35 @@ func TestStartRung(t *testing.T) {
 func TestDirectorExcludedFromWorkerLadder(t *testing.T) {
 	defer SetDirector(LegGrok) // restore default
 	SetDirector(LegGrok)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
 	assert.NotContains(t, Rungs, LegGrok)
 	SetDirector(LegClaude)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
 }
 
 func TestPickSkipsCooldownsAndFallsBack(t *testing.T) {
 	// Pin the director so the worker ladder is deterministic: claude director →
-	// Rungs = {free, qwen, step, gpt-oss, grok, luna, ds4-flash, minimax, deepseek, gemini, kimi, cursor, glm, codex, grok-max, codex-cli}.
+	// Rungs = {free, qwen, step, gpt-oss, grok, luna, ds4-flash, ds-flash, minimax, deepseek, gemini, kimi, cursor, glm, codex, grok-max, codex-cli}.
 	defer SetDirector(LegGrok)
 	SetDirector(LegClaude)
 	now := time.Now()
 	cool := map[Leg]time.Time{LegLuna: now.Add(time.Hour)}
 
 	got := Pick(5, cool, now) // start at luna's rung (index 5)
-	assert.Equal(t, []Leg{LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegStep, LegQwen, LegFree}, got, "luna cooling: take ds4-flash above, then fall back down the ladder")
+	assert.Equal(t, []Leg{LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegGrok, LegGPTOSS, LegStep, LegQwen, LegFree}, got, "luna cooling: take ds4-flash above, then fall back down the ladder")
 
 	got = Pick(0, map[Leg]time.Time{}, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got)
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got)
 
 	expired := map[Leg]time.Time{LegFree: now.Add(-time.Minute)}
 	got = Pick(0, expired, now)
-	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
+	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, got, "expired cooldown reopens the leg")
 }
 
 func TestModelSpecQwenAndGLM(t *testing.T) {
+	t.Setenv("CAPTAIN_GLM_MODEL", "")
+	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
+	LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
 	p, m, ok := ModelSpec(LegQwen)
 	assert.True(t, ok)
 	assert.Equal(t, "openrouter", p, "Scaleway instance stopped 2026-08-24; qwen is hosted OSS now")
@@ -151,7 +155,7 @@ func TestModelSpecQwenAndGLM(t *testing.T) {
 
 	p, m, ok = ModelSpec(LegGLM)
 	assert.True(t, ok)
-	assert.Equal(t, "openrouter", p, "NIM retired its whole GLM line (410 Gone, 2026-08-24)")
+	assert.Equal(t, "nim", p, "NIM lists z-ai/glm-5.3 again (catalog 2026-09-26); the 2026-08-24 410 was the 5.2 line")
 	assert.Contains(t, m, "glm")
 
 	p, m, ok = ModelSpec(LegMiniMax)

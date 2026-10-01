@@ -12,7 +12,7 @@ Everything below narrows or steers that.
 
 | Word | What it does |
 |---|---|
-| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
+| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
 | `/frontier <task>` | The frontier lane at maximum effort: the frontier legs near the top of the perf index (claude and codex-cli today) take turns; `/frontier /codex …` runs that leg's frontier model instead |
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |

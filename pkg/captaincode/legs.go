@@ -288,7 +288,7 @@ var legModels = map[Leg]struct{ Provider, Model string }{}
 // so the inventory is complete: grok and codex are MODEL PINS, not CLIs).
 func LegModelPins() []struct{ Leg, Provider, Model string } {
 	out := make([]struct{ Leg, Provider, Model string }, 0, len(legModels))
-	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegLuna, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegGemini, LegKimi} {
+	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegLuna, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegDSFlash, LegGemini, LegKimi} {
 		if mm, ok := legModels[l]; ok {
 			out = append(out, struct{ Leg, Provider, Model string }{string(l), mm.Provider, mm.Model})
 		}

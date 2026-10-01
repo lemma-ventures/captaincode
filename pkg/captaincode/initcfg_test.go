@@ -367,7 +367,12 @@ func TestEnsureOpencodeConfig_AddsMissingLegEntries(t *testing.T) {
 	asJSON := func(v any) string { b, _ := json.Marshal(v); return string(b) }
 	assert.Equal(t, `{"context":1000000,"output":32768}`, asJSON(claude["limit"]), "…but its context window is declared, so the TUI's '% used' means something")
 	assert.Equal(t, `{"input":0,"output":0}`, asJSON(claude["cost"]), "a subscription leg prices at 0")
-	assert.Equal(t, `{"input":1.09,"output":3.43}`, asJSON(models["glm"].(map[string]any)["cost"]), "an API leg carries its registry price")
+	assert.Equal(t, `{"input":0,"output":0}`, asJSON(models["glm"].(map[string]any)["cost"]), "NIM GLM is free, so the TUI prices it at 0")
+	nimModels := cfg["provider"].(map[string]any)["nim"].(map[string]any)["models"].(map[string]any)
+	assert.Contains(t, nimModels, "z-ai/glm-5.3", "uncatalogued nim 500s on an unlisted model")
+	assert.Contains(t, nimModels, "z-ai/glm-5.3-flash")
+	assert.Contains(t, nimModels, "deepseek-ai/deepseek-v4.1-flash")
+	assert.Contains(t, nimModels, "z-ai/glm-5.2", "an existing nim entry is left in place")
 	cmds := cfg["command"].(map[string]any)
 	for _, id := range append(workerLegIDs(), "team", "frontier") {
 		assert.Contains(t, cmds, id, "slash command /%s", id)
