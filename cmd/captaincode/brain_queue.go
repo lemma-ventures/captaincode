@@ -16,9 +16,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -202,3 +206,93 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 
 // queuedKey marks a request the queue runner issued: it never splits again.
 type queuedKey struct{}
+
+// handledTTL bounds how long a run prompt is remembered.
+const handledTTL = 30 * 24 * time.Hour
+
+// unhandled drops the prompts the brain already ran from a queue. A failed
+// reply is dropped from the transcript the fork replays, so the prompt it
+// answered looks unanswered: a /repeat whose reply ended in an APIError on
+// 27 September ran again, first in the queue, ahead of the prompt typed
+// four days later (2026-10-01). The newest prompt always runs; nil when
+// fewer than two are left to queue.
+func (b *brain) unhandled(dir string, msgs []oaiMessage, pending []int) []int {
+	if pending == nil {
+		return nil
+	}
+	last := pending[len(pending)-1]
+	var out []int
+	for _, idx := range pending {
+		if idx != last && b.wasHandled(promptKey(dir, msgs, idx)) {
+			fmt.Printf("captain brain: queue skips a prompt already run: %s\n", promptPeek(messageText(msgs[idx].Content)))
+			continue
+		}
+		out = append(out, idx)
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
+}
+
+// promptKey names a prompt by its place in the conversation: the folder,
+// the prompt and the three messages before it. A "continue" typed again
+// follows other messages and is a new prompt; a stale one replayed from
+// the transcript follows the same ones.
+func promptKey(dir string, msgs []oaiMessage, idx int) string {
+	h := sha256.New()
+	h.Write([]byte(dir))
+	for _, m := range msgs[max(0, idx-3) : idx+1] {
+		fmt.Fprintf(h, "\x00%s\x00%s", m.Role, strings.TrimSpace(messageText(m.Content)))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (b *brain) markHandled(key string) {
+	b.hmu.Lock()
+	defer b.hmu.Unlock()
+	b.loadHandledLocked()
+	now := time.Now()
+	for k, at := range b.handled {
+		if now.Sub(at) > handledTTL {
+			delete(b.handled, k)
+		}
+	}
+	b.handled[key] = now
+	path := handledPath()
+	if path == "" {
+		return
+	}
+	data, _ := json.Marshal(b.handled)
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, data, 0o600) == nil {
+		_ = os.Rename(tmp, path)
+	}
+}
+
+func (b *brain) wasHandled(key string) bool {
+	b.hmu.Lock()
+	defer b.hmu.Unlock()
+	b.loadHandledLocked()
+	_, ok := b.handled[key]
+	return ok
+}
+
+func (b *brain) loadHandledLocked() {
+	if b.handled != nil {
+		return
+	}
+	b.handled = map[string]time.Time{}
+	if data, err := os.ReadFile(handledPath()); err == nil {
+		_ = json.Unmarshal(data, &b.handled)
+	}
+}
+
+func handledPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".captaincode", "handled.json")
+}
