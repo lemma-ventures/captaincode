@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -250,4 +251,34 @@ func TestReliableLaneDropsLegsThatKeepFailing(t *testing.T) {
 	assert.Equal(t, cands[1:], reliableLane(cands, failing))
 	failing[captaincode.LegGLM] = captaincode.LegStats{Fails: 3}
 	assert.Equal(t, cands, reliableLane(cands, failing), "all failing: the lane keeps them all")
+}
+
+// Live 2026-10-01: after a 10-round /repeat the conversation was 591k chars,
+// and /frontier replayed all of it - "Prompt is too long" in 1.4s, every turn.
+// The frontier path fits the replay like every other path does.
+func TestFrontierTurnFitsTheReplay(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "0") // claude leads, through frontierFn
+	t.Setenv("CAPTAIN_COMPACT", "0")
+	b := teamBrain()
+	var got string
+	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {
+		got = task
+		return captaincode.Result{Text: "here is the summary", DurationMs: 5}, nil
+	}
+	round := strings.Repeat("built the finance lab, ran six sandboxes, recorded the digests. ", 1000)
+	msgs := []map[string]string{}
+	for i := 0; i < 10; i++ {
+		msgs = append(msgs, map[string]string{"role": "user", "content": "continue round " + strconv.Itoa(i)},
+			map[string]string{"role": "assistant", "content": round})
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": "summarize what you built in the 10 previous rounds"})
+	body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false, "messages": msgs})
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	r.Header.Set(workspaceHeader, t.TempDir())
+	b.chatCompletions(rec, r)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	require.Greater(t, len(body), 600_000)
+	assert.Less(t, len(got), 450_000, "the replay is fitted to 400k, with the contracts on top")
+	assert.Contains(t, got, "summarize what you built in the 10 previous rounds", "the turn being answered survives the cut")
 }

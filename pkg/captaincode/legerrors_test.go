@@ -145,3 +145,12 @@ func TestProviderNotConfiguredWrapsForTheBenchPolicy(t *testing.T) {
 	require.True(t, errors.Is(ErrProviderNotConfigured, ErrProviderAuth))
 	require.True(t, errors.Is(ErrProviderNotConfigured, ErrProviderDown))
 }
+
+// Live 2026-10-01: an over-long /frontier replay came back as a bare
+// "claude error: Prompt is too long" - no class, so no "/new" hint.
+func TestClassifyClaudeFailureNamesAnOverflow(t *testing.T) {
+	err := classifyClaudeFailure("Prompt is too long")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrContextOverflow, "the input is at fault, not the leg")
+	assert.NotErrorIs(t, err, ErrProviderDown, "rerouting the same input overflows again")
+}
