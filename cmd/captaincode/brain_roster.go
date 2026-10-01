@@ -53,7 +53,7 @@ func perfRefreshInterval() time.Duration {
 
 type rosterLeg struct {
 	Leg        string               `json:"leg"`
-	Label      string               `json:"label"` // what the sidebar prints: the leg with its route visible (codex-cli, codex-openai, glm-orouter)
+	Label      string               `json:"label"` // what the sidebar prints: the leg with its route visible (codex-cli, codex-openai, glm-nim)
 	Model      string               `json:"model"`
 	Display    string               `json:"display"`
 	Frontier   bool                 `json:"frontier"`

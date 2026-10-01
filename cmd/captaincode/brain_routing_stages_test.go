@@ -169,11 +169,20 @@ func TestExpectedCostPolicyIsGatedOnLabelledOutcomes(t *testing.T) {
 	t.Setenv("CAPTAIN_VALUE_TAU", "5,7")
 	t.Setenv("CAPTAIN_ROUTING_POLICY", "expected")
 	captaincode.SetDirector(captaincode.LegClaude)
-	t.Cleanup(func() { captaincode.SetDirector(captaincode.LegGrok) })
+	t.Cleanup(func() {
+		captaincode.SetDirector(captaincode.LegGrok)
+		_, _ = captaincode.LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
+	})
+	path := filepath.Join(t.TempDir(), "legs.json")
+	require.NoError(t, captaincode.AddLeg(path, captaincode.LegSpec{
+		ID: "dear", Provider: "openrouter", Model: "meta/dear-1",
+		PriceIn: 1.09, PriceOut: 3.43, Prior: 8.2,
+	}))
 	task := "tighten the wording of this paragraph and keep the argument intact"
+	dear := captaincode.Leg("dear")
 
 	b := teamBrain()
-	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
+	b.allowed = map[captaincode.Leg]bool{dear: true, captaincode.LegGemini: true}
 	b.estimatorFn = func() *captaincode.SuccessEstimator { return captaincode.NewSuccessEstimator(nil) }
 	resp, why := routeLeg(t, b, task)
 	assert.Equal(t, "gemini", resp.Leg, "under the gate the value order runs")
@@ -182,14 +191,12 @@ func TestExpectedCostPolicyIsGatedOnLabelledOutcomes(t *testing.T) {
 	assert.Equal(t, captaincode.PathValue, d.Path)
 	assert.NotEmpty(t, d.Expected, "…but the arms are on the record")
 
-	// Sixty labelled outcomes: gemini failed every one, glm passed every
-	// one. The expected cost of a gemini attempt now carries its repair.
 	b = teamBrain()
-	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
-	hist := append(labeledHistory(30, captaincode.LegGemini, false), labeledHistory(30, captaincode.LegGLM, true)...)
+	b.allowed = map[captaincode.Leg]bool{dear: true, captaincode.LegGemini: true}
+	hist := append(labeledHistory(30, captaincode.LegGemini, false), labeledHistory(30, dear, true)...)
 	b.estimatorFn = func() *captaincode.SuccessEstimator { return captaincode.NewSuccessEstimator(hist) }
 	resp, why = routeLeg(t, b, task)
-	assert.Equal(t, "glm", resp.Leg, "the leg that succeeds is cheaper per successful task: %s", why)
+	assert.Equal(t, "dear", resp.Leg, "the leg that succeeds is cheaper per successful task: %s", why)
 	assert.Contains(t, why, "expected $")
 	assert.NotEmpty(t, resp.Effort)
 	d = decisionAfterRoute(t, b, task)

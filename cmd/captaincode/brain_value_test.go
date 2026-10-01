@@ -41,12 +41,11 @@ func TestRouteFastPathIsValueRanked(t *testing.T) {
 	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
 	resp, why := routeLeg(t, b, "tighten the wording of this paragraph and keep the argument intact")
 	assert.Contains(t, why, "value-ranked")
-	// gemini (7.8, $0.38/M) vs glm (8.2, $1.09/M): on a trivial editorial
-	// task the price gap outweighs the quality gap with the default weights.
-	assert.Equal(t, "gemini", resp.Leg, "gemini: near glm's quality, a third of the price - value wins")
-	b.ledger.Cooldown(captaincode.LegGemini, time.Hour)
+	// glm (8.2, $0 on NIM) vs gemini (7.8, paid): free and the higher prior leads.
+	assert.Equal(t, "glm", resp.Leg, "free NIM glm leads a paid peer on a trivial task")
+	b.ledger.Cooldown(captaincode.LegGLM, time.Hour)
 	resp, _ = routeLeg(t, b, "tighten the wording of this paragraph and keep the argument intact")
-	assert.Equal(t, "glm", resp.Leg, "cooling legs drop out")
+	assert.Equal(t, "gemini", resp.Leg, "cooling legs drop out")
 }
 
 func TestRouteNewOverlayLegWinsItsDomainByData(t *testing.T) {
@@ -57,14 +56,14 @@ func TestRouteNewOverlayLegWinsItsDomainByData(t *testing.T) {
 	t.Cleanup(func() { captaincode.SetDirector(captaincode.LegGrok) })
 	path := filepath.Join(t.TempDir(), "legs.json")
 	require.NoError(t, captaincode.AddLeg(path, captaincode.LegSpec{ID: "muse", Provider: "openrouter", Model: "meta/muse-spark-1.3-contributor",
-		PriceIn: 1.0, PriceOut: 3.0, Prior: 7.2, DomainPrior: map[captaincode.Domain]float64{captaincode.DomainEditorial: 8.6}}))
+		Prior: 7.2, DomainPrior: map[captaincode.Domain]float64{captaincode.DomainEditorial: 8.6}}))
 	t.Cleanup(func() { captaincode.LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
 	b := teamBrain()
 	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, "muse": true}
 	resp, _ := routeLeg(t, b, "tighten the wording of this paragraph and keep the argument intact")
 	assert.Equal(t, "muse", resp.Leg, "added by data, routed by data")
 	resp, _ = routeLeg(t, b, "fix the nil pointer in the webhook retry loop and add a unit test")
-	assert.Equal(t, "glm", resp.Leg, "on code its 7.2 loses to glm's 8.2 at the same price")
+	assert.Equal(t, "glm", resp.Leg, "on code its 7.2 loses to glm's 8.2; both are $0 so quality decides")
 }
 
 func TestRouteExploresTheRunnerUp(t *testing.T) {
@@ -76,7 +75,7 @@ func TestRouteExploresTheRunnerUp(t *testing.T) {
 	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
 	b.exploreFn = func(captaincode.Class) bool { return true }
 	resp, why := routeLeg(t, b, "tighten the wording of this paragraph and keep the argument intact")
-	assert.Equal(t, "glm", resp.Leg, "runner-up gets the turn")
+	assert.Equal(t, "gemini", resp.Leg, "runner-up gets the turn; glm leads, so explore takes gemini")
 	assert.Contains(t, why, "EXPLORE")
 	b.mu.Lock()
 	explored := b.wasExplored("tighten the wording of this paragraph and keep the argument intact")
@@ -84,7 +83,7 @@ func TestRouteExploresTheRunnerUp(t *testing.T) {
 	assert.True(t, explored)
 	b.exploreFn = func(captaincode.Class) bool { return false }
 	resp, _ = routeLeg(t, b, "tighten the wording of this paragraph and keep the argument intact")
-	assert.Equal(t, "gemini", resp.Leg)
+	assert.Equal(t, "glm", resp.Leg)
 }
 
 func TestExploreRateFromEnv(t *testing.T) {
@@ -103,19 +102,19 @@ func TestRecordRunEstimatesSpendAndTagsExploration(t *testing.T) {
 	b.mu.Lock()
 	b.markExplored("rewrite the intro")
 	b.mu.Unlock()
-	b.recordRun(captaincode.LegGLM, "[user]\nrewrite the intro\n\n", captaincode.Result{Text: "short", Tokens: 100_000, DurationMs: 1000}, "")
+	b.recordRun(captaincode.LegGemini, "[user]\nrewrite the intro\n\n", captaincode.Result{Text: "short", Tokens: 100_000, DurationMs: 1000}, "")
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	require.NotEmpty(t, b.ledger.Events)
 	ev := b.ledger.Events[len(b.ledger.Events)-1]
-	assert.InDelta(t, captaincode.EstimateCost(captaincode.LegGLM, 100_000), ev.CostUSD, 1e-9, "API spend estimated from the registry price")
+	assert.InDelta(t, captaincode.EstimateCost(captaincode.LegGemini, 100_000), ev.CostUSD, 1e-9, "API spend estimated from the registry price")
 	assert.Greater(t, ev.CostUSD, 0.0)
 	assert.Equal(t, "explore", ev.Reason)
 }
 
 func TestRecordRunWritesTheChargeSpine(t *testing.T) {
 	b := teamBrain()
-	b.recordRun(captaincode.LegGLM, "[user]\nrewrite the intro\n\n", captaincode.Result{Text: "short", Tokens: 100_000, DurationMs: 1000}, "")
+	b.recordRun(captaincode.LegGemini, "[user]\nrewrite the intro\n\n", captaincode.Result{Text: "short", Tokens: 100_000, DurationMs: 1000}, "")
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	ev := b.ledger.Events[len(b.ledger.Events)-1]
@@ -156,7 +155,7 @@ func TestDirectorMenuCarriesValueHints(t *testing.T) {
 	}
 	routeLeg(t, b, "redesign the ingestion pipeline for concurrency and add a migration plan")
 	require.NotNil(t, hints)
-	assert.Contains(t, hints[captaincode.LegGLM], "est $")
+	assert.Contains(t, hints[captaincode.LegGemini], "est $", "a priced leg names its estimate; free NIM glm does not")
 	assert.Contains(t, hints[captaincode.LegGLM], "value rank")
 	assert.Contains(t, hints[captaincode.LegCursor], "subscription")
 }
@@ -207,7 +206,7 @@ func TestRecordRunChargesTheRepairAttempt(t *testing.T) {
 	b := teamBrain()
 	// A nudged turn is two provider calls merged into one Result; the tokens
 	// are the pair's, and the repair must appear without being billed twice.
-	b.recordRun(captaincode.LegGLM, "[user]\nrewrite the intro\n\n",
+	b.recordRun(captaincode.LegGemini, "[user]\nrewrite the intro\n\n",
 		captaincode.Result{Text: "short", Tokens: 100_000, DurationMs: 1000, Nudged: true}, "")
 	b.mu.Lock()
 	defer b.mu.Unlock()

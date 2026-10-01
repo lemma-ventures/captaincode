@@ -611,13 +611,15 @@ a single model runs it in all three bands, at that band's effort.
 | `deepseek` | `deepseek-v4-flash` | `deepseek-v4-pro` | `deepseek-v4-pro` |
 | `glm` | `glm-5.3-flash` | `glm-5.3` | `glm-5.3` |
 | `qwen` | `qwen3.6-35b-a3b` | `qwen3.5-397b-a17b` | `qwen3.5-397b-a17b` |
-| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `free` | one model | one model | one model |
+| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `ds-flash`, `free` | one model | one model | one model |
 
 `<PREFIX>_CHEAP_MODEL` and `<PREFIX>_FRONTIER_MODEL` pin a band
 (`CAPTAIN_CODEX_CHEAP_MODEL`, `CAPTAIN_CURSOR_FRONTIER_MODEL`,
 `CAPTAIN_CLAUDE_FRONTIER_MODEL`); `<PREFIX>_MODEL` stays the quality model,
 and on claude it now pins `claude -p --model` too. A registry overlay entry
 sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
+`glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0, as `kimi` does. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
+
 `CAPTAIN_CHEAP_TIER=0` keeps every leg on its own model at low effort.
 `captain upgrade --check` prints the resolved table.
 
