@@ -101,7 +101,7 @@ var defaultLegSpecs = []LegSpec{
 		Note: "Step 3.5 Flash via Hugging Face router (~$0.10/M in, 256k ctx); cheap open-weight reasoning worker, tool-calling, no vision"},
 	{ID: LegGPTOSS, Transport: TransportOpencode, Provider: "openrouter", Model: "openai/gpt-oss-120b", AA: "gpt-oss-120b",
 		PriceIn: 0.15, PriceOut: 0.6, Ctx: 131072, Prior: 6.9, Display: "gpt-oss 120B (captain · OpenRouter, Cerebras)",
-		Note: "gpt-oss-120b (OpenAI open weights) via OpenRouter; served by Cerebras it is the one serving tuple the Agentic Determinism Index scores byte-exact run after run (streak 10, 2026-09-17) - the /deterministic pick, pinned to that tuple; a capable mid-tier coder, not a frontier reasoner"},
+		Note: "gpt-oss-120b (OpenAI open weights) via OpenRouter, pinned to Cerebras when that tuple is green; ADI scored it byte-exact on 19 reference runs from 2026-09-07 through 2026-09-26, then not green on 2026-09-27, so /deterministic does not pick it until the feed is green again; a capable mid-tier coder, not a frontier reasoner"},
 	{ID: LegGrok, Transport: TransportOpencode, Provider: "xai", Model: "grok-build-0.1", AA: "grok-build-0-1-06-16",
 		Ctx: 262144, Vision: true, Subscription: true, Prior: 7.0, Display: "Grok (captain · opencode)",
 		Tiers: map[Tier]string{TierFrontier: "grok-4.7"},

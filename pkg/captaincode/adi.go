@@ -271,7 +271,7 @@ func ADIPinFor(l Leg) map[string]any {
 }
 
 // ADIOneLine describes a leg's determinism standing for the feed and the
-// director: "green (ADI #1, streak 10, Cerebras via OpenRouter, as of …)".
+// director: "green (ADI #1, streak N, Cerebras via OpenRouter, as of …)".
 func ADIOneLine(l Leg) string {
 	t, ok := ADIFor(l)
 	if !ok {
