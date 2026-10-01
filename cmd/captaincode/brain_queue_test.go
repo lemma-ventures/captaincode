@@ -75,3 +75,55 @@ func TestASinglePendingPromptIsNotAQueue(t *testing.T) {
 	msgs = append(msgs, oaiMessage{Role: "user", Content: jsonString("d")})
 	assert.Equal(t, []int{2, 4}, queuedPrompts(msgs))
 }
+
+// A /repeat whose reply ended in an APIError on 27 September looked
+// unanswered in the transcript the fork replayed, and ran again first in
+// the queue when a new prompt was typed four days later (2026-10-01). A
+// prompt the brain already ran is history - across a restart too - while
+// the newest prompt, and the same words typed again, always run.
+func TestQueueSkipsAPromptAlreadyRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var mu sync.Mutex
+	var runs []string
+	worker := func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		mu.Lock()
+		runs = append(runs, lastUserTurn(prompt))
+		mu.Unlock()
+		return leg, captaincode.Result{Text: "answer to " + lastUserTurn(prompt), DurationMs: 5}, nil
+	}
+	send := func(b *brain, msgs []map[string]string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"model": "cursor", "stream": false, "messages": msgs})
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+		require.Equal(t, 200, rec.Code, rec.Body.String())
+	}
+	history := []map[string]string{
+		{"role": "user", "content": "/cursor where are we at"},
+		{"role": "assistant", "content": "here"},
+	}
+	old := map[string]string{"role": "user", "content": "/cursor address the old plan"}
+
+	b := teamBrain()
+	b.runWorkerFn = worker
+	send(b, append(append([]map[string]string{}, history...), old)) // its reply never reaches the transcript
+
+	b2 := teamBrain() // a restarted brain
+	b2.runWorkerFn = worker
+	send(b2, append(append([]map[string]string{}, history...), old,
+		map[string]string{"role": "user", "content": "/cursor a note"},
+		map[string]string{"role": "user", "content": "/cursor what's left to build"}))
+	mu.Lock()
+	assert.Equal(t, []string{"address the old plan", "a note", "what's left to build"}, runs, "the stale prompt is not run again")
+	runs = nil
+	mu.Unlock()
+
+	// The same words typed again, after an answer, are a new prompt.
+	send(b2, append(append([]map[string]string{}, history...), old,
+		map[string]string{"role": "assistant", "content": "done"},
+		old,
+		map[string]string{"role": "user", "content": "/cursor then this"}))
+	mu.Lock()
+	assert.Equal(t, []string{"address the old plan", "then this"}, runs)
+	mu.Unlock()
+}

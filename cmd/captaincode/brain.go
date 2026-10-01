@@ -428,6 +428,15 @@ type brain struct {
 	inflight      map[string]*wfInflight // one execution per (workflow, task); retries attach
 	solo          map[string]*soloRun    // same, for ordinary single-leg turns
 
+	// Prompts already run as turns (brain_queue.go), persisted so a prompt a
+	// failed reply left unanswered in the transcript is not run again.
+	hmu     sync.Mutex
+	handled map[string]time.Time
+	// The working tree's dirty files when each turn's worker started
+	// (brain_verify.go): verification judges what the turn changed.
+	baseMu     sync.Mutex
+	verifyBase map[string]map[string]string
+
 	// Route-time task identities (ROADMAP M1.2). The director-side calls that
 	// PRECEDE the worker - tier-1 classification and the director's plan -
 	// happen in route, before recordRun would mint anything, so their spend

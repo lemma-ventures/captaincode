@@ -320,6 +320,13 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Remember the prompt this turn runs, so a transcript that later
+	// replays it as unanswered does not run it again (brain_queue.go). A
+	// /repeat round is the brain's own request, not a prompt; a queued one is.
+	round := r.Context().Value(noDedupeKey{}) != nil && r.Context().Value(queuedKey{}) == nil
+	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
+		b.markHandled(promptKey(req.ws.Dir, req.Messages, i))
+	}
 	// Modifiers compose with control words in either order: "/oss /repeat 5
 	// <task>" is "/repeat 5 /oss <task>" (hoist.go). Canonicalize the last
 	// user turn before anything reads its head, and force the model the
