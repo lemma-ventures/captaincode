@@ -116,7 +116,7 @@ func TestArbitrationPromptAndRuling(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", want, p)
 		}
 	}
-	for _, want := range []string{"## 5. One whole winner per group", "Objective evidence outranks a confident report", `{"winner"`} {
+	for _, want := range []string{"## 5. One whole winner per group", "Objective evidence outranks a confident report", `{"winner"`, `"equivalent": true`} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("prompt missing the skill's arbitration step (%q):\n%s", want, p)
 		}
@@ -133,6 +133,18 @@ func TestArbitrationPromptAndRuling(t *testing.T) {
 	}
 	if _, err := checkRuling(Ruling{Winner: "codex"}, contenders); err == nil {
 		t.Fatal("a ruling naming a leg instead of a worker id must be refused")
+	}
+	tied, err := checkRuling(Ruling{Winner: "w2-codex", Reason: "logic identical; tie broken by stable id order"}, contenders)
+	if err != nil || tied.Winner != "w1-claude" || !tied.Equivalent || tied.Reason != "equivalent; landed w1-claude (lowest id)" {
+		t.Fatalf("prose tie = %+v, %v", tied, err)
+	}
+	flagged, err := checkRuling(Ruling{Winner: "w2-codex", Equivalent: true, Reason: "same tests"}, contenders)
+	if err != nil || flagged.Winner != "w1-claude" || flagged.Reason != tied.Reason {
+		t.Fatalf("flagged tie = %+v, %v", flagged, err)
+	}
+	kept, err := checkRuling(Ruling{Winner: "w2-codex", Reason: "not equivalent; smaller diff"}, contenders)
+	if err != nil || kept.Winner != "w2-codex" || kept.Equivalent {
+		t.Fatalf("a denial must stay a preference: %+v, %v", kept, err)
 	}
 	if _, err := (Manager{}).Arbitrate("x", map[string]Contender{"w1": {}}); err == nil {
 		t.Fatal("one contender is not a conflict")

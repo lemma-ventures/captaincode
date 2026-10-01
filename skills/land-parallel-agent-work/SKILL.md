@@ -108,11 +108,17 @@ model produced it.
 Ask for a structured reply and validate it:
 
 ```json
-{"winner": "<one of this group's contender ids>", "reason": "<one line>"}
+{"winner": "<one of this group's contender ids>", "reason": "<one line>", "equivalent": false}
 ```
 
-- A winner that is not one of the group's contenders is no ruling. Neither is
-  no reply.
+- If the decider cannot prefer one contender on those criteria, it sets
+  `"equivalent": true` and does not break the tie. The harness then lands the
+  lowest contender id and records that. That is not a guess: the decider called
+  them equivalent, and id order is fixed before the call. A reason that calls
+  the work equivalent, identical in logic, or a tie is the same call, even if
+  the flag was left false.
+- A winner that is not one of the group's contenders is no ruling, unless the
+  reply is an equivalence. Neither is no reply.
 - No ruling: apply nothing from that group, keep every patch, and say so. Never
   fall back to a guessed winner (first to finish, biggest diff, most confident
   report). A guess is the harness making the call.
