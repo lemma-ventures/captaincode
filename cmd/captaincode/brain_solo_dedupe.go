@@ -27,6 +27,7 @@ type soloRun struct {
 	finished time.Time
 	text     string
 	err      error
+	partial  bool // cut off by a time cap or an interrupt, not an answer
 }
 
 // beginSolo registers a run, or reports the one already in flight (or just
@@ -47,7 +48,10 @@ func (b *brain) beginSolo(key string) (*soloRun, bool) {
 		// after a failure means "try again" - the user fixed the login and
 		// got the cached "Authentication required" four times in three
 		// minutes (cursor, 2026-09-13). In-flight runs still attach.
-		if !cur.finished.IsZero() && cur.err != nil {
+		// A run cut off by ctrl+c is no answer either: its resend was served
+		// the one opening line it had streamed, in 1.4s, and nothing ran
+		// (2026-10-01).
+		if !cur.finished.IsZero() && (cur.err != nil || cur.partial) {
 			delete(b.solo, key)
 		} else {
 			return cur, true
@@ -58,10 +62,10 @@ func (b *brain) beginSolo(key string) (*soloRun, bool) {
 	return cur, false
 }
 
-func (b *brain) recordSolo(key, text string, err error) {
+func (b *brain) recordSolo(key string, res captaincode.Result, err error) {
 	b.wmu.Lock()
 	if cur, ok := b.solo[key]; ok {
-		cur.text, cur.err, cur.finished = text, err, time.Now()
+		cur.text, cur.err, cur.partial, cur.finished = res.Text, err, res.Partial, time.Now()
 	}
 	b.wmu.Unlock()
 }

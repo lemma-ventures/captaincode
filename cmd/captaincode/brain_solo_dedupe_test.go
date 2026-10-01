@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
@@ -170,4 +171,30 @@ func TestStaleAbandonedAnswersExpire(t *testing.T) {
 	}
 	b.chatCompletions(httptest.NewRecorder(), wfReq(false, "old thing"))
 	assert.True(t, ran, "an hour-old orphan is history, not an answer to today's prompt")
+}
+
+// A resend after ctrl+c is "run it", never a replay of the cut-off run: the
+// stopped cursor run's one opening line came back in 1.4s and nothing ran
+// (2026-10-01). Neither the dedupe cache nor the abandoned-answer history
+// may serve it.
+func TestResendAfterAnInterruptRunsAgain(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := teamBrain()
+	var runs atomic.Int32
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		if runs.Add(1) == 1 {
+			return leg, captaincode.Result{Text: "I'll judge this as an investment decision, checking the repo first.", Partial: true},
+				fmt.Errorf("cursor-agent -p stopped after 54s: %w", captaincode.ErrInterrupted)
+		}
+		return leg, captaincode.Result{Text: "the full investor verdict"}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // ctrl+c: the TUI drops the request too
+	b.chatCompletions(httptest.NewRecorder(), wfReq(false, "act as an investor").WithContext(ctx))
+	require.Equal(t, int32(1), runs.Load())
+
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, wfReq(false, "act as an investor"))
+	assert.Equal(t, int32(2), runs.Load(), "the resend runs again")
+	assert.Contains(t, answerOf(t, rec), "the full investor verdict")
 }

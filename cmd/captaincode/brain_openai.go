@@ -603,7 +603,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// answer instead of paying for the work twice ("I never got the answer
 	// from codex", 2026-08-01 - a 14-minute chain delivered into a dead
 	// connection). Delivered answers are never replayed: asking again after
-	// you SAW the answer means run it again.
+	// you SAW the answer means run it again. Nor is a run cut off by ctrl+c
+	// preserved: the user stopped it, and a resend means run it.
 	if orphan, ok := findAbandonedAnswer(lastUserTurn(prompt)); ok {
 		fmt.Printf("captain brain: serving preserved answer %s (previous request abandoned mid-run)\n", orphan.ID)
 		emit, _, finish := newCompletionWriter(w, req, string(leg))
@@ -663,7 +664,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		elapsed := time.Since(t0)
 		if err != nil {
 			b.onWorkerError(leg, err)
-			b.recordSolo(dedupeKey, "", err)
+			b.recordSolo(dedupeKey, captaincode.Result{}, err)
 			if !titleReq { // a session title is housekeeping, not work
 				recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
 					Task: lastUserTurn(prompt), Output: res.Text, Error: err.Error(), DurationMs: elapsed.Milliseconds(), Logs: logPaths(res)})
@@ -673,11 +674,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeWorkerError(w, leg, err)
 			return
 		}
-		b.recordSolo(dedupeKey, res.Text, nil)
+		b.recordSolo(dedupeKey, res, nil)
 		if !titleReq { // a session title is housekeeping, not work
 			recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
 				Task: lastUserTurn(prompt), Output: res.Text, DurationMs: elapsed.Milliseconds(),
-				Abandoned: r.Context().Err() != nil, Logs: logPaths(res)})
+				Abandoned: r.Context().Err() != nil && !res.Partial, Logs: logPaths(res)})
 		}
 		fmt.Printf("captain brain: %s wrapper done in %s (%d chars)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
 		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: captaincode.ModelIDAt(leg, req.ws.Effort), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
@@ -808,7 +809,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	elapsed := time.Since(t0)
 	if err != nil {
 		b.onWorkerError(leg, err)
-		b.recordSolo(dedupeKey, "", err)
+		b.recordSolo(dedupeKey, captaincode.Result{}, err)
 		if !titleReq { // a session title is housekeeping, not work
 			recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
 				Task: lastUserTurn(prompt), Output: res.Text, Error: err.Error(), DurationMs: elapsed.Milliseconds(), Logs: logPaths(res)})
@@ -828,11 +829,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	b.recordSolo(dedupeKey, res.Text, nil)
+	b.recordSolo(dedupeKey, res, nil)
 	if !titleReq { // a session title is housekeeping, not work
 		recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
 			Task: lastUserTurn(prompt), Output: res.Text, DurationMs: elapsed.Milliseconds(),
-			Abandoned: r.Context().Err() != nil, Logs: logPaths(res)})
+			Abandoned: r.Context().Err() != nil && !res.Partial, Logs: logPaths(res)})
 	}
 	fmt.Printf("captain brain: %s wrapper done in %s (%d chars, streamed)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(leg), Model: captaincode.ModelIDAt(leg, req.ws.Effort), Text: promptPeek(res.Text), Ms: elapsed.Milliseconds()})
