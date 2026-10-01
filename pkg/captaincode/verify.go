@@ -8,7 +8,10 @@ package captaincode
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,6 +68,22 @@ func ChangedFiles(ctx context.Context, dir string) []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// DirtyState is the working tree's dirty files, each with its size and
+// modification time: compared before and after a worker runs, it says
+// whether the worker changed anything, whatever was already uncommitted.
+func DirtyState(ctx context.Context, dir string) map[string]string {
+	state := map[string]string{}
+	for _, f := range ChangedFiles(ctx, dir) {
+		st, err := os.Lstat(filepath.Join(dir, f))
+		if err != nil {
+			state[f] = "gone"
+			continue
+		}
+		state[f] = fmt.Sprintf("%d:%d", st.Size(), st.ModTime().UnixNano())
+	}
+	return state
 }
 
 // CommitsTouching finds the newest commit after since that touched any of

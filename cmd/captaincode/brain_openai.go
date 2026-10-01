@@ -315,7 +315,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// with several trailing user messages: each is its own turn, in order
 	// (brain_queue.go). A round the brain issued itself never splits.
 	if r.Context().Value(noDedupeKey{}) == nil && r.Context().Value(queuedKey{}) == nil && !isTitleTurn(req.Messages) {
-		if pending := queuedPrompts(req.Messages); pending != nil {
+		if pending := b.unhandled(req.ws.Dir, req.Messages, queuedPrompts(req.Messages)); pending != nil {
 			b.runQueued(w, r, req, pending)
 			return
 		}
@@ -602,6 +602,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if !titleReq && !internal {
 		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt))
 		taskID = b.openTask(lastUserTurn(prompt))
+		b.noteVerifyBase(taskID, req.ws.Dir)
 	}
 
 	// An answer produced for a client that had gone away (stall→reroute chains

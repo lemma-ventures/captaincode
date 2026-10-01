@@ -395,3 +395,30 @@ func TestSoloVerifyStopsWhenARetryHasNoVerdict(t *testing.T) {
 		}
 	}
 }
+
+// A turn that changed nothing here is not verified against the work in
+// progress it found: a sign-off done in another repository ran this one's
+// tests on 199 uncommitted lines, failed, and bought a high-effort repair
+// of them (2026-10-01). What the turn itself changes is still checked.
+func TestSoloVerifyJudgesOnlyWhatTheTurnChanged(t *testing.T) {
+	t.Setenv("CAPTAIN_SOLO_VERIFY", "1")
+	dir := gitRepoWithChange(t) // uncommitted before the turn
+	b := teamBrain()
+	checks := 0
+	b.captureTestFn = func(ctx context.Context, d string) (*captaincode.CheckEvidence, error) {
+		checks++
+		return &captaincode.CheckEvidence{Command: []string{"go", "test", "./..."}, Passed: true}, nil
+	}
+	taskID := b.openTask("sign off the fork commits")
+	b.noteVerifyBase(taskID, dir)
+	_, _, _, rec := b.verifyAndEscalate(captaincode.Workspace{Dir: dir}, captaincode.LegClaude, "[user]\nsign off the fork commits\n\n", captaincode.Result{Text: "done"}, taskID, nil, nil)
+	assert.Nil(t, rec, "nothing the turn did to check")
+	assert.Zero(t, checks)
+
+	taskID = b.openTask("fix the parser in a.go")
+	b.noteVerifyBase(taskID, dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a // the worker's own edit\n"), 0o644))
+	_, _, _, rec = b.verifyAndEscalate(captaincode.Workspace{Dir: dir}, captaincode.LegClaude, "[user]\nfix the parser in a.go\n\n", captaincode.Result{Text: "done"}, taskID, nil, nil)
+	require.NotNil(t, rec)
+	assert.Equal(t, 1, checks, "the turn's own edit is checked")
+}
