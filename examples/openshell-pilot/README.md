@@ -458,8 +458,10 @@ message. Each time it called their logic identical. Twice it preferred
 SambaNova's error message; twice it broke the tie "by stable id order" and
 landed Cerebras's. Its other nine rulings were the same in all four runs, so the
 integrated tree followed `csvline`: `acb0151` in the first and third runs,
-`57a9000` in the second and fourth. This is an observation on one fixture, not
-a determinism test; the lanes stay separate.
+`57a9000` in the second and fourth. A later change treats a ruling that calls
+the patches equivalent as a tie and lands the lowest contender id, so that
+flip is the harness's, not the model's. This is an observation on one fixture,
+not a determinism test; the lanes stay separate.
 
 Limits:
 
@@ -467,8 +469,9 @@ Limits:
   files, mode changes or binaries.
 - There is one winner per conflict group; overlapping patches are never merged.
 - The director sees each patch truncated to 2,000 characters and the worker's
-  unverified report. Its ruling is a model call, and the same prompt can get a
-  different ruling.
+  unverified report. A ruling that prefers one contender is still a model
+  call, so the same prompt can land a different worker. A ruling that calls
+  the patches equivalent lands the lowest contender id.
 - A change that breaks another landed task through a different file is caught
   only by the integrated verification. That failure fails the run; Captain does
   not retry without the culprit.

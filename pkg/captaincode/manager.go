@@ -539,9 +539,12 @@ type Contender struct {
 }
 
 // Ruling is the director's call on a conflict: whose changes land.
+// Equivalent means the director could not prefer one contender. Captain then
+// lands the lowest id itself, so a tie is not broken by a second model call.
 type Ruling struct {
-	Winner string `json:"winner"`
-	Reason string `json:"reason"`
+	Winner     string `json:"winner"`
+	Reason     string `json:"reason"`
+	Equivalent bool   `json:"equivalent,omitempty"`
 }
 
 // Arbitrate asks the director which one of several conflicting workers'
@@ -606,18 +609,56 @@ Task:
 		}
 		fmt.Fprintf(&sb, "report:\n%s\n\n", truncateStr(c.Text, 3000))
 	}
-	sb.WriteString(`Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>"}`)
+	sb.WriteString(`Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>","equivalent":false}
+If you cannot prefer one contender on the criteria above, set "equivalent": true and do not break the tie. Captain lands the lowest contender id.`)
 	return sb.String()
 }
 
 // checkRuling accepts a ruling only when it names one of the contenders.
+// An equivalence is not a pick: the lowest id lands, whatever winner the
+// director named.
 func checkRuling(r Ruling, contenders map[string]Contender) (Ruling, error) {
 	r.Winner = strings.TrimSpace(r.Winner)
+	ids := contenderIDs(contenders)
+	if r.Equivalent || reasonCallsEquivalent(r.Reason) {
+		r.Equivalent = true
+		r.Winner = ids[0]
+		r.Reason = truncateStr("equivalent; landed "+r.Winner+" (lowest id)", 200)
+		return r, nil
+	}
 	if _, ok := contenders[r.Winner]; !ok {
-		return Ruling{}, fmt.Errorf("arbitrate: director named %q, not one of %s", r.Winner, strings.Join(contenderIDs(contenders), ", "))
+		return Ruling{}, fmt.Errorf("arbitrate: director named %q, not one of %s", r.Winner, strings.Join(ids, ", "))
 	}
 	r.Reason = truncateStr(oneLine(r.Reason), 200)
 	return r, nil
+}
+
+// reasonCallsEquivalent is the backstop for a director that describes a tie
+// in prose and still names a winner. A denial ("not equivalent") is a
+// preference, not a tie.
+func reasonCallsEquivalent(reason string) bool {
+	s := strings.ToLower(oneLine(reason))
+	if s == "" || strings.Contains(s, "not equivalent") || strings.Contains(s, "not identical") {
+		return false
+	}
+	for _, phrase := range []string{
+		"equivalent",
+		"logic identical",
+		"identical logic",
+		"logics identical",
+		"tie broken",
+		"broke the tie",
+		"break the tie",
+		"no material difference",
+		"cannot prefer",
+		"can't prefer",
+		"no preference",
+	} {
+		if strings.Contains(s, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func contenderIDs(contenders map[string]Contender) []string {
