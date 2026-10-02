@@ -1,6 +1,6 @@
 # Captain Code implementation roadmap
 
-Prepared 13 September 2026; status refreshed 16 September 2026.
+Prepared 13 September 2026; status refreshed 2 October 2026.
 
 **M1–M5 control surfaces have largely landed in source** (accounting, eval harness,
 decisions, capabilities, quotas, budgets, escalation, isolation, artifacts,
@@ -15,6 +15,7 @@ guides, not release promises.
 | Item | Why it is still open |
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
+| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits and whole-plan attempt admission have controller tests only. Open: ordinary team planning, mixed host/sandbox stages, reconciling actual attempts into the ledger, strict dollar budgets, in-flight worker recovery, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
@@ -1525,6 +1526,318 @@ bounds captain's OWN model traffic. It is not a network boundary for a
 worker, whose `curl` in a bash tool call never passes through the proxy at
 all. A real boundary is a container, a VM, or a machine without the
 credentials - which is what the `ax` leg would buy.
+
+**M3.7 OpenShell update (1 October 2026, unreleased).** The explicit
+`openshell` worker entry now requires a verification argv and an edit scope,
+resolves the repository and pins the revision before execution, and rejects
+invalid configuration before launching a sandbox. No implicit `true` check or
+invalid `.git` protected-file default remains. The baseline can pass or fail
+for a general task; regression tasks can require failure explicitly.
+
+Both dispatch paths use the sandbox runner. A failed integrated check is a
+worker error, and the brain never reroutes this leg onto a host worker or
+runs the solo host verification/repair loop for it. `/interrupt` reaches
+controller cancellation and waits for cleanup. Exports stay as reviewable
+patches, with no writes to the user's checkout or index.
+
+Controller-backed regression tests cover configuration, snapshot pinning,
+argument preservation, failed verification, interruption, and host-boundary
+checks. These are not new live MicroVM measurements; the live entry-point
+qualifications follow below. For director-planned sandbox teams, the existing
+`captain openshell --team` command remains the supported path. See [configuration](CONFIGURATION.md#openshell-workers-experimental-unreleased).
+
+**M3.7 export handoff (2 October 2026, unreleased).** Successful solo brain
+runs now return a structured verified export, bound to the brain's task and
+attempt IDs and retained in the ledger. Artifact and handoff queries survive
+restart and show the snapshot, files, checksum, sandbox verification and run
+record as exported, not applied. They no longer attribute unrelated host
+working-tree edits to OpenShell. Interrupted reports stay errors.
+
+Regression tests cover controller-to-export binding, changed or symlinked
+patch rejection, ledger reload, task isolation and unchanged host files/index.
+Ordinary teams/workflows containing OpenShell are rejected before dispatch so
+their host gates cannot run and their output cannot imply patches landed.
+This update adds no new live sandbox or scale measurements.
+
+**M3.7 CLI boundary qualification (2 October 2026, unreleased).**
+`captain with openshell` now has a dedicated execution path: no host OpenCode
+note/session, ladder preflight, director call or host `--until` check. Its
+task and attempt are persisted before dispatch; completion retains the verified
+export and handoff, while Ctrl+C/SIGTERM waits for sandbox cleanup and records
+cancellation without an export.
+
+The [live CLI report](../examples/openshell-pilot/results/2026-10-02-cli-entry.json)
+records one Cerebras fixture task passing all 17 task gates and 8 fresh-sandbox
+integration gates in 62.184 seconds. Staged, unstaged and untracked host files
+and the Git index stayed byte-identical. Reapplying the exported patch to a
+disposable clone reproduced the verified tree. A second invocation interrupted
+after the Landlock check stopped its sandbox in 0.422 seconds and retained a
+`cancelled` record without an apply instruction. This is one fixture, not a
+scale or reliability measurement.
+
+**M3.7 HTTP boundary qualification (2 October 2026, unreleased).**
+Explicit OpenShell HTTP requests now bypass host memory/skill injection,
+compaction, cached team plans, narration retries and grading. Invalid workspaces,
+oversized conversations, ordinary workflow gates and strict dollar caps are
+refused. Task/attempt
+records precede dispatch; exports and handoffs are saved before success. HTTP
+disconnect and task cancellation reach controller cleanup and withhold exports.
+Concurrent retries are scoped to the workspace, and completed runs are not cached.
+
+The [HTTP entry report](../examples/openshell-pilot/results/2026-10-02-http-entry.json)
+records a public fixture passing 17 worker gates and 8 integration gates through
+an isolated HTTP server in 64.947 seconds. Host edits and the Git index stayed
+unchanged, and replaying the patch reproduced the verified tree. Disconnecting
+a second request after Landlock enforcement completed controller cleanup in
+0.406 seconds, leaving a cancelled attempt without an export. The test used the
+real prepared MicroVM runtime, not the running brain service. Handler regressions
+also cover JSON/SSE responses, persistence failure, cancellation and retry scope.
+
+**M3.7 parallel workflow composition (2 October 2026, unreleased).**
+Explicit `/openshell ... + /openshell ...` expressions now run 2-4 workers
+through the dedicated CLI/HTTP boundary. Workers share one pinned snapshot and
+operator configuration; each receives its own assignment and prior conversation.
+Every worker must pass. Failed workers and unresolved conflicts prevent a
+combined export, while their individual diffs and evidence remain available.
+Selected patches are verified together in a fresh sandbox before one durable
+export is returned. User files and the Git index are not changed.
+
+The ledger retains one task/aggregate attempt linked to the per-worker run
+record. Cancellation reaches all active controllers; there is no host fallback,
+host verification, automatic planning or synthesis. Mixed host/sandbox stages
+and ordinary team planning remain open. Regression coverage includes configuration, independent assignments,
+combined verification, failed-worker/conflict rejection and HTTP cancellation.
+
+The [parallel HTTP report](../examples/openshell-pilot/results/2026-10-02-parallel-entry.json)
+records two independent refactorings passing on their first attempts in 62.633
+seconds at concurrency 2. Both workers passed 17 gates; the combined patch passed
+8 gates in a fresh sandbox and replayed to the same tree. Disconnecting a second
+request stopped both active sandboxes in 0.407 seconds, left a cancelled aggregate
+attempt and delivered no export. Host files and the Git index stayed unchanged.
+Two earlier setup attempts stopped before model execution because the isolated
+test process could not reach Docker; these remain recorded in the report. One
+fixture on one host does not qualify scale or reliability.
+
+**M3.7 sequential verified snapshots (2 October 2026, unreleased).**
+Explicit OpenShell stages now compose with `>`, including parallel stages followed
+by a single worker. Up to four stages and eight workers share the operator's
+scope, profile and verification argv. Every stage is checked in a fresh sandbox
+before its exact tree becomes the next stage's snapshot. Intermediate commits
+stay in a separate local repository with hooks and content filters disabled.
+
+The final export binds the original commit to the last verified tree. Per-stage
+records and snapshot IDs are saved atomically; a failed or cancelled stage stops
+the chain and withholds the cumulative export. Earlier answers are not injected
+as instructions. Controller and HTTP tests cover inheritance, repeated same-file
+edits, replay, cancellation, validation and host preservation.
+
+The [live sequential result](../examples/openshell-pilot/results/2026-10-02-sequential-entry.json)
+passed one two-stage public fixture through HTTP in 114.0 seconds: 17 worker
+gates and 8 fresh-sandbox gates per stage, stage 2 based on stage 1's verified
+snapshot, and an exact cumulative replay. Patches and final tree match the
+parallel result for the same tasks. A disconnect during stage 2 stopped its
+sandbox in 0.405 seconds and delivered no export. Three earlier attempts never
+created a sandbox: the isolated test `HOME` resolved Docker to a missing default
+socket. The tests now resolve it from the account home and the pilot refuses a
+missing socket. No scale result is claimed.
+
+**M3.7 sandbox spend (2 October 2026, unreleased).** Shield now records each
+response's provider-reported tokens and `usage.cost` (numbers only), and every
+worker's `run.json` report totals them. The run's ledger charge is measured only
+when every request that crossed Shield was priced; otherwise it is unknown, and
+the `openshell` leg's empty price can no longer read as a free $0. The live
+sequential run charged a measured $0.0326 for 91,166 tokens across 15 priced
+requests. The ledger still keeps one charge per run rather than one per worker,
+and lanes that return no price (NIM) stay unknown.
+
+**M3.7 no-change reviews (2 October 2026, unreleased).** Explicit
+`/openshell --review <assignment>` stages and JSON tasks with `mode: "review"`
+accept only an empty export, a passing baseline and passing verification, with
+no repair attempt or edit scope. Edit tasks still require a patch. Reviews use
+the same Shield, denial and restart checks as edits, and their unchanged tree is
+verified again in a fresh sandbox before handoff. Review-only chains keep durable
+evidence and report nothing to apply. Regression tests cover edit-review-edit
+snapshot inheritance, changed review rejection, empty edit rejection, checksum
+and tree binding, and unchanged evidence after ledger reload. Model findings
+remain untrusted reports, not an approval gate.
+
+The [live review qualification](../examples/openshell-pilot/results/2026-10-02-review-entry.json)
+passed edit-review handoff and cumulative replay in 111.0 seconds. Both workers
+passed 17 gates and both stage trees passed 8 fresh-sandbox gates; the reviewer
+exported an empty patch and the exact predecessor tree. Disconnecting a second
+run during review stopped its active sandbox in 0.406 seconds and delivered no
+export. Host files and index stayed unchanged. Shield measured $0.0443 for
+123,394 tokens on the completed run. An earlier attempt passed execution but
+stopped on a billing assertion: one of 23 requests had no priced response, so
+the ledger correctly reported unknown cost. The qualification now checks both
+measured and unknown billing. This is one local public fixture, not scale proof.
+
+**M3.7 explicit coordinator recovery (2 October 2026, unreleased).**
+`captain openshell --resume <run-directory>` resumes new sequences from complete,
+verified stages. An owner-only plan pins assignments, scope, verification argv,
+provider policies and runtime fingerprints. Recovery rechecks worker and integrated
+gates, patch digests and tree replay before dispatching any remaining stage. A
+completed run is rechecked without another model or director call. Mid-worker
+interruption and failed stages remain refused; no stage is blindly replayed.
+
+An exclusive process lock covers initial execution and recovery. Regression tests
+kill a coordinator after its verified checkpoint, verify competing resumes are
+refused, and continue after the operating system releases the lock. They also
+cover altered plans, policies, binaries, evidence, gates and snapshot lineage,
+recovery interrupted again, no-change reviews, and preservation of host edits and
+index bytes. The command records continuation timestamps in the run; it leaves the
+original brain task and attempt unchanged. Task-linked and opt-in startup recovery
+are described below; ordinary team planning remains open.
+
+The [live recovery report](../examples/openshell-pilot/results/2026-10-02-resume-entry.json)
+passed a public edit-review fixture in 109.2 seconds. The first coordinator exited
+after stage 1 (56.4 seconds); a separate coordinator reused it and completed stage
+2 in 52.1 seconds. Each stage passed 17 worker gates and 8 fresh-sandbox gates;
+the cumulative patch reproduced the verified tree and host files/index stayed
+unchanged. Rechecking the completed run made no additional model calls. Shield
+recorded 11 requests, 64,116 tokens and $0.0230. Earlier attempts exposed a Docker
+socket setup issue and a fake-pilot mismatch: worker reports name the starting
+tree, while the integrated report names the verified result. Both are recorded.
+This qualifies one stage-boundary recovery, not in-flight resumption or scale.
+
+**M3.7 task-linked recovery (2 October 2026, unreleased).** Sequential CLI/HTTP
+dispatch now persists the run directory and plan checksum on the attempt before
+starting a sandbox. `captain task resume <task-id> <attempt-id>` validates the
+checkpoint under the sequence lock before creating and saving a new linked
+attempt. Only then does it launch a controller; completion records the export,
+cumulative usage and handoff under the original task. It bypasses host routing,
+memory and verification. The original interrupted attempt becomes failed.
+
+The task command returns after admission. Task inspection reports completion,
+and cancellation stops the controller and withholds export delivery. Invalid
+plans, missing or incomplete stages, duplicate resumes and unsupported shared
+budgets refuse before dispatch. Tasks with settled calls refuse rather than count
+sequence spend twice. Regression coverage includes durable pre-dispatch binding,
+exclusive locks, cancellation during admission and execution, client disconnect,
+plan substitution and missing exports. Ordinary team planning remains open;
+opt-in restart dispatch is described below.
+
+**M3.7 task recovery qualification (2 October 2026, unreleased).** The controller
+now refreshes the durable attempt checkpoint after every verified stage, including
+during recovery. The stage record is saved first; a ledger-save failure stops the
+next worker and withholds the final export. A regression fails on the previous
+implementation and verifies that the retained stage remains recoverable.
+
+The [live task recovery report](../examples/openshell-pilot/results/2026-10-02-task-resume-entry.json)
+passed a public Roman-numeral edit followed by a no-change review in 107.6 seconds.
+A subprocess exited after its first verified checkpoint (56.1 seconds). A separate
+coordinator reloaded and reconciled the ledger, rejected an altered plan, then
+resumed through the HTTP task API (51.5 seconds). A duplicate resume was refused.
+The original attempt became failed and one linked continuation succeeded; stage 1
+was reused unchanged, with 17 worker and 8 integration gates passing per stage.
+
+The exported patch reproduced the final verified tree without changing host files
+or index bytes. Artifacts and handoff remained available through the task API after
+another ledger reload. One cumulative charge matched Shield's 11 requests, 64,140
+tokens and $0.0230. This qualifies explicit task recovery at a verified stage
+boundary on one host; it does not qualify automatic dispatch or in-flight recovery.
+
+**M3.7 opt-in startup recovery (2 October 2026, unreleased).**
+`CAPTAIN_OPENSHELL_AUTO_RESUME=1` enables one startup pass after the HTTP listener
+binds and reconciliation is saved. Previously running sandbox sequences are
+validated and resumed serially through the same path as the explicit task API.
+Every continuation receives a durable causal attempt and one cumulative charge.
+The saved checkpoint must be at most 24 hours old; restart time cannot make an
+old checkpoint eligible again. Waiting tasks, cancelled work, changed runtime or
+evidence, incomplete stages and unsupported budgets remain refused.
+
+Reconciliation now preserves pending sandbox cancellation intent. Neither manual
+nor automatic task recovery may bypass it, and the legacy `/v1/resume` endpoint
+refuses sandbox tasks rather than creating an unvalidated running attempt.
+Shutdown cancels startup recovery and stops queued admissions. Regression coverage
+includes opt-in, stale/future timestamps, waiting tasks, cancellation persistence,
+serial dispatch, shutdown, invalid runtime, save failure and exactly-once charging.
+Ordinary team planning and strict dollar budgets remain open.
+Durable wall-time limits and attempt admission are described below.
+
+The [live startup recovery report](../examples/openshell-pilot/results/2026-10-02-startup-recovery.json)
+passed in 138.9 seconds (57.8 before the coordinator exit, 81.1 during recovery).
+The isolated harness reloaded the ledger and called the startup queue; it did not
+restart the user's brain. An altered plan was refused, stage 1 was reused unchanged,
+and stage 2 completed with 17 worker and 8 integration gates per stage. Host files
+and index stayed unchanged, the patch reproduced the verified tree, and artifacts
+and handoff survived reload. One cumulative charge covered 11 requests, 64,140
+tokens and $0.0230. This qualifies one public fixture on one host, not in-flight
+recovery, scale or a release build.
+
+**M3.7 shared wall-time limits (2 October 2026, unreleased).**
+`CAPTAIN_MAX_WALLTIME` now supplies one root deadline across solo, parallel and
+sequential OpenShell execution, including repair and integration verification.
+The task ledger retains the root start time and cap; the sequence plan binds an
+absolute `deadline_at` into its checksum. Manual and startup recovery retain that
+deadline, count downtime, and reject expired work before admitting a controller.
+Removing or increasing the environment limit cannot extend a saved deadline.
+Expiry stops active controllers, skips queued workers, preserves existing evidence
+and withholds the export. Controller cleanup retains its bounded shutdown grace.
+
+Regression coverage checks controller cleanup, queued-worker refusal, successful
+resume with the unchanged deadline, expiry while offline, expired manual/startup
+admission, late-result rejection and durable ledger stop reasons. These checks use
+local controller fixtures, not new live-provider or MicroVM qualification. Attempt
+cap admission is described below; strict dollar caps and ordinary team planning
+remain open.
+
+**M3.7 conservative attempt admission (2 October 2026, unreleased).**
+`CAPTAIN_MAX_ATTEMPTS` admits a complete explicit sandbox plan only when its
+worst-case worker, repair and director invocations fit. Each edit/review counts
+one; configured repairs count once; every possible conflict group gets a director
+slot plus one malformed-JSON retry. Verification sandboxes consume no model
+attempts. A cap too small refuses the whole plan before any sandbox starts,
+rather than starting parallel workers that cannot all finish within the cap.
+
+`run.json` exposes the cap and required slots separately from measured worker
+usage. Sequence plans checksum-bind the original cap; direct, task-linked and
+startup recovery must still fit the entire original plan, including reused stages.
+Nested contexts preserve tighter caller/task caps. Removing or increasing an
+environment cap cannot enlarge a saved allocation. Strict cost caps, malformed
+attempt settings and already-used generic root budgets remain refused.
+
+This is admission against a fixed upper bound, not dynamic reservation/refund:
+unused repair/ruling slots are not redistributed, and actual worker/director
+attempts are not yet reconciled into generic ledger counters. Local controller
+and HTTP regressions cover accepted/refused plans, real director retry dispatch
+through a fake CLI, multiple conflicts, reviews, nested limits, durable cap/stop
+records and recovery without replay. No new live-provider or MicroVM benchmark
+is claimed for this change. Ordinary team planning and strict dollar budgets
+remain open.
+
+**M3.7 review before commit (2 October 2026, unreleased).** A review of the
+uncommitted work found and fixed these defects, each with a regression test:
+
+- A director-planned `/team` with one OpenShell worker ran it through the
+  ordinary host path (director call, skill staging, no saved task, grading).
+  Teams now refuse OpenShell before planning, and the generic worker path
+  refuses it outright.
+- Sequences saved the 15-minute worker timeout as their permanent deadline,
+  so recovery was refused after 15 minutes even without a wall-time limit.
+  Only a task budget's root deadline is saved now.
+- A stage could run under a pilot, Shield or binary changed after the plan
+  was saved. Every stage now refuses to start unless the build matches the
+  plan's pinned provenance.
+- Stopping the brain left controllers from `captain task resume` running in
+  their own process group. Shutdown now cancels every sandbox controller,
+  refuses new ones and waits for cleanup.
+- A running brain's next save reverted a separate CLI run's result and
+  export. Task and attempt rows now merge newest-first across processes.
+- The brain's leg defaulted its host-side controller to the target
+  repository's `examples/openshell-pilot`; `CAPTAIN_OPENSHELL_PILOT` is now
+  required.
+- Smaller fixes: Captain's git plumbing ignores repository hooks and
+  fsmonitor, stage records are fsynced before the checkpoint naming them,
+  `--resume` no longer creates a lock file in arbitrary directories, a
+  cancellation that wins the race keeps no export, a directive-only
+  `/openshell` turn is refused, an undispatched task cannot stay "running",
+  and Shield no longer crashes on an oversized `usage.cost`.
+
+Still open from the review: the ledger checkpoint anchors only the plan
+digest, so consistent edits to every record inside the owner-only run
+directory are not detected, and a retry that attaches to a running HTTP
+request receives no keepalive until the run ends.
 
 **M3.8 status (20 September 2026).** Named, not built.
 

@@ -1,0 +1,229 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "verdict": "pass",
+  "entrypoint": "POST /v1/chat/completions, model=auto, /openshell edit > /openshell --review inspect",
+  "fixture": "Public iterative factorial refactoring followed by a no-change review, protected unittest cases",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "pkg/captaincode/openshell.go": "9404e23471d5a7118d2879ba8dce43e3d3f857a21891a95168c1bf2386f43de8",
+    "pkg/captaincode/openshell_workflow.go": "841f87c651b515ddcb5991ca816919fd3838e93e9436e26602b062534a363985",
+    "pkg/captaincode/openshell_sequence.go": "c4f9a9062d6d4a86698493743a300e415de87e1e7a38451c332b9b897da070c0",
+    "cmd/captaincode/brain_openshell.go": "e978e1d88ef83c2c955edd688944284a5a72d59ac32fa0b82ab5af37c410cbbb",
+    "examples/openshell-pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+    "examples/openshell-pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+    "cmd/captaincode/brain_openshell_parallel_live_test.go": "d2b80de8967f1c1c60c0a8203b0681970e837fc9ccdb6b40c362ffbeabe3447b"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "760fbcfa47b8357fb1c1b83fa0a510be82ec28d0",
+      "modified": true
+    },
+    "files": {
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/response.py": "5a77ea4aad73a1c1f341825952f62a1ea50ca7956cc28e1bc9e7a99733e244e4",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "6b4d7801e1d995aa2e4d72effc6ec5ad0c96766f9a5f62cd13742f3a9f7986e6",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "9209e6e29d77a0f17cfa9f1b443c354af25d56a4e06428e81b77c33e4c957a0d"
+    }
+  },
+  "run_record_sha256": "d11219ac4f8f2aaaba9ec142894c6616475a97e102f02522a034a850d990099a",
+  "wall_seconds": 110.979902333,
+  "run_seconds": 110.89,
+  "stages": [
+    {
+      "stage": 1,
+      "revision": "2819e823627c979acd991cd655a235eb5ed94b79",
+      "tree": "c27c4b4c776e94d32061c2182cf6641aedaaa8bd",
+      "next_revision": "e6901efc87ec8dfb7e9e15c8075b89af6e76fadb",
+      "verdict": "pass",
+      "mode": "edit",
+      "outcome": "landed",
+      "worker_seconds": 34.868,
+      "worker_attempts": 1,
+      "worker_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.642,
+        "gateway_ready_recovery": 0.708,
+        "sandbox_create": 13.627,
+        "sandbox_create_attempt": 13.627,
+        "sandbox_restart": 2.227,
+        "worker": 8.749
+      },
+      "shield": {
+        "requests": 12,
+        "responses": 12,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 12,
+        "prompt_tokens": 79878,
+        "completion_tokens": 1768,
+        "reasoning_tokens": 1059,
+        "cost_usd": 0.029283299999999998
+      },
+      "patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+      "changed_files": [
+        "factorial.py"
+      ],
+      "integrated_seconds": 21.732,
+      "integrated_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      }
+    },
+    {
+      "stage": 2,
+      "revision": "e6901efc87ec8dfb7e9e15c8075b89af6e76fadb",
+      "tree": "c27c4b4c776e94d32061c2182cf6641aedaaa8bd",
+      "next_revision": null,
+      "verdict": "pass",
+      "mode": "review",
+      "outcome": "unchanged",
+      "worker_seconds": 31.559,
+      "worker_attempts": 1,
+      "worker_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.674,
+        "gateway_ready_recovery": 0.709,
+        "sandbox_create": 13.262,
+        "sandbox_create_attempt": 13.262,
+        "sandbox_restart": 2.197,
+        "worker": 5.813
+      },
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 7,
+        "prompt_tokens": 40748,
+        "completion_tokens": 1000,
+        "reasoning_tokens": 534,
+        "cost_usd": 0.015011799999999999
+      },
+      "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "changed_files": [],
+      "integrated_seconds": 21.841,
+      "integrated_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      }
+    }
+  ],
+  "review_tree_matches_edit_tree": true,
+  "cumulative_export": {
+    "changed_files": [
+      "factorial.py"
+    ],
+    "patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+    "tree": "c27c4b4c776e94d32061c2182cf6641aedaaa8bd",
+    "replay_verified": true
+  },
+  "host_files_and_index_unchanged": true,
+  "spend": {
+    "complete": true,
+    "reported_cost_usd": 0.0442951,
+    "reported_tokens": 123394
+  },
+  "cancellation": {
+    "during": "review stage after Landlock enforcement",
+    "cleanup_seconds": 0.406003209,
+    "attempt_state": "cancelled",
+    "export_delivered": false
+  },
+  "earlier_attempts": [
+    {
+      "run_record_sha256": "475d974ee0c508ab047629f560869214ed5c986a5a06b21d3926ae7a455cc0a4",
+      "controller_verdict": "pass",
+      "qualification": "stopped at billing assertion before cancellation check",
+      "requests": 23,
+      "priced_responses": 22,
+      "ledger_cost_status": "unknown",
+      "resolution": "Qualification now requires unknown billing when responses are incomplete, measured billing otherwise."
+    }
+  ],
+  "limits": [
+    "One public fixture on one local host, not a scale or reliability measurement.",
+    "Review findings are untrusted prose; pass means configured verification passed, not model approval.",
+    "Review enforces an unchanged exported repository tree, not an operating-system read-only filesystem.",
+    "Prepared VM runtime uses the unreleased overlay recovery patch."
+  ]
+}

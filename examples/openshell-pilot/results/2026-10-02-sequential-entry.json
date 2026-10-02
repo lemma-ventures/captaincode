@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "entrypoint": "POST /v1/chat/completions, model=auto, /openshell ... > /openshell ...",
+  "harness": "Isolated HTTP server with prepared OpenShell MicroVM runtime; synthetic public fixture only.",
+  "verdict": "pass",
+  "fixture": "Sequential iterative factorial and Fibonacci refactorings with protected unittest cases",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "pkg/captaincode/openshell.go": "684fec187999ee3b17a9117c2363cf93569af05d61aeb8465639464fc68105bd",
+    "pkg/captaincode/openshell_sequence.go": "fa68832f52cfb31989e72f8b7e1751d2a83c95936ddeab4afa56a8fd79bb0089",
+    "pkg/captaincode/openshell_workflow.go": "5b9f0f0454d0c34889e28565fc4ea4dfada759637954e6709fea0d23d9427ac4",
+    "pkg/captaincode/accounting.go": "20e0588a9b8ec315e8f9fc9e2299d84397fda5d3a1c44607e2df3f5713536bbb",
+    "cmd/captaincode/brain.go": "454e9af146213f554b5fc7f7a12425b27de427862eedaf419352ea587b8e2e44",
+    "cmd/captaincode/brain_openai.go": "022476ad0b266b08d17f727521bf5bbea1bd325c19750c472c1d701b1023c518",
+    "cmd/captaincode/brain_openshell.go": "e978e1d88ef83c2c955edd688944284a5a72d59ac32fa0b82ab5af37c410cbbb",
+    "cmd/captaincode/openshell_solo.go": "2ed9fb47c19f67b563915b1cb4da6619ce6cdd373a144e67eb493ccd8230813f",
+    "cmd/captaincode/brain_openshell_live_test.go": "e96b0e0468184fabc1dfc5df3e37c13ecc7af7fa21885667fab3288bb79cff7c",
+    "cmd/captaincode/brain_openshell_parallel_live_test.go": "90a52e5ace3f7bc62dbc9353cf705641cab48f32bf2bc0af8840d47a3a865604",
+    "examples/openshell-pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+    "examples/openshell-pilot/task.py": "8479b6f2b0809ca5a8eea610f067ec9c84bc014b90c2ba5cf79bc2ae332a4e6b",
+    "examples/openshell-pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+    "examples/openshell-pilot/response.py": "5a77ea4aad73a1c1f341825952f62a1ea50ca7956cc28e1bc9e7a99733e244e4"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "610815421ea70c04e99af7f784ae7f639558c362",
+      "modified": false
+    },
+    "files": {
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/response.py": "5a77ea4aad73a1c1f341825952f62a1ea50ca7956cc28e1bc9e7a99733e244e4",
+      "pilot/task.py": "8479b6f2b0809ca5a8eea610f067ec9c84bc014b90c2ba5cf79bc2ae332a4e6b",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "8e9258653ead7310e0ba4a6e50164a6941e315b78ed90e2f2f56fee709a7b74c"
+    }
+  },
+  "run_record_sha256": "4a68892f96862d85c0aac451a52f4d91ef608278fefa7c7ece0a8085497efee9",
+  "concurrency": 2,
+  "require_all": true,
+  "wall_seconds": 114.025,
+  "run_seconds": 113.925,
+  "fixture_revision": "5c14a49b3fef7a38247a4ef0714b789b74de3475",
+  "stages": [
+    {
+      "stage": 1,
+      "revision": "5c14a49b3fef7a38247a4ef0714b789b74de3475",
+      "tree": "c27c4b4c776e94d32061c2182cf6641aedaaa8bd",
+      "next_revision": "aed86e08d17f3453761f98d3d2741c8692f1741d",
+      "verdict": "pass",
+      "integrated_seconds": 21.136,
+      "integrated_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      },
+      "integrated_patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+      "integrated_changed": [
+        "factorial.py"
+      ]
+    },
+    {
+      "stage": 2,
+      "revision": "aed86e08d17f3453761f98d3d2741c8692f1741d",
+      "tree": "efad0ba6c91a4639592bb93a8bb0efdda7154cc1",
+      "verdict": "pass",
+      "integrated_seconds": 22.287,
+      "integrated_checks": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      },
+      "integrated_patch_sha256": "e2bee3cb8c196d77690122ec97ef2bc166d2f690b02838eb4236dad04badefd9",
+      "integrated_changed": [
+        "fibonacci.py"
+      ]
+    }
+  ],
+  "workers": [
+    {
+      "id": "s1-w1-openshell",
+      "outcome": "landed",
+      "seconds": 38.218,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "base_revision": "5c14a49b3fef7a38247a4ef0714b789b74de3475",
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.637,
+        "gateway_ready_recovery": 0.704,
+        "sandbox_create": 19.127,
+        "sandbox_create_attempt": 19.127,
+        "sandbox_restart": 2.224,
+        "worker": 6.492
+      },
+      "shield": {
+        "requests": 8,
+        "responses": 8,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 8,
+        "prompt_tokens": 48571,
+        "completion_tokens": 1012,
+        "reasoning_tokens": 600,
+        "cost_usd": 0.01775885
+      },
+      "patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+      "changed_files": [
+        "factorial.py"
+      ]
+    },
+    {
+      "id": "s2-w1-openshell",
+      "outcome": "landed",
+      "seconds": 31.302,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "base_revision": "aed86e08d17f3453761f98d3d2741c8692f1741d",
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.629,
+        "gateway_ready_recovery": 0.706,
+        "sandbox_create": 13.137,
+        "sandbox_create_attempt": 13.137,
+        "sandbox_restart": 2.298,
+        "worker": 5.608
+      },
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 7,
+        "prompt_tokens": 40878,
+        "completion_tokens": 705,
+        "reasoning_tokens": 318,
+        "cost_usd": 0.01483605
+      },
+      "patch_sha256": "e2bee3cb8c196d77690122ec97ef2bc166d2f690b02838eb4236dad04badefd9",
+      "changed_files": [
+        "fibonacci.py"
+      ]
+    }
+  ],
+  "integrated": {
+    "patch_sha256": "9d4bfe7d00a27ac6cdeda42087dbf42e0731cc42168db4b58c7d67535ceda810",
+    "tree": "efad0ba6c91a4639592bb93a8bb0efdda7154cc1",
+    "changed_files": [
+      "factorial.py",
+      "fibonacci.py"
+    ],
+    "verify": [
+      "python3",
+      "-m",
+      "unittest",
+      "-v"
+    ],
+    "passed": true
+  },
+  "handoff": {
+    "stage_2_base_is_stage_1_snapshot": true,
+    "stage_1_snapshot_tree_is_stage_1_verified_tree": true,
+    "final_tree_is_stage_2_verified_tree": true
+  },
+  "patch_replay_matches_verified_tree": true,
+  "matches_parallel_report": {
+    "report": "2026-10-02-parallel-entry.json",
+    "same_worker_patches": true,
+    "same_integrated_tree": true
+  },
+  "accounting": {
+    "source": "Shield's audit of each provider response: OpenRouter usage tokens and usage.cost",
+    "completed_run": {
+      "requests": 15,
+      "priced_responses": 15,
+      "ledger_charge": {
+        "tokens": 91166,
+        "cost_usd": 0.032594899999999996,
+        "cost_status": "measured",
+        "price_source": "runtime"
+      }
+    },
+    "cancelled_run": {
+      "ledger_charge": {
+        "tokens": 49583,
+        "cost_usd": 0.01775885,
+        "cost_status": "measured",
+        "price_source": "runtime"
+      },
+      "note": "Stage 1's worker was billed; stage 2 was stopped before its first worker attempt, so it made no model call."
+    }
+  },
+  "host_preservation": {
+    "staged_files": true,
+    "unstaged_files": true,
+    "untracked_files": true,
+    "git_index": true
+  },
+  "cancellation": {
+    "after": "stage 1 passed and stage 2's worker reached Landlock enforcement",
+    "cleanup_seconds": 0.405,
+    "state": "cancelled",
+    "export_delivered": false,
+    "stages": [
+      {
+        "stage": 1,
+        "verdict": "pass"
+      },
+      {
+        "stage": 2,
+        "verdict": "fail"
+      }
+    ],
+    "stage_2_worker": "pilot stopped (context canceled): controller interrupted; sandbox cleanup requested",
+    "sandbox_stop_confirmed": 1
+  },
+  "earlier_attempts": [
+    {
+      "run_record_sha256": "25fdafc8560c14aeb38f124e460d1ec6974d34ee3f93632451c32e265c398599",
+      "verdict": "inconclusive",
+      "elapsed_seconds": 10.473,
+      "completed_stages": 0,
+      "export_delivered": false,
+      "worker_started": false,
+      "reason": "VM driver did not connect to the local Docker image store; registry fallback could not resolve the local-only worker image.",
+      "runtime_report_verdict": "inconclusive",
+      "cause": "The isolated test HOME held no Docker context, so the lookup returned the default /var/run/docker.sock, which Docker Desktop does not create on this host."
+    },
+    {
+      "run_record_sha256": "bfe876869b9176fb35cad8466afb2f454374e70617c3564fb644c3efc9894715",
+      "verdict": "inconclusive",
+      "elapsed_seconds": 10.669,
+      "completed_stages": 0,
+      "export_delivered": false,
+      "worker_started": false,
+      "reason": "VM driver did not connect to the local Docker image store; registry fallback could not resolve the local-only worker image.",
+      "runtime_report_verdict": "inconclusive",
+      "cause": "The isolated test HOME held no Docker context, so the lookup returned the default /var/run/docker.sock, which Docker Desktop does not create on this host."
+    },
+    {
+      "run_record_sha256": "efe491d60bd2dfa133d8b56970119ca316e18daf5e612fc4e051f69dc854e318",
+      "verdict": "inconclusive",
+      "completed_stages": 0,
+      "export_delivered": false,
+      "worker_started": false,
+      "reason": "Same registry fallback: the new DOCKER_HOST helper also resolved the context after TestMain had replaced HOME.",
+      "fix": "The live tests now resolve the context from the developer's account home and require the socket to exist; the pilot refuses a DOCKER_HOST without a socket instead of falling back to the registry."
+    },
+    {
+      "run_record_sha256": "dc07b33715ea8dbcc05eaf75b3ab4365d8025ee49dc49c409653ac59bd1e7298",
+      "verdict": "pass",
+      "wall_seconds": 108.21,
+      "cancel_cleanup_seconds": 0.406,
+      "note": "Same chain and the same patches and final tree, before Shield recorded provider usage; it asserted no accounting."
+    }
+  ],
+  "limits": [
+    "One synthetic fixture on one host; not a scale or reliability estimate.",
+    "One worker per stage: the run exercises the handoff, not parallel workers inside a sequential stage.",
+    "Development build: the source files above were uncommitted on top of the named revision.",
+    "Uses the existing locally patched OpenShell VM driver; the live brain was not restarted.",
+    "No synthetic credential in this fixture: secret masking and restoration were qualified separately."
+  ]
+}
