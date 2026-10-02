@@ -113,6 +113,14 @@ func TestDeliverableContractDemandsFormatting(t *testing.T) {
 	assert.Contains(t, deliverableContract, "never one large paragraph")
 }
 
+// Live 2026-10-02: a worker's `tail -f` watch on a finished job held its
+// claude -p session open for 11 minutes after the final report. The contract
+// tells every worker to end its background work before the turn ends.
+func TestDeliverableContractEndsBackgroundWork(t *testing.T) {
+	assert.Contains(t, deliverableContract, "every background job, watch and monitor you started has ended")
+	assert.Contains(t, deliverableContract, "never `tail -f`")
+}
+
 // Captain's prompts carried a task and nothing else. A worker meeting an
 // instruction with no setting invites misreading ordinary engineering as
 // something else (2026-09-09). The context must be accurate and present on
