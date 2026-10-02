@@ -1,7 +1,7 @@
 # Scoring and picking: one estimate per model, one rule to pick
 
-Status: proposed (2026-10-02). Phase 0, Phase 1 and the independent bug fixes
-are being implemented; Phases 2 and 3 wait for two weeks of Phase 0 data.
+Status: Phase 0, Phase 1 and the estimator fix implemented (2026-10-02).
+Phases 2 and 3 wait for two weeks of Phase 0 data.
 
 This spec replaces how Captain grades runs, scores legs and picks one. It
 came out of a review of the scoring code and a five-way blind red-team review
@@ -101,8 +101,10 @@ Two weeks of this data comes before anything is re-keyed.
    response model and provider. Store `model`, `effort` and `route`
    (transport, provider, quantization) as separate fields with
    `resolved: observed|projected`. Charges carry them too.
-2. **A permanent evidence log.** Every run, grade, check and outcome is
-   appended to `~/.captaincode/evidence.jsonl`, outside the 500/200 caps.
+2. **A permanent evidence log.** This existed already: `routing.jsonl`
+   (`journal_routing.go`) appends every decision, event (with its grade) and
+   outcome (with its checks), outside the 500/200 caps, up to 64 MB. It
+   holds everything since 2026-09-22.
 3. **Every pick is a decision record.** Lanes, `/frontier` included, record
    their candidates and the probability each had of being picked, so later
    phases can weight evidence by how it was collected.
@@ -114,10 +116,14 @@ Two weeks of this data comes before anything is re-keyed.
 1. **Commits accept the right task.** A commit accepts a task only when that
    task was the last writer of the lines it commits. Tasks sharing a commit
    split it. A corrective turn between delivery and commit voids it.
-2. **Tests the worker did not write.** A test counts only if it existed
-   before the run. The signal is the change from the last result on the same
-   commit, which is cached per commit. A timeout is no signal.
-3. **Silence is unknown**, not accepted.
+2. **Tests the worker did not write.** A test check labels only when the
+   run changed no test file. A failure labels only when the suite passed at
+   the same commit before the run; the brain remembers the last result per
+   folder, commit and command. With no earlier result a failure is
+   inconclusive: it still buys a repair, but settles nothing. A timeout is no
+   signal.
+3. **Silence is unknown**, not accepted: the outcome stays pending, out of
+   every label.
 4. **The judge is not a check.** Its grade stops being recorded as pass/fail,
    and past grade-only checks are removed from the labels.
 5. **Rework and time-to-accepted** are recorded per task: follow-up
@@ -170,14 +176,16 @@ are shown with the routing shift they would cause, and wait for the user.
 
 ### Independent fixes
 
-These do not wait for the phases:
-
-- The bandit policy has never run, though 386 labels exist (its gate is 200).
-- The success estimator's starting probability (`EffortPrior`, about 0.5)
-  is far below the 95% observed acceptance rate, so its floors exclude legs
-  for no evidential reason.
-- Gemini's benchmark pattern is `gemini-3-7-flash` while 3.8 runs.
-- Charges carry no model.
+- **Fixed:** the success estimator's starting probability (`EffortPrior`,
+  about 0.5) sat far below the observed acceptance rate, so its floors
+  excluded legs on no evidence. With 30 or more labels its level is now
+  shifted to the observed rate; the line still ranks legs against each other.
+- **Fixed:** charges carry their model (Phase 0).
+- **Not a bug:** the bandit policy is opt-in (`CAPTAIN_ROUTING_POLICY=bandit`);
+  Phase 3 replaces it.
+- **Not a bug:** Gemini's compiled default is 3.7 on purpose (the upgrade
+  check flags 3.8 above it); `captain upgrade` writes the 3.8 model and its
+  benchmark slug together, so an upgraded install is scored as 3.8.
 
 ## Rejected
 

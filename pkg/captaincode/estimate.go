@@ -125,7 +125,15 @@ type estSample struct {
 // SuccessEstimator answers success estimates from the routing history.
 type SuccessEstimator struct {
 	samples []estSample
+	// priorShift moves the cold-start prior so its average over the labelled
+	// samples matches their observed success rate. EffortPrior's line sat
+	// near 0.5 while 95% of labels were accepted, so the 0.45/0.55 success
+	// floors excluded legs on no evidence at all (SCORING.md).
+	priorShift float64
 }
+
+// priorCalibrationMin is how many labelled samples the prior shift needs.
+const priorCalibrationMin = 30
 
 // NewSuccessEstimator indexes the labelled samples. Unlabelled ones (pending
 // outcomes) are skipped: a pending outcome is not a weak success.
@@ -163,7 +171,26 @@ func NewSuccessEstimator(history []RoutingSample) *SuccessEstimator {
 		e.samples = append(e.samples, estSample{vec: TaskVector(task), class: d.Class, domain: d.Domain,
 			leg: leg, effort: effort, model: model, success: s.Success(), at: at})
 	}
+	e.priorShift = calibrationShift(e.samples)
 	return e
+}
+
+// calibrationShift is the observed success rate minus the average prior
+// over the samples, 0 below priorCalibrationMin. The prior keeps ranking
+// legs against each other; the shift sets its level from evidence.
+func calibrationShift(samples []estSample) float64 {
+	if len(samples) < priorCalibrationMin {
+		return 0
+	}
+	var prior, success float64
+	for _, s := range samples {
+		prior += EffortPrior(s.leg, s.effort)
+		if s.success {
+			success++
+		}
+	}
+	n := float64(len(samples))
+	return success/n - prior/n
 }
 
 // Samples is how many labelled tasks the estimator holds.
@@ -189,6 +216,9 @@ const (
 // into the prior for non-frontier legs (stage 2's third question).
 func (e *SuccessEstimator) Estimate(task string, class Class, domain Domain, leg Leg, effort Effort, midTierP float64, now time.Time) SuccessEstimate {
 	prior := EffortPrior(leg, effort)
+	if e != nil {
+		prior = math.Min(0.97, math.Max(0.05, prior+e.priorShift))
+	}
 	if midTierP > 0 && leg != LegClaude && !IsFrontierClass(leg) {
 		prior = 0.5*prior + 0.5*midTierP
 	}
