@@ -117,34 +117,102 @@ const repeatLiveKeep = 40
 // roundSummary distills a round to what it actually DID. Rounds return walls
 // of prose (a team round is two workers plus a director review), and a
 // supervisor scrolling past 3k characters per round is as blind as one seeing
-// nothing (2026-08-31). Runs on the compaction leg - fast and cheap - and
-// falls back to the first meaningful line rather than blocking the loop.
-func (b *brain) roundSummary(task, text string) string {
-	if strings.TrimSpace(text) == "" {
+// nothing (2026-08-31). Runs on the compaction leg - fast and cheap - then the
+// free leg, and falls back to a line of the answer rather than blocking the
+// loop. final is the round's final answer when run history has it: the
+// streamed text opens with the worker's narration ("Orienting: …", "I'll read
+// the roadmap …"), so its first line made a 55-minute round that committed
+// three fixes read like a review (2026-10-02).
+func (b *brain) roundSummary(task, text, final string) string {
+	if strings.TrimSpace(text) == "" && strings.TrimSpace(final) == "" {
 		return "(no output)"
 	}
+	source := final
+	if strings.TrimSpace(source) == "" {
+		source = text
+	}
+	input := summaryInput(source)
+	for _, leg := range roundSummaryLegs() {
+		if out := b.summarizeRoundOn(leg, task, input); out != "" {
+			return out
+		}
+	}
+	return firstLine(source, "")
+}
+
+// summarizeRoundOn is one digest attempt; "" means it produced nothing.
+func (b *brain) summarizeRoundOn(leg captaincode.Leg, task, input string) string {
 	if b.roundSummaryFn != nil {
-		return b.roundSummaryFn(text)
+		return strings.TrimSpace(b.roundSummaryFn(input))
 	}
 	d := captaincode.NewDispatcher(opencodePort)
 	d.Title = "round-summary"
 	d.NoTools = true
 	d.Timeout = 90 * time.Second
-	leg := compactLeg()
 	res, err := d.Run(leg,
 		"In AT MOST 2 sentences, say what this agent round actually DID: concrete "+
 			"changes, files touched, decisions taken, or why nothing changed. Name "+
-			"specifics. No preamble, no restating the task.\n\n"+text)
+			"specifics. No preamble, no restating the task.\n\n"+input)
 	// The digest is supervision overhead the loop pays for. It runs after the
 	// round's own turn has been billed and closed, so it gets a task row of
 	// its own rather than disappearing (ROADMAP M1.2).
 	if h := b.chargeOwnTask("repeat round digest: " + truncate(task, 80)); h != nil {
 		h(leg, "round-summary", res, err)
 	}
-	if err != nil || strings.TrimSpace(res.Text) == "" {
-		return firstLine(text, "")
+	if err != nil {
+		return ""
 	}
 	return strings.TrimSpace(res.Text)
+}
+
+// roundSummaryLegs is the compaction leg, then the free leg as a second try:
+// the compaction leg returned nothing for 7 of 22 rounds on 2026-10-02.
+func roundSummaryLegs() []captaincode.Leg {
+	first := compactLeg()
+	if first == captaincode.LegFree {
+		return []captaincode.Leg{first}
+	}
+	return []captaincode.Leg{first, captaincode.LegFree}
+}
+
+// summaryInput bounds what the digest reads, keeping the end: a round
+// reports what it did last, and the first 1,200 characters it used to get
+// were the worker's narration.
+func summaryInput(text string) string {
+	const head, tail = 1_000, 12_000
+	if len(text) <= head+tail {
+		return text
+	}
+	return captaincode.CutHead(text, head) + "\n…\n" + captaincode.CutTail(text, tail)
+}
+
+// roundFinal is the round's final answer from run history: the newest run
+// of this task recorded since the round started, or "" when there is none.
+func roundFinal(task string, since time.Time) string {
+	want := stripLeadingDirectives(task)
+	if want == "" {
+		return ""
+	}
+	recs, err := readHistory(30)
+	if err != nil {
+		return ""
+	}
+	for _, r := range recs {
+		if !r.At.Before(since) && r.Error == "" && strings.HasPrefix(strings.TrimSpace(r.Task), want) {
+			return r.Output
+		}
+	}
+	return ""
+}
+
+// stripLeadingDirectives drops the "/frontier", "/quality"… words a task
+// opens with: the run record holds the task the worker saw, without them.
+func stripLeadingDirectives(task string) string {
+	f := strings.Fields(task)
+	for len(f) > 0 && strings.HasPrefix(f[0], "/") {
+		f = f[1:]
+	}
+	return strings.Join(f, " ")
 }
 
 // repeatRoundKeep bounds retained round text: supervision needs the gist of
@@ -788,6 +856,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		} else {
 			th.failed = 0 // consecutive-failure counter
 		}
+		full := text
 		if len(text) > repeatRoundChars {
 			text = text[:repeatRoundChars] + "\n…[truncated - full text in `captain show`]"
 		}
@@ -795,7 +864,8 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		b.rmu.Unlock()
 		digest := ""
 		if errText == "" {
-			digest = b.roundSummary(task, text) // outside the lock: it makes a call
+			// Outside the lock: it reads history and makes calls.
+			digest = b.roundSummary(task, full, roundFinal(task, start))
 		}
 		b.rmu.Lock()
 		noop := errText == "" && roundDeferred(text)
