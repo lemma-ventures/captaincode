@@ -469,8 +469,15 @@ After restart, `captain task resume <task-id> <attempt-id>` validates that bindi
 and starts a linked attempt under the original task. This asynchronous task API
 path persists the resulting export and handoff; `captain task cancel <task-id>`
 stops the continuation. Incomplete stages, changed plans and previously settled
-task usage are refused. Every verified stage refreshes the durable attempt
-checkpoint, including during recovery; a failed ledger save stops the next worker.
+task usage are refused. Every newly verified stage advances a stage count and
+evidence digest in the durable attempt checkpoint. That digest binds the completed
+stage reports, snapshot lineage, original start time and set-aside usage for those
+stages. Task recovery checks it before admission and dispatch; reused stages never
+roll it back. A failed ledger save stops the next worker. Legacy checkpoints with
+no evidence digest and completed stages not anchored in the ledger require
+inspection before explicit run-directory recovery. That command validates local
+consistency without an independent ledger anchor. The ledger remains trusted;
+this does not defend against edits to both the ledger and the run directory.
 
 Optional startup recovery uses the same task path when the brain environment sets
 `CAPTAIN_OPENSHELL_AUTO_RESUME=1` (default off). It admits one sequence at a time,

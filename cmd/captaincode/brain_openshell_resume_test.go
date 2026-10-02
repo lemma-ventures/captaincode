@@ -35,7 +35,7 @@ func interruptedOpenShellTask(t *testing.T) (*brain, string, string) {
 	task, attempt, err := beginOpenShellSolo(b.ledger, "edit then review", "dead-process")
 	require.NoError(t, err)
 	require.NoError(t, b.ledger.RecordOpenShellCheckpoint(attempt, captaincode.OpenShellCheckpoint{
-		RunDir: "/tmp/fixture-run", SequenceSHA256: strings.Repeat("a", 64),
+		RunDir: "/tmp/fixture-run", SequenceSHA256: strings.Repeat("a", 64), EvidenceSHA256: strings.Repeat("b", 64),
 	}))
 	require.NoError(t, b.ledger.Save())
 	b.ledger, err = captaincode.LoadLedger()
@@ -121,7 +121,7 @@ func TestOpenShellTaskResumeCreatesDurableLinkedAttempt(t *testing.T) {
 }
 
 func TestOpenShellTaskResumeRejectsWithoutChangingLifecycle(t *testing.T) {
-	for _, name := range []string{"no checkpoint", "wrong task", "cancelled", "altered evidence", "request cancelled", "unsupported budget", "settled usage"} {
+	for _, name := range []string{"no checkpoint", "legacy checkpoint", "wrong task", "cancelled", "altered evidence", "request cancelled", "unsupported budget", "settled usage"} {
 		t.Run(name, func(t *testing.T) {
 			b, task, attempt := interruptedOpenShellTask(t)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -144,6 +144,8 @@ func TestOpenShellTaskResumeRejectsWithoutChangingLifecycle(t *testing.T) {
 			switch name {
 			case "no checkpoint":
 				b.ledger.AttemptStateFor(attempt).OpenShell = nil
+			case "legacy checkpoint":
+				b.ledger.AttemptStateFor(attempt).OpenShell.EvidenceSHA256 = ""
 			case "wrong task":
 				task = "unrelated"
 			case "cancelled":
@@ -280,7 +282,7 @@ func TestOpenShellHTTPBrainStopLeavesSequenceResumable(t *testing.T) {
 				var err error
 				if checkpointed {
 					err = b.ledger.RecordOpenShellCheckpoint(attempt, captaincode.OpenShellCheckpoint{
-						RunDir: "/tmp/fixture-run", SequenceSHA256: strings.Repeat("a", 64),
+						RunDir: "/tmp/fixture-run", SequenceSHA256: strings.Repeat("a", 64), EvidenceSHA256: strings.Repeat("b", 64),
 					})
 				}
 				b.mu.Unlock()

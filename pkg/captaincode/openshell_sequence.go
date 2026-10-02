@@ -217,7 +217,7 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 		return err
 	}
 	if recovered == nil {
-		if err := recordOpenShellCheckpoint(ctx, r.RunDir, run.SequenceSHA256); err != nil {
+		if err := recordOpenShellCheckpoint(ctx, r.RunDir, run, 0); err != nil {
 			return fmt.Errorf("openshell: persist task checkpoint before dispatch: %w", err)
 		}
 	}
@@ -320,8 +320,10 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 			return err
 		}
 		pending = -1
-		if err := recordOpenShellCheckpoint(ctx, r.RunDir, run.SequenceSHA256); err != nil {
-			return fmt.Errorf("openshell: persist task checkpoint after stage %d: %w", i+1, err)
+		if i >= len(recovered) {
+			if err := recordOpenShellCheckpoint(ctx, r.RunDir, run, i+1); err != nil {
+				return fmt.Errorf("openshell: persist task checkpoint after stage %d: %w", i+1, err)
+			}
 		}
 		r.logf("stage %d/%d: checkpoint verified", i+1, len(teams))
 	}
