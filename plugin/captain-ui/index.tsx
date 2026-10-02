@@ -984,6 +984,16 @@ const tui: TuiPlugin = async (api) => {
 // (stock revert is the one that also drops everything after it).
 type PromptRow = { id: string; partID?: string; text: string; queued: boolean; answered: boolean; when: string }
 
+// opencode refuses to delete a message while its session is busy (409
+// "Session is busy", 1.18.34) - and a prompt is only queued while the
+// session is busy, so Delete on a queued prompt always failed (2026-10-03).
+// A queued prompt is blanked to this marker instead, which the brain never
+// runs (brain_queue.go deletedPrompt - keep the two in step), and removed
+// for real once the session is idle.
+const DELETED_PROMPT = "[captain: this queued prompt was deleted]"
+const IDLE_RETRY_MS = 5_000
+const IDLE_RETRY_FOR_MS = 2 * 60 * 60 * 1000
+
 // openPromptsDialog is the entry both the palette command and the sidebar
 // link use. It is a module function, not a closure inside the command
 // registration, precisely so the sidebar can open it: stock opencode's
@@ -1030,6 +1040,7 @@ function promptCommands(api: TuiPluginApi) {
         .trim()
       const answered = msgs.slice(i + 1).some((x) => x.role === "assistant")
       const t = m.time?.created ? new Date(m.time.created) : undefined
+      if (text === DELETED_PROMPT) return // deleted while queued: gone from the list
       out.push({
         id: m.id,
         partID: textPart?.id,
@@ -1078,7 +1089,14 @@ function promptCommands(api: TuiPluginApi) {
         message={`Delete "${peek(row.text, 80)}"?${row.queued ? " It will not run." : row.answered ? " Its answer stays." : ""}`}
         onConfirm={async () => {
           try {
-            unwrap("delete message", await client.session.deleteMessage({ sessionID: sid, messageID: row.id }))
+            const r = await client.session.deleteMessage({ sessionID: sid, messageID: row.id })
+            if (row.queued && busy(r)) {
+              await blank(sid, row)
+              removeWhenIdle(sid, row.id)
+              api.ui.toast({ title: "prompt deleted", message: "it will not run · " + peek(row.text, 48), variant: "success", duration: 5000 })
+              return
+            }
+            unwrap("delete message", r)
             api.ui.toast({ title: "prompt deleted", message: peek(row.text, 60), variant: "success", duration: 5000 })
           } catch (e) {
             fail("delete prompt", e)
@@ -1087,6 +1105,32 @@ function promptCommands(api: TuiPluginApi) {
         onCancel={() => {}}
       />
     ))
+  }
+  // busy: the server refused because a turn is running.
+  const busy = (r: any) => r?.response?.status === 409 || /busy/i.test(JSON.stringify(r?.error ?? ""))
+  // blank writes the marker over every text part of a queued prompt (the
+  // first carries it, the rest go empty), so nothing of it reaches a worker.
+  const blank = async (sid: string, row: PromptRow) => {
+    const texts = (api.state.part(row.id) as any[]).filter((p) => p.type === "text" && !p.synthetic)
+    if (texts.length === 0) throw new Error("this prompt has no text part to blank")
+    for (const [i, part] of texts.entries()) {
+      unwrap("blank queued prompt", await client.part.update({
+        sessionID: sid, messageID: row.id, partID: part.id, part: { ...part, text: i === 0 ? DELETED_PROMPT : "" },
+      }))
+    }
+  }
+  // removeWhenIdle deletes the blanked message once the session stops being
+  // busy, retrying for up to two hours; a 404 means it is already gone.
+  const removeWhenIdle = (sid: string, messageID: string) => {
+    const until = Date.now() + IDLE_RETRY_FOR_MS
+    const timer = setInterval(async () => {
+      try {
+        const r = await client.session.deleteMessage({ sessionID: sid, messageID })
+        if (!busy(r) || Date.now() > until) clearInterval(timer)
+      } catch {
+        if (Date.now() > until) clearInterval(timer)
+      }
+    }, IDLE_RETRY_MS)
   }
   const revert = (sid: string, row: PromptRow) => {
     api.ui.dialog.replace(() => (

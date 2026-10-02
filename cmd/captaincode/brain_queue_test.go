@@ -127,3 +127,33 @@ func TestQueueSkipsAPromptAlreadyRun(t *testing.T) {
 	assert.Equal(t, []string{"address the old plan", "then this"}, runs)
 	mu.Unlock()
 }
+
+// opencode refuses to delete a message while its session is busy, and a
+// prompt is only queued while it is busy: the plugin blanks a deleted
+// queued prompt instead, and the brain never runs it (2026-10-03).
+func TestDeletedQueuedPromptsNeverRun(t *testing.T) {
+	b := teamBrain()
+	var runs []string
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		runs = append(runs, lastUserTurn(prompt))
+		return leg, captaincode.Result{Text: "answer to " + lastUserTurn(prompt), DurationMs: 5}, nil
+	}
+	send := func(msgs []map[string]string) string {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"model": "cursor", "stream": false, "messages": msgs})
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+		require.Equal(t, 200, rec.Code, rec.Body.String())
+		return rec.Body.String()
+	}
+	history := []map[string]string{{"role": "user", "content": "first"}, {"role": "assistant", "content": "done"}}
+
+	out := send(append(append([]map[string]string{}, history...), map[string]string{"role": "user", "content": deletedPrompt}))
+	assert.Contains(t, out, "nothing ran")
+	assert.Empty(t, runs, "a deleted prompt alone runs nothing")
+
+	send(append(append([]map[string]string{}, history...),
+		map[string]string{"role": "user", "content": "/cursor keep this one"},
+		map[string]string{"role": "user", "content": deletedPrompt}))
+	assert.Equal(t, []string{"keep this one"}, runs, "the deleted one is dropped, the other runs")
+}

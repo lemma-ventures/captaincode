@@ -34,6 +34,51 @@ import (
 // prompts it is noise: the work is the prompts.
 const queueNudge = "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
 
+// deletedPrompt is the text the TUI plugin writes over a queued prompt the
+// user deleted (plugin/captain-ui/index.tsx, keep the two in step). opencode
+// refuses to delete a message while its session is busy (409 "Session is
+// busy", 1.18.34) - and a prompt is only queued while the session is busy -
+// so the plugin blanks it instead and removes it once the session is idle.
+// A blanked prompt never runs.
+const deletedPrompt = "[captain: this queued prompt was deleted]"
+
+// dropDeleted removes the prompts the user deleted from a transcript.
+func dropDeleted(msgs []oaiMessage) []oaiMessage {
+	out := msgs[:0:0]
+	for _, m := range msgs {
+		if (m.Role == "user" || m.Role == "") && strings.TrimSpace(messageText(m.Content)) == deletedPrompt {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// onlyDeleted reports whether every prompt waiting after the last answer
+// was deleted: the turn then has nothing to run.
+func onlyDeleted(msgs []oaiMessage) bool {
+	last := -1
+	for i, m := range msgs {
+		if m.Role == "assistant" {
+			last = i
+		}
+	}
+	seen := false
+	for _, m := range msgs[last+1:] {
+		if m.Role != "user" && m.Role != "" {
+			continue
+		}
+		switch t := strings.TrimSpace(messageText(m.Content)); t {
+		case deletedPrompt:
+			seen = true
+		case "", queueNudge:
+		default:
+			return false
+		}
+	}
+	return seen
+}
+
 // queuedPrompts returns the indices of the user messages that follow the
 // last assistant message - the prompts waiting their turn - when there is
 // more than one of them. Empty messages and opencode's nudge do not count.
