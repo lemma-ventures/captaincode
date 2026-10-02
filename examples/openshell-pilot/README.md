@@ -496,6 +496,24 @@ CAPTAIN_TEST_OPENSHELL_TASK_RESUME_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_sta
   go test ./cmd/captaincode -run '^TestOpenShellTaskResumeLiveQualification$' -count=1 -v -timeout 15m
 ```
 
+The [2 October stage rerun qualification](results/2026-10-02-stage-rerun.json)
+stopped the review stage of the same fixture after its first model response. The
+first run, through the stop and sandbox cleanup, took 83.6 seconds and recorded
+the stage as interrupted. Recovery reused the verified edit stage unchanged, set
+the stopped run aside and ran the review again. It passed in 53.3 seconds; the
+cumulative patch reproduced the verified tree and the host index stayed unchanged.
+All three worker sessions were counted, including the stopped one. The stopped
+worker's Shield audit held 3 requests and 2 priced responses ($0.0026), but the
+controller tallies Shield only when a worker finishes. The set-aside run is
+therefore unpriced and the total cost is reported as unknown; the measured part
+was 63,851 tokens and $0.0230. The stop cancelled the controller, as a brain stop
+does; the brain's own stop path has unit tests only.
+
+```sh
+CAPTAIN_TEST_OPENSHELL_RERUN_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./pkg/captaincode -run '^TestOpenShellSequenceRerunLiveQualification$' -count=1 -v -timeout 20m
+```
+
 The [2 October recovery qualification](results/2026-10-02-resume-entry.json)
 completed an edit-review fixture in 109.2 seconds after the first coordinator
 exited at a verified checkpoint. A separate coordinator reused stage 1 without

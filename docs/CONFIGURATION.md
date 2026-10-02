@@ -845,6 +845,9 @@ Both recovery paths passed live on one public edit-then-review fixture on
 [task recovery report](../examples/openshell-pilot/results/2026-10-02-task-resume-entry.json)
 and the
 [startup recovery report](../examples/openshell-pilot/results/2026-10-02-startup-recovery.json).
+Rerunning a stage stopped mid-run passed live on the same fixture: see the
+[stage rerun report](../examples/openshell-pilot/results/2026-10-02-stage-rerun.json).
+That stop cancelled the controller; the brain's own stop path has unit tests only.
 
 The VM runtime needs Docker's local image store. It uses `DOCKER_HOST` when set,
 otherwise the active `docker context`, and refuses an endpoint without a socket

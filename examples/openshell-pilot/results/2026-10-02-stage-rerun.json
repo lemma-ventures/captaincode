@@ -1,0 +1,96 @@
+{
+  "attempt_usage": {
+    "workers": 3,
+    "repairs": 0,
+    "directors": 0,
+    "unmeasured": 0
+  },
+  "completed_resume_idempotent": true,
+  "cumulative_patch_reproduces_verified_tree": true,
+  "date": "2026-10-02",
+  "first_stage_reused_unchanged": true,
+  "fixture": "Public Roman numeral edit followed by a no-change review; stage 2 stopped after its first model response",
+  "host_index_unchanged": true,
+  "limits": "One public fixture on one host. The stop is a controller cancellation, as a brain stop delivers it; the brain's own shutdown path has unit tests only. The run's only uncommitted file was the live test itself, committed with this report.",
+  "model": "openai/gpt-oss-120b",
+  "patch_sha256": "929bd284940af6f0a5b54afecd14acaab10ad7d3df15ad473caf33443a049852",
+  "profile": "cerebras",
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "bf63b8b1b6fb02a583e9e9831e89fc4b5823896e1bec5a9dd55a3c3f254b19b2",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "fc33b16aa23f1bd4884f99c4716a6ae3400e76be2b52b69f6ef2e7366d37b46f",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "rerun_record": "stage-2-rerun-1/run.json",
+  "resume_seconds": 53.270115542,
+  "run_record_sha256": "412f48b3b4bc3d10ba2291a71a80ca01c527bb09f073dc5163de14589f6b3c93",
+  "runtime": "vm",
+  "schema": 1,
+  "set_aside": {
+    "stage": 2,
+    "run_record": "stage-2/run.json",
+    "revision": "22cde3baf9160e192385e4c00907a950852b0169",
+    "attempts": {
+      "workers": 1,
+      "repairs": 0,
+      "directors": 0,
+      "unmeasured": 0
+    },
+    "requests": 0,
+    "tokens": 0,
+    "cost_usd": 0,
+    "priced": false
+  },
+  "snapshot_lineage_matches": true,
+  "spend": {
+    "complete": false,
+    "cost_usd": 0.02295345,
+    "tokens": 63851
+  },
+  "stopped_after_seconds": 83.569772875,
+  "stopped_stage_verdict": "interrupted",
+  "verdict": "pass",
+  "source_revision": {
+    "revision": "f647575d8e7eba98f22d003991f5e44d00abc646",
+    "modified": true
+  },
+  "entrypoint": "go test ./pkg/captaincode -run TestOpenShellSequenceRerunLiveQualification (CAPTAIN_TEST_OPENSHELL_RERUN_LIVE=1)",
+  "stopped_worker_shield_audit": {
+    "requests": 3,
+    "responses": 2,
+    "priced_responses": 2,
+    "tokens": 7238,
+    "cost_usd": 0.00262,
+    "note": "Read offline from the retained stage-2 audit. The controller tallies Shield only when a worker finishes, so the set-aside run is unpriced and the run's total cost stays unknown; the third request was in flight when the stop landed."
+  }
+}
