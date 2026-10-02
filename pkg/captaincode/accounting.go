@@ -71,16 +71,19 @@ type Usage struct {
 
 // Charge is one node of the accounting tree.
 type Charge struct {
-	Version    int        `json:"version"`
-	ID         string     `json:"id"`
-	Parent     string     `json:"parent,omitempty"`
-	TaskID     string     `json:"task_id"`
-	Kind       ChargeKind `json:"kind"`
-	Leg        Leg        `json:"leg,omitempty"`
-	Label      string     `json:"label,omitempty"` // "classify", "director", "worker", "review", "repair"
-	At         time.Time  `json:"at"`
-	DurationMs int64      `json:"duration_ms,omitempty"`
-	Usage      Usage      `json:"usage"`
+	Version int        `json:"version"`
+	ID      string     `json:"id"`
+	Parent  string     `json:"parent,omitempty"`
+	TaskID  string     `json:"task_id"`
+	Kind    ChargeKind `json:"kind"`
+	Leg     Leg        `json:"leg,omitempty"`
+	Label   string     `json:"label,omitempty"` // "classify", "director", "worker", "review", "repair"
+	// Model is the model the charge paid for: observed when the worker
+	// reported it, else the leg's configured model.
+	Model      string    `json:"model,omitempty"`
+	At         time.Time `json:"at"`
+	DurationMs int64     `json:"duration_ms,omitempty"`
+	Usage      Usage     `json:"usage"`
 }
 
 // NewChargeID mints an identity for a charge node. Random rather than
@@ -177,6 +180,9 @@ func (l *Ledger) RecordCharge(c Charge) bool {
 		c.At = time.Now()
 	}
 	c.Usage = NormalizeUsage(c.Usage)
+	if c.Model == "" && c.Leg != "" && c.Kind == KindCall {
+		c.Model = ModelID(c.Leg)
+	}
 	for i, old := range l.Charges {
 		if old.ID != c.ID {
 			continue
@@ -301,4 +307,17 @@ func ChargeTree(charges []Charge, taskID string) []Charge {
 	}
 	walk("", 0)
 	return out
+}
+
+// SetChargeModel records the model a worker reported on the call charges of
+// one attempt: the charge is written before the run's result is read.
+func (l *Ledger) SetChargeModel(attemptID, model string) {
+	if attemptID == "" || model == "" {
+		return
+	}
+	for i := range l.Charges {
+		if l.Charges[i].Parent == attemptID && l.Charges[i].Kind == KindCall {
+			l.Charges[i].Model = model
+		}
+	}
 }

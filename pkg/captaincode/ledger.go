@@ -115,13 +115,21 @@ type Event struct {
 	// it ran as, the path that chose it, and which attempt of the task this
 	// run was - a repair or an escalation is 2+ and names the leg whose
 	// objective failure it answers.
-	ClassBy       string  `json:"class_by,omitempty"`
-	Confidence    float64 `json:"confidence,omitempty"`
-	Effort        Effort  `json:"effort,omitempty"`
-	Model         string  `json:"model,omitempty"`
-	Path          string  `json:"path,omitempty"`
-	Attempt       int     `json:"attempt,omitempty"`
-	EscalatedFrom Leg     `json:"escalated_from,omitempty"`
+	ClassBy    string  `json:"class_by,omitempty"`
+	Confidence float64 `json:"confidence,omitempty"`
+	Effort     Effort  `json:"effort,omitempty"`
+	Model      string  `json:"model,omitempty"`
+	// ModelResolved says how Model was known: "observed" (the provider
+	// reported it), "pinned" (captain passed it explicitly, e.g. codex -m)
+	// or "projected" (computed from configuration and aliases).
+	ModelResolved string `json:"model_resolved,omitempty"`
+	// Route is the transport and provider the run went through
+	// ("opencode:openrouter", "claude-cli"): one model id can be served by
+	// different providers.
+	Route         string `json:"route,omitempty"`
+	Path          string `json:"path,omitempty"`
+	Attempt       int    `json:"attempt,omitempty"`
+	EscalatedFrom Leg    `json:"escalated_from,omitempty"`
 }
 
 // LegStats is the 3-axis scorecard (performance, quality, cost) per leg,
@@ -567,6 +575,14 @@ func (l *Ledger) Record(e Event) {
 	if e.Model == "" && e.Leg != "" {
 		e.Model = ModelIDAt(e.Leg, e.Effort) // the version the run is attributed to
 	}
+	if e.Leg != "" {
+		if e.ModelResolved == "" {
+			e.ModelResolved = ModelResolution(e.Leg)
+		}
+		if e.Route == "" {
+			e.Route = RouteOf(e.Leg)
+		}
+	}
 	l.Events = append(l.Events, e)
 	l.journal(RoutingRecord{Kind: RoutingKindEvent, TaskID: e.TaskID, Event: &e})
 }
@@ -606,4 +622,31 @@ func stampDomain(e *Event) {
 	if e.Domain == "" && e.Task != "" {
 		e.Domain = string(TriageTask(e.Task).Domain)
 	}
+}
+
+// ModelResolution is how a leg's configured model name is known when the
+// transport reported none: "pinned" when captain passes the model explicitly
+// to a CLI that cannot substitute it, else "projected".
+func ModelResolution(l Leg) string {
+	spec, ok := Spec(l)
+	if !ok {
+		return "projected"
+	}
+	switch spec.Transport {
+	case TransportCodexCLI, TransportCursorCLI:
+		return "pinned"
+	}
+	return "projected"
+}
+
+// RouteOf is the transport and provider a leg's runs go through.
+func RouteOf(l Leg) string {
+	spec, ok := Spec(l)
+	if !ok {
+		return ""
+	}
+	if spec.Provider == "" {
+		return string(spec.Transport)
+	}
+	return string(spec.Transport) + ":" + spec.Provider
 }

@@ -256,6 +256,11 @@ type Result struct {
 	// response carrying x-ratelimit-remaining-requests:5 tells the routing
 	// gate the leg is about to hit its limit BEFORE the window closes.
 	Headers http.Header
+	// Model is the model the provider reported running ("" when the
+	// transport does not say). The name captain computes from its own
+	// configuration (ModelIDAt) is a guess: claude's `opus` alias hid which
+	// Opus ran, so its scores could not follow an upgrade (SCORING.md).
+	Model string
 }
 
 // ErrEmptyOutput signals the worker finished "successfully" and produced no
@@ -911,8 +916,10 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 	}
 	var msg struct {
 		Info struct {
-			Error  json.RawMessage `json:"error"`
-			Tokens struct {
+			Error      json.RawMessage `json:"error"`
+			ModelID    string          `json:"modelID"`
+			ProviderID string          `json:"providerID"`
+			Tokens     struct {
 				Total int `json:"total"`
 			} `json:"tokens"`
 		} `json:"info"`
@@ -947,7 +954,8 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			out.WriteString(p.Text)
 		}
 	}
-	return Result{Text: out.String(), Tokens: msg.Info.Tokens.Total, DurationMs: time.Since(start).Milliseconds(), Streamed: streamed}, nil
+	return Result{Text: out.String(), Tokens: msg.Info.Tokens.Total, DurationMs: time.Since(start).Milliseconds(), Streamed: streamed,
+		Model: observedOpencodeModel(msg.Info.ProviderID, msg.Info.ModelID)}, nil
 }
 
 // busEvent is one line of the opencode event bus: flat on /event, wrapped in
@@ -2048,7 +2056,10 @@ func (ws Workspace) RunClaudeFrontierStream(task string, onDelta, onStatus func(
 // --output-format stream-json`. We only need the text deltas (partial messages)
 // and the terminal "result" event (authoritative text + cost + error status).
 type claudeStreamLine struct {
-	Type  string `json:"type"`
+	Type string `json:"type"`
+	// Model is set on the `system`/`init` event: the model id the alias
+	// resolved to (claude-opus-5-5, not "opus").
+	Model string `json:"model"`
 	Event struct {
 		Type  string `json:"type"`
 		Delta struct {
@@ -2059,6 +2070,7 @@ type claudeStreamLine struct {
 	// "assistant" events carry the turn's content blocks - tool_use blocks are
 	// the only visible sign of life during a long tool chain.
 	Message struct {
+		Model   string `json:"model"`
 		Content []struct {
 			Type      string          `json:"type"`
 			Name      string          `json:"name"`
@@ -2257,6 +2269,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	haveFinal := false
 	var acc strings.Builder
 	longest := ""                   // longest assistant text block seen (see the "assistant" case)
+	observed := ""                  // the model claude reported running
 	blockOpen := false              // a text block is mid-stream: deltas continue the same paragraph
 	shellCalls := map[string]bool{} // tool_use ids of Bash calls: their results are worth a peek
 	for sc.Scan() {
@@ -2303,7 +2316,14 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 					}
 				}
 			}
+		case "system":
+			if ev.Model != "" && observed == "" {
+				observed = ev.Model
+			}
 		case "assistant":
+			if ev.Message.Model != "" && observed == "" {
+				observed = ev.Message.Model
+			}
 			// Remember the longest assistant message: `result` is only the LAST
 			// one, and a session that spawns subagents ends on a one-line
 			// reaction to their completion notifications - an 11-minute Ash
@@ -2386,7 +2406,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		tokens := final.Usage.InputTokens + final.Usage.OutputTokens +
 			final.Usage.CacheCreationInputTokens + final.Usage.CacheReadInputTokens
 		return Result{Text: text, Tokens: tokens, CostUSD: final.TotalCostUSD,
-			DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil}, nil
+			DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil, Model: observed}, nil
 	}
 	if waitErr != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
@@ -2749,4 +2769,16 @@ func preferSubstantiveReport(final, longest string) string {
 		return longest
 	}
 	return longest + "\n\n" + f
+}
+
+// observedOpencodeModel is the provider/model opencode reports for the
+// message it ran, in the registry's provider/model form.
+func observedOpencodeModel(provider, model string) string {
+	if model == "" {
+		return ""
+	}
+	if provider == "" {
+		return model
+	}
+	return provider + "/" + model
 }
