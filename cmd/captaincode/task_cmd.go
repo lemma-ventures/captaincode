@@ -134,6 +134,12 @@ func cmdTaskInspect(args []string) {
 		}
 		for _, a := range insp.Attempts {
 			fmt.Printf("  attempt %s — %s (leg: %s)\n", a.AttemptID, a.State, a.Leg)
+			if plan := a.OpenShellPlan; plan != nil {
+				fmt.Printf("    sandbox team plan (%d director call(s)): %s\n", plan.DirectorAttempts, terminalSafe(plan.Rationale, 200))
+				for i, brief := range plan.Assignments {
+					fmt.Printf("      w%d: %s\n", i+1, terminalSafe(strings.Join(strings.Fields(brief), " "), 300))
+				}
+			}
 			if a.OpenShell != nil {
 				fmt.Printf("    sandbox checkpoint: %s\n", terminalSafe(a.OpenShell.RunDir, 1000))
 				if a.State == captaincode.StateInterrupted {

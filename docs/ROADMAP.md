@@ -15,7 +15,7 @@ guides, not release promises.
 | Item | Why it is still open |
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
-| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Open: ordinary team planning, mixed host/sandbox stages, in-flight attempt reconciliation, strict dollar budgets, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
+| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Open: multi-stage planned teams, mixed host/sandbox stages, in-flight attempt reconciliation, strict dollar budgets, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
@@ -1834,9 +1834,9 @@ uncommitted work found and fixed these defects, each with a regression test:
   `/openshell` turn is refused, an undispatched task cannot stay "running",
   and Shield no longer crashes on an oversized `usage.cost`.
 
-The ledger evidence anchor described below closes the plan-only checkpoint gap.
-Still open from the review: a retry that attaches to a running HTTP request
-receives no keepalive until the run ends.
+The ledger evidence anchor described below closes the plan-only checkpoint gap,
+and a streaming retry that attaches to a running HTTP request now receives
+keepalives (see director-planned sandbox teams below).
 
 **M3.7 ledger-bound recovery evidence (2 October 2026, unreleased).**
 Task checkpoints now bind a verified-stage count and evidence digest as well as
@@ -1858,6 +1858,48 @@ Local controller regressions cover the previously accepted rewrite, durable
 ledger reload, three-stage continuation, stopped-stage reruns, altered evidence
 after admission, checkpoint rollback and failed-save refusal. No new live-provider
 or MicroVM benchmark is claimed for this change.
+
+**M3.7 director-planned sandbox teams (2 October 2026, unreleased).**
+`/team /openshell <task>` was refused before planning. It now runs on the sandbox
+entry: the tool-less `claude -p` director that rules on conflicts
+(`CAPTAIN_OPENSHELL_DIRECTOR=claude`) splits the task into 1-4 assignments, and
+Captain runs them as one parallel stage of `/openshell` workers, the same path as
+typed `/openshell A + /openshell B`. The planner sees only the task and the
+configured editable paths. Each worker receives the conversation, the team task
+and its assignment under the configured profile, scope and verification; a plan
+cannot widen the scope or start a no-change review.
+
+The task is saved before the director is asked, and configuration, prompt room
+and the attempt cap are checked before the call. The plan's calls (one, or two
+after a reply with no valid JSON) are director attempts: they come off
+`CAPTAIN_MAX_ATTEMPTS` before the team's own admission and settle with the task
+beside the rulings. The rationale, assignments and call count are saved on the
+attempt (`openshell_plan`) before any sandbox starts, because `run.json` keeps only
+a digest of the worker prompts; `captain task inspect` and the reply list them. A
+plan that fails, spends the cap, cannot be saved or is cancelled starts no sandbox.
+Host legs named beside `/openshell`, and `/team` with typed stages, are refused
+before planning. A leg directive at the very end of a turn is now read as one, so
+`/team /openshell` with no task is refused instead of reaching the host planner.
+A streaming retry that attaches to the identical running request now receives a
+status line and SSE keepalives while it waits.
+
+Regression tests cover plan splitting, duplicate assignments, the malformed-JSON
+retry, refusals before any call, unusable plans, review prevention, the lowered
+attempt cap, the plan record, a two-worker export through the fake controller,
+the brain's JSON and streaming paths, host-member refusals, failure settlement,
+cancellation while planning, an unsavable plan, and attached streaming retries
+under the race detector.
+
+The [live planned-team report](../examples/openshell-pilot/results/2026-10-02-planned-team.json)
+passed in 61.8 seconds on the public numbers fixture. One planning call split the
+task into one assignment per file, both workers passed their 17 checks in their
+own MicroVMs (about 34 seconds each, in parallel), no ruling was needed, and the
+combined tree passed 8 checks in a fresh sandbox. Shield priced all 12 worker
+requests: 70,849 tokens and $0.0252; the planning call is a counted, unpriced
+subscription call. Host files and index stayed unchanged, and the patch reproduced
+the verified tree. This qualifies one cleanly separable task on one host, not
+planning quality, conflict-heavy splits or scale. Multi-stage planned teams and
+mixed host/sandbox teams remain open.
 
 **M3.8 status (20 September 2026).** Named, not built.
 

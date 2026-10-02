@@ -51,6 +51,15 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 		writeErr(w, http.StatusBadRequest, workflowErr.Error())
 		return
 	}
+	planned := openShellTeamTurn(req.Model, raw)
+	if planned && len(teamRequired(raw)) != 1 {
+		writeErr(w, http.StatusBadRequest, "openshell: a sandbox team cannot include host workers; name only /openshell after /team")
+		return
+	}
+	if planned && len(wf.Stages) > 0 {
+		writeErr(w, http.StatusBadRequest, "openshell: /team /openshell plans its own workers; drop /team to run typed /openshell stages")
+		return
+	}
 	if openShellTaskEmpty(raw) || utf8.RuneCountInString(prompt) > 16384 || strings.ContainsRune(prompt, 0) {
 		writeErr(w, http.StatusBadRequest, "openshell: provide a user task and at most 16384 characters of conversation; host compaction is disabled")
 		return
@@ -81,6 +90,30 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	}
 	b.wmu.Unlock()
 	if attached {
+		// A streaming retry gets the heartbeats a long sandbox run needs while
+		// it waits, or an idle timer somewhere in the stack cuts it before the
+		// result exists. The raw writer leaves the running turn's /btw
+		// announcements where they are.
+		if req.Stream {
+			emit, status, finish := newCompletionWriterRaw(w, req, string(captaincode.LegOpenShell))
+			defer finish()
+			status("OpenShell: the same request is already running; waiting for its result\n")
+			select {
+			case <-r.Context().Done():
+				return
+			case <-cur.done:
+			}
+			b.wmu.Lock()
+			text, err := cur.text, cur.err
+			b.wmu.Unlock()
+			if err != nil {
+				// Through emit, under the writer's lock: writeWorkerError would
+				// write beside the keepalive goroutine.
+				text = fmt.Sprintf("\n[captain] %s failed: %s\n", captaincode.LegOpenShell, err.Error())
+			}
+			emit(text)
+			return
+		}
 		select {
 		case <-r.Context().Done():
 			return
@@ -164,19 +197,18 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	if ctx.Err() != nil || !req.ws.Steer.Interrupted().IsZero() {
 		err = captaincode.ErrInterrupted
 		res = openShellNotDispatched()
-	} else if len(wf.Stages) > 0 {
-		var history string
-		for i := len(req.Messages) - 1; i >= 0; i-- {
-			if req.Messages[i].Role == "user" {
-				history = promptFrom(req.Messages[:i])
-				break
+	} else if planned {
+		keep := func(plan captaincode.OpenShellPlanRecord) error {
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			if err := b.ledger.RecordOpenShellPlan(attemptID, plan); err != nil {
+				return err
 			}
+			return b.ledger.Save()
 		}
-		if b.runOpenShellWorkflowFn != nil {
-			res, err = b.runOpenShellWorkflowFn(ctx, req.ws, wf, history)
-		} else {
-			res, err = req.ws.RunOpenShellWorkflow(ctx, wf, history)
-		}
+		res, err = b.runPlannedOpenShellTeam(ctx, req.ws, lastUserTurn(prompt), openShellHistory(req.Messages), status, keep)
+	} else if len(wf.Stages) > 0 {
+		res, err = b.runOpenShellWorkflow(ctx, req.ws, wf, openShellHistory(req.Messages))
 	} else if b.runWorkerFn != nil {
 		var leg captaincode.Leg
 		leg, res, err = b.runWorkerFn(captaincode.LegOpenShell, prompt, nil, nil)
@@ -221,4 +253,77 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	turnSpend.add(req.ws.Steer, captaincode.LegOpenShell, res)
 	emit(text)
 	finish()
+}
+
+// openShellTeamTurn reports a "/team /openshell <task>" turn: a team whose
+// named member is the sandbox. It runs on openShellChat, never on the host
+// team path: the director only splits the task, and every worker is a
+// sandbox.
+func openShellTeamTurn(model, raw string) bool {
+	if model != "team" && captaincode.LeadingForced(raw) != "team" {
+		return false
+	}
+	return legInList(captaincode.LegOpenShell, teamRequired(raw))
+}
+
+// openShellHistory is the conversation before the last user turn, which
+// sandbox workers receive ahead of their assignment.
+func openShellHistory(msgs []oaiMessage) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return promptFrom(msgs[:i])
+		}
+	}
+	return ""
+}
+
+func (b *brain) runOpenShellWorkflow(ctx context.Context, ws captaincode.Workspace, wf captaincode.Workflow, history string) (captaincode.Result, error) {
+	if b.runOpenShellWorkflowFn != nil {
+		return b.runOpenShellWorkflowFn(ctx, ws, wf, history)
+	}
+	return ws.RunOpenShellWorkflow(ctx, wf, history)
+}
+
+// runPlannedOpenShellTeam has the tool-less director split task into sandbox
+// assignments, then runs them as one parallel stage of /openshell workers.
+// The planner's calls are director attempts: they come off the attempt cap
+// before the team's own admission and settle with the task. keep saves the
+// plan on the task before any sandbox starts; if it fails, none does.
+func (b *brain) runPlannedOpenShellTeam(ctx context.Context, ws captaincode.Workspace, task, history string, status func(string), keep func(captaincode.OpenShellPlanRecord) error) (captaincode.Result, error) {
+	planFn := captaincode.PlanOpenShellTeam
+	if b.planOpenShellTeamFn != nil {
+		planFn = b.planOpenShellTeamFn
+	}
+	status("OpenShell: the director is splitting the task into sandbox assignments\n")
+	plan, err := planFn(ctx, ws.Dir, task, history)
+	if err == nil {
+		ctx, err = captaincode.WithOpenShellAttemptsSpent(ctx, plan.DirectorAttempts)
+	}
+	if err == nil {
+		if err = keep(plan.Record()); err != nil {
+			err = fmt.Errorf("openshell: save team plan: %w", err)
+		}
+	}
+	if err != nil {
+		return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Directors: plan.DirectorAttempts}}, err
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "the director planned %d sandbox worker(s) in %d call(s)", len(plan.Assignments), plan.DirectorAttempts)
+	if plan.Rationale != "" {
+		sb.WriteString(" - " + terminalSafe(plan.Rationale, 200))
+	}
+	for i, brief := range plan.Assignments {
+		fmt.Fprintf(&sb, "\n  w%d: %s", i+1, terminalSafe(strings.Join(strings.Fields(brief), " "), 200))
+	}
+	note := sb.String()
+	status("OpenShell: " + note + "\n")
+	res, err := b.runOpenShellWorkflow(ctx, ws, plan.Workflow, history)
+	usage := captaincode.OpenShellAttemptUsage{Unmeasured: 1}
+	if res.OpenShellAttempts != nil {
+		usage = *res.OpenShellAttempts
+	}
+	usage.Directors += plan.DirectorAttempts
+	res.OpenShellAttempts = &usage
+	res.Text = "[captain/openshell] " + note + "\n\n" + res.Text
+	return res, err
 }

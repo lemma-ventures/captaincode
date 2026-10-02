@@ -1,0 +1,245 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "entrypoint": "POST /v1/chat/completions, model=team, /team /openshell <task>",
+  "harness": "Isolated HTTP server with real Captain handlers, the tool-less claude -p planner and prepared OpenShell MicroVM runtime; synthetic public fixture only.",
+  "verdict": "pass",
+  "fixture": "One task covering an iterative factorial and a linear-time Fibonacci refactoring, four protected unittest cases",
+  "task": "Refactor factorial.py to compute factorial with an iterative loop instead of recursion, and refactor fibonacci.py to compute fibonacci in linear time with an iterative loop. Keep each function's validation and public API. Run python3 -m unittest -v.",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "0ee1f4db62f438c22110c7d0e4539f6f823991ef",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "pkg/captaincode/openshell_plan.go": "e7fc2bfde10b7c5e14f3830c71ae407da19069b3f63af00cc29bd33a36ca177f",
+    "pkg/captaincode/openshell_plan_test.go": "b7283ce20b7d78b5c6aedabf14865eca237f35c0935f09dfa34c57b98e10ad99",
+    "pkg/captaincode/openshell.go": "1ad784df3f6f9744b516bf5051eeb9404c24100cd50a26a05c141a8d4b285464",
+    "pkg/captaincode/openshell_workflow.go": "f754591cbe295ae5f35941f1fac4392ea6efb90b53f34c440188c13083fe900c",
+    "pkg/captaincode/openshell_budget.go": "025e58fe3bcb22ce2ed188bd7de40f804ad24fb663e9529291aa57950bad080e",
+    "pkg/captaincode/lifecycle.go": "07ce7b6912a3c66ddc58fb1adcbeacb17a1750f4a7649265e00a9b5e7d75ef6b",
+    "cmd/captaincode/brain.go": "1de3e48d973fb60000db2fc2c0354291309c91cf16b1b96f2a262a2e0fd750fa",
+    "cmd/captaincode/brain_openai.go": "b6781974983fa1b36441286d6513035e29866e32fd0d22cff76f8f0f81b37c45",
+    "cmd/captaincode/brain_team.go": "a28ad93e3b30d4f30d450e6bf3e6a73b75eedc010b4d0e2cb8004606f80d63d5",
+    "cmd/captaincode/brain_openshell.go": "384aa4824ff7d51508d4269ee9ad2e6f63d024fb5e89c25891ad49fb28cad991",
+    "cmd/captaincode/task_cmd.go": "f660ddd387183567f9f7ea3c63b1a8eb9f46696eadc3c9bf489c369923020bbc",
+    "cmd/captaincode/brain_openshell_team_test.go": "5fe2f3fe5e39c92a232c27b9579d946c88ede61dd62978a438adcb590337f283",
+    "cmd/captaincode/brain_openshell_team_live_test.go": "caadce7c747f5116999f2c7e989b1f17289b91dbabd6ac243ade6504f6d2adda"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "a649ff1ea59f193c892c4d04797daa0c0b8d0f00480d217565bbe9eb1b5719c8",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "fc33b16aa23f1bd4884f99c4716a6ae3400e76be2b52b69f6ef2e7366d37b46f",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "run_record_sha256": "040ccc1026c190e56e87efaacb30685e3e1ccb7702bec89f6e3a735006c65ce4",
+  "concurrency": 2,
+  "require_all": true,
+  "wall_seconds": 61.788,
+  "run_seconds": 55.473,
+  "fixture_revision": "e3730557256a8c983c9fedd84b6446584236a2ad",
+  "plan": {
+    "director": "claude -p with no tools, MCP servers, customizations or saved session, in an empty directory",
+    "director_attempts": 1,
+    "workers": 2,
+    "rationale": "Two independent files with separate refactors; one worker per file avoids conflicts.",
+    "assignments": [
+      "Refactor factorial.py so the factorial function computes its result with an iterative loop instead of recursion. Keep the function's existing input validation (same checks, same exception types and messages) and its public API (function name, signature, return values, module-level exports) unchanged. Match the surrounding code style. You may change only factorial.py; do not touch fibonacci.py or any other file. When done, run `python3 -m unittest -v` and make sure the tests pass; report the results faithfully.",
+      "Refactor fibonacci.py so the fibonacci function computes its result in linear time using an iterative loop (e.g. tracking two running values) instead of recursion or any exponential approach. Keep the function's existing input validation (same checks, same exception types and messages) and its public API (function name, signature, indexing convention, return values, module-level exports) unchanged. Match the surrounding code style. You may change only fibonacci.py; do not touch factorial.py or any other file. When done, run `python3 -m unittest -v` and make sure the tests pass; report the results faithfully."
+    ],
+    "seconds_before_dispatch": 6.315
+  },
+  "workers": [
+    {
+      "id": "w1-openshell",
+      "outcome": "landed",
+      "seconds": 33.791,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.545,
+        "gateway_ready_recovery": 0.708,
+        "sandbox_create": 15.607,
+        "sandbox_create_attempt": 15.607,
+        "sandbox_restart": 2.244,
+        "worker": 5.304
+      },
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 6,
+        "prompt_tokens": 34801,
+        "completion_tokens": 449,
+        "reasoning_tokens": 161,
+        "cost_usd": 0.0125171
+      },
+      "patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+      "changed_files": [
+        "factorial.py"
+      ]
+    },
+    {
+      "id": "w2-openshell",
+      "outcome": "landed",
+      "seconds": 34.009,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.775,
+        "gateway_ready_recovery": 0.703,
+        "sandbox_create": 15.122,
+        "sandbox_create_attempt": 15.122,
+        "sandbox_restart": 2.254,
+        "worker": 5.083
+      },
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 6,
+        "prompt_tokens": 34958,
+        "completion_tokens": 641,
+        "reasoning_tokens": 312,
+        "cost_usd": 0.01271605
+      },
+      "patch_sha256": "10b3e4472f3ac6261678079430d464c711e412188bf2a772c5aca3725b6a210a",
+      "changed_files": [
+        "fibonacci.py"
+      ]
+    }
+  ],
+  "rulings": [],
+  "integrated": {
+    "seconds": 21.13,
+    "passed": true,
+    "patch_sha256": "0a85f36158042f1256fed73b5c5738c82cd1d35afbf6a5e3650e4483910ff516",
+    "changed_files": [
+      "factorial.py",
+      "fibonacci.py"
+    ],
+    "check_verdicts": {
+      "baseline": "pass",
+      "cancellation_descendants": "pass",
+      "cancellation_requested": "pass",
+      "filesystem_denied": "pass",
+      "landlock": "pass",
+      "network_denied": "pass",
+      "provider_path_denied": "pass",
+      "worker_tools": "pass"
+    }
+  },
+  "settled_attempts": {
+    "workers": 2,
+    "repairs": 0,
+    "directors": 1,
+    "unmeasured": 0
+  },
+  "spend": {
+    "complete": true,
+    "cost_usd": 0.02523315,
+    "tokens": 70849,
+    "planner": "subscription call, counted as a director attempt and not priced, as for rulings"
+  },
+  "host_preservation": {
+    "tracked_files": true,
+    "git_index": true
+  },
+  "patch_replay_matches_verified_tree": true,
+  "earlier_runs": [
+    {
+      "verdict": "pass",
+      "wall_seconds": 63.774,
+      "director_attempts": 1,
+      "workers": 2,
+      "cost_usd": 0.0252831,
+      "note": "Same fixture before the plan was saved on the task and the reply listed assignments; not counted above"
+    }
+  ],
+  "limits": [
+    "One synthetic fixture on one host; not a scale, reliability or planning-quality estimate.",
+    "The task splits cleanly by file, so no conflict ruling was needed; overlapping assignments are covered by controller tests only.",
+    "The planner sees only the task and editable paths; every worker shares one profile, edit scope and verification command.",
+    "seconds_before_dispatch includes HTTP handling and ledger saves as well as the planning call."
+  ]
+}
