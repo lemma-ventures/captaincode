@@ -126,7 +126,13 @@ type Event struct {
 	// Route is the transport and provider the run went through
 	// ("opencode:openrouter", "claude-cli"): one model id can be served by
 	// different providers.
-	Route         string `json:"route,omitempty"`
+	Route string `json:"route,omitempty"`
+	// Judge is the leg that judged this run on the rubric, from another
+	// vendor than the worker, and JudgePass its verdict (SCORING.md Phase
+	// 2). A weak observation: it counts by how often that judge agreed with
+	// tests it could be checked against.
+	Judge         Leg    `json:"judge,omitempty"`
+	JudgePass     bool   `json:"judge_pass,omitempty"`
 	Path          string `json:"path,omitempty"`
 	Attempt       int    `json:"attempt,omitempty"`
 	EscalatedFrom Leg    `json:"escalated_from,omitempty"`

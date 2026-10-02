@@ -325,9 +325,24 @@ func TestAssessPolicy_ConvergedLegIsNotScoredEveryRun(t *testing.T) {
 		calls++
 		return base(task, output, obj)
 	}
-	seedScored(b, captaincode.LegGLM, 10) // converged: 10 scored, N=10
+	seedScored(b, captaincode.LegGLM, 10) // 10 scored, N=10: the 1-in-10 sampler skips run 11
+	// Converged now means the model's estimate is certain (SCORING.md
+	// Phase 2): forty labelled outcomes on the model the run reports.
+	now := time.Now()
+	model := captaincode.ModelIDAt(captaincode.LegGLM, "")
+	var hist []captaincode.RoutingSample
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("seed%d", i)
+		hist = append(hist, captaincode.RoutingSample{
+			Decision: captaincode.Decision{TaskID: id, Task: id, Chosen: captaincode.LegGLM, At: now},
+			Outcome:  &captaincode.OutcomeEvidence{TaskID: id, Status: captaincode.AcceptanceAccepted, DecidedBy: captaincode.DecidedByCommit},
+			Events:   []captaincode.Event{{Leg: captaincode.LegGLM, Model: model, Outcome: "ok", Duration: 1000, At: now}},
+		})
+	}
+	est := captaincode.NewModelEstimator(hist, nil, now)
+	b.modelEstimatorFn = func() *captaincode.ModelEstimator { return est }
 	b.recordRun(captaincode.LegGLM, "[user]\nreal task\n\n", bigResult(), "")
-	assert.Equal(t, 0, calls, "converged scorecard → no director call")
+	assert.Equal(t, 0, calls, "a certain estimate → no judge call")
 	if evs := b.ledger.Events; assert.Len(t, evs, 11) {
 		assert.Zero(t, evs[10].Quality)
 		assert.Equal(t, "ok", evs[10].Outcome, "run still recorded for freshness")
@@ -616,4 +631,22 @@ func TestBrainRoute_CarriesTheEffort(t *testing.T) {
 	assert.Equal(t, "high", route("/quality fix typo in README", "codex", "").Effort, "…also mid-prompt")
 	assert.Equal(t, "low", route("refactor the concurrency architecture /speed", "codex", "").Effort, "/speed outranks the rating")
 	assert.Equal(t, "high", route("refactor the concurrency architecture across the codebase", "codex", "").Effort, "a hard task thinks hard")
+}
+
+// SCORING.md Phase 2: the director graded every sampled run, its own leg's
+// included. A run is now judged by another vendor's leg, on the rubric.
+func TestRunsAreJudgedByAnotherVendor(t *testing.T) {
+	var objective string
+	b := newRecordBrain(8.0, nil)
+	b.assessFn = func(task, output, obj string) (captaincode.Assessment, error) {
+		objective = obj
+		return captaincode.Assessment{Quality: 8, Verdict: "good"}, nil
+	}
+	b.recordRun(captaincode.LegClaude, "[user]\nreal task\n\n", bigResult(), "")
+	require.Len(t, b.ledger.Events, 1)
+	ev := b.ledger.Events[0]
+	require.NotEmpty(t, ev.Judge, "an uncertain new model is judged")
+	assert.NotEqual(t, "anthropic", captaincode.VendorOf(ev.Judge), "never its own vendor")
+	assert.True(t, ev.JudgePass)
+	assert.Contains(t, objective, "Rubric")
 }
