@@ -136,8 +136,8 @@ func cmdTaskInspect(args []string) {
 			fmt.Printf("  attempt %s — %s (leg: %s)\n", a.AttemptID, a.State, a.Leg)
 			if plan := a.OpenShellPlan; plan != nil {
 				fmt.Printf("    sandbox team plan (%d director call(s)): %s\n", plan.DirectorAttempts, terminalSafe(plan.Rationale, 200))
-				for i, brief := range plan.Assignments {
-					fmt.Printf("      w%d: %s\n", i+1, terminalSafe(strings.Join(strings.Fields(brief), " "), 300))
+				for _, line := range openShellPlanLines(*plan, 300) {
+					fmt.Printf("      %s\n", line)
 				}
 			}
 			if a.OpenShell != nil {

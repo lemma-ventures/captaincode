@@ -370,6 +370,31 @@ CAPTAIN_TEST_OPENSHELL_HTTP_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
   go test ./cmd/captaincode -run '^TestOpenShellHTTPLiveQualification$' -count=1 -v -timeout 15m
 ```
 
+### Director-planned stages (experimental, unreleased)
+
+`/team /openshell <task>` can plan parallel edits followed by dependent edit or
+read-only review stages. It uses the existing verified-snapshot handoff and
+exports one cumulative patch. Plans have at most four stages, four workers per
+stage and eight workers overall. Scope and tests stay operator-configured;
+reviews must leave the tree unchanged. See the
+[configuration contract](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+
+The opt-in public numbers fixture asks the tool-less director for two parallel
+refactors followed by a review of the verified result. It checks every worker's
+sandbox gates, unchanged review output, snapshot lineage, final patch reproduction,
+ledger reload and host file/index preservation. The
+[2 October qualification](results/2026-10-02-planned-stages.json) passed in
+120.5 seconds: three workers passed all 17 checks, both integration sandboxes
+passed all 8 checks, and the review left the verified tree unchanged. All 19
+worker responses were priced, totaling $0.04149; the host subscription planning
+call is counted separately and unpriced. This is one fixture on the locally
+patched VM driver, not a scale or reliability claim.
+
+```sh
+CAPTAIN_TEST_OPENSHELL_PLANNED_STAGES_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellHTTPPlannedStagesLiveQualification$' -count=1 -v -timeout 15m
+```
+
 ### Explicit parallel workflows (experimental, unreleased)
 
 The CLI and HTTP entry also accept one parallel stage with 2-4 OpenShell workers:
