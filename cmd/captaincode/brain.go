@@ -481,10 +481,15 @@ type brain struct {
 	pickFn func(task string, class captaincode.Class, prefer string, menu []captaincode.Scored, self captaincode.Leg) (captaincode.WorkerPick, error)
 	// The success estimator (brain_estimate.go): rebuilt from the routing
 	// history every estimatorTTL; estimatorFn is its test seam.
-	est         *captaincode.SuccessEstimator
-	estAt       time.Time
-	labeled     int
-	estimatorFn func() *captaincode.SuccessEstimator
+	est *captaincode.SuccessEstimator
+	// modelEst is the Phase 2 estimator (model_estimate.go), rebuilt like est.
+	modelEst   *captaincode.ModelEstimator
+	modelEstAt time.Time
+	// modelEstimatorFn is modelEst's test seam.
+	modelEstimatorFn func() *captaincode.ModelEstimator
+	estAt            time.Time
+	labeled          int
+	estimatorFn      func() *captaincode.SuccessEstimator
 	// lastSupervise holds the supervisor's last answers per running worker
 	// (brain_supervise.go), read by the verify sequence (brain_verify.go).
 	smu           sync.Mutex
@@ -919,25 +924,6 @@ func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, t
 	p, err := mgr.Plan(task, class, prefer, open, stats, teams, allowFanOut)
 	b.noteDirectorOutcome(err)
 	return p, err
-}
-
-// doAssess has the director score one worker run. taskID, when set, bills the
-// scoring call (and directorJSON's corrective retry, which is a second real
-// call) to that task as a "review" attempt - the learning loop is not free,
-// and a baseline report that hides its own overhead is not a baseline.
-// skills, when the worker held a shelf, adds the second question: of the
-// procedures captain staged, which does this answer show being used, and
-// were they worth their place (M3.9).
-func (b *brain) doAssess(taskID, task, output, objective string, skills []captaincode.SkillRef) (captaincode.Assessment, error) {
-	if b.assessFn != nil {
-		return b.assessFn(task, output, objective)
-	}
-	// Called from recordRun WITHOUT mu - snapshot the effective director.
-	b.mu.Lock()
-	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Skills: skills}
-	b.mu.Unlock()
-	mgr.CallLabel, mgr.OnCall = "review", b.chargeAux(taskID)
-	return mgr.Assess(task, output, objective)
 }
 
 // chargeAux bills a director-side provider call to the task that caused it:
@@ -1883,14 +1869,16 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	// A repair or an escalation attempt is not graded by the director: the
 	// objective check that gated it is its grade, and a judge call for an
 	// attempt that failed `go test` would price the failure twice.
-	if label == "" && len(res.Text) >= 200 && res.DurationMs >= 5000 && b.shouldAssess(leg) {
-		if a, err := b.doAssess(ev.TaskID, task, res.Text, "none", stocked); err == nil {
+	// The judge is another vendor's leg, called where the model's estimate is
+	// uncertain (and one run in ten otherwise), on a rubric with the test
+	// result beside it (SCORING.md Phase 2). The director used to grade
+	// every sampled run, its own leg's included.
+	if judge, ok := b.judgeFor(leg, ev, label, res); ok {
+		if a, err := b.doJudge(judge, ev.TaskID, task, res.Text, b.judgeObjective(ev.TaskID), stocked); err == nil {
 			ev.Quality, ev.Verdict, grades = a.Quality, a.Verdict, a.Skills
+			ev.Judge, ev.JudgePass = judge, a.Verdict != "poor"
 			if wsDir != "" { // the grade and its reasoning go to memory too (brain_euclid.go)
-				b.mu.Lock()
-				reviewer := b.effectiveDirector()
-				b.mu.Unlock()
-				journalReview(captaincode.Workspace{Dir: wsDir}, leg, reviewer, task, a.Quality, a.Verdict, a.Notes)
+				journalReview(captaincode.Workspace{Dir: wsDir}, leg, judge, task, a.Quality, a.Verdict, a.Notes)
 			}
 			// The grade is no longer recorded as a check (it was, as
 			// director:assess, until 2026-10-02): a judge's opinion that
