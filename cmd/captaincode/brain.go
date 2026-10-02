@@ -2470,13 +2470,26 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 						rationale += " · " + why
 					}
 				}
+				explored, passedOver := false, captaincode.Leg("")
 				if len(ladder) > 1 && b.explore(tr.Class) {
+					explored, passedOver = true, leg
 					leg, effort = ladder[1], ""
 					b.markExplored(req.Task)
 					rationale += fmt.Sprintf(" · EXPLORE: trying runner-up %s to earn it a score", leg)
 				}
 				totalMs := time.Since(t0).Milliseconds()
-				dec := b.valueDecision(tr, leg, rows, totalMs, rationale)
+				dec := b.valueDecision(tr, leg, rows, totalMs, rationale, explored, passedOver)
+				if eps := exploreRate(tr.Class); len(ladder) > 1 && eps > 0 {
+					top := passedOver
+					if !explored {
+						top = leg
+					}
+					// The policy's pick unless the draw explored, then the
+					// runner-up: summed, since they can be the same leg.
+					dec.Propensities = map[captaincode.Leg]float64{}
+					dec.Propensities[top] += 1 - eps
+					dec.Propensities[ladder[1]] += eps
+				}
 				if path != captaincode.PathValue {
 					dec.Path, dec.Policy.Name = path, path
 				}

@@ -89,6 +89,11 @@ type Decision struct {
 	// explored turn reads as the router preferring the runner-up.
 	Explored   bool `json:"explored,omitempty"`
 	PassedOver Leg  `json:"passed_over,omitempty"`
+	// Propensities is the probability each leg had of being chosen by the
+	// policy that decided (1 for the chosen leg of a deterministic pick):
+	// evidence collected by a router is only comparable across legs when
+	// weighted by how likely each was to be tried (SCORING.md Phase 0).
+	Propensities map[Leg]float64 `json:"propensities,omitempty"`
 
 	// Shape says whether the turn ran one worker or a team; Workers names a
 	// team's legs (Chosen is empty then: no single leg was chosen).

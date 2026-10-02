@@ -294,3 +294,37 @@ func TestFrontierTurnFitsTheReplay(t *testing.T) {
 	assert.Less(t, len(got), 450_000, "the replay is fitted to 400k, with the contracts on top")
 	assert.Contains(t, got, "summarize what you built in the 10 previous rounds", "the turn being answered survives the cut")
 }
+
+// The frontier lane decided without route(), so its picks were never on the
+// record: 132 frontier turns, 2 decisions (SCORING.md Phase 0).
+func TestFrontierTurnIsOnTheRecord(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "0")
+	b := teamBrain()
+	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {
+		return captaincode.Result{Text: "refactored the lexer", DurationMs: 5}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "refactor the lexer"}}})
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	r.Header.Set(workspaceHeader, t.TempDir())
+	b.chatCompletions(rec, r)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	// The run is recorded asynchronously: wait for it, so it cannot write
+	// into the next test's state.
+	require.Eventually(t, func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return len(b.ledger.Events) > 0
+	}, 10*time.Second, 20*time.Millisecond)
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.NotEmpty(t, b.ledger.Decisions)
+	d := b.ledger.Decisions[len(b.ledger.Decisions)-1]
+	assert.Equal(t, d.TaskID, b.ledger.Events[len(b.ledger.Events)-1].TaskID, "the run is billed to the decision's task")
+	assert.Equal(t, captaincode.PathLane, d.Path)
+	assert.Equal(t, captaincode.LegClaude, d.Chosen)
+	assert.NotEmpty(t, d.TaskID, "attached to the turn's task")
+	assert.Equal(t, 1.0, d.Propensities[captaincode.LegClaude])
+}

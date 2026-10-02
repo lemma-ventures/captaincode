@@ -551,6 +551,15 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		lead = pick.Leg
 	}
 	fmt.Printf("captain brain: %s\n", pick.Reason)
+	// The frontier lane decided without route(), so its pick was never on the
+	// record: 132 frontier turns, 2 decisions (SCORING.md Phase 0). The
+	// identity opens now and the decision attaches to it at once - a
+	// 17-minute run would outlive a parked decision.
+	taskID := ""
+	if task := lastUserTurn(prompt); !req.internal {
+		b.recordDecision(task, frontierDecision(task, pick))
+		taskID = b.openTask(task)
+	}
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(pick.Leg), Model: "frontier", Text: pick.Reason})
 	status(pick.Reason + "\n")
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
@@ -596,7 +605,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		Task: lastUserTurn(prompt), Output: res.Text, DurationMs: time.Since(t0).Milliseconds()})
 	fmt.Printf("captain brain: frontier done on %s in %s (%d chars)\n", ranLeg, time.Since(t0).Round(time.Millisecond), len(res.Text))
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(ranLeg), Model: "frontier", Text: promptPeek(res.Text), Ms: time.Since(t0).Milliseconds()})
-	go b.recordRunAt(ranLeg, prompt, res, ws, "", 1, "", "", stocked...)
+	go b.recordRunAt(ranLeg, prompt, res, ws, taskID, 1, "", "", stocked...)
 	if !req.Stream || !res.Streamed {
 		emit(res.Text)
 	}
@@ -778,4 +787,20 @@ func newCompletionWriterRaw(w http.ResponseWriter, req oaiChatReq, model string)
 			closed = true
 			mu.Unlock()
 		})
+}
+
+// frontierDecision is the record behind a /frontier pick: the lane's band as
+// the candidates, the deterministic pick at probability 1.
+func frontierDecision(task string, pick captaincode.LanePick) captaincode.Decision {
+	tr := captaincode.TriageTask(task)
+	d := captaincode.Decision{
+		Class: tr.Class, Domain: tr.Domain, Chosen: pick.Leg, Rationale: pick.Reason,
+		Path: captaincode.PathLane, Shape: captaincode.ShapeSolo, Effort: captaincode.EffortMax,
+		Policy: captaincode.Policy{Name: "frontier-lane"}, Attempt: 1,
+		Propensities: map[captaincode.Leg]float64{pick.Leg: 1},
+	}
+	for _, l := range pick.Band {
+		d.Candidates = append(d.Candidates, captaincode.Scored{Leg: l})
+	}
+	return d
 }

@@ -43,6 +43,9 @@ type oaiChatReq struct {
 	// ws is the folder the calling TUI is open in (see brain_workspace.go);
 	// resolved from the request, never from the body.
 	ws captaincode.Workspace
+	// internal marks a request the brain issued itself (a /repeat round, a
+	// queued prompt): it opens no task identity of its own.
+	internal bool
 }
 
 // lastUserRaw returns the last user turn exactly as typed - before directive
@@ -311,6 +314,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ws = workspaceOf(r)
+	req.internal = r.Context().Value(noDedupeKey{}) != nil
 	// Several prompts queued behind the previous turn arrive as one request
 	// with several trailing user messages: each is its own turn, in order
 	// (brain_queue.go). A round the brain issued itself never splits.

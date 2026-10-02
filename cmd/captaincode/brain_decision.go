@@ -42,6 +42,9 @@ const decisionTTL = routeTurnTTL
 func (b *brain) recordDecision(task string, d captaincode.Decision) {
 	d.Task = truncate(task, 120)
 	d.At = time.Now()
+	if d.Propensities == nil && d.Chosen != "" {
+		d.Propensities = map[captaincode.Leg]float64{d.Chosen: 1} // a deterministic pick
+	}
 	b.rtmu.Lock()
 	defer b.rtmu.Unlock()
 	if b.pendingDecisions == nil {
@@ -142,7 +145,7 @@ func (b *brain) attachDecision(taskID, task string) {
 // valueDecision builds the record behind a cheap-path choice: the ranked
 // field, the hard exclusions with their reasons, and the policy snapshot the
 // ranking is only reproducible alongside. Caller holds b.mu.
-func (b *brain) valueDecision(tr captaincode.TriageResult, chosen captaincode.Leg, rows []captaincode.Scored, decidedMs int64, rationale string) captaincode.Decision {
+func (b *brain) valueDecision(tr captaincode.TriageResult, chosen captaincode.Leg, rows []captaincode.Scored, decidedMs int64, rationale string, explored bool, passedOver captaincode.Leg) captaincode.Decision {
 	d := captaincode.Decision{
 		Class: tr.Class, Domain: tr.Domain, Chosen: chosen, Rationale: rationale,
 		Path:       captaincode.PathValue,
@@ -160,11 +163,13 @@ func (b *brain) valueDecision(tr captaincode.TriageResult, chosen captaincode.Le
 		d.Path, d.Policy.Name = captaincode.PathLadder, "ladder"
 		return d
 	}
-	// Exploration is the one case where the chosen leg is not the top of the
-	// ranking. Naming what it passed over keeps that legible as a deliberate
-	// departure rather than a ranking nobody can reproduce.
-	if eligible[0].Leg != chosen {
-		d.Explored, d.PassedOver = true, eligible[0].Leg
+	// Explored is the exploration draw, and only that. It used to mean "not
+	// the value ranking's first row", which marked 51 of 81 expected-policy
+	// decisions as explored when that policy simply ranked differently
+	// (SCORING.md). Naming what it passed over keeps a deliberate departure
+	// legible.
+	if explored {
+		d.Explored, d.PassedOver = true, passedOver
 	}
 	return d
 }
