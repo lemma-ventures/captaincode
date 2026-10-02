@@ -5,8 +5,9 @@ snapshot, one OpenShell sandbox, and one edit, test, export and landing cycle.
 The fixture pilot operates on the small `fixture/` repository, not your checkout.
 [Task mode](#task-mode-and-captain-openshell) applies the same boundary to a
 task spec, and `captain openshell` runs a team of such sandboxes and returns one
-verified patch. Neither changes Captain's routing, scope declarations,
-configuration or running brain.
+verified patch. The experimental, unreleased `openshell` leg also accepts
+explicit solo tasks and sandbox-only workflows; it requires operator
+configuration and stays outside automatic routing. See [configuration](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
 
 ## Current result
 
@@ -114,6 +115,37 @@ options to `prepare.py`. The gateway and CLI remain pinned to
 driver is an explicit local build, not a replacement downloaded automatically.
 The Docker backend still requires working Landlock ABI 3 or newer; an
 unavailable kernel feature stops the pilot without reducing enforcement.
+
+## Direct CLI qualification
+
+The [2 October CLI result](results/2026-10-02-cli-entry.json) exercises
+`captain with openshell`, built from the modified checkout recorded in the
+report. One Cerebras worker fixed the Roman-numeral fixture in one attempt.
+All 17 task gates and 8 fresh-sandbox integration gates passed in **62.184 s**.
+Worker gateway readiness plus sandbox creation took **21.830 s**; model-driven
+worker execution took **7.107 s**. Shield mediated 9 requests and 9 responses.
+
+Every 2 October report was produced from uncommitted changes on top of
+`cbd15cb`; the reports with a `source_revision` record it as `modified: true`.
+Reports written by Go test binaries show `provenance.captain.modified: false`
+only because test binaries carry no VCS stamp; `source_revision` is authoritative.
+
+The fixture contained staged, unstaged and untracked operator edits. Their
+bytes and the Git index remained unchanged. The export survived a ledger
+reload, and applying its patch to a separate disposable clone reproduced
+the exact tree verified in the integration sandbox. No worker-written code
+was executed on the host.
+
+A second CLI invocation received SIGINT after the live Landlock check and
+before model dispatch. Its sandbox stop was confirmed, the CLI exited with
+status 1 in **0.422 s** after the signal, and the ledger retained `cancelled`
+without a verified export or an apply instruction.
+
+This qualifies one direct CLI fixture on the locally patched MicroVM runtime.
+It does not qualify the brain HTTP entry, ordinary teams/workflows or scale.
+No synthetic secret was supplied: Shield mediation and refusal when Shield
+is unavailable were exercised; masking/restoration remains covered by the
+earlier dedicated fixture runs.
 
 ## Pinned provider comparison
 
@@ -266,6 +298,260 @@ captain openshell --team examples/openshell-pilot/team/team.json \
 
 Per-task states go under `--state-root` (default `/tmp`), which must stay short
 for the MicroVM socket path.
+
+### Explicit solo worker
+
+With the pilot prepared, choose existing source files and a real test command. The direct CLI
+uses only the sandbox runner; it rejects host `--until` checks. Its prompt
+may say "until tests pass", but the only executable check is the explicit
+`CAPTAIN_OPENSHELL_VERIFY` argv inside the sandbox.
+For example, in a Python repository with `parser.py` and unittest tests:
+
+```sh
+export CAPTAIN_OPENSHELL_PREPARED="$pilot_state"
+export CAPTAIN_OPENSHELL_PILOT="$pilot_source"
+export CAPTAIN_OPENSHELL_ALLOWED='parser.py'
+export CAPTAIN_OPENSHELL_VERIFY='["python3","-m","unittest"]'
+export CAPTAIN_OPENSHELL_BASELINE=fail
+captain with openshell "Fix the parser regression covered by the tests"
+```
+
+`pilot_source` is the absolute path to this directory. Set these variables in
+the brain's environment to use `/openshell`. The default inference profile is
+Cerebras; set `CAPTAIN_OPENSHELL_PROFILE=nim` for NIM. Baseline `fail` requires a
+failing regression test before editing; the solo default is `any` for general
+changes. Both require passing final and integrated checks.
+
+The entry pins the committed revision, validates configuration before starting,
+returns a verified patch without writing the checkout, and propagates a failed
+integrated check as an error. Brain provider failover and solo host verification
+are disabled for this leg. `/interrupt` reaches the controller's cleanup path.
+Controller-backed tests cover both dispatch paths. The
+[direct CLI qualification](#direct-cli-qualification) exercises the hardened
+CLI live; the [HTTP entry qualification](#http-entry-qualification) exercises
+the brain handlers through an isolated HTTP server.
+
+Brain runs and the direct CLI retain the verified export in the task's durable
+attempt record. The CLI also prints its task ID; an already-running brain picks
+up a separate CLI process's records at its next ledger save.
+`captain task artifacts <task-id>` and `captain task inspect <task-id>` show
+the snapshot, file list, checksum, verification and evidence location after
+restart, with the label **exported (not applied)**. The sandbox's export does
+not include unrelated host edits. Brain teams/workflows that mix this leg with
+host workers or host gates are rejected before dispatch; use sandbox-only
+`/openshell` workflows or the standalone team command above.
+
+### HTTP entry qualification
+
+The [2 October HTTP report](results/2026-10-02-http-entry.json) records the public
+Roman numeral fixture through `POST /v1/chat/completions` with `model: "openshell"`.
+An isolated Go HTTP server used the real handlers and prepared MicroVM runtime.
+The worker passed all 17 gates, and a fresh sandbox passed all 8 integration
+gates, in 64.947 seconds overall. Reapplying the exported patch reproduced the
+verified tree. Staged, unstaged and untracked host edits and the Git index stayed
+unchanged. The export and handoff survived a ledger reload before HTTP success.
+
+A second request disconnected after Landlock enforcement and before model
+dispatch. The handler completed controller cleanup in 0.406 seconds and retained
+a cancelled attempt without an export. This qualifies one fixture on one host;
+it does not measure scale, provider reliability or a new secret-restoration case.
+The running brain service was not restarted or exercised.
+
+The opt-in test requires the prepared runtime, its locally available worker
+image, and `OPENROUTER_API_KEY`. It keeps isolated raw evidence in a temporary
+`cc-http-*` directory. The test reads the active Docker context from your
+account's home before it isolates `HOME`; set `DOCKER_HOST` to override it:
+
+```sh
+CAPTAIN_TEST_OPENSHELL_HTTP_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellHTTPLiveQualification$' -count=1 -v -timeout 15m
+```
+
+### Explicit parallel workflows (experimental, unreleased)
+
+The CLI and HTTP entry also accept one parallel stage with 2-4 OpenShell workers:
+
+```sh
+CAPTAIN_OPENSHELL_CONCURRENCY=2 captain with openshell \
+  '/openshell refactor parser.py + /openshell refactor formatter.py'
+```
+
+Configure the prepared runtime, profile, allowed files and verification argv as
+for a solo task. All workers use that configuration and the same pinned revision.
+They receive their own assignment and the earlier conversation. Every requested
+worker must pass; a failed worker or unresolved conflict withholds the combined
+export. The selected patches pass one fresh-sandbox integration check. The ledger
+stores an aggregate attempt linked to `run.json`, including per-worker evidence
+and `require_all: true`. Host files and the Git index are not edited.
+
+Host workers/gates and automatic team planning remain refused.
+For distinct scopes, profiles or verification commands, use the JSON team entry.
+The parallel HTTP live fixture exercises two independent numerical refactorings,
+patch replay, host preservation and a second request cancelled with both workers
+active. Run it with the prepared runtime, provider key and Docker socket available:
+
+```sh
+CAPTAIN_TEST_OPENSHELL_PARALLEL_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellHTTPParallelLiveQualification$' -count=1 -v -timeout 15m
+```
+
+The [2 October parallel HTTP result](results/2026-10-02-parallel-entry.json)
+passed both tasks on their first attempts in 62.633 seconds: 17 gates per worker
+and 8 integration gates. Replaying the patch matched the verified tree. A second
+request cancelled with both workers active confirmed both sandbox stops in
+0.407 seconds and delivered no export. Staged, unstaged and untracked files and
+the host index stayed unchanged. The report also preserves the two setup failures
+before the Docker endpoint was corrected and the earlier passing development run.
+This is a public fixture qualification, not a scale or reliability measurement.
+
+### Shared wall-time limit (experimental, unreleased)
+
+Set `CAPTAIN_MAX_WALLTIME=10m` to give the complete task one ten-minute deadline,
+including worker startup, parallel work, repairs and integration checks. CLI/HTTP
+sequences persist that absolute deadline in their recovery plan and the root task
+limit in the ledger. `captain openshell --resume`, task resume and optional startup
+recovery retain it. Downtime counts; increasing or unsetting the limit does not
+replenish an existing sequence. Caller and worker deadlines may stop work earlier.
+
+Expiry triggers controller cleanup, skips queued workers and withholds the export;
+earlier evidence is retained. Cleanup can extend past the deadline by the existing
+shutdown grace. Strict dollar caps remain refused. Controller
+regressions cover deadline persistence and expiry; this change has not yet received
+a separate live MicroVM qualification.
+
+### Sequential snapshot handoffs (experimental, unreleased)
+
+The explicit CLI/HTTP workflow accepts `>` between OpenShell stages, optionally
+combining parallel workers within a stage. Limits are 4 stages, 4 workers per
+stage and 8 workers total. Configuration stays fixed across the workflow.
+
+```sh
+captain with openshell \
+  '/openshell refactor parser.py > /openshell simplify parser.py using the refactored implementation'
+```
+
+A stage must pass its worker gates and fresh-sandbox integration check. Edit
+workers must produce a patch; explicit review workers must leave the snapshot
+unchanged. Only then does the next stage receive that verified tree.
+Intermediate commits stay in a separate local snapshot repository, with hooks
+and content filters disabled. The cumulative export reproduces the last verified
+tree from the original pinned commit; no user checkout or index is changed.
+Failures and cancellation retain stage evidence and withhold the final export.
+The coordinator records each handoff atomically and saves a checksum-bound plan.
+`captain openshell --resume <run-directory>` continues at verified stage boundaries,
+using the saved scope, checks and runtime. It rechecks each completed worker and
+integrated export before running another stage, without repeating completed model
+or director calls. A process lock prevents competing controllers; changed runtime
+inputs and incomplete stages are refused. This is explicit local continuation,
+not automatic brain recovery or resumption of an in-flight worker. It does not
+update the original brain attempt. See
+[configuration](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+
+`CAPTAIN_MAX_ATTEMPTS` applies conservative admission before execution: the
+whole plan needs room for every worker, configured repair and two director calls
+per possible conflict group (one ruling plus a malformed-JSON retry). Reviews
+count once; verification sandboxes do not call a model. A default edit then review
+requires three slots. Unused slots are not reassigned. `attempt_budget` in
+`run.json` records the cap and worst-case requirement separately from actual
+worker usage. Recovery keeps the original checksum-bound cap and checks all
+stages, including those already completed; it cannot reset the allocation.
+Strict dollar budgets remain unsupported. These controls have local regression
+coverage; the live reports below predate attempt-cap admission.
+
+New sequential tasks entered through Captain's CLI or HTTP endpoint also bind
+the plan checksum and run directory to their ledger attempt before dispatch.
+After restart, `captain task resume <task-id> <attempt-id>` validates that binding
+and starts a linked attempt under the original task. This asynchronous task API
+path persists the resulting export and handoff; `captain task cancel <task-id>`
+stops the continuation. Incomplete stages, changed plans and previously settled
+task usage are refused. Every verified stage refreshes the durable attempt
+checkpoint, including during recovery; a failed ledger save stops the next worker.
+
+Optional startup recovery uses the same task path when the brain environment sets
+`CAPTAIN_OPENSHELL_AUTO_RESUME=1` (default off). It admits one sequence at a time,
+only after listener binding and saved reconciliation, with a checkpoint from the
+last 24 hours. Waiting tasks, pending cancellations, stale or incomplete evidence,
+changed runtime and unsupported budgets are refused. Repeated startup does not
+recharge completed work. Shutdown stops the active continuation and its queue;
+there is no background retry loop. See the configuration reference for inspection
+and cancellation commands.
+
+The [2 October task recovery qualification](results/2026-10-02-task-resume-entry.json)
+passed in 107.6 seconds. The first coordinator exited after the edit stage; another
+coordinator reloaded the ledger and resumed the review through the HTTP task API.
+Altered plans and duplicate resumes were refused. Both stages passed 17 worker and
+8 integration gates, and the cumulative patch reproduced the verified tree. Host
+files and index stayed unchanged; artifacts and handoff survived another ledger
+reload. The continuation recorded one charge for all 11 requests, 64,140 tokens and
+$0.0230. This is one public fixture, with explicit stage-boundary recovery only.
+
+```sh
+CAPTAIN_TEST_OPENSHELL_TASK_RESUME_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellTaskResumeLiveQualification$' -count=1 -v -timeout 15m
+```
+
+The [2 October recovery qualification](results/2026-10-02-resume-entry.json)
+completed an edit-review fixture in 109.2 seconds after the first coordinator
+exited at a verified checkpoint. A separate coordinator reused stage 1 without
+another model call, completed stage 2, and produced a patch matching the final
+verified tree. Both stages passed 17 worker and 8 integration gates. Host files
+and index bytes stayed unchanged. This is one fixture, not a scale result.
+
+Use `/openshell --review <assignment>` alone or after `>` for a no-change review.
+JSON teams express the same contract with `"mode": "review"`, `"allowed": []`,
+`"baseline": "pass"` and no repair attempts. Shield, the denial checks, restart
+recovery and fresh-sandbox verification still run. Any exported edit is refused.
+Review findings are saved as `answer.txt`; passing checks is not a model approval.
+A review-only workflow keeps checksum-bound evidence and prints nothing to apply.
+
+The review qualification runs an edit followed by a review, checks identical
+stage trees and cumulative replay, then disconnects a second run during review
+and checks cancellation and host preservation:
+
+```sh
+CAPTAIN_TEST_OPENSHELL_REVIEW_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellHTTPReviewLiveQualification$' -count=1 -v -timeout 20m
+```
+
+The [2 October review result](results/2026-10-02-review-entry.json) passed in
+111.0 seconds, with an unchanged review tree and an exactly replayable cumulative
+patch. Cancellation during a second review stopped its sandbox in 0.406 seconds
+without an export. Host files and index stayed unchanged; the completed run cost
+$0.0443 for 123,394 tokens. The report includes the earlier incomplete billing
+response and the corrected accounting assertion. This is one fixture on one host.
+
+Controller regressions cover parallel-to-sequential inheritance, successive
+edits to the same file, exact cumulative replay, invalid exports, cancellation,
+pre-dispatch validation, and refusal to execute Git hooks or content filters.
+The opt-in HTTP fixture also checks a real two-stage MicroVM chain:
+
+```sh
+CAPTAIN_TEST_OPENSHELL_SEQUENTIAL_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellHTTPSequentialLiveQualification$' -count=1 -v -timeout 15m
+```
+
+The [2 October sequential result](results/2026-10-02-sequential-entry.json)
+passed one two-stage chain through HTTP in 114.0 seconds. Each stage's worker
+passed 17 gates on its first attempt and each stage tree passed 8 gates in a
+fresh sandbox. Stage 2 started from stage 1's snapshot commit, whose tree was
+stage 1's verified tree. Replaying the cumulative patch on a clone of the original
+commit reproduced the final tree. Host files and the Git index stayed unchanged.
+
+The worker patches and final tree are byte-identical to the parallel result for
+the same two tasks (tree `efad0ba6`). Shield saw 15 requests and all 15 came back
+priced: the ledger charged a measured $0.0326 for 91,166 tokens. A second request
+was disconnected after stage 1 passed and stage 2's worker reached Landlock
+enforcement. Its sandbox stopped in 0.405 seconds, the attempt was recorded as
+cancelled with no export, and its charge was stage 1's bill alone ($0.0178,
+the same 49,583 tokens as in the completed run). An earlier passing run, before
+Shield recorded usage, produced the same patches and tree. This is one fixture
+with one worker per stage, not a scale or reliability measurement.
+
+Three earlier attempts stopped before any sandbox existed. The isolated test
+`HOME` had no Docker context, so the lookup returned `/var/run/docker.sock`,
+which Docker Desktop does not create. The VM driver then asked Docker Hub for
+the local-only worker image. The live tests now resolve the context from your
+account's home, and the pilot refuses an endpoint without a socket.
 
 ### Team results
 
@@ -759,3 +1045,26 @@ Upstream references are pinned to
 [support requirements](https://github.com/NVIDIA/OpenShell/blob/v0.1.2/docs/about/support-matrix.mdx),
 [middleware](https://github.com/NVIDIA/OpenShell/blob/v0.1.2/docs/extensibility/supervisor-middleware/index.mdx),
 and [extension authentication](https://github.com/NVIDIA/OpenShell/blob/v0.1.2/docs/extensibility/overview.mdx).
+
+### Startup recovery qualification
+
+Run the opt-in public fixture with a prepared MicroVM runtime, local worker image,
+provider key and Docker socket available:
+
+```sh
+CAPTAIN_TEST_OPENSHELL_STARTUP_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./cmd/captaincode -run '^TestOpenShellStartupLiveQualification$' -count=1 -v -timeout 15m
+```
+
+The test exits the initial coordinator after its first verified stage, reloads
+and reconciles the isolated ledger, rejects an altered plan, and runs the startup
+recovery queue. It checks stage reuse, duplicate refusal, one cumulative charge,
+durable export/handoff, patch replay, and unchanged host files and index. It does
+not restart the user's brain.
+
+The [2 October startup recovery report](results/2026-10-02-startup-recovery.json)
+passed in 138.9 seconds: 57.8 for the initial stage and 81.1 for recovery. Both
+stages passed 17 worker and 8 integration gates, with one cumulative charge for
+11 requests, 64,140 tokens and $0.0230. It qualifies the startup queue after ledger
+reload on one public fixture and one host; it is not a full brain-process restart
+or release qualification.

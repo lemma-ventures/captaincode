@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "entrypoint": "captain with openshell",
+  "date": "2026-10-02",
+  "started_at": "2026-10-02T00:27:28.320037+02:00",
+  "verdict": "pass",
+  "fixture": "team/repo/roman.py and test_roman.py; operator.txt staged, roman.py unstaged, untracked.txt untracked",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "go_version": "go1.25.4",
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "captain_sha256": "a88efba35aa9fc28d9e2d2d77e51900c110f62ca32b96577f6b25666c1032ac0",
+  "entrypoint_sources_sha256": {
+    "cmd/captaincode/main.go": "396840cb41d5e0f73fbc01d69d5daa89bac051fb60c69bf4fa9d35dfa8b79473",
+    "cmd/captaincode/openshell_solo.go": "5f529e48ccb61a512507619172ac8149c9488444c751615ae0d222a32430e194"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "610815421ea70c04e99af7f784ae7f639558c362",
+      "modified": false
+    },
+    "files": {
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/middleware.py": "a8e0bb34c5ea7e62d5c3d25dc755df857afe6d07aa8e5c5dc31f5e981a411346",
+      "pilot/pilot.py": "7aa072cbb1581afd17198d9c4abc9a48982e27e3fe5947a1014422eca5fdb5c2",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/response.py": "109d6cc77e51c7c18e49baf1797840ca104da021339238e24b9621f3c2b994df",
+      "pilot/task.py": "b1604ba73ad82714e9b94e6d8da01cfc7ea96a04e879caa0ea2403aefccc8050",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "8e9258653ead7310e0ba4a6e50164a6941e315b78ed90e2f2f56fee709a7b74c"
+    }
+  },
+  "run_record_sha256": "5b5623b4dba92c5f183a07a6a3968b5d897d3eae08fb3331ff682d610d2ab284",
+  "fixture_revision": "9b3e0e018f025c5b1c222ce0e68f07310714e6a5",
+  "wall_seconds": 62.184,
+  "worker": {
+    "attempts": 1,
+    "task_successes": 1,
+    "checks": {
+      "baseline": "pass",
+      "cancellation_descendants": "pass",
+      "cancellation_requested": "pass",
+      "checkpoint_reloaded": "pass",
+      "diff_scope": "pass",
+      "export_ready": "pass",
+      "filesystem_denied": "pass",
+      "landlock": "pass",
+      "network_denied": "pass",
+      "protected_unchanged": "pass",
+      "provider_path_denied": "pass",
+      "restart_recovery": "pass",
+      "sandbox_verify": "pass",
+      "shield_mediated": "pass",
+      "shield_unavailable_denied": "pass",
+      "worker_exit": "pass",
+      "worker_tools": "pass"
+    },
+    "timings_seconds": {
+      "gateway_ready": 2.159,
+      "gateway_ready_recovery": 0.81,
+      "sandbox_create": 19.671,
+      "sandbox_create_attempt": 19.671,
+      "sandbox_restart": 2.269,
+      "worker": 7.107
+    },
+    "shield": {
+      "requests": 9,
+      "responses": 9,
+      "blocked": 0,
+      "secrets_masked": 0,
+      "identities_masked": 0,
+      "served_by": [
+        "Cerebras"
+      ]
+    }
+  },
+  "integrated": {
+    "passed": true,
+    "seconds": 21.968,
+    "tree": "16df6ccca3ab3a5e68db02196263efb07a7798b2",
+    "patch_sha256": "b08b4dc61c990eccbcd295da2240d076619b04dc8989d0a273fcd150da0e0e53",
+    "changed_files": [
+      "roman.py"
+    ],
+    "verify": [
+      "python3",
+      "-m",
+      "unittest",
+      "-v"
+    ],
+    "checks": {
+      "baseline": "pass",
+      "cancellation_descendants": "pass",
+      "cancellation_requested": "pass",
+      "filesystem_denied": "pass",
+      "landlock": "pass",
+      "network_denied": "pass",
+      "provider_path_denied": "pass",
+      "worker_tools": "pass"
+    }
+  },
+  "host_preservation": {
+    "staged": true,
+    "unstaged": true,
+    "untracked": true,
+    "git_index_byte_identical": true
+  },
+  "export": {
+    "ledger_reload": true,
+    "disposition": "exported (not applied)",
+    "patch_reapplied_to_disposable_clone": true,
+    "reapplied_tree_equals_sandbox_verified_tree": true
+  },
+  "cancellation": {
+    "exit_code": 1,
+    "signal_delivered": true,
+    "cleanup_seconds": 0.422,
+    "wall_seconds": 21.621,
+    "phase": "after landlock, before model dispatch",
+    "sandbox_stop_confirmed": true,
+    "ledger_state": "cancelled",
+    "verified_export": false,
+    "apply_instruction": false
+  },
+  "limits": [
+    "One public fixture on one Apple Silicon host; not a reliability or scale estimate.",
+    "Uses locally patched OpenShell VM driver; patch is not an upstream release.",
+    "Brain HTTP entry and ordinary team/workflow composition were not qualified by this run.",
+    "No synthetic secret was injected; Shield mediation and denial when unavailable passed, not a new masking/restoration measurement.",
+    "Captain built from a modified checkout; exact binary and entrypoint source hashes are recorded."
+  ]
+}
