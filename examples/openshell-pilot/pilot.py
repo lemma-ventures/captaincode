@@ -242,11 +242,13 @@ class Pilot:
             driver = self.state / "bin/openshell-driver-vm"
             version = command([driver, "--version"], env=self.env).stdout.decode().strip()
             self.report["vm_driver"] = {"version": version, "sha256": hashlib.sha256(driver.read_bytes()).hexdigest()}
-            if not self.env.get("DOCKER_HOST"):
-                endpoint = command(["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]).stdout.decode().strip()
-                if not endpoint.startswith("unix://"):
-                    raise RuntimeError("VM pilot requires a local Docker image store")
-                self.env["DOCKER_HOST"] = endpoint
+            # The driver only reads a unix:// DOCKER_HOST. A missing socket
+            # would send it to the registry for the local-only worker image.
+            endpoint = self.env.get("DOCKER_HOST") or command(
+                ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"]).stdout.decode().strip()
+            if not endpoint.startswith("unix://") or not Path(endpoint.removeprefix("unix://")).is_socket():
+                raise RuntimeError(f"VM pilot requires a local Docker image store; no socket at {endpoint!r}, set DOCKER_HOST")
+            self.env["DOCKER_HOST"] = endpoint
             return
         started = time.monotonic()
         probe = "import ctypes,json,os; lib=ctypes.CDLL(None,use_errno=True); abi=lib.syscall(444,0,0,1); print(json.dumps({'landlock_abi':abi,'errno':ctypes.get_errno(),'kernel':os.uname().release}))"

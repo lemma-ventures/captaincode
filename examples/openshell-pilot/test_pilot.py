@@ -1,4 +1,5 @@
 import json
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -106,6 +107,29 @@ class PilotTests(unittest.TestCase):
         with patch("pilot.command") as run, self.assertRaisesRegex(RuntimeError, "short --state"):
             instance.preflight()
         run.assert_not_called()
+
+    def test_vm_requires_a_docker_socket_that_exists(self):
+        instance = pilot.Pilot(self.repo / "vm", runtime="vm")
+        driver = instance.state / "bin/openshell-driver-vm"
+        driver.parent.mkdir(parents=True, exist_ok=True)
+        driver.write_bytes(b"driver")
+        endpoint = "unix://" + str(self.repo / "docker.sock")
+
+        def run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, stdout=(endpoint + "\n").encode() if argv[0] == "docker" else b"0.1.2\n")
+
+        instance.env.pop("DOCKER_HOST", None)
+        with patch("pilot.command", side_effect=run), self.assertRaisesRegex(RuntimeError, "no socket"):
+            instance.preflight()
+        listener = socket.socket(socket.AF_UNIX)
+        self.addCleanup(listener.close)
+        listener.bind(endpoint.removeprefix("unix://"))
+        with patch("pilot.command", side_effect=run):
+            instance.preflight()
+        self.assertEqual(instance.env["DOCKER_HOST"], endpoint)
+        instance.env["DOCKER_HOST"] = "tcp://127.0.0.1:2375"
+        with patch("pilot.command", side_effect=run), self.assertRaisesRegex(RuntimeError, "no socket"):
+            instance.preflight()
 
     def test_middleware_runs_without_grpc_fork_handlers(self):
         instance = pilot.Pilot(self.repo / "vm", runtime="vm")
