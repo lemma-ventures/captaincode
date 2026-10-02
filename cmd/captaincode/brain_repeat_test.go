@@ -341,9 +341,9 @@ func TestRoundsCarryASummary(t *testing.T) {
 func TestRoundSummaryFallsBackToFirstLine(t *testing.T) {
 	b := teamBrain()
 	b.roundSummaryFn = func(text string) string { return text } // no network in tests
-	assert.Equal(t, "(no output)", b.roundSummary("t", "   "))
+	assert.Equal(t, "(no output)", b.roundSummary("t", "   ", ""))
 	b.roundSummaryFn = func(text string) string { return firstLine(text, "") }
-	assert.Equal(t, "first meaningful line", b.roundSummary("t", "\n\nfirst meaningful line\nrest"))
+	assert.Equal(t, "first meaningful line", b.roundSummary("t", "\n\nfirst meaningful line\nrest", ""))
 }
 
 // Launching a loop must SHOW it. Requiring "/repeat watch" as a second command
