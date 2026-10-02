@@ -264,6 +264,7 @@ type ArtifactsRequest struct {
 type ArtifactsResponse struct {
 	Integration *IntegrationCandidate `json:"integration,omitempty"`
 	Manifests   []PatchManifest       `json:"manifests,omitempty"`
+	Exports     []VerifiedExport      `json:"exports,omitempty"`
 }
 
 // CancelRequest cancels a task and all its descendants.

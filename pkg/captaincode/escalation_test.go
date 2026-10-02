@@ -133,7 +133,7 @@ func TestNextEscalationRespectsAllowed(t *testing.T) {
 	// Find a worker leg that is NOT LegFree to fail from.
 	var failLeg Leg
 	for _, l := range AllLegs {
-		if l != LegFree && ServesTasks(l) {
+		if l != LegFree && AutoRoutes(l) {
 			failLeg = l
 			break
 		}
@@ -156,7 +156,7 @@ func TestNextEscalationSkipsCooldowns(t *testing.T) {
 	// Put all worker legs except one on cooldown.
 	var open Leg
 	for _, l := range AllLegs {
-		if l != LegFree && ServesTasks(l) {
+		if l != LegFree && AutoRoutes(l) {
 			open = l
 			break
 		}

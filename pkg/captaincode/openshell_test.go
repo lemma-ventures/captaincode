@@ -325,13 +325,21 @@ func fakeOpenShellPilot(args []string) int {
 	}
 
 	var do struct {
-		Write map[string]string `json:"write"`
-		Fail  bool              `json:"fail"`
-		Hang  bool              `json:"hang"`
-		SHA   string            `json:"sha"`
+		Write  map[string]string `json:"write"`
+		Expect map[string]string `json:"expect"`
+		Fail   bool              `json:"fail"`
+		Hang   bool              `json:"hang"`
+		SHA    string            `json:"sha"`
 	}
 	if json.Unmarshal([]byte(spec.Prompt), &do) != nil {
 		return 2
+	}
+	for name, expected := range do.Expect {
+		out, err := exec.Command("git", "-C", spec.Repo, "show", spec.Revision+":"+name).Output()
+		if err != nil || string(out) != expected {
+			report["verdict"], report["error"] = "fail", "worker did not receive the verified predecessor snapshot"
+			return finish(1)
+		}
 	}
 	switch {
 	case do.Hang:
@@ -349,7 +357,11 @@ func fakeOpenShellPilot(args []string) int {
 		report["verdict"], report["error"] = "fail", "the task's check still fails after the repair attempt"
 		return finish(1)
 	}
-	patch, tree, err := fakeOpenShellPatch(spec.Repo, spec.Revision, do.Write)
+	patch, _, err := fakeOpenShellPatch(spec.Repo, spec.Revision, do.Write)
+	if err != nil {
+		return 2
+	}
+	baseTree, err := exec.Command("git", "-C", spec.Repo, "rev-parse", spec.Revision+"^{tree}").Output()
 	if err != nil {
 		return 2
 	}
@@ -366,7 +378,7 @@ func fakeOpenShellPilot(args []string) int {
 	pass(openShellTaskChecks)
 	report["shield"] = map[string]any{"requests": 3, "responses": 3, "served_by": []string{"FakeProvider"}}
 	report["export"] = map[string]any{"patch": "result.patch", "patch_sha256": sum, "changed_files": changed,
-		"base_revision": spec.Revision, "tree": tree,
+		"base_revision": spec.Revision, "tree": strings.TrimSpace(string(baseTree)),
 		"verify": map[string]any{"argv": spec.Verify, "exit_code": 0, "seconds": 0.5}}
 	answer := fmt.Sprintf("args=%s\nsentinel=%t\nkey=%t\n", strings.Join(args[2:], " "),
 		os.Getenv("CAPTAIN_OPENSHELL_SENTINEL") != "", os.Getenv("OPENROUTER_API_KEY") != "")
@@ -482,6 +494,7 @@ func TestOpenShellRunTeamLandsWhatHoldsUp(t *testing.T) {
 		fakeOpenShellTask("t6", "cerebras", `{"write":{"c.txt":"c6\n"},"sha":"`+strings.Repeat("0", 64)+`"}`, "c", "c.txt"),
 		fakeOpenShellTask("t7", "sambanova", `{}`, "d", "d.txt"),
 	}}
+	team.Tasks[6].Mode, team.Tasks[6].Allowed = "review", nil
 	run, err := r.RunTeam(context.Background(), team)
 	require.NoError(t, err)
 
@@ -521,8 +534,8 @@ func TestOpenShellRunTeamLandsWhatHoldsUp(t *testing.T) {
 	assert.Equal(t, hex.EncodeToString(digest[:]), run.Integrated.PatchSHA256)
 	verifyLog, err := os.ReadFile(filepath.Join(r.RunDir, "integrated", "baseline-verify.log"))
 	require.NoError(t, err)
-	assert.Equal(t, `argv=["sh" "-c" "set -e; check a; check b"]`+"\na.txt=a1\nb.txt=b3\nc.txt=c\nd.txt=d\n", string(verifyLog),
-		"the fresh sandbox checks the integrated tree with every landed task's check")
+	assert.Equal(t, `argv=["sh" "-c" "set -e; check d; check a; check b"]`+"\na.txt=a1\nb.txt=b3\nc.txt=c\nd.txt=d\n", string(verifyLog),
+		"the fresh sandbox checks the integrated tree with every landed task's and reviewer's check")
 
 	assert.Len(t, openShellStates(t, r), 3, "only the failed tasks' states are kept")
 	for _, res := range run.Tasks[3:6] {
@@ -561,11 +574,15 @@ func TestOpenShellRunRecordsProvenance(t *testing.T) {
 	x := sha256.Sum256([]byte("x"))
 	selfSum, err := fileSHA256(self)
 	require.NoError(t, err)
+	pythonSum, err := fileSHA256(filepath.Join(r.Prepared, "venv", "bin", "python"))
+	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
-		"pilot/task.py": hex.EncodeToString(x[:]), "pilot/pilot.py": hex.EncodeToString(x[:]),
+		"captain/binary": selfSum,
+		"pilot/task.py":  hex.EncodeToString(x[:]), "pilot/pilot.py": hex.EncodeToString(x[:]),
 		"pilot/Dockerfile": hex.EncodeToString(x[:]), "prepared/shield": selfSum,
 		"prepared/bin/openshell": hex.EncodeToString(x[:]), "prepared/bin/openshell-gateway": hex.EncodeToString(x[:]),
 		"prepared/generated/shield_pb2.py": hex.EncodeToString(x[:]),
+		"prepared/venv/bin/python":         pythonSum,
 	}, run.Provenance.Files, "what runs is hashed; the pilot's tests are not")
 	assert.Equal(t, runtime.Version(), run.Provenance.Shield.GoVersion, "Shield's build stamp is read from the binary")
 	assert.Equal(t, runtime.Version(), run.Provenance.Captain.GoVersion)
@@ -662,4 +679,33 @@ func TestOpenShellRunnerRefusesABadSetup(t *testing.T) {
 		assert.Error(t, err, name)
 	}
 	assert.Empty(t, openShellStates(t, r), "no sandbox state is created for a bad setup")
+}
+
+func TestOpenShellGitPlumbingRunsNoRepositoryHooks(t *testing.T) {
+	repo, outside := t.TempDir(), t.TempDir()
+	marker := filepath.Join(outside, "ran")
+	hooks := filepath.Join(outside, "hooks")
+	require.NoError(t, os.Mkdir(hooks, 0o700))
+	script := []byte("#!/bin/sh\ntouch '" + marker + "'\n")
+	require.NoError(t, os.WriteFile(filepath.Join(hooks, "reference-transaction"), script, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "fsmonitor"), script, 0o700))
+	included := filepath.Join(outside, "included")
+	require.NoError(t, os.WriteFile(included, []byte("[core]\n\thooksPath = "+hooks+"\n\tfsmonitor = "+filepath.Join(outside, "fsmonitor")+"\n"), 0o600))
+	for _, args := range [][]string{{"init", "--quiet", repo}, {"-C", repo, "config", "core.hooksPath", "/dev/null"}, {"-C", repo, "config", "include.path", included}} {
+		require.NoError(t, exec.Command("git", args...).Run())
+	}
+	ctx := context.Background()
+	env := append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	tree, err := gitOutput(ctx, repo, nil, nil, "write-tree")
+	require.NoError(t, err)
+	commit, err := gitOutput(ctx, repo, env, nil, "commit-tree", strings.TrimSpace(string(tree)), "-m", "snapshot")
+	require.NoError(t, err)
+	require.NoError(t, exec.Command("git", "-C", repo, "update-ref", "refs/captain/plain", strings.TrimSpace(string(commit))).Run())
+	require.FileExists(t, marker, "the included config does run hooks for plain git")
+	require.NoError(t, os.Remove(marker))
+	_, err = gitOutput(ctx, repo, nil, nil, "update-ref", "refs/captain/stage-1", strings.TrimSpace(string(commit)))
+	require.NoError(t, err)
+	_, err = gitOutput(ctx, repo, nil, nil, "write-tree")
+	require.NoError(t, err)
+	assert.NoFileExists(t, marker)
 }

@@ -523,8 +523,10 @@ func (l *Ledger) mergeFromDisk() {
 	l.Decisions = mergeByKey(l.Decisions, disk.Decisions, jsonKey)
 	l.Shadows = mergeByKey(l.Shadows, disk.Shadows, jsonKey)
 	l.Budgets = mergeByKey(l.Budgets, disk.Budgets, func(b Budget) string { return b.TaskID })
-	l.TaskStates = mergeByKey(l.TaskStates, disk.TaskStates, func(t TaskState) string { return t.TaskID })
-	l.AttemptStates = mergeByKey(l.AttemptStates, disk.AttemptStates, func(a AttemptState) string { return a.AttemptID })
+	l.TaskStates = mergeNewest(l.TaskStates, disk.TaskStates, func(t TaskState) string { return t.TaskID },
+		func(t TaskState) time.Time { return t.UpdatedAt })
+	l.AttemptStates = mergeNewest(l.AttemptStates, disk.AttemptStates, func(a AttemptState) string { return a.AttemptID },
+		func(a AttemptState) time.Time { return a.UpdatedAt })
 	l.Handoffs = mergeByKey(l.Handoffs, disk.Handoffs, func(h HandoffBrief) string { return h.TaskID })
 	l.Outcomes = mergeByKey(l.Outcomes, disk.Outcomes, func(o OutcomeEvidence) string { return o.TaskID })
 	l.Snapshots = mergeByKey(l.Snapshots, disk.Snapshots, func(s PolicySnapshot) string { return s.ID })
@@ -549,6 +551,36 @@ func mergeByKey[T any](mem, disk []T, key func(T) string) []T {
 		}
 		mem = append(mem, v)
 		seen[k] = true
+	}
+	return mem
+}
+
+// mergeNewest is mergeByKey for lifecycle rows another process may advance:
+// the copy updated last wins. A brain that merged a CLI task while it was
+// running must not write that stale copy over the CLI's later "succeeded"
+// and its export, and a CLI's stale view of a brain task is replaced the
+// same way.
+func mergeNewest[T any](mem, disk []T, key func(T) string, updated func(T) time.Time) []T {
+	if len(disk) == 0 {
+		return mem
+	}
+	at := make(map[string]int, len(mem))
+	for i, v := range mem {
+		at[key(v)] = i
+	}
+	for _, v := range disk {
+		k := key(v)
+		if k == "" {
+			continue
+		}
+		if i, ok := at[k]; ok {
+			if updated(v).After(updated(mem[i])) {
+				mem[i] = v
+			}
+			continue
+		}
+		at[k] = len(mem)
+		mem = append(mem, v)
 	}
 	return mem
 }

@@ -34,6 +34,12 @@ const (
 	// it can never take a task (ServesTasks), so it is no worker rung, no
 	// model in the TUI's picker and no stage in a workflow.
 	TransportSystemOne Transport = "system-one" // POST /v1/systemone
+	// TransportOpencodeShell is NVIDIA OpenShell: a sandboxed edit–test–export
+	// cycle executed inside MicroVMs, with Shield masking, Landlock and network
+	// isolation, restart recovery, and a director tie-break on overlapping
+	// changes. Requires CAPTAIN_OPENSHELL_PREPARED, CAPTAIN_OPENSHELL_PILOT,
+	// CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
+	TransportOpencodeShell Transport = "opencode-shell"
 )
 
 // LegSpec is one registry entry.
@@ -152,6 +158,11 @@ var defaultLegSpecs = []LegSpec{
 		Ctx: 1000000, Vision: true, Subscription: true, Prior: 9.5, Display: "Claude (captain · claude -p)",
 		Tiers: map[Tier]string{TierCheap: "sonnet", TierFrontier: "opus"},
 		Note:  "Claude Opus 5.5 via Max sub (the `opus` alias on Claude Code 2.1.280+; 5h+weekly windows, no extra-usage spend); Anthropic's go-to for long-running agentic coding, /frontier runs it at max effort (reads the Opus 5 AA row when the feed lacks 5.5; CAPTAIN_FRONTIER_MODEL=fable brings Fable 5.1 back); architecture, gnarly debugging, escalation apex"},
+	// openshell carries no prior (0): it is a sandbox around a worker, not a
+	// model, so it sits at the foot of AllLegs and AutoRoutes keeps it off the
+	// ladder and the failover chain.
+	{ID: LegOpenShell, Transport: TransportOpencodeShell, Provider: "openshell", Model: "team",
+		Note: "NVIDIA OpenShell sandboxed execution (requires CAPTAIN_OPENSHELL_PREPARED, CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY env vars; runs one task in a MicroVM with Landlock, Shield and verified patch export)"},
 }
 
 // specs is the ACTIVE registry (defaults + overlay), keyed by id; specOrder
@@ -174,6 +185,17 @@ func Spec(l Leg) (LegSpec, bool) {
 func ServesTasks(l Leg) bool {
 	s, ok := specs[l]
 	return ok && s.Transport != TransportSystemOne
+}
+
+// AutoRoutes reports whether the router may hand a leg work on its own: a
+// worker rung, a /frontier failover link, a leg on Jev's menu. An OpenShell
+// leg serves tasks but only when named ("captain with openshell"): it is an
+// execution backend, not a model with a benchmark prior, and it needs an
+// operator-prepared sandbox (CAPTAIN_OPENSHELL_PREPARED) that a cold
+// escalation cannot assume.
+func AutoRoutes(l Leg) bool {
+	s, ok := specs[l]
+	return ok && ServesTasks(l) && s.Transport != TransportOpencodeShell
 }
 
 func boolp(b bool) *bool { return &b }

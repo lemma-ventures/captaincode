@@ -134,6 +134,12 @@ func cmdTaskInspect(args []string) {
 		}
 		for _, a := range insp.Attempts {
 			fmt.Printf("  attempt %s — %s (leg: %s)\n", a.AttemptID, a.State, a.Leg)
+			if a.OpenShell != nil {
+				fmt.Printf("    sandbox checkpoint: %s\n", terminalSafe(a.OpenShell.RunDir, 1000))
+				if a.State == captaincode.StateInterrupted {
+					fmt.Println("    resume with: captain task resume <task-id> <attempt-id>")
+				}
+			}
 		}
 		if insp.Budget != nil {
 			fmt.Printf("  budget: %d/%d attempts", insp.Budget.SettledAttempts, insp.Budget.MaxAttempts)
@@ -189,8 +195,23 @@ func cmdTaskArtifacts(args []string) {
 	sendTaskRequest(captaincode.OpArtifacts, taskID, bodyJSON, func(resp *captaincode.TaskResponse) {
 		var arts captaincode.ArtifactsResponse
 		json.Unmarshal(resp.Body, &arts)
+		for _, export := range arts.Exports {
+			m := export.Manifest
+			if m.HasChanges() {
+				fmt.Printf("exported (not applied): %s - %d file(s), sandbox %s\n", m.Leg, len(m.ChangedFiles), export.Runtime)
+			} else {
+				fmt.Printf("verified unchanged snapshot: %s, sandbox %s; nothing to apply\n", m.Leg, export.Runtime)
+			}
+			fmt.Printf("  repository: %s\n  snapshot: %s\n  files: %s\n  sha256: %s\n  patch: %s\n  run record: %s\n", export.Repository, m.BaseRevision, strings.Join(m.ChangedFiles, ", "), m.DiffDigest, m.DiffPath, export.RunRecord)
+			if m.Check != nil {
+				argv, _ := json.Marshal(m.Check.Command)
+				fmt.Printf("  verification: %s (exit %d, passed %t)\n", argv, m.Check.ExitCode, m.Check.Passed && !m.Check.TimedOut)
+			}
+		}
 		if arts.Integration == nil {
-			fmt.Println("no artifacts for task.")
+			if len(arts.Exports) == 0 {
+				fmt.Println("no artifacts for task.")
+			}
 			return
 		}
 		fmt.Printf("integration: %s\n", arts.Integration.Status)

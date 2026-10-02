@@ -140,7 +140,9 @@ func CallUsage(leg Leg, tokens int, costUSD float64, raw map[string]any) Usage {
 			// No marginal dollar by construction: the fee was paid upstream.
 			// Quota consumption is a separate column (M1 metric table).
 			u.CostStatus, u.PriceSource = UsageMeasured, "subscription:"+string(leg)
-		} else if s, ok := Spec(leg); ok && s.PriceIn == 0 && s.PriceOut == 0 {
+		} else if s, ok := Spec(leg); ok && s.PriceIn == 0 && s.PriceOut == 0 && s.Transport != TransportOpencodeShell {
+			// OpenShell lists no price because it is a sandbox around
+			// priced workers, not a free model: its bill comes from Shield.
 			u.CostStatus, u.PriceSource = UsageMeasured, "registry:"+string(leg)
 		}
 	}

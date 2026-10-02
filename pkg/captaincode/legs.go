@@ -230,6 +230,7 @@ func providerAuthError(msg string) bool {
 var ErrSessionNotFound = errors.New("opencode session not found")
 
 type Result struct {
+	Export     *VerifiedExport
 	Text       string
 	Tokens     int
 	CostUSD    float64 // real $ cost when the leg reports it (claude -p); 0 for subscription legs with no per-call price
@@ -579,6 +580,12 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		// failures (classifyCodexCLIFailure), so a dead `codex login` arrives
 		// as a typed provider fault instead of an opaque dead end.
 		return runCodexCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
+	case TransportOpencodeShell:
+		base := d.Timeout
+		if base <= 0 {
+			base = workerTimeout()
+		}
+		return runOpenShell(d.Dir, task, base, d.Ceiling, d.Steer)
 	case TransportSystemOne:
 		// A decision leg cannot take a task. Every dispatch path is guarded
 		// before this point; this is the backstop for the one that is not.
@@ -1869,6 +1876,9 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		return emptyIsFailure(leg, res, err)
 	case TransportCodexCLI:
 		res, err := runCodexCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
+		return emptyIsFailure(leg, res, err)
+	case TransportOpencodeShell:
+		res, err := runOpenShell(ws.Dir, task, base, ceil, ws.Steer)
 		return emptyIsFailure(leg, res, err)
 	}
 	// free/grok/codex: the dispatcher tails opencode's event bus; OnDelta forwards

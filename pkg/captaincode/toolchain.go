@@ -126,6 +126,10 @@ func APIContracts() []APIContract {
 		Transport: TransportSystemOne,
 		Endpoint:  "https://api.typesafe.ai/v1/systemone",
 		Versioned: "every response names the release that served it (model: jev-1.13.0 behind the jev-latest alias); CAPTAIN_JEV_MODEL pins one",
+	}, {
+		Transport: TransportOpencodeShell,
+		Endpoint:  "NVIDIA OpenShell MicroVM (captain openshell)",
+		Versioned: "Captain build info + provenance hashes of pilot scripts, shield, and OpenShell binaries, recorded in run.json",
 	}}
 }
 
