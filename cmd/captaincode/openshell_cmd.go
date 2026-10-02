@@ -29,6 +29,8 @@ import (
 
 const openShellUsage = `usage: captain openshell --team <team.json> --pilot <dir> --prepared <dir> [flags]
        captain openshell --resume <run-directory>
+       captain openshell profiles --pilot <dir> [--dry-run]
+       captain openshell qualify --pilot <dir> --prepared <dir> --profile <name> [--runtime vm|docker]
 
   --resume       continue a saved sequence from verified stages; never replay in-flight work
   --team         the team spec: {"schema":1,"id":...,"tasks":[...]} (see examples/openshell-pilot/README.md)
@@ -39,9 +41,25 @@ const openShellUsage = `usage: captain openshell --team <team.json> --pilot <dir
   --concurrency  sandboxes at once, 1-8 (default 2)
   --director     who rules on tasks that changed the same files: none or claude (default none: they are not landed)
   --state-root   parent of the per-task states (default /tmp; the microVM socket path must stay short)
-  --runtime      vm or docker (default vm)`
+  --runtime      vm or docker (default vm)
+
+  profiles  rebuild <pilot>/catalog.json from the registry's API-key legs and
+            OpenRouter's public zero-data-retention endpoint list
+  qualify   run the pilot's 18-check fixture on one profile three times, each
+            with the one repair a task gets; only 3 of 3 full passes record it
+            in <pilot>/qualified.json, and only then can a task use it`
 
 func cmdOpenShell(args []string) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "profiles":
+			cmdOpenShellProfiles(args[1:])
+			return
+		case "qualify":
+			cmdOpenShellQualify(args[1:])
+			return
+		}
+	}
 	fs := flag.NewFlagSet("openshell", flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprintln(os.Stderr, openShellUsage) }
 	teamFile := fs.String("team", "", "")
@@ -269,4 +287,105 @@ func terminalSafe(s string, n int) string {
 		return string(runes[:n]) + "…"
 	}
 	return s
+}
+
+// cmdOpenShellProfiles rebuilds the pilot's catalog from the registry. The
+// pilot keeps its hand-kept profiles beside it; `python3 profiles.py` lists
+// both with their qualification.
+func cmdOpenShellProfiles(args []string) {
+	fs := flag.NewFlagSet("openshell profiles", flag.ExitOnError)
+	fs.Usage = func() { fmt.Fprintln(os.Stderr, openShellUsage) }
+	pilot := fs.String("pilot", "", "")
+	dryRun := fs.Bool("dry-run", false, "")
+	fs.Parse(args)
+	if *pilot == "" || fs.NArg() > 0 {
+		fs.Usage()
+		os.Exit(2)
+	}
+	if _, err := os.Stat(filepath.Join(*pilot, "profiles.py")); err != nil {
+		fatal(fmt.Errorf("openshell: --pilot %s has no profiles.py", *pilot))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	endpoints, err := captaincode.FetchOpenRouterZDR(ctx, captaincode.OpenRouterZDRURL)
+	if err != nil {
+		fatal(err)
+	}
+	catalog := captaincode.OpenShellRegistryCatalog(endpoints, time.Now())
+	names := make([]string, 0, len(catalog.Profiles))
+	for name := range catalog.Profiles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		p := catalog.Profiles[name]
+		fmt.Printf("%-48s %-32s %-28s $%.2f/$%.2f\n", name, p.Model, p.Route, p.Ceiling[0], p.Ceiling[1])
+	}
+	for _, s := range catalog.Skipped {
+		fmt.Printf("skipped  %s\n", s)
+	}
+	if *dryRun {
+		fmt.Fprintf(os.Stderr, "openshell: %d profile(s) from %d ZDR endpoint(s); not written (--dry-run)\n", len(names), len(endpoints))
+		return
+	}
+	path, err := captaincode.WriteOpenShellCatalog(*pilot, catalog)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Fprintf(os.Stderr, "openshell: %d profile(s) from %d ZDR endpoint(s) written to %s; none is selectable until `captain openshell qualify` passes on it\n",
+		len(names), len(endpoints), path)
+}
+
+// cmdOpenShellQualify runs the pilot's fixture on one profile.
+func cmdOpenShellQualify(args []string) {
+	fs := flag.NewFlagSet("openshell qualify", flag.ExitOnError)
+	fs.Usage = func() { fmt.Fprintln(os.Stderr, openShellUsage) }
+	pilot := fs.String("pilot", "", "")
+	prepared := fs.String("prepared", "", "")
+	profile := fs.String("profile", "", "")
+	stateRoot := fs.String("state-root", "/tmp", "")
+	runtime := fs.String("runtime", "vm", "")
+	fs.Parse(args)
+	if *pilot == "" || *prepared == "" || *profile == "" || fs.NArg() > 0 {
+		fs.Usage()
+		os.Exit(2)
+	}
+	r := &captaincode.OpenShellRunner{Runtime: *runtime}
+	var err error
+	for _, p := range []struct {
+		dst *string
+		src string
+	}{{&r.Pilot, *pilot}, {&r.Prepared, *prepared}, {&r.StateRoot, *stateRoot}} {
+		if *p.dst, err = filepath.Abs(p.src); err != nil {
+			fatal(err)
+		}
+	}
+	if *runtime == "vm" && len(r.StateRoot) > 56 {
+		fatal(fmt.Errorf("openshell: --state-root %s is too long for the microVM socket path; use /tmp", r.StateRoot))
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Fprintf(os.Stderr, "openshell: qualifying %s with the pilot fixture (%s runtime)\n", *profile, *runtime)
+	runs, err := r.Qualify(ctx, *profile, os.Stderr)
+	for i, run := range runs {
+		if run.Report == nil {
+			fmt.Printf("profile %s run %d: no report (%v), state %s\n", *profile, i+1, run.Err, run.State)
+			continue
+		}
+		passed := 0
+		for _, c := range run.Report.Checks {
+			if c.Verdict == "pass" {
+				passed++
+			}
+		}
+		attempts := 0
+		if run.Report.WorkerAttempts != nil {
+			attempts = *run.Report.WorkerAttempts
+		}
+		fmt.Printf("profile %s run %d: verdict %s, %d/%d checks passed, %d worker attempt(s), state %s\n",
+			*profile, i+1, run.Report.Verdict, passed, len(run.Report.Checks), attempts, run.State)
+	}
+	if err != nil {
+		fatal(err)
+	}
 }

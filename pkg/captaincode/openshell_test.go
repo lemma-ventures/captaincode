@@ -280,6 +280,24 @@ func fakeOpenShellPilot(args []string) int {
 		flags[args[i]] = args[i+1]
 	}
 	state := flags["--state"]
+	if dir := filepath.Dir(args[1]); filepath.Base(args[1]) == "profiles.py" {
+		// profiles.py record <profile> <report>...: note what was recorded.
+		return fakeOpenShellAppend(filepath.Join(dir, "recorded"), strings.Join(args[2:], " ")+"\n")
+	} else if slices.Contains(args, "--qualify") {
+		// A fixture run: a profile named "flaky" fails its second run.
+		runs, _ := os.ReadFile(filepath.Join(dir, "runs"))
+		fakeOpenShellAppend(filepath.Join(dir, "runs"), "x")
+		report := map[string]any{"verdict": "pass", "inference": flags["--profile"], "worker_attempts": 1}
+		if flags["--profile"] == "flaky" && len(runs) == 1 {
+			report["verdict"] = "fail"
+		}
+		data, _ := json.Marshal(report)
+		os.WriteFile(filepath.Join(state, "report.json"), data, 0o600)
+		if report["verdict"] != "pass" {
+			return 1
+		}
+		return 0
+	}
 	var spec struct {
 		Mode, ID, Repo, Revision, Prompt string
 		Verify                           []string
@@ -430,6 +448,18 @@ func fakeOpenShellPilot(args []string) int {
 
 // fakeOpenShellPatch builds the patch a sandbox would export for the given
 // file contents, through a temporary index.
+func fakeOpenShellAppend(file, text string) int {
+	f, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 2
+	}
+	defer f.Close()
+	if _, err := f.WriteString(text); err != nil {
+		return 2
+	}
+	return 0
+}
+
 func fakeOpenShellPatch(repo, rev string, writes map[string]string) ([]byte, string, error) {
 	dir, err := os.MkdirTemp("", "fake-index-")
 	if err != nil {

@@ -22,6 +22,8 @@ func strictOpenShellEnv(t *testing.T, limit string) {
 	}
 	t.Setenv("CAPTAIN_STRICT", "1")
 	t.Setenv("CAPTAIN_MAX_COST", limit)
+	// A kept, priced lane: the fake pilot has no catalog for the default.
+	t.Setenv("CAPTAIN_OPENSHELL_PROFILE", "cerebras")
 }
 
 func TestOpenShellBudgetContextCarriesAStrictCostCap(t *testing.T) {

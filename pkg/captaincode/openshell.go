@@ -64,7 +64,7 @@ const (
 
 var (
 	openShellID      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`) // task.py TASK_ID
-	openShellProfile = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)            // task.py's --profile choices decide
+	openShellProfile = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)            // task.py's --profile choices decide
 	openShellBareArg = regexp.MustCompile(`^[A-Za-z0-9_./=:@%+,-]+$`)
 	openShellObject  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
@@ -1630,7 +1630,7 @@ func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, O
 	}
 	taskID := fmt.Sprintf("brain-%x", sha256.Sum256([]byte(task)))[:12]
 	team = OpenShellTeam{Schema: 1, ID: taskID, Tasks: []OpenShellTask{{
-		ID: taskID, Profile: value("CAPTAIN_OPENSHELL_PROFILE", "cerebras"),
+		ID: taskID, Profile: value("CAPTAIN_OPENSHELL_PROFILE", "glm-cheap-z-ai-fp8"),
 		Prompt: task, Verify: verify, Allowed: allowed,
 		Protected:      paths("CAPTAIN_OPENSHELL_PROTECTED"),
 		Baseline:       value("CAPTAIN_OPENSHELL_BASELINE", "any"),

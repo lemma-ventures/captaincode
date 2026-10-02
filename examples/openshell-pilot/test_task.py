@@ -22,6 +22,19 @@ TESTS = ("import unittest\nfrom calc import double\n\n\nclass DoubleTests(unitte
          "    def test_double(self):\n        self.assertEqual(double(3), 6)\n")
 
 
+# These tests exercise task mode, not profile selection (test_profiles.py):
+# every profile counts as qualified here.
+_qualified = patch("pilot.require_qualified")
+
+
+def setUpModule():
+    _qualified.start()
+
+
+def tearDownModule():
+    _qualified.stop()
+
+
 def git(repo, *args, env=None):
     return subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
                            "-c", "core.hooksPath=/dev/null", *args], cwd=repo, env=env, check=True,
