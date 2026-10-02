@@ -802,5 +802,9 @@ func frontierDecision(task string, pick captaincode.LanePick) captaincode.Decisi
 	for _, l := range pick.Band {
 		d.Candidates = append(d.Candidates, captaincode.Scored{Leg: l})
 	}
+	if pick.Time != nil {
+		d.TimePick, d.Propensities, d.Explored = pick.Time, pick.Time.Propensities, pick.Time.Explored
+		d.Path = captaincode.PathTime
+	}
 	return d
 }

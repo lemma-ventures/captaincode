@@ -2448,7 +2448,14 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 					}
 				}
 				explored, passedOver := false, captaincode.Leg("")
-				if len(ladder) > 1 && b.explore(tr.Class) {
+				// CAPTAIN_PICK=on: the time rule picks from the ladder and
+				// does its own exploring (SCORING.md Phase 3).
+				var onPick *captaincode.TimePick
+				if tp, ok := b.decidePick(ladder, tr.Domain); ok {
+					leg, effort, path = tp.Leg, "", captaincode.PathTime
+					rationale += " · " + tp.Reason
+					onPick = &tp
+				} else if len(ladder) > 1 && b.explore(tr.Class) {
 					explored, passedOver = true, leg
 					leg, effort = ladder[1], ""
 					b.markExplored(req.Task)
@@ -2456,7 +2463,9 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				}
 				totalMs := time.Since(t0).Milliseconds()
 				dec := b.valueDecision(tr, leg, rows, totalMs, rationale, explored, passedOver)
-				if eps := exploreRate(tr.Class); len(ladder) > 1 && eps > 0 {
+				if onPick != nil {
+					dec.TimePick, dec.Propensities, dec.Explored = onPick, onPick.Propensities, onPick.Explored
+				} else if eps := exploreRate(tr.Class); len(ladder) > 1 && eps > 0 {
 					top := passedOver
 					if !explored {
 						top = leg
@@ -2761,6 +2770,13 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	// balancer, the only open leg, or the director when nothing cleared the
 	// bar - under the lock that read the counts. A plan-only route sends
 	// nothing and counts nothing.
+	// CAPTAIN_PICK=on: the lanes and the director chose the menu; the time
+	// rule picks from it (SCORING.md Phase 3). The director classifies.
+	var onPick *captaincode.TimePick
+	if tp, ok := b.decidePick(decMenu, captaincode.TriageTask(req.Task).Domain); ok {
+		leg, rationale, decPath = tp.Leg, tp.Reason+" (menu: "+decPath+")", captaincode.PathTime
+		onPick = &tp
+	}
 	if lane != "" && !req.planOnly {
 		b.ledger.NoteLane(lane, leg, time.Now())
 	}
@@ -2787,6 +2803,9 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	}
 	stampTriage(&dec, *out)
 	stampShadow(&dec, shadow, classBy)
+	if onPick != nil {
+		dec.TimePick, dec.Propensities, dec.Explored = onPick, onPick.Propensities, onPick.Explored
+	}
 	b.recordOpenShadow(req.Task, dec, openCh, classBy)
 	b.recordDecision(req.Task, dec)
 	fmt.Printf("captain brain: routed %q → class=%s leg=%s (%s) in %dms [director %dms] - %s\n",

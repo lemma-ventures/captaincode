@@ -1,7 +1,8 @@
 # Scoring and picking: one estimate per model, one rule to pick
 
-Status: Phase 0, Phase 1 and the estimator fix implemented (2026-10-02).
-Phases 2 and 3 wait for two weeks of Phase 0 data.
+Status: all four phases implemented (2026-10-03). Phase 3's rule runs in
+shadow mode by default: every decision records what it would have picked,
+and `CAPTAIN_PICK=on` lets it decide once two weeks of Phase 0-2 data are in.
 
 This spec replaces how Captain grades runs, scores legs and picks one. It
 came out of a review of the scoring code and a five-way blind red-team review
@@ -168,6 +169,21 @@ test-verified runs before its grades count. About two thirds of graded runs
 - **The director classifies; it does not pick.** It sets class, constraints
   and risk; the rule picks the leg.
 - The `value`, `expected` and bandit paths collapse into this rule.
+
+As built (`pick.go`, `brain_pick.go`):
+
+- **Shadow by default.** `CAPTAIN_PICK` unset records the rule's pick
+  (`time_pick` on the decision, with minutes and draw shares per leg) and
+  changes nothing. `on` decides; `off` silences it.
+- **What it replaces when on.** The value path's epsilon draw, the lanes'
+  equal-share rotation and `OSSTurn`, the frontier lane's balancer, and the
+  director's leg choice: each still builds the menu, the rule picks from it.
+  The `value`, `expected` and bandit code stays in place until the rule has
+  run long enough to retire them.
+- **Constants.** A full subscription window adds 15 minutes, a unit of mix
+  deficit is worth 20, a waiting user is offered legs within 0.15 of the
+  best P, and at most 20% of recent decided picks may be draws away from the
+  best by mean. All are first guesses for the data to correct.
 
 ### Benchmark priors
 
