@@ -8,8 +8,8 @@ import (
 
 func TestQualityPriorsCoverEveryLeg(t *testing.T) {
 	for _, leg := range AllLegs {
-		if !ServesTasks(leg) {
-			assert.Zero(t, QualityPrior(leg), "a decision leg (%s) is not a worker and carries no worker prior", leg)
+		if !AutoRoutes(leg) {
+			assert.Zero(t, QualityPrior(leg), "a decision or named-only leg (%s) is no rung and carries no worker prior", leg)
 			continue
 		}
 		assert.Greater(t, QualityPrior(leg), 0.0, "leg %s must have a benchmark prior", leg)

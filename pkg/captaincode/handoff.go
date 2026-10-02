@@ -93,6 +93,11 @@ type ArtifactSummary struct {
 	DiffPath     string   `json:"diff_path,omitempty"`
 	CheckPassed  bool     `json:"check_passed"`
 	CheckCommand string   `json:"check_command,omitempty"`
+	Disposition  string   `json:"disposition,omitempty"`
+	BaseRevision string   `json:"base_revision,omitempty"`
+	Repository   string   `json:"repository,omitempty"`
+	Runtime      string   `json:"runtime,omitempty"`
+	RunRecord    string   `json:"run_record,omitempty"`
 }
 
 // IntegrationSummary is the M3.2 integration candidate in brief form.
@@ -221,6 +226,22 @@ func buildArtifactSummariesFromLedger(l *Ledger, taskID string) []ArtifactSummar
 	attempts := l.AttemptStatesFor(taskID)
 	out := make([]ArtifactSummary, 0, len(attempts))
 	for _, as := range attempts {
+		if as.Export != nil {
+			e := as.Export
+			m := e.Manifest
+			s := ArtifactSummary{
+				AttemptID: as.AttemptID, Leg: as.Leg, ChangedFiles: m.ChangedFiles,
+				DiffDigest: m.DiffDigest, DiffPath: m.DiffPath,
+				Disposition: "exported", BaseRevision: m.BaseRevision,
+				Repository: e.Repository, Runtime: e.Runtime, RunRecord: e.RunRecord,
+			}
+			if m.Check != nil {
+				s.CheckPassed = m.Check.Passed && !m.Check.TimedOut
+				s.CheckCommand = shellJoin(m.Check.Command)
+			}
+			out = append(out, s)
+			continue
+		}
 		// Skip attempts with no artifact references: they either produced
 		// text only or failed before writing.
 		if as.DiffPath == "" && as.WorktreeDir == "" && len(as.ChangedFiles) == 0 {
@@ -276,6 +297,13 @@ func buildFailedChecks(l *Ledger, taskID string, integration *IntegrationCandida
 func buildRemainingActions(l *Ledger, taskID string) []string {
 	var actions []string
 	for _, as := range l.AttemptStatesFor(taskID) {
+		if as.Export != nil {
+			if as.Export.Manifest.HasChanges() {
+				actions = append(actions, fmt.Sprintf("review exported patch %s before applying; the workspace was not changed by attempt %s", as.Export.Manifest.DiffPath, as.AttemptID))
+			} else {
+				actions = append(actions, fmt.Sprintf("review unchanged snapshot evidence %s from attempt %s; nothing to apply", as.Export.RunRecord, as.AttemptID))
+			}
+		}
 		switch as.State {
 		case StateInterrupted:
 			actions = append(actions, fmt.Sprintf("attempt %s (leg %s) was interrupted — resume decision needed", as.AttemptID, as.Leg))
@@ -418,6 +446,13 @@ func FormatHandoffBrief(b HandoffBrief) string {
 				files = fmt.Sprintf("%d files", len(a.ChangedFiles))
 			}
 			fmt.Fprintf(&sb, "  · %s — %s, %s", a.Leg, files, check)
+			if a.Disposition == "exported" {
+				if len(a.ChangedFiles) == 0 {
+					fmt.Fprintf(&sb, ", verified unchanged snapshot, sandbox %s", a.Runtime)
+				} else {
+					fmt.Fprintf(&sb, ", exported (not applied), sandbox %s", a.Runtime)
+				}
+			}
 			if a.DiffDigest != "" {
 				d := a.DiffDigest
 				if len(d) > 12 {
@@ -426,6 +461,9 @@ func FormatHandoffBrief(b HandoffBrief) string {
 				fmt.Fprintf(&sb, ", diff %s", d)
 			}
 			sb.WriteString("\n")
+			if a.Disposition == "exported" {
+				fmt.Fprintf(&sb, "    repository: %s\n    snapshot: %s\n    files: %s\n    sha256: %s\n    patch: %s\n    verification: %s\n    run record: %s\n", a.Repository, a.BaseRevision, strings.Join(a.ChangedFiles, ", "), a.DiffDigest, a.DiffPath, a.CheckCommand, a.RunRecord)
+			}
 		}
 	}
 	if b.Integration != nil {

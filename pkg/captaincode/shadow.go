@@ -210,7 +210,7 @@ func JevLegQuestion(menu []Leg, d Domain) (S1Question, []Leg) {
 	crit := map[string]string{}
 	var offered []Leg
 	for _, l := range menu {
-		if !KnownLeg(l) || !ServesTasks(l) || legIn(l, offered) {
+		if !KnownLeg(l) || !AutoRoutes(l) || legIn(l, offered) {
 			continue
 		}
 		offered = append(offered, l)

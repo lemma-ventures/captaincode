@@ -335,6 +335,10 @@ func cmdUI() {
 }
 
 func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer, until string, maxIters int, noManager bool) {
+	if forced == captaincode.LegOpenShell {
+		cmdOpenShellSolo(ledger, task, until)
+		return
+	}
 	classHint := captaincode.Classify(task)
 	class := classHint
 	plan := captaincode.CompileLoop(task, until, maxIters)

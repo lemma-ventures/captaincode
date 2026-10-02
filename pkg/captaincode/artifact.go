@@ -45,6 +45,13 @@ import (
 // versioned types carry.
 const ArtifactVersion = 1
 
+type VerifiedExport struct {
+	Manifest   PatchManifest `json:"manifest"`
+	Repository string        `json:"repository"`
+	Runtime    string        `json:"runtime"`
+	RunRecord  string        `json:"run_record"`
+}
+
 // PatchManifest is an immutable record of what one worker changed in its
 // isolated worktree. Once created it is never mutated; the diff is saved to a
 // file so the manifest is a reference, not a container.

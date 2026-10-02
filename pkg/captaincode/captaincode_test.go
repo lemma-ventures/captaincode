@@ -121,6 +121,7 @@ func TestDirectorExcludedFromWorkerLadder(t *testing.T) {
 	SetDirector(LegGrok)
 	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, Rungs, "grok director → grok not a worker; cursor sits below codex-cli and claude")
 	assert.NotContains(t, Rungs, LegGrok)
+	assert.NotContains(t, Rungs, LegOpenShell, "openshell runs only when named")
 	SetDirector(LegClaude)
 	assert.Equal(t, []Leg{LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI}, Rungs, "claude director → claude not a worker; codex-cli is the top worker rung")
 }

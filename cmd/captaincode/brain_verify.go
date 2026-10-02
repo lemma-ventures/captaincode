@@ -90,7 +90,7 @@ func (b *brain) captureTest(ctx context.Context, dir string) (*captaincode.Check
 // Intermediate attempts are recorded here; the caller records the final
 // one with the attempt number the record carries.
 func (b *brain) verifyAndEscalate(ws captaincode.Workspace, leg captaincode.Leg, prompt string, res captaincode.Result, taskID string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Workspace, captaincode.Result, *captaincode.EscalationOutcome) {
-	if !soloVerifyEnabled() || taskID == "" {
+	if leg == captaincode.LegOpenShell || !soloVerifyEnabled() || taskID == "" {
 		return leg, ws, res, nil
 	}
 	task := lastUserTurn(prompt)

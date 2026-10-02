@@ -59,6 +59,14 @@ const (
 	// registry (doctor, pricing, `captain jev`) but never a worker rung: the
 	// brain asks it the triage questions instead (systemone.go).
 	LegJev Leg = "jev" // POST api.typesafe.ai/v1/systemone (TYPESAFE_API_KEY)
+	// openshell (2026-09-30): NVIDIA OpenShell sandboxed execution, run only
+	// when named. Each task runs inside its own MicroVM with Landlock, network
+	// isolation and Shield credential masking. The worker edits and tests a
+	// pinned snapshot; Captain rechecks the patch without executing it,
+	// verifies the result in a fresh sandbox and returns an export to review,
+	// never applied to the checkout. Requires CAPTAIN_OPENSHELL_PREPARED,
+	// CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
+	LegOpenShell Leg = "openshell"
 )
 
 // AllLegs is every ACTIVE leg in ascending prior order - derived from the
@@ -93,7 +101,8 @@ func LegDisplayName(l Leg) string {
 var Director = LegGrok
 
 // Rungs is the worker escalation ladder: every leg that takes tasks, except
-// the director. A decision leg (ServesTasks false) is never a rung.
+// the director. A decision leg (ServesTasks false) and a named-only leg
+// (AutoRoutes false) are never rungs.
 var Rungs = workerLadder(Director)
 
 // KnownLeg reports whether l is a real backend leg.
@@ -109,7 +118,7 @@ func KnownLeg(l Leg) bool {
 func workerLadder(d Leg) []Leg {
 	r := make([]Leg, 0, len(AllLegs))
 	for _, l := range AllLegs {
-		if l != d && ServesTasks(l) {
+		if l != d && AutoRoutes(l) {
 			r = append(r, l)
 		}
 	}

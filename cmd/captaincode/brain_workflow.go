@@ -360,6 +360,14 @@ func (b *brain) runWorkflowLeg(ws captaincode.Workspace, leg captaincode.Leg, pr
 
 // workflowChat executes a workflow and returns its single reviewed output.
 func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string, wf captaincode.Workflow, id string) {
+	for _, stage := range wf.Stages {
+		for _, worker := range stage.Legs {
+			if worker.Leg == captaincode.LegOpenShell {
+				writeWorkerError(w, "workflow", fmt.Errorf("openshell workers cannot share a workflow with host workers; make every stage /openshell or use captain openshell --team"))
+				return
+			}
+		}
+	}
 	t0 := time.Now()
 	task := lastUserTurn(prompt)
 	key := wf.Key()

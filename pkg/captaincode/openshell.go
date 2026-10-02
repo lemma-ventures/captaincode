@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime/debug"
 	"slices"
@@ -100,10 +101,11 @@ type OpenShellTeam struct {
 }
 
 // OpenShellTask is one sandboxed edit: a task.py spec without the fields
-// Captain pins itself (repo, revision, mode). Zero values take task.py's
+// Captain pins itself (repo, revision). Zero values take task.py's
 // defaults.
 type OpenShellTask struct {
 	ID              string   `json:"id"`
+	Mode            string   `json:"mode,omitempty"`
 	Profile         string   `json:"profile"`
 	Prompt          string   `json:"prompt"`
 	Verify          []string `json:"verify"`
@@ -172,6 +174,15 @@ func (t OpenShellTask) Validate() error {
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("openshell task %s: %s", t.ID, fmt.Sprintf(format, args...))
 	}
+	switch t.Mode {
+	case "", "edit":
+	case "review":
+		if len(t.Allowed) != 0 || (t.Baseline != "" && t.Baseline != "pass") || t.RepairAttempts != 0 {
+			return fail("review needs no edit scope, a passing baseline and no repair attempts")
+		}
+	default:
+		return fail("mode must be edit or review")
+	}
 	if !openShellProfile.MatchString(t.Profile) {
 		return fail("profile %q is not a profile name", t.Profile)
 	}
@@ -181,7 +192,7 @@ func (t OpenShellTask) Validate() error {
 	if err := checkOpenShellArgv(t.Verify); err != nil {
 		return fail("verify: %v", err)
 	}
-	if len(t.Allowed) == 0 || len(t.Allowed) > 64 || len(t.Protected) > 256 {
+	if (t.Mode != "review" && len(t.Allowed) == 0) || len(t.Allowed) > 64 || len(t.Protected) > 256 {
 		return fail("allowed needs 1-64 paths and protected at most 256")
 	}
 	seen := map[string]bool{}
@@ -269,7 +280,9 @@ type OpenShellCheck struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
-// OpenShellShield summarizes what crossed the Shield middleware.
+// OpenShellShield summarizes what crossed the Shield middleware. The token
+// and cost fields are what the provider itself reported on each response
+// (OpenRouter's usage block), not the worker's account of its own calls.
 type OpenShellShield struct {
 	Requests         int      `json:"requests"`
 	Responses        int      `json:"responses"`
@@ -277,6 +290,39 @@ type OpenShellShield struct {
 	SecretsMasked    int      `json:"secrets_masked"`
 	IdentitiesMasked int      `json:"identities_masked"`
 	ServedBy         []string `json:"served_by,omitempty"`
+	PricedResponses  int      `json:"priced_responses,omitempty"`
+	PromptTokens     int      `json:"prompt_tokens,omitempty"`
+	CompletionTokens int      `json:"completion_tokens,omitempty"`
+	ReasoningTokens  int      `json:"reasoning_tokens,omitempty"` // a subset of CompletionTokens
+	CostUSD          float64  `json:"cost_usd,omitempty"`
+}
+
+// Spend totals what the providers billed every worker in the run. It is
+// complete only when each request that crossed Shield came back with a
+// price; a blocked, failed or unpriced call, or a worker that stopped before
+// Shield was tallied, leaves the bill unknown rather than understated.
+func (run *OpenShellRun) Spend() (tokens int, costUSD float64, complete bool) {
+	requests := 0
+	complete = true
+	for _, t := range run.Tasks {
+		if t == nil || t.Report == nil {
+			continue
+		}
+		s := t.Report.Shield
+		if s == nil {
+			if t.Report.WorkerAttempts > 0 {
+				complete = false
+			}
+			continue
+		}
+		requests += s.Requests
+		tokens += s.PromptTokens + s.CompletionTokens
+		costUSD += s.CostUSD
+		if s.PricedResponses != s.Requests {
+			complete = false
+		}
+	}
+	return tokens, costUSD, complete && requests > 0
 }
 
 // OpenShellExport describes the patch a task's sandbox exported.
@@ -296,6 +342,7 @@ type OpenShellExport struct {
 // OpenShellResult is one task's outcome in a team run.
 type OpenShellResult struct {
 	Task     string           `json:"task"`
+	Mode     string           `json:"mode,omitempty"`
 	Profile  string           `json:"profile"`
 	Outcome  string           `json:"outcome"`
 	Error    string           `json:"error,omitempty"`
@@ -338,23 +385,41 @@ type OpenShellIntegrated struct {
 
 // OpenShellRun is the record of a team run (run.json).
 type OpenShellRun struct {
-	Version     int                   `json:"version"`
-	Team        string                `json:"team"`
-	Repo        string                `json:"repo"`
-	Revision    string                `json:"revision"`
-	Runtime     string                `json:"runtime"`
-	Director    string                `json:"director"`
-	Concurrency int                   `json:"concurrency"`
-	Provenance  *OpenShellProvenance  `json:"provenance,omitempty"`
-	StartedAt   time.Time             `json:"started_at"`
-	Seconds     float64               `json:"seconds"`
-	Verdict     string                `json:"verdict"`
-	Error       string                `json:"error,omitempty"`
-	Tasks       []*OpenShellResult    `json:"tasks"`
-	Candidate   *IntegrationCandidate `json:"candidate,omitempty"`
-	Rulings     []OpenShellRuling     `json:"rulings,omitempty"`
-	Landed      *IntegrationCandidate `json:"landed,omitempty"`
-	Integrated  *OpenShellIntegrated  `json:"integrated,omitempty"`
+	Version        int                     `json:"version"`
+	Team           string                  `json:"team"`
+	Repo           string                  `json:"repo"`
+	Revision       string                  `json:"revision"`
+	Runtime        string                  `json:"runtime"`
+	Director       string                  `json:"director"`
+	Concurrency    int                     `json:"concurrency"`
+	RequireAll     bool                    `json:"require_all,omitempty"`
+	Provenance     *OpenShellProvenance    `json:"provenance,omitempty"`
+	StartedAt      time.Time               `json:"started_at"`
+	DeadlineAt     time.Time               `json:"deadline_at,omitempty"`
+	AttemptBudget  *OpenShellAttemptBudget `json:"attempt_budget,omitempty"`
+	Seconds        float64                 `json:"seconds"`
+	Verdict        string                  `json:"verdict"`
+	Error          string                  `json:"error,omitempty"`
+	Tasks          []*OpenShellResult      `json:"tasks"`
+	Stages         []OpenShellStageRecord  `json:"stages,omitempty"`
+	SequenceSHA256 string                  `json:"sequence_sha256,omitempty"`
+	Resumptions    []time.Time             `json:"resumptions,omitempty"`
+	Candidate      *IntegrationCandidate   `json:"candidate,omitempty"`
+	Rulings        []OpenShellRuling       `json:"rulings,omitempty"`
+	Landed         *IntegrationCandidate   `json:"landed,omitempty"`
+	Integrated     *OpenShellIntegrated    `json:"integrated,omitempty"`
+}
+
+func (run *OpenShellRun) reviewOnly() bool {
+	if len(run.Tasks) == 0 {
+		return false
+	}
+	for _, task := range run.Tasks {
+		if task == nil || task.Mode != "review" || task.Outcome != OpenShellUnchanged {
+			return false
+		}
+	}
+	return true
 }
 
 // OpenShellProvenance names the code a run executed, so its record can be
@@ -389,7 +454,11 @@ type OpenShellRunner struct {
 	Revision     string // pinned base commit
 	RunDir       string // run.json, integrated.patch, diffs and per-task evidence
 	Concurrency  int
-	Director     OpenShellDirector // nil: overlapping tasks are not landed
+	DeadlineAt   time.Time
+	MaxAttempts  int
+	RequireAll   bool
+	Pinned       *OpenShellProvenance // a sequence plan's build: a stage under any other refuses to start
+	Director     OpenShellDirector    // nil: overlapping tasks are not landed
 	DirectorName string
 	Log          func(format string, args ...any)
 
@@ -445,6 +514,15 @@ func (r *OpenShellRunner) check(ctx context.Context) error {
 // BuildRevision stands in for Captain's, as it does for the release checks.
 func (r *OpenShellRunner) provenance() (*OpenShellProvenance, error) {
 	p := &OpenShellProvenance{Files: map[string]string{}}
+	binary, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	sum, err := fileSHA256(binary)
+	if err != nil {
+		return nil, err
+	}
+	p.Files["captain/binary"] = sum
 	if info, ok := debug.ReadBuildInfo(); ok {
 		p.Captain = openShellBuild(info)
 	}
@@ -457,9 +535,13 @@ func (r *OpenShellRunner) provenance() (*OpenShellProvenance, error) {
 	for _, set := range []struct{ name, root, pattern string }{
 		{"pilot", r.Pilot, "*.py"},
 		{"pilot", r.Pilot, "Dockerfile"},
+		{"pilot", r.Pilot, "*.yaml"},
+		{"pilot", r.Pilot, "requirements.txt"},
+		{"pilot", r.Pilot, "artifacts.lock.json"},
 		{"prepared", r.Prepared, "shield"},
 		{"prepared", r.Prepared, "bin/*"},
 		{"prepared", r.Prepared, "generated/*.py"},
+		{"prepared", r.Prepared, "venv/bin/python"},
 	} {
 		files, _ := filepath.Glob(filepath.Join(set.root, set.pattern)) // constant patterns
 		for _, file := range files {
@@ -497,9 +579,19 @@ func openShellBuild(info *debug.BuildInfo) OpenShellBuild {
 // lands the tasks whose exports hold up, and verifies the integrated tree in
 // a fresh sandbox. The record is written to RunDir/run.json either way.
 func (r *OpenShellRunner) RunTeam(ctx context.Context, team OpenShellTeam) (*OpenShellRun, error) {
+	ctx, cancel, err := OpenShellBudgetContext(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	ctx, stop := r.deadlineContext(ctx)
+	defer stop()
 	run := &OpenShellRun{Version: ArtifactVersion, Team: team.ID, Repo: r.Repo, Revision: r.Revision,
-		Runtime: r.Runtime, Director: r.DirectorName, Concurrency: r.Concurrency, StartedAt: time.Now(), Verdict: "fail"}
-	err := r.runTeam(ctx, team, run)
+		Runtime: r.Runtime, Director: r.DirectorName, Concurrency: r.Concurrency, RequireAll: r.RequireAll, StartedAt: time.Now(), DeadlineAt: r.DeadlineAt, Verdict: "fail"}
+	run.AttemptBudget, err = r.attemptBudget(ctx, []OpenShellTeam{team})
+	if err == nil {
+		err = r.runTeam(ctx, team, run)
+	}
 	if err != nil {
 		run.Error = err.Error()
 	}
@@ -523,6 +615,9 @@ func (r *OpenShellRunner) runTeam(ctx context.Context, team OpenShellTeam, run *
 		return err
 	}
 	run.Provenance = provenance
+	if r.Pinned != nil && !reflect.DeepEqual(provenance, r.Pinned) {
+		return errors.New("openshell: runtime or pilot changed since the sequence plan was saved; start a new workflow")
+	}
 	// Tasks start in spec order, at most Concurrency at once.
 	run.Tasks = make([]*OpenShellResult, len(team.Tasks))
 	next := make(chan int)
@@ -555,6 +650,13 @@ func (r *OpenShellRunner) runTeam(ctx context.Context, team OpenShellTeam, run *
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if r.RequireAll {
+		for _, res := range run.Tasks {
+			if res.Outcome == OpenShellFailed {
+				return fmt.Errorf("openshell: required worker %s failed: %s", res.Task, res.Error)
+			}
+		}
+	}
 	return r.integrate(ctx, team, run)
 }
 
@@ -578,7 +680,7 @@ func cmpOr(v, fallback int) int {
 // detection; RunTeam closes it.
 func (r *OpenShellRunner) runTask(ctx context.Context, teamID string, t OpenShellTask) *OpenShellResult {
 	start := time.Now()
-	res := &OpenShellResult{Task: t.ID, Profile: t.Profile, Outcome: OpenShellFailed,
+	res := &OpenShellResult{Task: t.ID, Mode: t.Mode, Profile: t.Profile, Outcome: OpenShellFailed,
 		Evidence: filepath.Join(r.RunDir, "tasks", t.ID), task: t}
 	defer func() {
 		res.Seconds = seconds(time.Since(start))
@@ -586,6 +688,9 @@ func (r *OpenShellRunner) runTask(ctx context.Context, teamID string, t OpenShel
 	}()
 	spec := map[string]any{"schema": 1, "mode": "edit", "id": t.ID, "repo": r.Repo, "revision": r.Revision,
 		"prompt": t.Prompt, "verify": t.Verify, "allowed": t.Allowed}
+	if t.Mode == "review" {
+		spec["mode"], spec["allowed"], spec["baseline"] = "review", []string{}, "pass"
+	}
 	if len(t.Protected) > 0 {
 		spec["protected"] = t.Protected
 	}
@@ -781,6 +886,9 @@ func readOpenShellFile(file string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// writeOpenShellFile creates a record once and makes it durable before
+// returning: a sequence saves the checkpoint that names a stage's records
+// right after them, and recovery rereads and rehashes them after a crash.
 func writeOpenShellFile(file string, data []byte) error {
 	f, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -790,7 +898,23 @@ func writeOpenShellFile(file string, data []byte) error {
 		f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return syncOpenShellDir(filepath.Dir(file))
+}
+
+func syncOpenShellDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 // openShellEvidence is what a run keeps from each pilot state: the report,
@@ -853,6 +977,13 @@ func (r *OpenShellRunner) land(ctx context.Context, teamID string, t OpenShellTa
 	}
 	if digest := sha256.Sum256(patch); hex.EncodeToString(digest[:]) != e.PatchSHA256 {
 		return errors.New("export: the patch is not the one the report describes")
+	}
+	if t.Mode == "review" {
+		if len(patch) != 0 {
+			return errors.New("export: review changed repository files")
+		}
+	} else if len(patch) == 0 {
+		return errors.New("export: edit produced no change")
 	}
 	files, err := checkOpenShellPatch(ctx, r.Repo, patch, t.Allowed)
 	if err != nil {
@@ -948,7 +1079,10 @@ func gitApply(ctx context.Context, dir string, patch []byte, check bool) error {
 func gitOutput(ctx context.Context, dir string, env []string, stdin []byte, args ...string) ([]byte, error) {
 	c, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(c, "git", append([]string{"-C", dir}, args...)...)
+	// Captain's plumbing never runs a repository's hooks or fsmonitor: the
+	// snapshot repository sits in a writable run directory, and command-line
+	// settings outrank anything its config, or a file it includes, sets.
+	cmd := exec.CommandContext(c, "git", append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"}, args...)...)
 	if env != nil {
 		cmd.Env = env
 	}
@@ -987,10 +1121,18 @@ func (r *OpenShellRunner) integrate(ctx context.Context, team OpenShellTeam, run
 				dropped[id] = true
 			}
 			run.Rulings = append(run.Rulings, ruling)
+			if r.RequireAll && ruling.Error != "" {
+				return fmt.Errorf("openshell: required conflict ruling failed: %s", ruling.Error)
+			}
 		}
 	}
 	var kept []PatchManifest
 	var landed []OpenShellTask
+	for _, res := range run.Tasks {
+		if res.Outcome == OpenShellUnchanged && res.task.Mode == "review" {
+			landed = append(landed, res.task)
+		}
+	}
 	for _, m := range manifests {
 		if dropped[m.Worker] {
 			byID[m.Worker].Outcome = OpenShellDropped
@@ -1001,10 +1143,10 @@ func (r *OpenShellRunner) integrate(ctx context.Context, team OpenShellTeam, run
 	}
 	final := BuildIntegrationCandidate(team.ID, "openshell", r.Revision, kept)
 	run.Landed = &final
-	if final.Status == IntegrationEmpty {
+	if final.Status == IntegrationEmpty && len(landed) != len(run.Tasks) {
 		return errors.New("no task produced a change that could land")
 	}
-	if final.Status != IntegrationClean {
+	if final.Status != IntegrationClean && final.Status != IntegrationEmpty {
 		return fmt.Errorf("integration: candidate is %s after the rulings", final.Status)
 	}
 	integrated, err := r.applyAndVerify(ctx, team, final, landed)
@@ -1133,8 +1275,10 @@ func (r *OpenShellRunner) applyAndVerify(ctx context.Context, team OpenShellTeam
 		return integrated, err
 	}
 	defer wt.Close()
-	if err := ApplyIntegrationCandidate(ctx, wt.Dir, final); err != nil {
-		return integrated, err
+	if final.Status != IntegrationEmpty {
+		if err := ApplyIntegrationCandidate(ctx, wt.Dir, final); err != nil {
+			return integrated, err
+		}
 	}
 	patch, err := gitOutput(ctx, wt.Dir, nil, nil, "diff", "--no-ext-diff", "--no-textconv", "--binary", "--no-renames", r.Revision, "--")
 	if err != nil {
@@ -1185,8 +1329,10 @@ func (r *OpenShellRunner) treeWith(ctx context.Context, patch []byte) (string, e
 	if _, err := gitOutput(ctx, r.Repo, env, nil, "read-tree", r.Revision); err != nil {
 		return "", err
 	}
-	if _, err := gitOutput(ctx, r.Repo, env, patch, "apply", "--cached", "--whitespace=nowarn", "-"); err != nil {
-		return "", err
+	if len(patch) > 0 {
+		if _, err := gitOutput(ctx, r.Repo, env, patch, "apply", "--cached", "--whitespace=nowarn", "-"); err != nil {
+			return "", err
+		}
 	}
 	out, err := gitOutput(ctx, r.Repo, env, nil, "write-tree")
 	if err != nil {
@@ -1331,4 +1477,306 @@ func sortedCopy(items []string) []string {
 
 func seconds(d time.Duration) float64 {
 	return float64(d.Milliseconds()) / 1000
+}
+
+func ResolveOpenShellRepo(ctx context.Context, repo, revision string) (string, string, error) {
+	if strings.HasPrefix(revision, "-") || revision == "" {
+		return "", "", fmt.Errorf("openshell: %q is not a revision", revision)
+	}
+	top, err := gitOutput(ctx, repo, nil, nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", "", fmt.Errorf("openshell: %s is not a git repository: %w", repo, err)
+	}
+	dir, err := filepath.EvalSymlinks(strings.TrimSpace(string(top)))
+	if err != nil {
+		return "", "", err
+	}
+	sha, err := gitOutput(ctx, dir, nil, nil, "rev-parse", "--verify", "--quiet", revision+"^{commit}")
+	if err != nil {
+		return "", "", fmt.Errorf("openshell: %s is not a commit in %s: %w", revision, dir, err)
+	}
+	pinned := strings.TrimSpace(string(sha))
+	if !pinnedRevision(pinned) {
+		return "", "", fmt.Errorf("openshell: revision %q did not resolve to a commit sha", revision)
+	}
+	return dir, pinned, nil
+}
+
+func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, OpenShellTeam, error) {
+	var team OpenShellTeam
+	prepared := os.Getenv("CAPTAIN_OPENSHELL_PREPARED")
+	if strings.TrimSpace(prepared) == "" {
+		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_PREPARED to the prepare.py state directory")
+	}
+	// The controller runs on the host, so its scripts never default to the
+	// target repository: a repository being sandboxed must not choose them.
+	if strings.TrimSpace(os.Getenv("CAPTAIN_OPENSHELL_PILOT")) == "" {
+		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_PILOT to the examples/openshell-pilot directory of a Captain checkout you trust")
+	}
+	var verify []string
+	rawVerify := os.Getenv("CAPTAIN_OPENSHELL_VERIFY")
+	if err := json.Unmarshal([]byte(rawVerify), &verify); err != nil {
+		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_VERIFY to a JSON argv array, such as [\"python3\",\"-m\",\"unittest\"]")
+	}
+	if err := checkOpenShellArgv(verify); err != nil {
+		return nil, team, fmt.Errorf("openshell: verify (CAPTAIN_OPENSHELL_VERIFY): %w", err)
+	}
+	paths := func(key string) []string {
+		var result []string
+		for _, p := range strings.Split(os.Getenv(key), ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				result = append(result, p)
+			}
+		}
+		return result
+	}
+	allowed := paths("CAPTAIN_OPENSHELL_ALLOWED")
+	if len(allowed) == 0 {
+		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_ALLOWED to the comma-separated paths the worker may change")
+	}
+	value := func(key, fallback string) string {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		return fallback
+	}
+	concurrency := 1
+	if v := os.Getenv("CAPTAIN_OPENSHELL_CONCURRENCY"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 8 {
+			return nil, team, fmt.Errorf("openshell: CAPTAIN_OPENSHELL_CONCURRENCY must be 1-8")
+		}
+		concurrency = n
+	}
+	runner := &OpenShellRunner{
+		Prepared:     prepared,
+		Pilot:        os.Getenv("CAPTAIN_OPENSHELL_PILOT"),
+		Runtime:      value("CAPTAIN_OPENSHELL_RUNTIME", "vm"),
+		StateRoot:    "/tmp",
+		Concurrency:  concurrency,
+		DirectorName: value("CAPTAIN_OPENSHELL_DIRECTOR", "none"),
+	}
+	if runner.Runtime != "vm" && runner.Runtime != "docker" {
+		return nil, team, fmt.Errorf("openshell: runtime must be vm or docker")
+	}
+	switch runner.DirectorName {
+	case "none":
+	case "claude":
+		runner.Director = ToolLessClaudeDirector
+	default:
+		return nil, team, fmt.Errorf("openshell: CAPTAIN_OPENSHELL_DIRECTOR must be none or claude")
+	}
+	taskID := fmt.Sprintf("brain-%x", sha256.Sum256([]byte(task)))[:12]
+	team = OpenShellTeam{Schema: 1, ID: taskID, Tasks: []OpenShellTask{{
+		ID: taskID, Profile: value("CAPTAIN_OPENSHELL_PROFILE", "cerebras"),
+		Prompt: task, Verify: verify, Allowed: allowed,
+		Protected:      paths("CAPTAIN_OPENSHELL_PROTECTED"),
+		Baseline:       value("CAPTAIN_OPENSHELL_BASELINE", "any"),
+		RepairAttempts: 1, DeadlineSeconds: 600, VerifySeconds: 120,
+	}}}
+	if err := team.Validate(); err != nil {
+		return nil, team, err
+	}
+	var err error
+	runner.Repo, runner.Revision, err = ResolveOpenShellRepo(ctx, value("CAPTAIN_OPENSHELL_REPO", dir), value("CAPTAIN_OPENSHELL_REVISION", "HEAD"))
+	if err != nil {
+		return nil, team, err
+	}
+	for _, p := range []*string{&runner.Pilot, &runner.Prepared} {
+		if *p, err = filepath.Abs(*p); err != nil {
+			return nil, team, err
+		}
+	}
+	return runner, team, nil
+}
+
+func runOpenShell(dir, task string, base, ceil time.Duration, steer *Steer) (Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), base)
+	defer cancel()
+	return (Workspace{Dir: dir, Steer: steer}).RunOpenShell(ctx, task)
+}
+
+func (ws Workspace) RunOpenShell(ctx context.Context, task string) (Result, error) {
+	ctx, cancel, err := OpenShellBudgetContext(ctx, nil)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cancel()
+	ctx, stop := context.WithTimeout(ctx, workerTimeout())
+	defer stop()
+	runner, team, err := openShellConfig(ctx, ws.Dir, task)
+	if err != nil {
+		return Result{}, err
+	}
+	return runConfiguredOpenShell(ctx, runner, team, ws.Steer)
+}
+
+func runConfiguredOpenShell(ctx context.Context, runner *OpenShellRunner, team OpenShellTeam, steer *Steer) (Result, error) {
+	if err := configureOpenShellRunDir(runner, team.ID); err != nil {
+		return Result{}, err
+	}
+	return runOpenShellTeam(ctx, runner, team, steer)
+}
+
+func configureOpenShellRunDir(runner *OpenShellRunner, id string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("openshell: cannot find home directory: %w", err)
+	}
+	baseDir := filepath.Join(home, ".captaincode", "openshell")
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		return fmt.Errorf("openshell: cannot create state dir: %w", err)
+	}
+	runner.RunDir, err = os.MkdirTemp(baseDir, time.Now().UTC().Format("20060102T150405Z")+"-"+id+"-")
+	if err != nil {
+		return fmt.Errorf("openshell: cannot create run dir: %w", err)
+	}
+	runner.Log = func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "openshell: "+format+"\n", args...)
+	}
+	return nil
+}
+
+func runOpenShellTeam(ctx context.Context, runner *OpenShellRunner, team OpenShellTeam, steer *Steer) (Result, error) {
+	ctx, stopped, detach := interruptible(ctx, steer, LegOpenShell)
+	defer detach()
+	if !steer.Interrupted().IsZero() {
+		return Result{}, ErrInterrupted
+	}
+	run, err := runner.RunTeam(ctx, team)
+	return finishOpenShellRun(ctx, runner, run, err, stopped.Load())
+}
+
+func finishOpenShellRun(ctx context.Context, runner *OpenShellRunner, run *OpenShellRun, err error, stopped bool) (Result, error) {
+	if run == nil {
+		return Result{}, err
+	}
+	ctx, cancel := runner.deadlineContext(ctx)
+	defer cancel()
+	res := Result{Text: openShellResultText(run, runner.RunDir), DurationMs: int64(run.Seconds * 1000)}
+	if tokens, cost, complete := run.Spend(); complete {
+		res.Tokens, res.CostUSD = tokens, cost
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		res.Partial = true
+		res.Text = "OpenShell deadline reached: no verified export delivered.\nrun record: " + filepath.Join(runner.RunDir, "run.json") + "\n"
+		return res, context.DeadlineExceeded
+	}
+	if stopped || ctx.Err() != nil {
+		res.Partial = true
+		res.Text = "OpenShell interrupted: no verified export delivered.\nrun record: " + filepath.Join(runner.RunDir, "run.json") + "\n"
+		return res, ErrInterrupted
+	}
+	if err != nil {
+		return res, err
+	}
+	if run.Verdict != "pass" || run.Integrated == nil || !run.Integrated.Passed {
+		detail := run.Error
+		if run.Integrated != nil && run.Integrated.Error != "" {
+			detail = run.Integrated.Error
+		}
+		return res, fmt.Errorf("openshell: integrated verification did not pass: %s", detail)
+	}
+	res.Export, err = runner.verifiedExport(ctx, run)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		res.Export = nil
+		res.Text = "OpenShell export rejected: " + err.Error() + "\nrun record: " + filepath.Join(runner.RunDir, "run.json") + "\n"
+		return res, err
+	}
+	if res.Export.Manifest.HasChanges() {
+		res.Text += fmt.Sprintf("exported (not applied)\napply with: %s\n", shellJoin([]string{"git", "-C", res.Export.Repository, "apply", res.Export.Manifest.DiffPath}))
+	} else {
+		res.Text += "verified unchanged snapshot; nothing to apply\n"
+	}
+	return res, nil
+}
+
+func (r *OpenShellRunner) verifiedExport(ctx context.Context, run *OpenShellRun) (*VerifiedExport, error) {
+	if run == nil || run.Verdict != "pass" || run.Integrated == nil || !run.Integrated.Passed || run.Revision != r.Revision {
+		return nil, errors.New("openshell: no verified export")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	integrated := run.Integrated
+	if integrated.Patch != filepath.Join(r.RunDir, "integrated.patch") {
+		return nil, errors.New("openshell: unexpected export path")
+	}
+	if err := checkOpenShellArgv(integrated.Verify); err != nil {
+		return nil, fmt.Errorf("openshell: export verification: %w", err)
+	}
+	patch, err := readOpenShellFile(integrated.Patch, openShellPatchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("openshell: export: %w", err)
+	}
+	digest := sha256.Sum256(patch)
+	if hex.EncodeToString(digest[:]) != integrated.PatchSHA256 {
+		return nil, errors.New("openshell: export changed after verification")
+	}
+	files, err := checkOpenShellPatch(ctx, r.Repo, patch, integrated.ChangedFiles)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Equal(files, sortedCopy(integrated.ChangedFiles)) {
+		return nil, errors.New("openshell: export file list does not match verified patch")
+	}
+	if len(files) == 0 && !run.reviewOnly() {
+		return nil, errors.New("openshell: empty export requires successful review tasks only")
+	}
+	tree, err := r.treeWith(ctx, patch)
+	if err != nil {
+		return nil, err
+	}
+	if tree != integrated.Tree {
+		return nil, errors.New("openshell: export does not reproduce the verified tree")
+	}
+	return &VerifiedExport{
+		Manifest: PatchManifest{
+			Version: ArtifactVersion, TaskID: run.Team, Leg: string(LegOpenShell),
+			BaseRevision: run.Revision, ChangedFiles: files,
+			DiffDigest: integrated.PatchSHA256, DiffPath: integrated.Patch,
+			Check: &CheckEvidence{Command: slices.Clone(integrated.Verify), Passed: true,
+				Duration: time.Duration(integrated.Seconds * float64(time.Second))},
+			CreatedAt: time.Now(),
+		},
+		Repository: r.Repo, Runtime: run.Runtime, RunRecord: filepath.Join(r.RunDir, "run.json"),
+	}, nil
+}
+
+func openShellResultText(run *OpenShellRun, runDir string) string {
+	if run == nil {
+		return "OpenShell: no run record"
+	}
+	passed := 0
+	for _, r := range run.Tasks {
+		if r != nil && r.Outcome != OpenShellFailed {
+			passed++
+		}
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "snapshot: %s (committed files only)\n", run.Revision)
+	sb.WriteString(fmt.Sprintf("OpenShell %s: %d/%d task(s) passed in %.1fs\n", run.Verdict, passed, len(run.Tasks), run.Seconds))
+	if budget := run.AttemptBudget; budget != nil && budget.Limit > 0 {
+		fmt.Fprintf(&sb, "attempt admission: %d worst-case slots / %d cap (not measured usage)\n", budget.Required, budget.Limit)
+	}
+	for _, res := range run.Tasks {
+		if res == nil {
+			continue
+		}
+		detail := ""
+		if rep := res.Report; rep != nil && rep.Shield != nil {
+			if len(rep.Shield.ServedBy) > 0 {
+				detail += " served by " + strings.Join(rep.Shield.ServedBy, "/")
+			}
+		}
+		if res.Error != "" {
+			detail += " - " + res.Error
+		}
+		fmt.Fprintf(&sb, "  %s %s %.1fs%s\n", res.Task, res.Outcome, res.Seconds, detail)
+	}
+	sb.WriteString("run record: " + filepath.Join(runDir, "run.json") + "\n")
+	return sb.String()
 }

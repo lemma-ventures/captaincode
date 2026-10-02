@@ -28,7 +28,9 @@ import (
 )
 
 const openShellUsage = `usage: captain openshell --team <team.json> --pilot <dir> --prepared <dir> [flags]
+       captain openshell --resume <run-directory>
 
+  --resume       continue a saved sequence from verified stages; never replay in-flight work
   --team         the team spec: {"schema":1,"id":...,"tasks":[...]} (see examples/openshell-pilot/README.md)
   --pilot        the directory holding task.py and pilot.py
   --prepared     a prepare.py state: OpenShell binaries, the Shield, the Python environment
@@ -51,7 +53,27 @@ func cmdOpenShell(args []string) {
 	director := fs.String("director", "none", "")
 	stateRoot := fs.String("state-root", "/tmp", "")
 	runtime := fs.String("runtime", "vm", "")
+	resume := fs.String("resume", "", "")
 	fs.Parse(args)
+	if *resume != "" {
+		invalid := fs.NArg() > 0
+		fs.Visit(func(f *flag.Flag) { invalid = invalid || f.Name != "resume" })
+		if invalid {
+			fatal(fmt.Errorf("openshell: --resume uses saved settings and cannot be combined with other arguments"))
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := captaincode.ResumeOpenShellSequence(ctx, *resume, func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "openshell: "+format+"\n", args...)
+		})
+		if result.Text != "" {
+			fmt.Print(result.Text)
+		}
+		if err != nil {
+			fatal(err)
+		}
+		return
+	}
 	if *teamFile == "" || *pilot == "" || *prepared == "" || fs.NArg() > 0 {
 		fs.Usage()
 		os.Exit(2)
@@ -116,27 +138,15 @@ func cmdOpenShell(args []string) {
 // openShellRepo resolves the repository's top level and pins the revision to
 // a commit sha.
 func openShellRepo(repo, revision string) (string, string, error) {
-	if strings.HasPrefix(revision, "-") {
-		return "", "", fmt.Errorf("openshell: --revision %q is not a revision", revision)
-	}
-	top, err := exec.Command("git", "-C", repo, "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return "", "", fmt.Errorf("openshell: %s is not a git repository", repo)
-	}
-	dir, err := filepath.EvalSymlinks(strings.TrimSpace(string(top)))
-	if err != nil {
-		return "", "", err
-	}
-	sha, err := exec.Command("git", "-C", dir, "rev-parse", "--verify", "--quiet", revision+"^{commit}").Output()
-	if err != nil {
-		return "", "", fmt.Errorf("openshell: %s is not a commit in %s", revision, dir)
-	}
-	return dir, strings.TrimSpace(string(sha)), nil
+	return captaincode.ResolveOpenShellRepo(context.Background(), repo, revision)
 }
 
 func printOpenShellRun(run *captaincode.OpenShellRun, dir string) {
-	if run == nil || run.Tasks == nil {
+	if run == nil {
 		return
+	}
+	if budget := run.AttemptBudget; budget != nil && budget.Limit > 0 {
+		fmt.Printf("attempt admission: %d worst-case slots / %d cap (not measured usage)\n", budget.Required, budget.Limit)
 	}
 	var taskSeconds, startup []float64
 	passed := 0
@@ -210,7 +220,11 @@ func printOpenShellRun(run *captaincode.OpenShellRun, dir string) {
 	}
 	fmt.Printf("\nrun record: %s\n", filepath.Join(dir, "run.json"))
 	if run.Verdict == "pass" && run.Integrated != nil {
-		fmt.Printf("apply with: git -C %s apply %s\n", run.Repo, run.Integrated.Patch)
+		if len(run.Integrated.ChangedFiles) == 0 {
+			fmt.Println("verified unchanged snapshot; nothing to apply")
+		} else {
+			fmt.Printf("apply with: git -C %s apply %s\n", run.Repo, run.Integrated.Patch)
+		}
 	}
 }
 
