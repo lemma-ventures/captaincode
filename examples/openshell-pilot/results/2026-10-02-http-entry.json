@@ -1,0 +1,216 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "entrypoint": "POST /v1/chat/completions, model=openshell",
+  "harness": "Isolated Go httptest HTTP server with real Captain handlers and the prepared OpenShell MicroVM runtime; no live brain restart.",
+  "verdict": "pass",
+  "fixture": "Public Roman numeral fixture; staged, unstaged and untracked host edits",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "cmd/captaincode/brain_openshell.go": "63076f4bd14accba8134ada71de82885efe309cc88e84b4ad1e4d3f8c643baea",
+    "cmd/captaincode/brain_openai.go": "022476ad0b266b08d17f727521bf5bbea1bd325c19750c472c1d701b1023c518",
+    "cmd/captaincode/openshell_solo.go": "86b122132e89f52c7cdbda4a8764b5cbcc5812646d4e1fba8d7946a2db8993c7",
+    "cmd/captaincode/brain_openshell_live_test.go": "1d4a05eea6ab0ae79c01013f5cc653344ee59184b0dfed846bfce584cde7ac64",
+    "pkg/captaincode/openshell.go": "a6ed9423cfe361b3eb096a04564cecb2f568dfc8362e0e2e633cbd8421864f8e"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "610815421ea70c04e99af7f784ae7f639558c362",
+      "modified": false
+    },
+    "files": {
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/middleware.py": "a8e0bb34c5ea7e62d5c3d25dc755df857afe6d07aa8e5c5dc31f5e981a411346",
+      "pilot/pilot.py": "7aa072cbb1581afd17198d9c4abc9a48982e27e3fe5947a1014422eca5fdb5c2",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/response.py": "109d6cc77e51c7c18e49baf1797840ca104da021339238e24b9621f3c2b994df",
+      "pilot/task.py": "b1604ba73ad82714e9b94e6d8da01cfc7ea96a04e879caa0ea2403aefccc8050",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "8e9258653ead7310e0ba4a6e50164a6941e315b78ed90e2f2f56fee709a7b74c"
+    }
+  },
+  "run_record_sha256": "af2dc24ced0d88f0dbef098bce342c97b2dc5698a0aac6e813f0d06e00b5b96d",
+  "wall_seconds": 64.947,
+  "fixture_revision": "6c56f340ccfbb4bbcc4b673989e189031db88d7b",
+  "worker": {
+    "worker_attempts": 1,
+    "task_successes": 1,
+    "checks": {
+      "baseline": {
+        "verdict": "pass",
+        "detail": "Verification at the base revision must fail."
+      },
+      "cancellation_descendants": {
+        "verdict": "pass",
+        "detail": "The stopped VM and every descendant are gone; recovery boots a new kernel."
+      },
+      "cancellation_requested": {
+        "verdict": "pass",
+        "detail": "A deadline must stop the sandbox; disconnecting exec is insufficient."
+      },
+      "checkpoint_reloaded": {
+        "verdict": "pass"
+      },
+      "diff_scope": {
+        "verdict": "pass",
+        "detail": "Text edits to allowed files only, applying cleanly to the base revision."
+      },
+      "export_ready": {
+        "verdict": "pass",
+        "detail": "Patch, verification log and worker report are on the host for Captain."
+      },
+      "filesystem_denied": {
+        "verdict": "pass"
+      },
+      "landlock": {
+        "verdict": "pass",
+        "detail": "Guest must provide ABI 3 or newer"
+      },
+      "network_denied": {
+        "verdict": "pass",
+        "detail": "Requires a failed connection and its matching policy denial event; a timeout does not pass."
+      },
+      "protected_unchanged": {
+        "verdict": "pass",
+        "detail": "Files the task protects keep their base content."
+      },
+      "provider_path_denied": {
+        "verdict": "pass"
+      },
+      "restart_recovery": {
+        "verdict": "pass",
+        "detail": "The export still passes verification after a sandbox restart."
+      },
+      "sandbox_verify": {
+        "verdict": "pass"
+      },
+      "shield_mediated": {
+        "verdict": "pass",
+        "detail": "Every model call crossed Shield on the pinned model; OpenRouter lanes confirm the pinned provider."
+      },
+      "shield_unavailable_denied": {
+        "verdict": "pass"
+      },
+      "worker_exit": {
+        "verdict": "pass"
+      },
+      "worker_tools": {
+        "verdict": "pass",
+        "detail": "OpenCode's file search must list every file the task names, in path order, before any model call."
+      }
+    },
+    "timings_seconds": {
+      "gateway_ready": 1.757,
+      "gateway_ready_recovery": 0.812,
+      "sandbox_create": 22.621,
+      "sandbox_create_attempt": 22.621,
+      "sandbox_restart": 2.498,
+      "worker": 6.597
+    },
+    "shield": {
+      "requests": 8,
+      "responses": 8,
+      "blocked": 0,
+      "secrets_masked": 0,
+      "identities_masked": 0,
+      "served_by": [
+        "Cerebras"
+      ]
+    }
+  },
+  "integrated": {
+    "passed": true,
+    "seconds": 22.17,
+    "tree": "d973cdcee15a52e430a6bc10c31663828807bff1",
+    "patch_sha256": "c2a4c4624a4d236132f68aeb4693e3c7435cc280be0f663f79104b63a1fe150c",
+    "changed_files": [
+      "roman.py"
+    ],
+    "verify": [
+      "python3",
+      "-m",
+      "unittest",
+      "-v"
+    ],
+    "checks": {
+      "baseline": {
+        "verdict": "pass",
+        "detail": "Verification at the base revision must pass."
+      },
+      "cancellation_descendants": {
+        "verdict": "pass",
+        "detail": "The stopped VM and every descendant are gone; recovery boots a new kernel."
+      },
+      "cancellation_requested": {
+        "verdict": "pass",
+        "detail": "A deadline must stop the sandbox; disconnecting exec is insufficient."
+      },
+      "filesystem_denied": {
+        "verdict": "pass"
+      },
+      "landlock": {
+        "verdict": "pass",
+        "detail": "Guest must provide ABI 3 or newer"
+      },
+      "network_denied": {
+        "verdict": "pass",
+        "detail": "Requires a failed connection and its matching policy denial event; a timeout does not pass."
+      },
+      "provider_path_denied": {
+        "verdict": "pass"
+      },
+      "worker_tools": {
+        "verdict": "pass",
+        "detail": "OpenCode's file search must list every file the task names, in path order, before any model call."
+      }
+    }
+  },
+  "host_preservation": {
+    "staged": true,
+    "unstaged": true,
+    "untracked": true,
+    "git_index_byte_identical": true
+  },
+  "export": {
+    "ledger_reload": true,
+    "persisted_before_http_success": true,
+    "disposition": "exported (not applied)",
+    "patch_reapplied_to_disposable_clone": true,
+    "reapplied_tree_equals_sandbox_verified_tree": true
+  },
+  "cancellation": {
+    "trigger": "HTTP client disconnect after Landlock check, before model dispatch",
+    "controller_cleanup_seconds": 0.406,
+    "ledger_state": "cancelled",
+    "verified_export": false,
+    "cancel_tree_empty": true
+  },
+  "limits": [
+    "One public fixture on one host; not a scale or reliability measurement.",
+    "Uses locally patched OpenShell VM driver; not an upstream release.",
+    "HTTP handlers were exercised in an isolated test server, not the running brain service.",
+    "No synthetic secret was injected; Shield mediation and unavailable-denial gates passed, not a new masking/restoration measurement.",
+    "The initial isolated-home attempt could not access the local worker image until DOCKER_HOST was supplied; no worker was dispatched in that attempt.",
+    "Ordinary team/workflow composition remains unsupported.",
+    "Shared attempt, wall-time and strict dollar caps are refused at the HTTP boundary until supported by the pilot."
+  ]
+}

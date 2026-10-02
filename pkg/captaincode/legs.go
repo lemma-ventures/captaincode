@@ -230,11 +230,13 @@ func providerAuthError(msg string) bool {
 var ErrSessionNotFound = errors.New("opencode session not found")
 
 type Result struct {
-	Text       string
-	Tokens     int
-	CostUSD    float64 // real $ cost when the leg reports it (claude -p); 0 for subscription legs with no per-call price
-	DurationMs int64
-	Streamed   bool // output was already live-printed; don't reprint
+	OpenShellAttempts *OpenShellAttemptUsage
+	Export            *VerifiedExport
+	Text              string
+	Tokens            int
+	CostUSD           float64 // real $ cost when the leg reports it (claude -p); 0 for subscription legs with no per-call price
+	DurationMs        int64
+	Streamed          bool // output was already live-printed; don't reprint
 	// Partial marks output salvaged from a run that hit its time cap. Eight
 	// minutes of a paper audit must not evaporate because the ninth was not
 	// allowed (live 2026-07-30: claude and codex both hit the cap on a
@@ -293,7 +295,7 @@ var legModels = map[Leg]struct{ Provider, Model string }{}
 // so the inventory is complete: grok and codex are MODEL PINS, not CLIs).
 func LegModelPins() []struct{ Leg, Provider, Model string } {
 	out := make([]struct{ Leg, Provider, Model string }, 0, len(legModels))
-	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegLuna, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegGemini, LegKimi} {
+	for _, l := range []Leg{LegFree, LegGrok, LegGrokMax, LegLuna, LegCodex, LegGLM, LegMiniMax, LegQwen, LegDeepSeek, LegDSFlash, LegGemini, LegKimi} {
 		if mm, ok := legModels[l]; ok {
 			out = append(out, struct{ Leg, Provider, Model string }{string(l), mm.Provider, mm.Model})
 		}
@@ -584,6 +586,12 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		// failures (classifyCodexCLIFailure), so a dead `codex login` arrives
 		// as a typed provider fault instead of an opaque dead end.
 		return runCodexCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
+	case TransportOpencodeShell:
+		base := d.Timeout
+		if base <= 0 {
+			base = workerTimeout()
+		}
+		return runOpenShell(d.Dir, task, base, d.Ceiling, d.Steer)
 	case TransportSystemOne:
 		// A decision leg cannot take a task. Every dispatch path is guarded
 		// before this point; this is the backstop for the one that is not.
@@ -1877,6 +1885,9 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		return emptyIsFailure(leg, res, err)
 	case TransportCodexCLI:
 		res, err := runCodexCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
+		return emptyIsFailure(leg, res, err)
+	case TransportOpencodeShell:
+		res, err := runOpenShell(ws.Dir, task, base, ceil, ws.Steer)
 		return emptyIsFailure(leg, res, err)
 	}
 	// free/grok/codex: the dispatcher tails opencode's event bus; OnDelta forwards

@@ -296,14 +296,69 @@ func starterConfig() map[string]any {
 				"npm":     "@ai-sdk/openai-compatible",
 				"name":    "NVIDIA NIM (direct)",
 				"options": map[string]any{"baseURL": "https://integrate.api.nvidia.com/v1", "apiKey": "{env:NVIDIA_API_KEY}"},
-				"models": map[string]any{
-					"z-ai/glm-5.3": map[string]any{"name": "GLM-5.3 (OpenRouter)"},
-				},
+				"models":  nimCatalogModels(),
 			},
 		},
 		"agent":      map[string]any{"title": map[string]any{"model": "captain/free"}},
 		"permission": canonicalPermission(),
 	}
+}
+
+// nimCatalogModels is every model id a compiled NIM leg runs, including a
+// cheap-tier sibling. The nim provider id is uncatalogued on purpose
+// (opencode drops custom models it merges from models.dev), so an unlisted
+// id is an opaque 500.
+func nimCatalogModels() map[string]any {
+	out := map[string]any{}
+	add := func(id, name string) {
+		if id == "" {
+			return
+		}
+		if _, ok := out[id]; ok {
+			return
+		}
+		out[id] = map[string]any{"name": name}
+	}
+	for _, s := range defaultLegSpecs {
+		if s.Provider != "nim" || s.Model == "" {
+			continue
+		}
+		name := s.Display
+		if name == "" {
+			name = s.Model
+		}
+		add(s.Model, name)
+		if cheap := s.Tiers[TierCheap]; cheap != "" && cheap != s.Model {
+			add(cheap, cheap+" (NIM)")
+		}
+	}
+	return out
+}
+
+// ensureNimModels lists missing registry NIM models under an existing nim
+// provider block. A config with no nim block is left alone: /init never
+// invents credentials. Existing entries are not renamed.
+func ensureNimModels(cfg map[string]any) []string {
+	providers, _ := cfg["provider"].(map[string]any)
+	block, ok := providers["nim"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	models, ok := block["models"].(map[string]any)
+	if !ok {
+		models = map[string]any{}
+		block["models"] = models
+	}
+	var added []string
+	for id, entry := range nimCatalogModels() {
+		if _, has := models[id]; has {
+			continue
+		}
+		models[id] = entry
+		added = append(added, id)
+	}
+	sort.Strings(added)
+	return added
 }
 
 // StripJSONC removes // and /* */ comments (outside strings) and trailing
@@ -433,6 +488,10 @@ func EnsureOpencodeConfig(path string, apply bool) (changed bool, notes []string
 	}
 	if ensureWorkspaceHeader(cfg) {
 		notes = append(notes, "captain provider now sends X-Captain-Cwd, so one brain serves every open TUI in its own folder")
+		changed = true
+	}
+	if added := ensureNimModels(cfg); len(added) > 0 {
+		notes = append(notes, "listed NIM models the registry serves: "+strings.Join(added, ", "))
 		changed = true
 	}
 
@@ -612,7 +671,7 @@ CAPTAIN_ROUTE_TIMEOUT_MS=30000
 CAPTAIN_FALLBACK_LEG=%s
 # Restrict which legs may run (comma list). Unset = all wired legs.
 #CAPTAIN_LEGS=free,grok,codex,claude,cursor,glm,minimax
-# NVIDIA NIM key - enables the kimi leg (NIM retired its GLM and MiniMax lines).
+# NVIDIA NIM key - kimi, glm (5.3 and 5.3 Flash) and ds-flash (V4.1 Flash). MiniMax left NIM on 2026-09-09.
 #NVIDIA_API_KEY=
 # Self-hosted Qwen (OpenAI root incl /v1) - enables the qwen leg.
 #CAPTAIN_SCALEWAY_BASE_URL=

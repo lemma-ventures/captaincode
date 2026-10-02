@@ -384,6 +384,12 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.Model = string(leg)
 	}
 
+	if !titleReq && (req.Model == string(captaincode.LegOpenShell) || captaincode.LeadingForced(lastUserRaw(req.Messages)) == string(captaincode.LegOpenShell) ||
+		openShellTeamTurn(req.Model, lastUserRaw(req.Messages))) {
+		b.openShellChat(w, r, req, prompt)
+		return
+	}
+
 	// The repository the task is about (reporefs.go): by default the folder
 	// the TUI is open in; a task that names another repo runs there.
 	if !titleReq {
@@ -492,6 +498,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("captain brain: auto → %s · %s effort · %s\n", resp.Model, req.ws.Effort, resp.Rationale)
 		}
 		switch req.Model {
+		case string(captaincode.LegOpenShell):
+			b.openShellChat(w, r, req, prompt)
+			return
 		case "team":
 			b.teamChat(w, req, prompt)
 			return
@@ -1106,7 +1115,7 @@ func (b *brain) recordQuotaFromHeaders(leg captaincode.Leg, res captaincode.Resu
 // success with a marker explaining why. A rate limit still benches the leg -
 // the text is kept, the window is still closed.
 func (b *brain) salvagePartial(leg captaincode.Leg, res captaincode.Result, err error) (captaincode.Result, error, string) {
-	if err == nil || !captaincode.WorthKeeping(res, err) {
+	if leg == captaincode.LegOpenShell || err == nil || !captaincode.WorthKeeping(res, err) {
 		return res, err, ""
 	}
 	note := fmt.Sprintf("%s cut off at the time limit - partial output", leg)

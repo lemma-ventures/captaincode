@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -723,6 +724,58 @@ func TestCaptureSoloArtifactWithChanges(t *testing.T) {
 	}
 	if _, err := os.Stat(diffPath); err != nil {
 		t.Fatalf("diff file not written: %v", err)
+	}
+}
+
+// A solo capture diffs the user's own workspace: what the user staged must
+// still be staged afterwards, and the untracked file must still be in the diff.
+func TestCaptureSoloArtifactLeavesTheIndexAlone(t *testing.T) {
+	repo, _ := artifactFixtureRepo(t)
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return string(out)
+	}
+	for name, body := range map[string]string{"a.txt": "staged\n", "b.txt": "unstaged\n", "c.txt": "staged new\n", "new.txt": "untracked\n"} {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("add", "a.txt", "c.txt")
+	index, err := os.ReadFile(filepath.Join(repo, ".git", "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, diffPath, err := CaptureSoloArtifact(context.Background(), repo, t.TempDir(), "glm")
+	if err != nil {
+		t.Fatalf("CaptureSoloArtifact: %v", err)
+	}
+	sort.Strings(files)
+	if strings.Join(files, " ") != "a.txt b.txt c.txt new.txt" {
+		t.Fatalf("changed files: %v", files)
+	}
+	diff, err := os.ReadFile(diffPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(diff), "+untracked") {
+		t.Fatalf("diff does not include the untracked file: %s", diff)
+	}
+	if got := git("diff", "--cached", "--name-only"); got != "a.txt\nc.txt\n" {
+		t.Fatalf("staged files after capture: %q", got)
+	}
+	after, err := os.ReadFile(filepath.Join(repo, ".git", "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, index) {
+		t.Fatal("capture rewrote the workspace's index")
+	}
+	if got := git("status", "--porcelain", "--", "new.txt"); got != "?? new.txt\n" {
+		t.Fatalf("untracked file after capture: %q", got)
 	}
 }
 

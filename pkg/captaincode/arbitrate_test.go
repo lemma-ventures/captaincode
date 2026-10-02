@@ -116,6 +116,14 @@ func TestArbitrationPromptAndRuling(t *testing.T) {
 			t.Fatalf("prompt missing %q:\n%s", want, p)
 		}
 	}
+	for _, want := range []string{"## 5. One whole winner per group", "Objective evidence outranks a confident report", `{"winner"`, `"equivalent": true`} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("prompt missing the skill's arbitration step (%q):\n%s", want, p)
+		}
+	}
+	if strings.Contains(p, "## 6.") {
+		t.Fatal("the prompt should carry section 5 alone, not the rest of the skill")
+	}
 	if strings.Index(p, "w1-claude") > strings.Index(p, "w2-codex") {
 		t.Fatal("contenders should be listed in a stable order")
 	}
@@ -125,6 +133,18 @@ func TestArbitrationPromptAndRuling(t *testing.T) {
 	}
 	if _, err := checkRuling(Ruling{Winner: "codex"}, contenders); err == nil {
 		t.Fatal("a ruling naming a leg instead of a worker id must be refused")
+	}
+	tied, err := checkRuling(Ruling{Winner: "w2-codex", Reason: "logic identical; tie broken by stable id order"}, contenders)
+	if err != nil || tied.Winner != "w1-claude" || !tied.Equivalent || tied.Reason != "equivalent; landed w1-claude (lowest id)" {
+		t.Fatalf("prose tie = %+v, %v", tied, err)
+	}
+	flagged, err := checkRuling(Ruling{Winner: "w2-codex", Equivalent: true, Reason: "same tests"}, contenders)
+	if err != nil || flagged.Winner != "w1-claude" || flagged.Reason != tied.Reason {
+		t.Fatalf("flagged tie = %+v, %v", flagged, err)
+	}
+	kept, err := checkRuling(Ruling{Winner: "w2-codex", Reason: "not equivalent; smaller diff"}, contenders)
+	if err != nil || kept.Winner != "w2-codex" || kept.Equivalent {
+		t.Fatalf("a denial must stay a preference: %+v, %v", kept, err)
 	}
 	if _, err := (Manager{}).Arbitrate("x", map[string]Contender{"w1": {}}); err == nil {
 		t.Fatal("one contender is not a conflict")
@@ -166,5 +186,18 @@ func TestApplyChecksEveryDiffBeforeWriting(t *testing.T) {
 	}
 	if string(got) != "alpha\n" {
 		t.Fatalf("a.txt = %q; a later bad diff must leave earlier files unwritten", got)
+	}
+}
+
+// The director's arbitration step is embedded from a copy of the published
+// skill. A copy that drifted would have the director follow rules the
+// published skill no longer states.
+func TestLandParallelSkillMatchesThePublishedOne(t *testing.T) {
+	published, err := os.ReadFile(filepath.Join("..", "..", "skills", "land-parallel-agent-work", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(published) != landParallelSkill {
+		t.Fatal("pkg/captaincode/skills/land_parallel_agent_work.md drifted from skills/land-parallel-agent-work/SKILL.md - copy it over")
 	}
 }

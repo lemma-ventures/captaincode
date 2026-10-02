@@ -27,7 +27,7 @@ const (
 	LegGPTOSS  Leg = "gpt-oss" // opencode serve -> gpt-oss-120b via OpenRouter, pinned to Cerebras: the ADI-green open-weight leg (adi.go)
 	LegGrok    Leg = "grok"    // opencode serve -> SuperGrok OAuth (burn-first sub: daily reset)
 	LegCodex   Leg = "codex"   // opencode serve -> ChatGPT-subscription OAuth
-	LegGLM     Leg = "glm"     // opencode serve -> GLM-5.3 via OpenRouter (best open-weights leg; NIM only carries the flash variant)
+	LegGLM     Leg = "glm"     // opencode serve -> GLM-5.3 via NVIDIA NIM (free; cheap tier GLM-5.3 Flash)
 	LegMiniMax Leg = "minimax" // opencode serve -> MiniMax M3 via OpenRouter (NIM retired it 2026-09-09)
 	LegClaude  Leg = "claude"  // claude -p headless (Claude Max)
 	LegCursor  Leg = "cursor"  // cursor-agent -p headless (Cursor subscription)
@@ -39,6 +39,7 @@ const (
 	// Providers router; join the /oss pool. Same credential (HF_TOKEN).
 	LegStep     Leg = "step"      // opencode serve -> Step 3.5 Flash via Hugging Face
 	LegDS4Flash Leg = "ds4-flash" // opencode serve -> DeepSeek V4 Flash via Hugging Face
+	LegDSFlash  Leg = "ds-flash"  // opencode serve -> DeepSeek V4.1 Flash via NVIDIA NIM (free)
 	// Frontier-class (2026-09-09): the Codex CLI driving gpt-6-astra at xhigh
 	// reasoning on the ChatGPT subscription - see codex-cli.go. NOT the codex leg.
 	LegCodexCLI Leg = "codex-cli" // codex exec headless (Codex CLI, ~/.codex/auth.json)
@@ -58,6 +59,14 @@ const (
 	// registry (doctor, pricing, `captain jev`) but never a worker rung: the
 	// brain asks it the triage questions instead (systemone.go).
 	LegJev Leg = "jev" // POST api.typesafe.ai/v1/systemone (TYPESAFE_API_KEY)
+	// openshell (2026-09-30): NVIDIA OpenShell sandboxed execution, run only
+	// when named. Each task runs inside its own MicroVM with Landlock, network
+	// isolation and Shield credential masking. The worker edits and tests a
+	// pinned snapshot; Captain rechecks the patch without executing it,
+	// verifies the result in a fresh sandbox and returns an export to review,
+	// never applied to the checkout. Requires CAPTAIN_OPENSHELL_PREPARED,
+	// CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
+	LegOpenShell Leg = "openshell"
 )
 
 // AllLegs is every ACTIVE leg in ascending prior order - derived from the
@@ -92,7 +101,8 @@ func LegDisplayName(l Leg) string {
 var Director = LegGrok
 
 // Rungs is the worker escalation ladder: every leg that takes tasks, except
-// the director. A decision leg (ServesTasks false) is never a rung.
+// the director. A decision leg (ServesTasks false) and a named-only leg
+// (AutoRoutes false) are never rungs.
 var Rungs = workerLadder(Director)
 
 // KnownLeg reports whether l is a real backend leg.
@@ -108,7 +118,7 @@ func KnownLeg(l Leg) bool {
 func workerLadder(d Leg) []Leg {
 	r := make([]Leg, 0, len(AllLegs))
 	for _, l := range AllLegs {
-		if l != d && ServesTasks(l) {
+		if l != d && AutoRoutes(l) {
 			r = append(r, l)
 		}
 	}

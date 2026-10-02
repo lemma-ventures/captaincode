@@ -1,0 +1,263 @@
+{
+  "schema": 1,
+  "profiles": {
+    "cerebras": {
+      "identity": "084859ed7972c8a0ae29ec702f0dd645fd6e6c7f28d5e8db2adff49c8ea2f935",
+      "model": "openai/gpt-oss-120b",
+      "route": "cerebras",
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:02:38+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T200238Z-cerebras-1.json",
+          "report_sha256": "64e76c910667ffe844eae8a364ed9ec386cfabc3ecc8f855f42c9a8cd5f91ae9"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200238Z-cerebras-2.json",
+          "report_sha256": "ac3aeefe1d0a5f8d073ff08731bf0c95b2ed2e6c908cc804964d17b6932ecea9"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200238Z-cerebras-3.json",
+          "report_sha256": "59ee1ce25557055593254a202d46ffd44b5748d19c4c3e7aed69ad99919d2d27"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    },
+    "glm-cheap-z-ai-fp8": {
+      "identity": "441ff8dde58ed09cdd9378fefd875cb9b7cb28d3acd2ca2e8ae22b144be07f7c",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "z-ai/fp8",
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:03:48+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T200348Z-glm-cheap-z-ai-fp8-1.json",
+          "report_sha256": "7020e22622842f1d4c8ace41d87b2c16d45c5614dfd3242c7a301a358ad6e817"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200348Z-glm-cheap-z-ai-fp8-2.json",
+          "report_sha256": "9d2d366a3cfd07af26ac4c5625259f9fc0a947bb7884614147f0acead52641df"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200348Z-glm-cheap-z-ai-fp8-3.json",
+          "report_sha256": "61dcd43780805f78f0eae947d38ebebaab3adbb1834baad233fcfc4617d629cb"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    },
+    "glm-z-ai-fp8": {
+      "identity": "1c266c6cb1f2cfaa6a9a5d42ea0cc81048112ceddf0bf4e5486f6960a8cea717",
+      "model": "z-ai/glm-5.3",
+      "route": "z-ai/fp8",
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:05:38+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T200538Z-glm-z-ai-fp8-1.json",
+          "report_sha256": "28d52c8617daba1d7a6335935188a72b095c4d216c4795d58a21d4f2d2594062"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200538Z-glm-z-ai-fp8-2.json",
+          "report_sha256": "1990a442f3845a095dfc8b6d2ba1abd8d072e2c5e584fd9a5fcc86bc16d51b26"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200538Z-glm-z-ai-fp8-3.json",
+          "report_sha256": "0ab6608329e763382a6bdf221b5dc6577db125456f6057ee734a3e1511822fa3"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    },
+    "gpt-oss-groq": {
+      "identity": "ae52c159d2631a0db5990588758cd43b3c88d0b72f807a8c19ef281d8ce1d0bf",
+      "model": "openai/gpt-oss-120b",
+      "route": "groq",
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:02:38+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T200238Z-gpt-oss-groq-1.json",
+          "report_sha256": "f617dbbf79d6fb0da258cc8d447acb5d15e093162482d86e929eae5d8d429c3a"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200238Z-gpt-oss-groq-2.json",
+          "report_sha256": "d83fe372f9307286d6b3a4e628595e4c05a38694a2ec27933feb8d0a9d8e12ae"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200238Z-gpt-oss-groq-3.json",
+          "report_sha256": "878458b309e99f2e0a6ff5473cdbbcb42f06de232651ec39ac54dc3d0d95b096"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    },
+    "kimi-fireworks": {
+      "identity": "55daa69d5f395054d9a73487a93e841ad9b20d9bfeaef8229dbd9fe5f2868604",
+      "model": "moonshotai/kimi-k3",
+      "route": "fireworks",
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:04:16+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T200416Z-kimi-fireworks-1.json",
+          "report_sha256": "4a0144c8e3e31ec4225a49dc0c88b02b3b6a759d8d3e6dc0ed9ad07084ef6704"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200416Z-kimi-fireworks-2.json",
+          "report_sha256": "fa2a97d89217bf168828a38afc947dcce502b04c435cec68458a9a6180b1a72c"
+        },
+        {
+          "report": "results/qualify/2026-10-02T200416Z-kimi-fireworks-3.json",
+          "report_sha256": "21f3230bd55897f6f804a1bcfd8a7ca2c20367273bb27640f95287f6138e4487"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    },
+    "nim": {
+      "identity": "f17a51b733ba0bf179c3e1ee0d76bc689a42b742777a53e0f9493735bffcee29",
+      "model": "z-ai/glm-5.3-flash",
+      "route": null,
+      "checks": [
+        "baseline_fails",
+        "cancellation_descendants",
+        "cancellation_requested",
+        "checkpoint_reloaded",
+        "diff_landed",
+        "diff_scope",
+        "filesystem_denied",
+        "landlock",
+        "network_denied",
+        "nim_path_denied",
+        "restart_recovery",
+        "sandbox_tests",
+        "shield_response_identity",
+        "shield_tool_output",
+        "shield_tool_secret",
+        "shield_unavailable_denied",
+        "worker_exit",
+        "worker_tools"
+      ],
+      "qualified_at": "2026-10-02T20:18:59+00:00",
+      "repair_attempts": 1,
+      "runs": [
+        {
+          "report": "results/qualify/2026-10-02T201859Z-nim-1.json",
+          "report_sha256": "a58bd88440e3dd6cc0ef51da14705c6e366a772ea42278e147728ec164b7fb39"
+        },
+        {
+          "report": "results/qualify/2026-10-02T201859Z-nim-2.json",
+          "report_sha256": "c141feac036a3950b4b38e4de7f7f37d9f5dc22de8eb70823381fe4a3a69c9af"
+        },
+        {
+          "report": "results/qualify/2026-10-02T201859Z-nim-3.json",
+          "report_sha256": "c7af6e53c47303d00a4048ae3e22cd5df115a3027fe98f76a128d210bc1960f8"
+        }
+      ],
+      "compute_driver": "vm",
+      "openshell": "0.1.2"
+    }
+  }
+}

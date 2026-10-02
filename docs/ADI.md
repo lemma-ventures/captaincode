@@ -35,8 +35,9 @@ because determinism is a property of the deployment. Captain uses it for
    `openrouter`, `nim` ↔ `nvidia_nim`, …), green first, then by rank.
 3. The run is pinned: while the worker runs, the egress proxy rewrites every
    OpenRouter request for that model with the tuple's `provider_prefs` and
-   `temperature: 0` unless the caller set one. The feed shows
-   `deterministic: gpt-oss pinned to Cerebras via OpenRouter (ADI green, streak 10)`.
+    `temperature: 0` unless the caller set one. The feed shows
+    `deterministic: <leg> pinned to <label> (ADI green, streak N)`.
+    The 2026-09-17 wording `gpt-oss pinned to Cerebras via OpenRouter (ADI green, streak 10)` is an old example, not the current standing. As of the 2026-10-01 feed, no registered leg is green.
 4. Nothing green among the registered legs → the turn runs without the pool
    and the feed names the green tuples no leg serves; `captain adi` prints the
    same table; `captain legs add <id> openrouter/<model>` registers one.

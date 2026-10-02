@@ -1,0 +1,42 @@
+{
+  "date": "2026-09-29",
+  "verdict": "inconclusive",
+  "reason": "OpenShell refused sandbox startup: Landlock allow/deny probe failed. No model request was sent.",
+  "versions": {
+    "openshell": "0.1.2",
+    "opencode": "1.18.32",
+    "docker_engine": "28.0.4",
+    "docker_kernel": "6.10.14-linuxkit"
+  },
+  "landlock_probe": {
+    "abi": -1,
+    "errno": 38,
+    "error": "ENOSYS"
+  },
+  "gateway_ready_seconds": 12.064,
+  "worker_attempts": 0,
+  "task_successes": 0,
+  "worker_success_rate": null,
+  "live_acceptance": {
+    "filesystem_denial": "not run",
+    "network_denial": "not run",
+    "shield_payload_masking": "not run",
+    "cancellation": "not run",
+    "restart_recovery": "not run",
+    "diff_landing": "not run"
+  },
+  "observed": [
+    "TLS gateway started with client-certificate authentication",
+    "Shield middleware negotiated successfully with signed extension authentication",
+    "OpenCode image reports version 1.18.32",
+    "Unrestricted container can read the out-of-scope canary",
+    "OpenShell mandatory Landlock probe rejected the same Docker runtime"
+  ],
+  "adapter_validation": {
+    "go_shield_tests": "pass (2 tests)",
+    "python_tests": "pass (9 tests)",
+    "go_vet": "pass",
+    "repository_go_tests": "pass"
+  },
+  "cleanup": "Failed sandbox and pilot provider removed; gateway and middleware stopped."
+}

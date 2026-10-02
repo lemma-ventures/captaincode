@@ -517,7 +517,7 @@ Both are **predictions**, not comparisons with a choice captain made at the same
 
 ### Pools: `/oss` and `/deterministic`
 
-`/oss <task>` runs the task on open-weight models only (registry `open`, else the model family: llama, qwen, glm, deepseek, kimi, minimax, gpt-oss, mistral, gemma…). `/deterministic <task>` runs it on a leg whose **serving tuple** is green in the [Agentic Determinism Index](https://lemma-ventures.github.io/agentic-determinism-index/) right now - the latest scored appearance was byte-exact - and pins the request to that tuple through the egress proxy (OpenRouter `provider.order`, `allow_fallbacks: false`, `temperature: 0`), so the run uses the stack that was measured, not whatever OpenRouter routes to this minute. Both are modifiers like `/quality`: they count wherever they stand in the turn and compose with `/repeat`, `/parallel`, `/team`, `/frontier` and a leg prefix in either order (`/oss /repeat 5 <task>` is `/repeat 5 /oss <task>`; a named leg outside the pool still wins). Nothing in the pool → the turn runs without it and the feed says why, naming the green tuples no leg serves yet. `captain adi` prints every leg's standing and `captain legs add` registers a green tuple; the compiled `gpt-oss` leg (gpt-oss-120b via OpenRouter, Cerebras) is the one green today.
+`/oss <task>` runs the task on open-weight models only (registry `open`, else the model family: llama, qwen, glm, deepseek, kimi, minimax, gpt-oss, mistral, gemma…). `/deterministic <task>` runs it on a leg whose **serving tuple** is green in the [Agentic Determinism Index](https://lemma-ventures.github.io/agentic-determinism-index/) right now - the latest scored appearance was byte-exact - and pins the request to that tuple through the egress proxy (OpenRouter `provider.order`, `allow_fallbacks: false`, `temperature: 0`), so the run uses the stack that was measured, not whatever OpenRouter routes to this minute. Both are modifiers like `/quality`: they count wherever they stand in the turn and compose with `/repeat`, `/parallel`, `/team`, `/frontier` and a leg prefix in either order (`/oss /repeat 5 <task>` is `/repeat 5 /oss <task>`; a named leg outside the pool still wins). Nothing in the pool → the turn runs without it and the feed says why, naming the green tuples no leg serves yet. `captain adi` prints every leg's standing and `captain legs add` registers a green tuple. As of the 2026-10-01 feed, no compiled leg is green. gpt-oss on Cerebras was green for 19 reference runs (2026-09-07 through 2026-09-26) and is not green after the 2026-09-27 score.
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -550,6 +550,394 @@ dialog (`ctrl+x p`) before the running turn ends.
 ### Naming the thread: `/rename`
 
 `/rename [title]` sets the session's title - what the TUI shows for this thread - instead of the auto-generated name, which is taken from the first message and can be meaningless when that message is an error. With no argument the name is built from the repository the TUI is open in and the thread's recent prompts: the plugin reads the session's last few user turns, sets `<repo>: <newest request>` immediately, then asks the brain's cheapest leg to fold repo and context into a tidier title and replaces it when that lands. `/rename <title>` sets exactly the title you type. The plugin writes it through opencode's session API and refuses the turn, so nothing is queued; the toast is the receipt. Registered as a captain command, it overrides opencode's built-in `/rename` dialog.
+
+### OpenShell workers (experimental, unreleased)
+
+Name `openshell` explicitly to run one task through the prepared OpenShell pilot.
+It is excluded from automatic routing and escalation ladders. Both
+`captain with openshell "<task>"` and the brain's `/openshell` path use the
+sandbox runner, and `/team /openshell <task>` runs a sandbox-only team the
+director plans (below). A failed sandbox worker never reroutes to a host worker.
+Any other route is refused before a sandbox starts, including a host `/team`
+that picks it or names it beside host legs, because only these entries save the
+task first, bind cancellation to the controller and keep the verified export.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CAPTAIN_OPENSHELL_PREPARED` | required | Directory produced by the pilot's `prepare.py`, including binaries, Shield and Python environment |
+| `CAPTAIN_OPENSHELL_ALLOWED` | required | Comma-separated, repository-relative paths of 1-64 existing files the worker may edit |
+| `CAPTAIN_OPENSHELL_VERIFY` | required | JSON argv array, such as `["python3","-m","unittest"]`; 1-32 nonempty arguments, with no implicit shell parsing |
+| `CAPTAIN_OPENSHELL_PILOT` | required | `examples/openshell-pilot` of a Captain checkout you trust. Its controller runs on the host, so it never defaults to the repository being sandboxed |
+| `CAPTAIN_OPENSHELL_REPO` | current workspace | Repository to snapshot; resolved to its top level |
+| `CAPTAIN_OPENSHELL_REVISION` | `HEAD` | Commit or ref, resolved once to a full commit ID before execution |
+| `CAPTAIN_OPENSHELL_PROFILE` | `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI's ZDR endpoint) | Pilot inference profile: `nim`, a kept gpt-oss lane, or a registry-generated profile from the pilot's `catalog.json` (`captain openshell profiles`). A new task runs only on a profile that passed the pilot's 18-check fixture 3 times out of 3, with the one repair a task gets, in the last 30 days (`captain openshell qualify`); `python3 <pilot>/profiles.py` lists which are |
+| `CAPTAIN_OPENSHELL_RUNTIME` | `vm` | `vm` or `docker`; the runtime must pass the pilot's enforcement gates |
+| `CAPTAIN_OPENSHELL_PROTECTED` | empty | Additional comma-separated file paths whose content must stay unchanged; Git metadata is always outside the writable scope |
+| `CAPTAIN_OPENSHELL_BASELINE` | `any` | Expected baseline result: `fail` for a regression task, `pass`, or `any`; final verification must pass in every mode |
+| `CAPTAIN_OPENSHELL_CONCURRENCY` | `1` | Maximum simultaneous sandbox workers, 1-8; an explicit parallel stage accepts 2-4 workers |
+| `CAPTAIN_OPENSHELL_DIRECTOR` | `none` | `none` or `claude`; arbitration is only needed for teams with overlapping patches. `/team /openshell` needs `claude`, which also plans the split |
+
+There is no default verification command. JSON preserves spaces, commas and
+quoting inside arguments. An operator who explicitly supplies a no-op check
+has not established correctness; choose the repository's real tests.
+The prepared image must contain the test runtime and dependencies.
+
+The direct CLI bypasses the host OpenCode server, routing ladder and director.
+It refuses `--until`; phrases such as "until tests pass" stay in the task prompt
+and never compile into host commands. The configured verification argv and
+bounded repair run inside the sandbox. Ctrl+C or SIGTERM requests controller
+cleanup and waits for it before exiting. The CLI saves task/attempt state,
+verified exports and a handoff brief in its local ledger before reporting success.
+A cancelled run retains its record without publishing a verified export.
+
+The HTTP entry accepts `model: "openshell"` or a leading `/openshell` with
+`model: "auto"`. It uses the explicitly configured repository or request workspace;
+it does not switch repositories based on prompt text. It bypasses host memory
+injection, skill staging, compaction, cached team plans and director grading.
+Conversations above 16,384 characters are refused before dispatch, rather than
+sent to a host compactor. Ordinary workflow IDs and host gates are refused.
+
+`CAPTAIN_MAX_WALLTIME` now bounds the complete OpenShell task, including parallel
+workers, repairs, verification and sequential handoffs. For example, `10m` gives
+all stages one ten-minute deadline. The task ledger and checksum-bound sequence
+plan retain the original limit; downtime counts, and neither manual nor startup
+recovery resets the clock. A smaller current limit can shorten the remaining time.
+Expired tasks do not dispatch another worker. Expiry during execution requests
+controller cleanup, withholds the export and records a failed task with a wall-time
+stop reason, rather than claiming verification failed. Cleanup may outlast the
+deadline by the controller's shutdown grace period.
+
+`CAPTAIN_MAX_ATTEMPTS` now gates the whole plan before the first worker starts.
+Admission counts one slot per worker, each configured repair (zero or one), and,
+when a director is configured, two slots per possible conflict group in each
+stage. A group needs at least two edit workers, so a stage with N edit workers
+reserves `2 * floor(N / 2)` director slots, including malformed-JSON
+retries. Review workers count once and cannot form patch conflicts. Verification
+sandboxes do not invoke a model and use no attempt slots. An attempt here is a
+worker session or director invocation, not each inference request in a tool loop.
+
+Admission is conservative: the complete worst-case plan must fit, even if workers
+pass first try or write disjoint files. Unused repair/ruling slots are not
+redistributed. The default solo edit needs two slots; an edit followed by a review
+needs three. JSON teams can set `repair_attempts: 0`. `run.json` reports
+`attempt_budget.limit` and `attempt_budget.required` as an admission bound.
+`attempt_usage` separately records actual worker sessions, repairs and director
+invocations, including a malformed-JSON retry. CLI/HTTP completion reconciles
+these counts into the ledger's settled attempts, even after failure or cancellation;
+unused slots are not charged. Task-linked recovery totals completed and resumed
+stages once, on the continuation attempt. Verification sandboxes are excluded.
+
+Missing or invalid counts are unknown, never zero; a refusal before any sandbox
+starts settles a known zero. `unmeasured` counts executions whose attempt count
+is unavailable; the ledger's `unmeasured_executions` and
+`captain budget` label the settled total as a lower bound and stop further budget
+admission. Older director records and custom directors without instrumentation
+have unknown counts. Reconciliation occurs when the controller returns, not while
+it is running; a process killed before returning still needs recovery or inspection.
+The reserved counter does not represent OpenShell's static plan admission.
+
+New sequence plans checksum-bind the original cap. Recovery checks the whole
+original plan, including completed stages, so restarting never grants another
+allocation. Removing or raising the environment cap cannot enlarge that saved
+allocation; a tighter current cap can refuse recovery. The CLI/HTTP ledger keeps
+the configured cap and an `attempts_exhausted` stop reason on admission refusal.
+Invalid or negative attempt settings refuse execution; zero means unlimited.
+
+The pilot retains its per-worker deadlines and bounded repair. Wall-time settings
+must be zero (unlimited) or a valid duration of at least 1ms; invalid values refuse
+execution. Shorter caller and worker deadlines still apply.
+
+**Strict dollar caps.** With `CAPTAIN_STRICT=1` and `CAPTAIN_MAX_COST` (or a strict
+task budget), each worker's Shield holds it to a share of the cap, request by
+request. Admission splits the cap evenly across every worker the plan can start,
+rounded down to a micro-dollar, so the shares never add up to more than the cap.
+Unused shares are not reassigned. Before forwarding a request, Shield reserves its
+worst case: prompt tokens bounded by the forwarded body's bytes plus 4,096, and
+completion tokens by the clamped `max_tokens`, both at the lane's pinned price
+ceiling (`profiles.py`, 25-40% above the 2 October 2026 list prices). Shield also
+sends the ceiling, with a zero per-request fee, as OpenRouter's `max_price`, so a
+provider that raised its price is refused before it generates. A request whose worst case does not fit the rest
+of the share is refused with `shield_budget_exhausted` and never reaches the
+provider.
+
+A priced response replaces its reservation with the provider's bill. An unpriced,
+failed or missing response keeps the whole reservation, so the committed total
+never understates. A bill above its reservation would mean the bound failed:
+Shield then refuses every later request, and Captain fails the worker. A Shield
+restarted for the same worker rebuilds the committed total from its fsync'd audit.
+Captain also fails a worker whose report lacks the budget, names another limit or
+shows more committed than its share.
+
+Strict caps need an OpenRouter lane (`cerebras`, `sambanova`, `together`,
+`deepinfra`, `crusoe` or `parasail`); NIM returns no price and is refused. Host
+calls that are not priced are refused rather than left outside the cap:
+`/team /openshell`, whose planner is a subscription call, and any stage with two
+or more edit workers while `CAPTAIN_OPENSHELL_DIRECTOR` is set, since it could
+need a ruling. Verification sandboxes call no model and get a zero allocation.
+Recovery of a strict-capped run is refused for now (`--resume`, task resume and
+startup recovery): rerunning a stopped stage would need each worker's share less
+what its Shield already committed. An unreadable `CAPTAIN_MAX_COST` under
+`CAPTAIN_STRICT` refuses execution. `run.json` keeps `cost_budget` and each
+worker's `report.shield.budget`. The committed amount is not yet charged to the
+ledger's task budget, so `captain budget` shows the cap but not this spend.
+
+Spend is read at the Shield, not from the worker. Each response's audit row keeps
+the provider's own token counts and, on OpenRouter lanes, its `usage.cost`; no
+content is recorded. Every worker's `report.shield` in `run.json` totals its
+requests, priced responses, prompt, completion and reasoning tokens, and dollars,
+including a worker that failed its checks or was cancelled after it started.
+The run's ledger charge is **measured** only when every request that crossed
+Shield came back priced. A blocked, failed or unpriced call, or a worker stopped
+before its tally, leaves the charge **unknown**, never a false $0. Lanes without a
+returned price, such as NIM, are unknown for now.
+
+Task and attempt records are saved before dispatch. The response headers
+`X-Captain-Task-ID` and `X-Captain-Attempt-ID` identify the run; streaming clients
+receive the task ID before execution. Success is returned only after the export
+and handoff have been saved. Client disconnects, `/interrupt` and task cancellation
+request controller cleanup and withhold the export. Overlapping identical HTTP
+requests share a run only within the same workspace; completed exports are not
+replayed for later requests, whose snapshot may have changed.
+
+The snapshot contains committed files only. Uncommitted and staged edits stay
+outside it, and the result names the pinned commit. Captain rechecks the exported
+patch on the host without executing it, then verifies the combined tree in a
+fresh sandbox. Failed verification returns an error and no apply instruction.
+The brain skips its ordinary host test/repair loop for this solo leg.
+
+`/interrupt` cancels the controller and waits for its bounded cleanup. Run
+records, exports and evidence remain under `~/.captaincode/openshell/`.
+The result is a patch to review and apply explicitly; it does not edit the
+current checkout. For brain runs, `captain task artifacts <task-id>` and
+`captain task inspect <task-id>` show the repository, pinned revision, files,
+patch checksum, sandbox verification argv and run record. These references
+survive a brain restart and are marked **exported (not applied)**. Existing
+host edits are not attributed to the sandbox, and interrupted reports are
+not converted into successful deliveries.
+
+An explicit parallel workflow can run 2-4 OpenShell workers against the same
+pinned snapshot. Set the concurrency limit to at least 2 to run them together:
+
+```sh
+CAPTAIN_OPENSHELL_CONCURRENCY=2 captain with openshell \
+  '/openshell refactor parser.py + /openshell refactor formatter.py'
+```
+
+The same expression works through the HTTP entry with `model: "auto"` or
+`model: "openshell"`. Each worker receives the earlier conversation plus its
+own assignment, with the configured profile, edit scope and verification argv.
+Every worker must pass independently. An unsuccessful worker or unresolved
+conflict stops the workflow without publishing a partial export; individual
+diffs and reports remain available. Conflicts need an explicitly configured
+director. The selected patches must then pass verification together in a fresh
+sandbox before Captain exports one patch. The local checkout and index stay
+unchanged. Cancellation reaches every active controller and waits for cleanup.
+
+The ledger tracks the workflow as one task and one aggregate attempt; the
+linked `run.json` records each worker and repair, its evidence and any ruling,
+with `require_all: true`. Wall-time limits, conservative whole-plan attempt caps
+and strict dollar caps apply through both CLI and HTTP.
+
+`/team /openshell <task>` lets the director plan up to 4 sandbox stages, with
+1-4 workers per stage and at most 8 workers total. Workers within a stage run
+in parallel; later stages receive the preceding verified tree through the same
+runner as typed `/openshell ... + /openshell ... > /openshell ...` workflows. It needs
+`CAPTAIN_OPENSHELL_DIRECTOR=claude`: the same tool-less `claude -p` (no tools,
+MCP servers, customizations or saved session, in an empty directory) plans the
+split and rules on conflicts. Like the rulings, it runs on the host, outside the
+sandbox and Shield, so it receives only the task and the configured editable
+paths: no conversation, memory or repository content.
+Each worker receives the conversation, the team task and its own assignment.
+A plan cannot change the configured profile, edit scope or verification argv,
+and each stage explicitly selects `edit` or `review` mode. Review workers have
+no editable scope or repair attempt, must pass the configured checks, and must
+export an unchanged tree. Review prose is not an approval or an instruction to
+later stages. The planner favors one stage for tasks without dependencies.
+
+The task is saved before the director is asked. Configuration, the attempt cap
+and the prompt size are checked before the planning call. The planner's calls
+(one, or two after a reply with no valid JSON) count as director attempts. They
+come off `CAPTAIN_MAX_ATTEMPTS` before the team's own admission and settle with
+the task's attempt usage beside the conflict rulings; the run's `run.json` does
+not include them. Like rulings, their subscription tokens are not priced. The
+rationale, stage boundaries, modes and assignments are saved on the task
+(`captain task inspect` lists stage/worker IDs) before any sandbox starts.
+A plan that fails, spends the attempt cap, cannot be saved or is cancelled starts no sandbox. Naming a
+host leg beside it (`/team /openshell /claude`) or combining `/team` with typed
+stages is refused before planning. Recovery reuses the saved stages without
+asking the planner again. Planning calls remain counted against the root attempt
+cap and settle once with the resumed task, even across repeated restarts.
+
+Use `>` to hand a verified snapshot to the next stage. A workflow accepts up to
+4 stages, 4 workers per stage, and 8 workers total; every worker needs an explicit
+assignment. Parallel and sequential stages can be combined:
+
+```sh
+captain with openshell \
+  '/openshell refactor parser.py + /openshell refactor formatter.py > /openshell simplify their shared parsing logic'
+```
+
+Each stage starts only after its workers and fresh-sandbox integration check
+pass. The next stage receives that exact verified tree, under the same profile,
+edit scope, protected files and verification argv. Later baselines must pass even
+when the initial task requires a failing baseline. Earlier model answers are not
+injected as instructions; the handoff is the verified repository state.
+
+Snapshots live in a separate local repository under the run directory. Its Git
+hooks and content filters are disabled; intermediate commits inherit the source
+commit's identity and timestamp and never enter the operator's repository history.
+The final patch spans the original revision through the last verified tree.
+Edit workers must produce a change. An explicit review worker must export no
+changes and pass verification against the unchanged snapshot.
+Cancellation or failure withholds the cumulative export and prevents later stages.
+One public two-stage fixture passed live through HTTP on 2 October 2026 (see the
+[sequential report](../examples/openshell-pilot/results/2026-10-02-sequential-entry.json)).
+
+Use `--review` at the start of an OpenShell assignment to inspect a snapshot
+without exporting edits. It works alone or between editing stages:
+
+```sh
+captain with openshell \
+  '/openshell refactor parser.py > /openshell --review inspect the refactored parser and report findings'
+```
+
+The workflow still uses the operator's configured profile, protected files and
+verification argv. Review workers receive no edit scope, require a passing
+baseline and get no repair attempts. Their empty patch must match its checksum;
+Captain rechecks that it reproduces the same tree and verifies that tree in a
+fresh sandbox. A changed review export, failed check or cancellation stops the
+chain. Review findings remain untrusted prose in `[stage-N/]tasks/<id>/answer.txt`; passing
+the configured checks does not mean the model approved the code.
+
+For a JSON team, set `"mode": "review"`, `"allowed": []`,
+`"baseline": "pass"` and `"repair_attempts": 0` on the task. Omitted mode stays
+`edit`. A workflow containing only reviews returns **verified unchanged
+snapshot; nothing to apply**, with durable evidence and no apply command.
+
+`run.json` is saved atomically before dispatch and after each handoff. Its `stages`
+array links the input revision, verified tree, next snapshot and stage report.
+New sequences also save an owner-only `sequence.json` with the complete plan and
+runtime fingerprints. To continue after the coordinator stops between verified
+stages, use the same build and prepared runtime:
+
+```sh
+captain openshell --resume "$HOME/.captaincode/openshell/<run-directory>"
+```
+
+Resume revalidates every completed stage's gates, patch hashes, edit scope,
+verification argv and snapshot lineage before running any unfinished stage. A
+completed workflow is rechecked without more model or director calls. A run lock
+refuses concurrent controllers and is released by the operating system after a
+crash. Changed scripts, provider policies or prepared binaries require a new
+workflow; credentials still come from the current environment and are not saved
+in the plan.
+
+Recovery reuses only verified stages. When a cancellation or a brain stop halts a
+stage's workers, the controller waits for them to stop and records that stage run
+as `interrupted`. Recovery sets the run aside and runs the stage again from the
+same snapshot, in `stage-N-rerun-K`. The stopped run keeps its directory, and its
+measured attempts and Shield spend still count. With an attempt cap, the attempts
+already used plus the worst case of the remaining stages must fit, and an unknown
+count cannot. A stage that failed its checks, or one still marked running because
+its controller died (its workers may have outlived it), is refused, so an
+uncertain worker is never launched twice. Inspect and clean up that stage before
+starting a new workflow. Older runs without a saved
+plan cannot be resumed. The command updates the sequence's local run record and
+returns an export; it does not rewrite the original brain task or attempt, apply
+files, or enable automatic brain restart recovery.
+
+New CLI and HTTP sequential tasks also save the run directory and plan checksum
+in their durable attempt before any sandbox starts. After a brain restart, use
+the task API to continue a verified checkpoint under the original task:
+
+```sh
+captain task inspect <task-id>
+captain task resume <task-id> <interrupted-attempt-id>
+```
+
+The task command validates the saved plan, runtime, gates and patches while holding
+the sequence lock, then saves a new attempt linked to the interrupted one before
+launching its controller. The old attempt becomes failed; the new one owns the
+continuation and its eventual export, charges and handoff. The command returns the
+new attempt ID immediately; inspect the task for completion or use `captain task
+cancel <task-id>` to stop it. Disconnecting the resume client does not cancel the
+accepted continuation. A cancellation withholds exports and stops the controller.
+
+Each newly verified stage advances `verified_stages` and `evidence_sha256` in the
+attempt checkpoint. The digest binds the original start time, snapshot lineage,
+exact completed stage reports (including checks, patch digests and measured usage),
+and the set-aside attempt summaries for those stages. Task and startup recovery
+compare this digest before admission and again before dispatch. Reused stages do
+not roll the checkpoint back; replacing a digest at the same stage is refused.
+
+A failed ledger save stops progression before another worker starts. If a stage
+completed on disk but its evidence checkpoint was not saved, task recovery refuses
+to adopt that unanchored result. Older task checkpoints without the evidence digest
+are also refused. Inspect the retained records before choosing explicit
+`captain openshell --resume <run-directory>`, which performs local consistency
+checks but has no independent ledger anchor. This protects completed-stage evidence
+against changes confined to the run directory; it does not protect against an
+actor who can also rewrite the trusted ledger. An interrupted stage's unverified
+usage remains subject to the existing reconciliation limits.
+
+Missing or changed checkpoints, stages still marked running, settled task usage, strict
+dollar budgets and expired workflow deadlines are refused before dispatch. Solo
+and single-stage tasks have no sequence checkpoint and cannot use this task-level
+recovery. No exported patch is
+applied to the host. The legacy `/v1/resume` endpoint refuses sandbox tasks; use
+`captain task resume` so recovery validates evidence before changing ownership.
+
+Automatic recovery is off by default. Set `CAPTAIN_OPENSHELL_AUTO_RESUME=1` in the
+brain environment to recover eligible sequences once on startup. The brain binds
+its HTTP listener first, saves reconciliation, and then processes interrupted
+sandbox workflows one at a time. Each continuation uses the same locked validation
+and durable admission as `captain task resume`; it does not rerun completed stages.
+
+Only previously running controllers with a checkpoint timestamp in the last 24
+hours are eligible. Restart time does not refresh that age. Waiting-for-input tasks,
+operator interruptions, pending cancellations, changed plans/runtime, failed or
+still-running stages, settled usage and unsupported budgets are not dispatched. Rejections stay
+visible in lifecycle records and the brain log for explicit inspection. Cancellation
+intent survives reconciliation and also blocks manual resume; start a new workflow
+if you intend to perform that work again.
+
+Startup continuations are labelled `sandbox restart recovery` in the charge tree.
+Inspect their task and artifacts as above. Shutdown stops the active startup
+continuation, withholds its export, leaves it resumable as described below, and
+stops the queue. This is a single startup pass, not a retry loop or mid-worker
+recovery.
+
+Stopping the brain cancels every sandbox controller it started, including HTTP
+runs and accepted `captain task resume` continuations, and refuses new ones. It
+waits up to 3 minutes 30 seconds for their cleanup before exiting, and delivers
+no export. A sequence that saved a checkpoint is not recorded as cancelled. Its
+attempt stays running in the ledger, the next start marks it interrupted (`brain
+process restarted`), and `captain task resume` or startup recovery continues it,
+running the stopped stage again. The HTTP error names that command, and the run's
+usage settles when the continuation finishes. Solo and single-stage runs, runs
+past their deadline, and runs with a pending cancellation are recorded as
+cancelled.
+
+Both recovery paths passed live on one public edit-then-review fixture on
+2 October 2026: see the
+[task recovery report](../examples/openshell-pilot/results/2026-10-02-task-resume-entry.json)
+and the
+[startup recovery report](../examples/openshell-pilot/results/2026-10-02-startup-recovery.json).
+Rerunning a stage stopped mid-run passed live on the same fixture: see the
+[stage rerun report](../examples/openshell-pilot/results/2026-10-02-stage-rerun.json).
+That stop cancelled the controller; the brain's own stop path has unit tests only.
+
+The VM runtime needs Docker's local image store. It uses `DOCKER_HOST` when set,
+otherwise the active `docker context`, and refuses an endpoint without a socket
+rather than asking a registry for the local-only worker image. Set `DOCKER_HOST`
+explicitly when the brain runs with a `HOME` other than your own.
+
+Mixed host/sandbox workers, host gates and cached workflow IDs remain
+unsupported. Use
+`captain openshell --team` for a JSON team with distinct per-worker profiles,
+scopes and verification commands.
+
+See the [pilot setup and limits](../examples/openshell-pilot/README.md).
 
 ### Workers and watchdogs
 
@@ -611,13 +999,15 @@ a single model runs it in all three bands, at that band's effort.
 | `deepseek` | `deepseek-v4-flash` | `deepseek-v4-pro` | `deepseek-v4-pro` |
 | `glm` | `glm-5.3-flash` | `glm-5.3` | `glm-5.3` |
 | `qwen` | `qwen3.6-35b-a3b` | `qwen3.5-397b-a17b` | `qwen3.5-397b-a17b` |
-| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `free` | one model | one model | one model |
+| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `ds-flash`, `free` | one model | one model | one model |
 
 `<PREFIX>_CHEAP_MODEL` and `<PREFIX>_FRONTIER_MODEL` pin a band
 (`CAPTAIN_CODEX_CHEAP_MODEL`, `CAPTAIN_CURSOR_FRONTIER_MODEL`,
 `CAPTAIN_CLAUDE_FRONTIER_MODEL`); `<PREFIX>_MODEL` stays the quality model,
 and on claude it now pins `claude -p --model` too. A registry overlay entry
 sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
+`glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0, as `kimi` does. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
+
 `CAPTAIN_CHEAP_TIER=0` keeps every leg on its own model at low effort.
 `captain upgrade --check` prints the resolved table.
 
@@ -714,8 +1104,9 @@ settings.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries for a task. Enforced by the budget controller. |
-| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch. |
+| `CAPTAIN_MAX_WALLTIME` | unset (`0` = unlimited) | Shared task wall-time limit, such as `10m`. OpenShell persists its absolute deadline across stages and recovery; downtime counts. |
+| `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries. OpenShell admits the complete worst-case plan before dispatch; other paths use the budget controller. |
+| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch, and OpenShell workers are held to it request by request at Shield ([strict dollar caps](#openshell-workers-experimental-unreleased)). |
 | `CAPTAIN_STRICT` | off | When set with a cost cap, only cost-reporting adapters may run (see `captain budget`). |
 | `CAPTAIN_MAX_REPAIRS` | `1` | Same-leg objective-failure repairs before escalation. `0` = no repairs. |
 | `CAPTAIN_MAX_EFFORT_ESCALATIONS` | `1` | Between the repair and the leg escalation: the same leg one effort rung up (prompt cache and context survive). `0` = skip straight to the leg. |

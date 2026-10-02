@@ -278,7 +278,7 @@ func FrontierChainFor(failed Leg, r Requirements) []Leg {
 	var out []Leg
 	add := func(ls []Leg) {
 		for _, l := range ls {
-			if !seen[l] && ServesTasks(l) { // a decision leg cannot be a last attempt
+			if !seen[l] && AutoRoutes(l) { // a decision or named-only leg cannot be a last attempt
 				seen[l] = true
 				out = append(out, l)
 			}

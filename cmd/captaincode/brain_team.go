@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -76,6 +77,11 @@ func (b *brain) takeTeamPlan(task string) (captaincode.Plan, bool) {
 	}
 	return p, ok
 }
+
+// errOpenShellTeam refuses OpenShell in a host team, before the director is
+// asked when the user named it, whatever the plan's size. "/team /openshell"
+// alone never gets here: openShellChat plans a sandbox-only team.
+var errOpenShellTeam = errors.New("openshell workers cannot join a host team; use /team /openshell <task> for a sandbox-only team, typed /openshell ... + /openshell ... stages, or captain openshell --team")
 
 // runWorker executes one team worker; stubbed in tests. The default carries
 // the full resilience stack (stall watchdog, provider-down reroute).
@@ -182,7 +188,8 @@ func (b *brain) teamPlanFor(ws captaincode.Workspace, task, prefer string, requi
 func teamRequired(raw string) []captaincode.Leg {
 	var out []captaincode.Leg
 	for {
-		m := captainDirective.FindString(raw)
+		probe := raw + " " // a directive needs a separator, even at the end
+		m := captainDirective.FindString(probe)
 		if m == "" {
 			return out
 		}
@@ -193,7 +200,7 @@ func teamRequired(raw string) []captaincode.Leg {
 		case captaincode.KnownLeg(captaincode.Leg(word)):
 			out = appendLegOnce(out, captaincode.Leg(word))
 		}
-		raw = strings.TrimSpace(raw[len(m):])
+		raw = strings.TrimSpace(probe[len(m):])
 	}
 }
 
@@ -231,6 +238,12 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	prefer := teamPrefer(lastUserRaw(req.Messages))
 	required := teamRequired(lastUserRaw(req.Messages))
 	t0 := time.Now()
+	for _, l := range required {
+		if l == captaincode.LegOpenShell {
+			writeWorkerError(w, "team", errOpenShellTeam)
+			return
+		}
+	}
 
 	// A named SEQUENCE is a pipeline, and a team is one parallel stage: honor the
 	// order via the workflow engine even when the user forced /team (live
@@ -255,6 +268,13 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		fmt.Printf("captain brain: team plan failed - %v\n", err)
 		writeWorkerError(w, "team", err)
 		return
+	}
+
+	for _, worker := range plan.Workers {
+		if worker.Leg == captaincode.LegOpenShell {
+			writeWorkerError(w, "team", errOpenShellTeam)
+			return
+		}
 	}
 
 	// One-worker plan is not a team: run the single leg normally. Logged and

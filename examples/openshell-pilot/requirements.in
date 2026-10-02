@@ -1,0 +1,4 @@
+grpcio==1.84.0
+grpcio-tools==1.84.0
+PyJWT==2.15.1
+cryptography==50.0.1

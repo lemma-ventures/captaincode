@@ -37,6 +37,153 @@ grep '"kind":"decision"' ~/.captaincode/routing.jsonl | grep 'words from the pro
 | `gate.log` | Action-gate screening of a tool call (see [CONFIGURATION.md](CONFIGURATION.md)) | Append-only |
 | `redact.log` | Masking call: how many values were masked, never the values | Append-only |
 
+## OpenShell exports (experimental, unreleased)
+
+An explicit OpenShell brain run or `captain with openshell` stores a verified
+export on its attempt in `state.json`, separately from files applied to the workspace. The `exports`
+array returned by `captain task artifacts <task-id>` includes its repository,
+base revision, file list, SHA-256, patch path, sandbox runtime, exact verification
+argv and `run.json` path. The CLI and handoff brief label it **exported (not
+applied)**. These records survive a brain restart within the ledger's retention
+limits; the underlying patch and evidence remain under `~/.captaincode/openshell/`.
+
+Each worker's spend is in `run.json` under `tasks[].report.shield`: requests,
+priced responses, token counts and `cost_usd`, as the provider reported them to
+Shield. The attempt's single `call` charge in `state.json` sums them, and reads
+`measured` only when every request was priced; otherwise it reads `unknown`.
+
+The direct CLI prints its task ID and saves the task state and handoff brief
+before returning. Its records can be read from `state.json` immediately; a
+brain already running picks them up at its next save, when the newer copy of
+each task and attempt row wins over its own. Cancellation is stored as `cancelled`, with no verified export.
+
+The HTTP path saves dispatch before execution and saves exports and handoffs
+before returning success. `X-Captain-Task-ID` and `X-Captain-Attempt-ID` identify
+the records; streaming responses also announce the task ID. A disconnected
+client cancels its controller; a cancelled or failed attempt remains queryable
+without a verified export. These records do not depend on asynchronous grading.
+
+The patch bytes, file list and reproduced tree are rechecked before returning the export.
+Failed or interrupted runs expose no verified export. Host edits present before
+or during the sandbox run are not counted as its changes. Explicit parallel
+`/openshell ... + /openshell ...` workflows use the same durable export path:
+one task and aggregate attempt point to `run.json`, whose `tasks` array retains
+each worker's manifest, report, repairs and evidence. `require_all: true` means
+all requested workers must pass and every conflict must have a valid ruling
+before the combined patch can be verified and exported. Failed workflows keep
+individual evidence without presenting it as a successful combined export.
+A `/team /openshell` turn records the same aggregate attempt for its planned
+stages. Its `openshell_attempts.directors` count also includes the planner's
+calls, which happen before the controller starts and so are not in `run.json`.
+`openshell_plan` on that attempt keeps the director's rationale, each worker's
+assignment, ordered `stages` with their `edit`/`review` modes, and the call count.
+It is saved before any sandbox starts, because
+`run.json` holds only a digest of the worker prompts; `captain task inspect`
+prints it. Older single-stage records retain their flat `assignments` list.
+On task-linked recovery the plan carries into the new attempt; planner calls
+settle once with the cumulative worker/ruling counts, without replanning.
+Sequential `/openshell ... > /openshell ...` workflows retain the same aggregate
+attempt plus a `stages` array in `run.json`. Each entry records its input
+`revision`, verified `tree`, `next_revision` when another stage follows, and a
+`run_record` pointing to `stage-N/run.json`. The separate `snapshot/` repository
+retains intermediate commits; the final `integrated.patch` applies against the
+original revision, not the last stage's base. Root records are replaced atomically
+before stage dispatch and after verified handoffs. A failed later stage leaves
+prior evidence available without exporting partial work. New sequences retain an
+owner-only `sequence.json` containing their task assignments and execution settings;
+`run.json.sequence_sha256` binds that plan. `captain openshell --resume <run-directory>`
+reuses only fully verified stages and records explicit continuation times in
+`resumptions`. It checks saved runtime fingerprints, worker and integration gates,
+patch scope and hashes, and the complete snapshot chain before dispatch. A stage
+run that a cancellation stopped has verdict `interrupted`. Recovery moves it to
+`set_aside`, which records its stage, run record, revision, measured `attempts`
+and Shield `requests`, `tokens`, `cost_usd` and `priced`. It then runs the stage
+again in `stage-N-rerun-K`. A stage cancelled before any worker started leaves no
+stage record, so recovery simply starts it. Failed stages, and stages still marked running
+because their controller died, are not replayed. A completed sequence can be rechecked without
+rewriting it or calling a model. The original brain task/attempt stays unchanged;
+task-linked recovery is described below. Mixed host/sandbox workflows remain refused; JSON
+sandbox teams are available through `captain openshell --team`.
+
+New OpenShell run records include `deadline_at` when a task or caller deadline
+applies. A sequence stores the same value in its checksum-bound `sequence.json`.
+Recovery cannot extend that saved deadline, including when the environment limit
+is removed or increased. CLI/HTTP tasks with `CAPTAIN_MAX_WALLTIME` also persist
+their root start time and limit in the ledger budget; expiry during execution
+records `time_exhausted`, fails the task and withholds its verified export.
+Expired recovery is refused before dispatch and retains earlier evidence.
+
+`run.json.attempt_usage` separates worker sessions, repair sessions and director
+invocations from the worst-case `attempt_budget` admission bound. CLI/HTTP results
+persist this breakdown in `AttemptState.openshell_attempts` and settle the root
+budget once. Failed and cancelled runs still count completed invocations. A
+recovery continuation owns the cumulative count, including reused stages;
+replaying the same settlement does not add it again. `unmeasured` identifies
+executions with unavailable counts, so `captain budget` displays known attempts
+as a lower bound. Verification sandboxes use no model attempt. Set-aside runs
+count in `attempt_usage` and in the run's spend; one whose record is missing
+counts as unknown, not zero. In-flight usage is not yet reconciled; counts are
+saved when the controller returns.
+
+Under a strict dollar cap, `run.json.cost_budget` records the cap (`limit_usd`),
+each worker's share (`worker_usd`) and the workers it was split across; a
+sequence's `sequence.json` binds `max_cost_usd` into its checksum. Each worker's
+`report.shield.budget` gives the share its Shield enforced (`limit_usd`), what it
+`committed_usd`, how many requests it `refused`, and whether a bill `breached`
+its reservation. Committed counts a request at its bill once a priced response
+settled it, else at its whole reservation, so it is an upper bound on what the
+provider charged. The worker's `shield-audit.jsonl` holds the rows behind it:
+each forwarded request has a random `reservation` token, `reserved_usd` and
+`body_bytes`; the response or blocked-delivery row repeats the token with
+`settled_usd`; a refused request has a `budget_refused` row with its
+`reserve_usd`, the `committed_usd` before it and the `limit_usd`. No content is
+recorded.
+
+For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`,
+`sequence_sha256`, `verified_stages` and `evidence_sha256` before sandbox dispatch.
+`captain task inspect <id>` shows that checkpoint after a restart. `captain task resume <task-id> <attempt-id>`
+revalidates it under the run lock and creates a new attempt with `parent_attempt`
+pointing to the interrupted attempt. The original attempt becomes failed, while
+the continuation owns its final export, cumulative sequence usage and handoff.
+Tasks with already-settled call usage are refused to avoid double counting.
+The response means the continuation was accepted, not that verification passed;
+inspect the task for completion and read `captain task artifacts <id>` for the
+export. Invalid or incomplete checkpoints do not become running tasks. A brain
+stop leaves a checkpointed sequence's attempt running, so the next start marks it
+interrupted and nothing settles until a continuation finishes. A worker is never
+resumed mid-run: a stopped stage runs again from its verified input.
+
+With `CAPTAIN_OPENSHELL_AUTO_RESUME=1`, startup uses the same validation path for
+previously running sandbox sequences with checkpoints from the last 24 hours.
+Continuations run one at a time and have the attempt charge label `sandbox restart
+recovery`. Default startup performs no recovery dispatch. The checkpoint timestamp,
+not reconciliation time, controls freshness; pending cancellations and waiting tasks
+are not resumed automatically. A cancellation requested before restart is retained
+in `interrupt_reason` and blocks manual recovery too. The brain log records rejected
+startup candidates, while their lifecycle remains interrupted for inspection.
+
+After each newly verified stage, the controller advances the stage count and
+evidence digest and refreshes `checkpoint_at`. The digest binds the original start
+time, snapshot lineage, completed stage report bytes and set-aside usage for those
+stages. Task recovery checks it before admission and again before dispatch; it
+rejects coordinated rewrites of reports and their summaries. Reusing a stage does
+not roll back the checkpoint. The ledger is the trusted anchor, so rewriting both
+it and the run directory is outside this check.
+
+The stage record reaches disk first. If its ledger save fails, no next stage or
+final export is delivered. Task recovery refuses completed stages beyond its saved
+count and legacy checkpoints without an evidence digest. Inspect the retained
+records before choosing `captain openshell --resume <run-directory>`; that explicit
+path validates local consistency without the independent task-ledger anchor.
+
+Explicit review tasks record `tasks[].mode: "review"` and `outcome: "unchanged"`.
+Their report binds an empty patch checksum to the pinned snapshot and successful
+sandbox checks; findings are retained in the worker's `answer.txt`. A review-only
+run keeps its verified export evidence across ledger reloads, but the CLI and
+handoff label it **verified unchanged snapshot** and offer nothing to apply.
+An edit followed by a review still exports the earlier edits against the original
+revision. Review text is evidence to read, not an automated approval gate.
+
 ## What is not recorded exactly (yet)
 
 Two answers are partial today. Both are known, and both are on the list.

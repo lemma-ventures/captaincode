@@ -129,8 +129,8 @@ func NormalizeUsage(u Usage) Usage {
 
 // CallUsage builds the normalized usage for one finished provider call from
 // what the runtime reported. A measured dollar figure wins; otherwise the
-// registry prices the tokens and the record says so; a subscription leg is a
-// measured $0 marginal charge, not an unknown one.
+// registry prices the tokens and the record says so; a subscription leg, or a
+// free registry leg, is a measured $0 marginal charge, not an unknown one.
 func CallUsage(leg Leg, tokens int, costUSD float64, raw map[string]any) Usage {
 	u := Usage{Total: tokens, Raw: raw}
 	switch {
@@ -143,6 +143,10 @@ func CallUsage(leg Leg, tokens int, costUSD float64, raw map[string]any) Usage {
 			// No marginal dollar by construction: the fee was paid upstream.
 			// Quota consumption is a separate column (M1 metric table).
 			u.CostStatus, u.PriceSource = UsageMeasured, "subscription:"+string(leg)
+		} else if s, ok := Spec(leg); ok && s.PriceIn == 0 && s.PriceOut == 0 && s.Transport != TransportOpencodeShell {
+			// OpenShell lists no price because it is a sandbox around
+			// priced workers, not a free model: its bill comes from Shield.
+			u.CostStatus, u.PriceSource = UsageMeasured, "registry:"+string(leg)
 		}
 	}
 	return NormalizeUsage(u)

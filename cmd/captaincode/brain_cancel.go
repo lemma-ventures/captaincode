@@ -131,6 +131,13 @@ func (b *brain) resumeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.mu.Lock()
+	for _, as := range b.ledger.InterruptedAttempts() {
+		if as.TaskID == taskID && as.Leg == captaincode.LegOpenShell {
+			b.mu.Unlock()
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "openshell: use captain task resume with the interrupted attempt ID for verified recovery"})
+			return
+		}
+	}
 	defer b.mu.Unlock()
 	budget := b.ledger.BudgetFor(taskID)
 	if budget != nil && budget.MaxAttempts > 0 && budget.SettledAttempts+budget.ReservedAttempts >= budget.MaxAttempts {

@@ -19,10 +19,20 @@ func TestRegistryDefaultsReproduceTheLadder(t *testing.T) {
 	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
 	_, err := LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
 	require.NoError(t, err)
-	assert.Equal(t, []Leg{LegJev, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
+	assert.Equal(t, []Leg{LegJev, LegOpenShell, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
 	assert.NotContains(t, Rungs, LegJev, "the decision leg is registered but never a worker rung")
-	assert.Equal(t, "openrouter", legModels[LegGLM].Provider)
+	assert.True(t, ServesTasks(LegOpenShell), "openshell takes a task when named")
+	assert.False(t, AutoRoutes(LegOpenShell), "but never as a rung")
+	assert.NotContains(t, Rungs, LegOpenShell)
+	assert.NotContains(t, FrontierChain(LegFrontier), LegOpenShell, "nor as a /frontier failover link")
+	assert.Equal(t, "nim", legModels[LegGLM].Provider)
 	assert.Equal(t, "z-ai/glm-5.3", legModels[LegGLM].Model)
+	glm, ok := Spec(LegGLM)
+	require.True(t, ok)
+	assert.Equal(t, 0.0, glm.PriceIn, "NIM serves GLM-5.3 free")
+	assert.Equal(t, "z-ai/glm-5.3-flash", glm.Tiers[TierCheap])
+	assert.Equal(t, "nim", legModels[LegDSFlash].Provider)
+	assert.Equal(t, "deepseek-ai/deepseek-v4.1-flash", legModels[LegDSFlash].Model)
 	_, claudeInModels := legModels[LegClaude]
 	assert.False(t, claudeInModels, "CLI legs have no opencode pin")
 	assert.Equal(t, 9.5, QualityPrior(LegClaude))
@@ -81,7 +91,7 @@ func TestRegistryOverlayCanOverrideAndDisableCompiledLegs(t *testing.T) {
 	_, err := LoadRegistry(path)
 	t.Cleanup(func() { LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
 	require.NoError(t, err)
-	assert.Equal(t, "openrouter", legModels[LegGLM].Provider, "untouched fields keep their compiled value")
+	assert.Equal(t, "nim", legModels[LegGLM].Provider, "untouched fields keep their compiled value")
 	assert.Equal(t, "z-ai/glm-5.3-flash", legModels[LegGLM].Model)
 	assert.False(t, KnownLeg(LegQwen), "disabled legs leave the ladder")
 	assert.NotContains(t, AllLegs, LegQwen)
@@ -190,18 +200,19 @@ func TestLedgerStatsByDomain(t *testing.T) {
 func TestEstimateCost(t *testing.T) {
 	assert.Equal(t, 0.0, EstimateCost(LegClaude, 100_000), "subscription legs have no per-token $")
 	assert.Equal(t, 0.0, EstimateCost(LegFree, 100_000))
-	glm := EstimateCost(LegGLM, 1_000_000) // 0.75M in × 1.09 + 0.25M out × 3.43
-	assert.InDelta(t, 0.75*1.09+0.25*3.43, glm, 0.001)
+	assert.Equal(t, 0.0, EstimateCost(LegGLM, 1_000_000), "NIM GLM is free")
+	mm := EstimateCost(LegMiniMax, 1_000_000) // 0.75M in × 0.30 + 0.25M out × 1.20
+	assert.InDelta(t, 0.75*0.30+0.25*1.20, mm, 0.001)
 	assert.Equal(t, 0.0, EstimateCost("nope", 1000))
 }
 
 func TestValueRankPrefersCheapWhenQualityTies(t *testing.T) {
 	t.Setenv("CAPTAIN_VALUE_WEIGHTS", "")
 	t.Setenv("CAPTAIN_VALUE_TAU", "")
-	// gemini 7.8 @ $0.38/2.0 vs glm 7.8 @ $0.6/2.2 → same quality, gemini cheaper.
+	// glm 8.2 at $0 (NIM) vs gemini 7.8 paid: free and the higher prior leads.
 	rows := ValueRank(ClassMedium, DomainGeneral, []Leg{LegGLM, LegGemini}, nil, 100_000, nil)
 	require.Len(t, rows, 2)
-	assert.Equal(t, LegGemini, rows[0].Leg)
+	assert.Equal(t, LegGLM, rows[0].Leg)
 	assert.Greater(t, rows[0].Value, rows[1].Value)
 }
 
@@ -214,7 +225,7 @@ func TestValueRankGoodEnoughThreshold(t *testing.T) {
 	assert.Contains(t, legs, LegGrok, "7.0 clears τ(medium)=7.0")
 	assert.Contains(t, legs, LegGLM)
 	trivial := Legs(ValueRank(ClassTrivial, DomainGeneral, []Leg{LegFree, LegGLM}, nil, 50_000, nil))
-	assert.Equal(t, LegFree, trivial[0], "trivial: cost weighs more than quality - free (6.0 ≥ τ=5.5) beats a $0.05 glm")
+	assert.Equal(t, LegGLM, trivial[0], "trivial: both are $0, so the higher prior (glm 8.2) leads")
 	medium := Legs(ValueRank(ClassMedium, DomainGeneral, []Leg{LegFree, LegGLM}, nil, 50_000, func(Leg) float64 { return 0 }))
 	assert.Equal(t, LegGLM, medium[0], "medium: quality weighs more (and free is under τ anyway)")
 	t.Setenv("CAPTAIN_VALUE_TAU", "5,6.5")

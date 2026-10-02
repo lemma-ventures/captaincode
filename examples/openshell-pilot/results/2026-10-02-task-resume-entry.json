@@ -1,0 +1,87 @@
+{
+  "altered_plan_refused": true,
+  "artifacts_and_handoff_survive_reload": true,
+  "causal_attempts": 2,
+  "controller_exit_code": 87,
+  "cumulative_patch_reproduces_verified_tree": true,
+  "duplicate_resume_refused": true,
+  "first_stage_reused_unchanged": true,
+  "fixture": "Public Roman numeral edit followed by a no-change review",
+  "host_files_and_index_unchanged": true,
+  "initial_stage_seconds": 56.103038875,
+  "integrated_checks_per_stage": 8,
+  "limits": "One public fixture on one host. Explicit task API recovery at a verified stage boundary; no mid-worker or automatic recovery.",
+  "model": "openai/gpt-oss-120b",
+  "model_requests": 11,
+  "patch_sha256": "729cfdc80da9a350ead42ca211dbfe2ef8ccad92e12b9962deac826ae75206b7",
+  "profile": "cerebras",
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "ec58fcb26eb9c45806ea329663c9b7f06052c72b4a3583f04c6dce69b6069510",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "5a77ea4aad73a1c1f341825952f62a1ea50ca7956cc28e1bc9e7a99733e244e4",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "restart_reconciled_attempt": true,
+  "resume_seconds": 51.483860291,
+  "run_record_sha256": "e54fe16e21358cc51ca67f814fba8b7b94d978e56e10ace0b9db14712eaf6ac0",
+  "runtime": "vm",
+  "schema": 1,
+  "snapshot_lineage_matches": true,
+  "spend": {
+    "complete": true,
+    "cost_usd": 0.0229974,
+    "tokens": 64140
+  },
+  "stage_count": 2,
+  "usage_charged_once": true,
+  "verdict": "pass",
+  "wall_seconds": 107.586899166,
+  "worker_checks_per_stage": 17,
+  "date": "2026-10-02",
+  "entrypoint": "Explicit task API recovery after coordinator exit at a verified stage boundary",
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "sources_sha256": {
+    "pkg/captaincode/openshell.go": "9c628ac9b27486473216b62b043bd804a729b5d3600c4a6ad58f4deaaf866125",
+    "pkg/captaincode/openshell_checkpoint.go": "32cf231109ec12d4de9fb2bc1048c87e5bcab756f0f5d6ba55eca63221294bbc",
+    "pkg/captaincode/openshell_checkpoint_test.go": "ee65c9f1fe0891b8bceb66d49eb32e90177adfe0970a6351d04d68ee58894b0b",
+    "pkg/captaincode/openshell_sequence.go": "35cf53e25a267bf20af385ffe6a00c5c683f99d0f156c8d6438ceb862ec009fd",
+    "pkg/captaincode/openshell_resume.go": "77b1f8988dd553a3838370fdaa428c89a8ce4de667d6f263781b6485e492e343",
+    "cmd/captaincode/brain_openshell_resume.go": "431f1b9737de52a12cc1bb1fb90bd4ea90496818cb24e919829b54268e943a2c",
+    "cmd/captaincode/brain_openshell_resume_live_test.go": "0a608d74251ad0e58c1925ff6e045bb289584111654bc3c6cf52fa369b8e0833",
+    "cmd/captaincode/openshell_solo.go": "ff568fcf13a3c39cef76a783cc685024e8797319024ae597602ab0df6b975b63",
+    "cmd/captaincode/brain_task.go": "4044cb9ac37142d8429a829d784f47fbd9bbc056837853229bef09a13b2d75db"
+  }
+}

@@ -250,6 +250,13 @@ func (b *brain) taskArtifacts(w http.ResponseWriter, _ *http.Request, req captai
 		resp.Integration = &ic
 		resp.Manifests = ic.Manifests
 	}
+	b.mu.Lock()
+	for _, attempt := range b.ledger.AttemptStatesFor(req.TaskID) {
+		if attempt.Export != nil && attempt.State == captaincode.StateSucceeded {
+			resp.Exports = append(resp.Exports, *attempt.Export)
+		}
+	}
+	b.mu.Unlock()
 	b.writeTaskOK(w, req, captaincode.OpArtifacts, req.TaskID, resp)
 }
 
@@ -276,7 +283,7 @@ func (b *brain) taskCancel(w http.ResponseWriter, _ *http.Request, req captainco
 	})
 }
 
-func (b *brain) taskResume(w http.ResponseWriter, _ *http.Request, req captaincode.TaskRequest) {
+func (b *brain) taskResume(w http.ResponseWriter, r *http.Request, req captaincode.TaskRequest) {
 	if req.TaskID == "" {
 		writeJSON(w, 400, taskAPIError(captaincode.ErrBadRequest, "task_id required"))
 		return
@@ -291,8 +298,16 @@ func (b *brain) taskResume(w http.ResponseWriter, _ *http.Request, req captainco
 		return
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	as := b.ledger.AttemptStateFor(body.AttemptID)
+	sandbox := as != nil && as.Leg == captaincode.LegOpenShell
+	b.mu.Unlock()
+	if sandbox {
+		b.resumeOpenShellTask(w, r, req, body)
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	as = b.ledger.AttemptStateFor(body.AttemptID)
 	if as == nil {
 		writeJSON(w, 404, taskAPIError(captaincode.ErrNotFound, "attempt not found"))
 		return

@@ -67,7 +67,10 @@ func (b *brain) handoffBuildHTTP(w http.ResponseWriter, _ *http.Request, taskID 
 func (b *brain) integrationFor(taskID string) *captaincode.IntegrationCandidate {
 	b.imu.Lock()
 	defer b.imu.Unlock()
-	ic := b.lastIntegrations[taskID]
+	ic, ok := b.lastIntegrations[taskID]
+	if !ok {
+		return nil
+	}
 	return &ic
 }
 

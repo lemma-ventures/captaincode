@@ -229,7 +229,7 @@ func TestDoctorAcceptsProvidersFromTheOpencodeAuthStore(t *testing.T) {
 
 	assert.Regexp(t, `(?m)^\s*✓\s+grok\b`, out, "xai is authenticated in the auth store")
 	assert.Regexp(t, `(?m)^\s*✓\s+free\b`, out, "opencode's own roster needs no credential block")
-	assert.Regexp(t, `(?m)^\s*✗\s+glm\b`, out, "openrouter is in neither place → still blocked")
+	assert.Regexp(t, `(?m)^\s*✗\s+glm\b`, out, "the NVIDIA key is in neither place → still blocked")
 	assert.NotContains(t, out, "oauth", "credential values are never read or printed")
 }
 

@@ -7,12 +7,16 @@ func TestCallUsageSeparatesBilledFromPriced(t *testing.T) {
 	if billed.CostStatus != UsageMeasured || billed.PriceSource != "runtime" {
 		t.Fatalf("runtime dollars must read measured: %+v", billed)
 	}
-	priced := CallUsage(LegGLM, 100_000, 0, nil)
+	priced := CallUsage(LegMiniMax, 100_000, 0, nil)
 	if priced.CostUSD <= 0 || priced.CostStatus != UsageEstimated {
 		t.Fatalf("registry-priced tokens must read estimated: %+v", priced)
 	}
-	if priced.PriceSource != "registry:"+string(LegGLM) {
+	if priced.PriceSource != "registry:"+string(LegMiniMax) {
 		t.Fatalf("estimate must name its price source: %+v", priced)
+	}
+	free := CallUsage(LegGLM, 100_000, 0, nil)
+	if free.CostUSD != 0 || free.CostStatus != UsageMeasured || free.PriceSource != "registry:"+string(LegGLM) {
+		t.Fatalf("a free registry leg is a measured $0, not an unknown: %+v", free)
 	}
 	silent := CallUsage(LegClaude, 0, 0, nil)
 	if silent.Status != UsageUnknown || silent.CostStatus != UsageUnknown {

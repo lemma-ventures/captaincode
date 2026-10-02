@@ -1,0 +1,226 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "entrypoint": "POST /v1/chat/completions, model=auto, /openshell ... + /openshell ...",
+  "harness": "Isolated HTTP server with real Captain handlers and prepared OpenShell MicroVM runtime; synthetic public fixture only.",
+  "verdict": "pass",
+  "fixture": "Independent iterative factorial and Fibonacci refactorings with four protected unittest cases",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "pkg/captaincode/openshell.go": "c5eb9c4fdba08e92303f8b8fb7d208327ea5a85962b39cbfd8d7caafafb03ada",
+    "pkg/captaincode/openshell_workflow.go": "b18924c8e23c2fdccd5db5f75271bfa1f7cecd57e3a2943037c8ba57ef4921ad",
+    "pkg/captaincode/openshell_workflow_test.go": "4e1ded3aa3921182aa3af934a1194d4f598d7c6c0b6cdf94426a3657a31d2303",
+    "cmd/captaincode/brain.go": "454e9af146213f554b5fc7f7a12425b27de427862eedaf419352ea587b8e2e44",
+    "cmd/captaincode/brain_openai.go": "022476ad0b266b08d17f727521bf5bbea1bd325c19750c472c1d701b1023c518",
+    "cmd/captaincode/brain_openshell.go": "cf577d9993bf9f00c364720808c359585ae6a75c68b999d865d515d9833425c1",
+    "cmd/captaincode/openshell_solo.go": "2ed9fb47c19f67b563915b1cb4da6619ce6cdd373a144e67eb493ccd8230813f",
+    "cmd/captaincode/brain_openshell_http_test.go": "b591ee3196de68942b4e8a2e3cc64dd7e7e7eff13b5e19654ba1d5a94d4721bf",
+    "cmd/captaincode/brain_openshell_parallel_live_test.go": "45f182842c8a38fd5b4b997c193dd2e95ce6f45d0336dcde11907cda1e1c5570"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "610815421ea70c04e99af7f784ae7f639558c362",
+      "modified": false
+    },
+    "files": {
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/middleware.py": "a8e0bb34c5ea7e62d5c3d25dc755df857afe6d07aa8e5c5dc31f5e981a411346",
+      "pilot/pilot.py": "7aa072cbb1581afd17198d9c4abc9a48982e27e3fe5947a1014422eca5fdb5c2",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/response.py": "109d6cc77e51c7c18e49baf1797840ca104da021339238e24b9621f3c2b994df",
+      "pilot/task.py": "b1604ba73ad82714e9b94e6d8da01cfc7ea96a04e879caa0ea2403aefccc8050",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "8e9258653ead7310e0ba4a6e50164a6941e315b78ed90e2f2f56fee709a7b74c"
+    }
+  },
+  "run_record_sha256": "fc3f8b0aa4f9db0504c8c239ab1bfb5eddd31fdef9ad6f6ae803e55f43b07794",
+  "concurrency": 2,
+  "require_all": true,
+  "wall_seconds": 62.633,
+  "fixture_revision": "6fa474377a76402e9ad9a6fbe55f4726c4d5e661",
+  "workers": [
+    {
+      "id": "w1-openshell",
+      "outcome": "landed",
+      "seconds": 37.778,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.577,
+        "gateway_ready_recovery": 0.713,
+        "sandbox_create": 16.882,
+        "sandbox_create_attempt": 16.882,
+        "sandbox_restart": 2.295,
+        "worker": 7.038
+      },
+      "shield": {
+        "requests": 8,
+        "responses": 8,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ]
+      },
+      "patch_sha256": "465a21b25fcbbf9abbc6cbb21f803acb4b65328e6e274849b8ffabb266199776",
+      "changed_files": [
+        "factorial.py"
+      ]
+    },
+    {
+      "id": "w2-openshell",
+      "outcome": "landed",
+      "seconds": 36.823,
+      "worker_attempts": 1,
+      "task_successes": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.811,
+        "gateway_ready_recovery": 0.708,
+        "sandbox_create": 16.377,
+        "sandbox_create_attempt": 16.377,
+        "sandbox_restart": 2.286,
+        "worker": 6.254
+      },
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ]
+      },
+      "patch_sha256": "e2bee3cb8c196d77690122ec97ef2bc166d2f690b02838eb4236dad04badefd9",
+      "changed_files": [
+        "fibonacci.py"
+      ]
+    }
+  ],
+  "integrated": {
+    "seconds": 24.467,
+    "passed": true,
+    "check_verdicts": {
+      "baseline": "pass",
+      "cancellation_descendants": "pass",
+      "cancellation_requested": "pass",
+      "filesystem_denied": "pass",
+      "landlock": "pass",
+      "network_denied": "pass",
+      "provider_path_denied": "pass",
+      "worker_tools": "pass"
+    },
+    "patch_sha256": "9d4bfe7d00a27ac6cdeda42087dbf42e0731cc42168db4b58c7d67535ceda810",
+    "tree": "efad0ba6c91a4639592bb93a8bb0efdda7154cc1",
+    "changed_files": [
+      "factorial.py",
+      "fibonacci.py"
+    ],
+    "verify": [
+      "python3",
+      "-m",
+      "unittest",
+      "-v"
+    ]
+  },
+  "host_preservation": {
+    "staged_files": true,
+    "unstaged_files": true,
+    "untracked_files": true,
+    "git_index": true
+  },
+  "patch_replay_matches_verified_tree": true,
+  "cancellation": {
+    "active_workers": 2,
+    "after": "both workers reached Landlock enforcement",
+    "cleanup_seconds": 0.407,
+    "state": "cancelled",
+    "export_delivered": false,
+    "sandbox_stop_confirmed": 2
+  },
+  "earlier_attempts": [
+    {
+      "verdict": "inconclusive",
+      "phase": "sandbox creation",
+      "reason": "Docker endpoint unavailable to the isolated test process",
+      "model_calls": 0
+    },
+    {
+      "verdict": "inconclusive",
+      "phase": "sandbox creation",
+      "reason": "Explicit Docker socket unavailable; resolved by reading the active Docker context endpoint",
+      "model_calls": 0
+    },
+    {
+      "verdict": "pass",
+      "wall_seconds": 58.778,
+      "cancellation_cleanup_seconds": 0.516,
+      "note": "Same runtime code, before adding explicit assertions on both sandbox stop logs."
+    }
+  ],
+  "limits": [
+    "One synthetic fixture on one host; not a scale or reliability estimate.",
+    "No synthetic credential in this fixture: Shield mediation and fail-closed behavior were exercised, secret masking/restoration was qualified separately.",
+    "All workers share one profile, edit scope and verification command.",
+    "Sequential stages, mixed host/sandbox workflows, automatic team planning and shared budget accounting remain unsupported.",
+    "Uses the existing locally patched OpenShell driver; the live brain was not restarted."
+  ]
+}

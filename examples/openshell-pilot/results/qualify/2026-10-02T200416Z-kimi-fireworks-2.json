@@ -1,0 +1,116 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "test_exit_code": 0,
+      "tests_sha256": "8a4bbacd91ec778d13d78be4dfeddd42eb3d314eaf715c4fe9dc5a7da0491a85",
+      "verdict": "pass",
+      "worker_exit_code": 0,
+      "worker_seconds": 39.922,
+      "worker_sha256": "81a9e36ca2820533e030ca1b25b37381498dcb1f830ce2e3f49f94271021ca72"
+    }
+  ],
+  "checks": {
+    "baseline_fails": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "cancellation_descendants": {
+      "detail": "The stopped VM and every descendant are gone; recovery boots a new kernel.",
+      "verdict": "pass"
+    },
+    "cancellation_requested": {
+      "detail": "A deadline must stop the sandbox; disconnecting exec is insufficient.",
+      "verdict": "pass"
+    },
+    "checkpoint_reloaded": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "diff_landed": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "diff_scope": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "filesystem_denied": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "landlock": {
+      "detail": "Guest must provide ABI 3 or newer",
+      "verdict": "pass"
+    },
+    "network_denied": {
+      "detail": "Requires a failed connection and its matching policy denial event; a timeout does not pass.",
+      "verdict": "pass"
+    },
+    "nim_path_denied": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "restart_recovery": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "sandbox_tests": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "shield_response_identity": {
+      "detail": "The provider sees an identity stand-in; the worker receives the synthetic original.",
+      "verdict": "pass"
+    },
+    "shield_tool_output": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "shield_tool_secret": {
+      "detail": "Only a paired tool argument regains the synthetic credential; its SHA-256 must match and answers stay masked.",
+      "verdict": "pass"
+    },
+    "shield_unavailable_denied": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "worker_exit": {
+      "detail": "",
+      "verdict": "pass"
+    },
+    "worker_tools": {
+      "detail": "OpenCode glob and content search must work under policy, in path order, before any model call.",
+      "verdict": "pass"
+    }
+  },
+  "compute_driver": "vm",
+  "inference": "kimi-fireworks",
+  "max_worker_attempts": 2,
+  "model": "moonshotai/kimi-k3",
+  "opencode": "1.18.32",
+  "openshell": "0.1.2",
+  "output_token_limit": 16384,
+  "policy_sha256": "92e204c9e7e665b6038036242397879f7bd0bf37d4a60b719afb13722632c858",
+  "runtime": {
+    "errno": 0,
+    "kernel": "6.12.76",
+    "landlock_abi": 6
+  },
+  "schema": 1,
+  "task_successes": 1,
+  "timings_seconds": {
+    "gateway_ready": 1.675,
+    "gateway_ready_recovery": 0.713,
+    "sandbox_create": 15.245,
+    "sandbox_create_attempt": 15.245,
+    "sandbox_restart": 2.292,
+    "worker": 40.213
+  },
+  "verdict": "pass",
+  "vm_driver": {
+    "sha256": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+    "version": "openshell-driver-vm 0.1.3-dev.31+ga6d87cbf4"
+  },
+  "worker_attempts": 1
+}

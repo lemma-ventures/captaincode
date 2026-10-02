@@ -231,6 +231,22 @@ func cmdBrain(args []string) {
 	// The launch check: the main brain and the project's local brain, as the
 	// operator should hear it before the first prompt (filesystem only).
 	fmt.Print(captaincode.RenderBrainChecks(captaincode.CheckBrains(euclidCwd())))
+	listener, err := net.Listen("tcp", *addr)
+	if err != nil {
+		fatal(err)
+	}
+	defer listener.Close()
+	life, stopLife := context.WithCancel(context.Background())
+	defer stopLife()
+	b.life = life
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	startupDone := make(chan struct{})
+	go func() {
+		defer close(startupDone)
+		b.recoverOpenShellOnStartup(life)
+	}()
 	fmt.Printf("captain brain: director=%s listening on http://%s\n", captaincode.Director, *addr)
 	// SIGTERM/SIGINT (the launcher's restart, a plain kill): end every worker
 	// run first. The CLI workers are this process's children; with no handler
@@ -239,9 +255,11 @@ func cmdBrain(args []string) {
 	// an -rr, 2026-09-19). Each run's Steer holds its stop; StopAll on every
 	// live turn cancels the contexts and the transports kill their processes.
 	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
+		stopLife()
+		// Admissions check life under mu: past this point none can start.
+		b.mu.Lock()
+		b.mu.Unlock()
 		b.steers.mu.Lock()
 		turns := make([]*captaincode.Steer, 0, len(b.steers.live))
 		for s := range b.steers.live {
@@ -253,10 +271,21 @@ func cmdBrain(args []string) {
 			n += len(s.StopAll())
 		}
 		fmt.Printf("captain brain: stopping - %d worker run(s) ended\n", n)
+		cleaned := make(chan struct{})
+		go func() {
+			<-startupDone
+			b.sandboxes.Wait()
+			close(cleaned)
+		}()
+		select {
+		case <-cleaned:
+		case <-time.After(3*time.Minute + 30*time.Second):
+			fmt.Fprintln(os.Stderr, "captain brain: sandbox cleanup did not finish before shutdown deadline; inspect retained sandbox state")
+		}
 		time.Sleep(1500 * time.Millisecond) // let the transports reap their children
 		os.Exit(0)
 	}()
-	if err := brainServer(*addr, withWriteDeadline(mux)).ListenAndServe(); err != nil {
+	if err := brainServer(*addr, withWriteDeadline(mux)).Serve(listener); err != nil {
 		fatal(err)
 	}
 }
@@ -363,7 +392,10 @@ type brain struct {
 	// routeNoteFn stubs the director's routing of a /btw in tests (brain_btw.go).
 	routeNoteFn func(note string, briefs map[captaincode.Leg]string) ([]captaincode.Leg, string, error)
 	// runWorkerFn stubs worker execution in tests; nil → the real runner.
-	runWorkerFn func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error)
+	runWorkerFn                func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error)
+	runOpenShellWorkflowFn     func(context.Context, captaincode.Workspace, captaincode.Workflow, string) (captaincode.Result, error)
+	planOpenShellTeamFn        func(ctx context.Context, dir, task, history string) (captaincode.OpenShellTeamPlan, error)
+	prepareOpenShellRecoveryFn func(context.Context, captaincode.OpenShellCheckpoint) (openShellRecovery, error)
 	// assessMultiFn stubs Manager.AssessMulti in tests; nil → real director call.
 	assessMultiFn func(task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error)
 	// arbitrateFn stubs the director's ruling on conflicting worker changes
@@ -421,9 +453,15 @@ type brain struct {
 	// single-worker team run printed no "running" line and a restart cut an
 	// 18-minute Ash cohort turn (2026-09-10).
 	inflightRuns atomic.Int32
-	rng          *rand.Rand
-	exploreFn    func(c captaincode.Class) bool
-	explored     map[string]time.Time
+	// life ends when the brain starts shutting down (nil: never). Sandbox
+	// controllers run under it, and sandboxes counts the ones shutdown waits
+	// for: task.py has its own process group, so a brain that just exited
+	// would leave a sandbox running until its own deadline.
+	life      context.Context
+	sandboxes sync.WaitGroup
+	rng       *rand.Rand
+	exploreFn func(c captaincode.Class) bool
+	explored  map[string]time.Time
 	// teamPlans caches route-time fan-out plans for the team wrapper (by task).
 	// Own mutex: storeTeamPlan is called from route, which already holds mu.
 	tmu        sync.Mutex
@@ -1318,6 +1356,9 @@ func (b *brain) shouldAssess(leg captaincode.Leg) bool {
 // skipping cooled-down legs (the failed one was cooled just before this call),
 // honoring CAPTAIN_LEGS, and keeping image tasks on vision-capable legs.
 func (b *brain) rerouteTarget(failed captaincode.Leg, prompt string, alsoExclude ...captaincode.Leg) (captaincode.Leg, bool) {
+	if failed == captaincode.LegOpenShell {
+		return "", false
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	task := lastUserTurn(prompt)
@@ -1422,6 +1463,12 @@ func isReroutable(err error) bool {
 // caller has no task identity yet (solo turn before recordRun): the budget
 // check is a no-op and the per-path bounds (2 hops, chain time cap) still apply.
 func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg, prompt string, onDelta, onStatus func(string), taskID string) (captaincode.Leg, captaincode.Result, error) {
+	// OpenShell has its own entries (openShellChat, the CLI, task recovery):
+	// they save the task before dispatch, bind cancellation to the sandbox
+	// controller and keep the verified export. This path does none of that.
+	if leg == captaincode.LegOpenShell {
+		return leg, captaincode.Result{}, errOpenShellEntry
+	}
 	// A session title never reroutes. Rerouting exists so real work survives a
 	// leg going down; spending a second leg to name a conversation is waste,
 	// and it is what made a /frontier turn look like it ran on the free leg.
@@ -1592,7 +1639,7 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 	// real work) is NOT rerouted: a fresh leg would start over from zero and
 	// the caller salvages the text instead (45 minutes of frontier work went
 	// to cursor as a blank slate, 2026-09-10).
-	for hop := 0; hop < 2 && !titleRun && err != nil && isReroutable(err) && !captaincode.WorthKeeping(res, err) &&
+	for hop := 0; hop < 2 && leg != captaincode.LegOpenShell && !titleRun && err != nil && isReroutable(err) && !captaincode.WorthKeeping(res, err) &&
 		time.Since(chainStart) < captaincode.WorkerTimeout()*time.Duration(captaincode.NoTimeoutMul(prompt)); hop++ {
 		// Shared budget gate (ROADMAP M2.4): a reroute is another provider
 		// call that draws from the same root task budget. If the cap is
@@ -1852,7 +1899,13 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	// the handoff brief carries the same artifact evidence a parallel workflow
 	// does. Skipped for title/distill calls and when wsDir is empty (tests).
 	var changed []string
-	if wsDir != "" && ev.AttemptID != "" {
+	if leg == captaincode.LegOpenShell {
+		if res.Export != nil {
+			b.mu.Lock()
+			b.ledger.RecordVerifiedExport(ev.AttemptID, *res.Export)
+			b.mu.Unlock()
+		}
+	} else if wsDir != "" && ev.AttemptID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		files, digest, diffPath, err := captaincode.CaptureSoloArtifact(ctx, wsDir, b.diffDir(), string(leg))
 		cancel()
@@ -2022,9 +2075,7 @@ func (b *brain) completeAttemptLocked(taskID, attemptID string, state captaincod
 // buildHandoffLocked assembles and stores the M3.5 handoff brief for a task
 // from the current ledger state. Caller holds b.mu.
 func (b *brain) buildHandoffLocked(taskID string) {
-	b.imu.Lock()
-	ic := b.lastIntegrations[taskID]
-	b.imu.Unlock()
+	ic := b.integrationFor(taskID)
 	requirements := ""
 	for _, ev := range b.ledger.Events {
 		if ev.TaskID == taskID && ev.Task != "" {
@@ -2032,7 +2083,7 @@ func (b *brain) buildHandoffLocked(taskID string) {
 			break
 		}
 	}
-	brief := captaincode.BuildHandoffBrief(b.ledger, taskID, requirements, &ic)
+	brief := captaincode.BuildHandoffBrief(b.ledger, taskID, requirements, ic)
 	b.ledger.RecordHandoff(brief)
 }
 
@@ -2048,6 +2099,20 @@ func (b *brain) cancelTask(taskID string) []string {
 // any stragglers, then transitions the lifecycle to cancelled. Returns what
 // was cancelled and what was still alive after the deadline (killed).
 func (b *brain) cancelTaskWithDeadline(taskID string) captaincode.CancelResult {
+	b.mu.Lock()
+	for _, as := range b.ledger.AttemptStatesFor(taskID) {
+		if captaincode.CanTransition(as.State, captaincode.StateCancelRequested) {
+			b.ledger.TransitionAttempt(as.AttemptID, captaincode.StateCancelRequested)
+		} else if as.State == captaincode.StateInterrupted {
+			b.ledger.TransitionAttempt(as.AttemptID, captaincode.StateCancelled)
+		}
+	}
+	if ts := b.ledger.TaskStateFor(taskID); ts != nil && captaincode.CanTransition(ts.State, captaincode.StateCancelRequested) {
+		b.ledger.TransitionTask(taskID, captaincode.StateCancelRequested)
+	} else if ts != nil && ts.State == captaincode.StateInterrupted {
+		b.ledger.TransitionTask(taskID, captaincode.StateCancelled)
+	}
+	b.mu.Unlock()
 	deadline := captaincode.DefaultCancelDeadline()
 	result := b.cancelTree.CancelWithDeadline(taskID, deadline)
 	b.mu.Lock()

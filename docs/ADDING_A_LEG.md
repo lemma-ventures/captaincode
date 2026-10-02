@@ -49,8 +49,12 @@ Repoint the leg rather than adding a new one:
 
 ```sh
 export CAPTAIN_GLM_PROVIDER=openrouter
-export CAPTAIN_GLM_MODEL=z-ai/glm-5.2
+export CAPTAIN_GLM_MODEL=z-ai/glm-5.3
 ```
+
+That pin overrides the compiled provider. `glm` is on NVIDIA NIM
+(`z-ai/glm-5.3`, cheap tier `z-ai/glm-5.3-flash`) as of 2026-09-26. A
+`CAPTAIN_GLM_PROVIDER=openrouter` pin hides that. Clear the pin to use NIM.
 
 The leg keeps its identity, its scorecard and its place in the ladder. A new leg
 id starts from a cold prior and loses the history.

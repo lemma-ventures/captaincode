@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -538,9 +539,12 @@ type Contender struct {
 }
 
 // Ruling is the director's call on a conflict: whose changes land.
+// Equivalent means the director could not prefer one contender. Captain then
+// lands the lowest id itself, so a tie is not broken by a second model call.
 type Ruling struct {
-	Winner string `json:"winner"`
-	Reason string `json:"reason"`
+	Winner     string `json:"winner"`
+	Reason     string `json:"reason"`
+	Equivalent bool   `json:"equivalent,omitempty"`
 }
 
 // Arbitrate asks the director which one of several conflicting workers'
@@ -559,15 +563,44 @@ func (m Manager) Arbitrate(task string, contenders map[string]Contender) (Ruling
 	return checkRuling(r, contenders)
 }
 
+// landParallelSkill is the published land-parallel-agent-work skill
+// (skills/ at the repository root), copied here so it can be embedded;
+// TestLandParallelSkillMatchesThePublishedOne keeps the two identical. The
+// director cannot open a skill - it is one JSON call with no working
+// directory - so the step it performs is handed to it as prompt text.
+//
+//go:embed skills/land_parallel_agent_work.md
+var landParallelSkill string
+
+// arbitrationStep is the one step of that skill the director performs:
+// section 5, picking one whole winner per conflict group.
+var arbitrationStep = skillSection(landParallelSkill, "## 5.")
+
+// skillSection returns a markdown section from its heading up to the next
+// "## " heading.
+func skillSection(md, heading string) string {
+	i := strings.Index(md, "\n"+heading)
+	if i < 0 {
+		return ""
+	}
+	body := md[i+1:]
+	if j := strings.Index(body[len(heading):], "\n## "); j >= 0 {
+		body = body[:len(heading)+j]
+	}
+	return strings.TrimSpace(body)
+}
+
 // arbitrationPrompt lays the contenders out in a stable order.
 func arbitrationPrompt(task string, contenders map[string]Contender) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, `You are Captain Code's director. Parallel workers changed the SAME files for this task, and only one worker's changes can land: their edits are not merged. Decide whose changes land.
+	fmt.Fprintf(&sb, `You are Captain Code's director. Parallel workers changed the SAME files for this task, and only one worker's changes can land: their edits are not merged. Decide whose changes land. You are the decider in this step of the land-parallel-agent-work procedure:
+
+%s
 
 Task:
 %s
 
-`, truncateStr(task, 2000))
+`, arbitrationStep, truncateStr(task, 2000))
 	for _, id := range contenderIDs(contenders) {
 		c := contenders[id]
 		fmt.Fprintf(&sb, "--- worker %q (leg=%s) ---\nchanged: %s\n", id, c.Leg, truncateStr(strings.Join(c.Files, ", "), 600))
@@ -576,19 +609,56 @@ Task:
 		}
 		fmt.Fprintf(&sb, "report:\n%s\n\n", truncateStr(c.Text, 3000))
 	}
-	sb.WriteString(`Judge on correctness first, then how completely the changes do what the task asks, then how little they touch beyond it. Objective evidence (a passing gate or test suite) outranks a confident report. Judge the work, not which model did it.
-Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>"}`)
+	sb.WriteString(`Reply with STRICT JSON only, using the exact worker id shown above: {"winner":"<id>","reason":"<one line, <=140 chars>","equivalent":false}
+If you cannot prefer one contender on the criteria above, set "equivalent": true and do not break the tie. Captain lands the lowest contender id.`)
 	return sb.String()
 }
 
 // checkRuling accepts a ruling only when it names one of the contenders.
+// An equivalence is not a pick: the lowest id lands, whatever winner the
+// director named.
 func checkRuling(r Ruling, contenders map[string]Contender) (Ruling, error) {
 	r.Winner = strings.TrimSpace(r.Winner)
+	ids := contenderIDs(contenders)
+	if r.Equivalent || reasonCallsEquivalent(r.Reason) {
+		r.Equivalent = true
+		r.Winner = ids[0]
+		r.Reason = truncateStr("equivalent; landed "+r.Winner+" (lowest id)", 200)
+		return r, nil
+	}
 	if _, ok := contenders[r.Winner]; !ok {
-		return Ruling{}, fmt.Errorf("arbitrate: director named %q, not one of %s", r.Winner, strings.Join(contenderIDs(contenders), ", "))
+		return Ruling{}, fmt.Errorf("arbitrate: director named %q, not one of %s", r.Winner, strings.Join(ids, ", "))
 	}
 	r.Reason = truncateStr(oneLine(r.Reason), 200)
 	return r, nil
+}
+
+// reasonCallsEquivalent is the backstop for a director that describes a tie
+// in prose and still names a winner. A denial ("not equivalent") is a
+// preference, not a tie.
+func reasonCallsEquivalent(reason string) bool {
+	s := strings.ToLower(oneLine(reason))
+	if s == "" || strings.Contains(s, "not equivalent") || strings.Contains(s, "not identical") {
+		return false
+	}
+	for _, phrase := range []string{
+		"equivalent",
+		"logic identical",
+		"identical logic",
+		"logics identical",
+		"tie broken",
+		"broke the tie",
+		"break the tie",
+		"no material difference",
+		"cannot prefer",
+		"can't prefer",
+		"no preference",
+	} {
+		if strings.Contains(s, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func contenderIDs(contenders map[string]Contender) []string {
