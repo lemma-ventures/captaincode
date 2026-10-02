@@ -159,6 +159,8 @@ type LanePick struct {
 	Leg    Leg
 	Band   []Leg // the legs that shared the lane, best first
 	Reason string
+	// Time is the Phase 3 rule's pick when it decided the lane.
+	Time *TimePick
 }
 
 // OSSTurn gives a lane's next turn to open weights when the lane owes them

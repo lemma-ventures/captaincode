@@ -37,6 +37,7 @@ const (
 	PathPick     = "pick"            // tier 2: the director answered a typed choice over the value menu
 	PathExpected = "expected"        // ranked by expected cost per successful task (expected.go)
 	PathBandit   = "bandit"          // Thompson sampling over (leg, effort) arms (bandit.go)
+	PathTime     = "time"            // the Phase 3 rule picked from the menu (pick.go)
 	PathLane     = "lane"            // a /frontier, /quality or /save lane evened out its recent turns (lanes.go)
 )
 
@@ -94,6 +95,9 @@ type Decision struct {
 	// evidence collected by a router is only comparable across legs when
 	// weighted by how likely each was to be tried (SCORING.md Phase 0).
 	Propensities map[Leg]float64 `json:"propensities,omitempty"`
+	// TimePick is the Phase 3 rule's pick (pick.go): what decided the turn
+	// when CAPTAIN_PICK=on, what it would have picked otherwise.
+	TimePick *TimePick `json:"time_pick,omitempty"`
 
 	// Shape says whether the turn ran one worker or a team; Workers names a
 	// team's legs (Chosen is empty then: no single leg was chosen).

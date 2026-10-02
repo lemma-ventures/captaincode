@@ -199,6 +199,7 @@ func (b *brain) attachDecision(taskID, task string) {
 		return
 	}
 	p.dec.TaskID = taskID
+	b.shadowPick(&p.dec)
 	b.ledger.RecordDecision(p.dec)
 }
 

@@ -122,7 +122,18 @@ func (b *brain) frontierLead(task string) captaincode.LanePick {
 			cands = append(cands, c)
 		}
 	}
-	pick, ok := captaincode.BalanceLane(captaincode.LaneFrontier, reliableLane(cands, b.ledger.Stats()),
+	cands = reliableLane(cands, b.ledger.Stats())
+	// CAPTAIN_PICK=on: the lane chose the frontier legs; the time rule
+	// picks among them (SCORING.md Phase 3).
+	var legs []captaincode.Leg
+	for _, c := range cands {
+		legs = append(legs, c.Leg)
+	}
+	if tp, ok := b.decidePick(legs, captaincode.TriageTask(task).Domain); ok {
+		b.ledger.NoteLane(captaincode.LaneFrontier, tp.Leg, now)
+		return captaincode.LanePick{Leg: tp.Leg, Band: legs, Reason: "frontier " + tp.Reason, Time: &tp}
+	}
+	pick, ok := captaincode.BalanceLane(captaincode.LaneFrontier, cands,
 		b.ledger.LaneCounts(captaincode.LaneFrontier, captaincode.LaneWindow()))
 	if !ok {
 		claude.Reason = "frontier: claude (no frontier leg is open for this task)"
