@@ -207,6 +207,17 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 	if err != nil {
 		return err
 	}
+	cost, err := r.costBudget(ctx, teams)
+	if err != nil {
+		return err
+	}
+	if cost != nil && recovered != nil {
+		return fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
+	}
+	if cost != nil {
+		run.CostBudget = cost
+		r.MaxCostUSD, r.WorkerCostUSD = cost.LimitUSD, cost.WorkerUSD
+	}
 	if recovered == nil {
 		r.MaxAttempts = budget.Limit
 		if err := r.saveSequencePlan(teams, run); err != nil {
@@ -256,7 +267,7 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 		stage := &OpenShellRunner{Pilot: r.Pilot, Prepared: r.Prepared, StateRoot: r.StateRoot,
 			Runtime: r.Runtime, Repo: snapshot, Revision: current, Concurrency: r.Concurrency,
 			RunDir: openShellStageDir(r.RunDir, i+1, run.reruns(i+1)), RequireAll: true,
-			MaxAttempts: r.MaxAttempts, Pinned: run.Provenance,
+			MaxAttempts: r.MaxAttempts, MaxCostUSD: r.MaxCostUSD, WorkerCostUSD: r.WorkerCostUSD, Pinned: run.Provenance,
 			Director: r.Director, DirectorName: r.DirectorName, Log: r.Log}
 		var result *OpenShellRun
 		if i < len(recovered) {

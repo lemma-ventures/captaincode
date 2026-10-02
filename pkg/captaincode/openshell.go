@@ -295,6 +295,19 @@ type OpenShellShield struct {
 	CompletionTokens int      `json:"completion_tokens,omitempty"`
 	ReasoningTokens  int      `json:"reasoning_tokens,omitempty"` // a subset of CompletionTokens
 	CostUSD          float64  `json:"cost_usd,omitempty"`
+	// Budget is present under a strict cap: what this worker's Shield
+	// committed against its share, refused requests and any breached bound.
+	Budget *OpenShellShieldBudget `json:"budget,omitempty"`
+}
+
+// OpenShellShieldBudget is one Shield's strict allocation. Committed counts
+// each forwarded request at its bill once a priced response settled it, and
+// at its whole worst-case reservation otherwise, so it never understates.
+type OpenShellShieldBudget struct {
+	LimitUSD     float64 `json:"limit_usd"`
+	CommittedUSD float64 `json:"committed_usd"`
+	Refused      int     `json:"refused"`
+	Breached     bool    `json:"breached"`
 }
 
 // Spend totals what the providers billed every worker in the run. It is
@@ -410,6 +423,7 @@ type OpenShellRun struct {
 	StartedAt      time.Time               `json:"started_at"`
 	DeadlineAt     time.Time               `json:"deadline_at,omitempty"`
 	AttemptBudget  *OpenShellAttemptBudget `json:"attempt_budget,omitempty"`
+	CostBudget     *OpenShellCostBudget    `json:"cost_budget,omitempty"`
 	AttemptUsage   *OpenShellAttemptUsage  `json:"attempt_usage,omitempty"`
 	Seconds        float64                 `json:"seconds"`
 	Verdict        string                  `json:"verdict"`
@@ -461,21 +475,25 @@ type OpenShellDirector func(ctx context.Context, task string, contenders map[str
 // OpenShellRunner runs a team's tasks, each through task.py in its own state
 // directory, and lands what holds up.
 type OpenShellRunner struct {
-	Pilot        string // directory holding task.py and pilot.py
-	Prepared     string // a prepare.py state: bin/, generated/, shield, venv/
-	StateRoot    string // parent of the per-task states; short, since the VM socket lives under it
-	Runtime      string // "vm" or "docker"
-	Repo         string // top level of the repository
-	Revision     string // pinned base commit
-	RunDir       string // run.json, integrated.patch, diffs and per-task evidence
-	Concurrency  int
-	DeadlineAt   time.Time
-	MaxAttempts  int
-	RequireAll   bool
-	Pinned       *OpenShellProvenance // a sequence plan's build: a stage under any other refuses to start
-	Director     OpenShellDirector    // nil: overlapping tasks are not landed
-	DirectorName string
-	Log          func(format string, args ...any)
+	Pilot       string // directory holding task.py and pilot.py
+	Prepared    string // a prepare.py state: bin/, generated/, shield, venv/
+	StateRoot   string // parent of the per-task states; short, since the VM socket lives under it
+	Runtime     string // "vm" or "docker"
+	Repo        string // top level of the repository
+	Revision    string // pinned base commit
+	RunDir      string // run.json, integrated.patch, diffs and per-task evidence
+	Concurrency int
+	DeadlineAt  time.Time
+	MaxAttempts int
+	// MaxCostUSD is a strict dollar cap and WorkerCostUSD each worker's share
+	// of it (costBudget), enforced by the worker's Shield; zero means none.
+	MaxCostUSD    float64
+	WorkerCostUSD float64
+	RequireAll    bool
+	Pinned        *OpenShellProvenance // a sequence plan's build: a stage under any other refuses to start
+	Director      OpenShellDirector    // nil: overlapping tasks are not landed
+	DirectorName  string
+	Log           func(format string, args ...any)
 
 	landing sync.Mutex // worktree add and capture, one task at a time
 }
@@ -605,6 +623,12 @@ func (r *OpenShellRunner) RunTeam(ctx context.Context, team OpenShellTeam) (*Ope
 		Runtime: r.Runtime, Director: r.DirectorName, Concurrency: r.Concurrency, RequireAll: r.RequireAll, StartedAt: time.Now(), DeadlineAt: r.DeadlineAt, Verdict: "fail"}
 	run.AttemptBudget, err = r.attemptBudget(ctx, []OpenShellTeam{team})
 	if err == nil {
+		run.CostBudget, err = r.costBudget(ctx, []OpenShellTeam{team})
+	}
+	if err == nil && run.CostBudget != nil {
+		r.MaxCostUSD, r.WorkerCostUSD = run.CostBudget.LimitUSD, run.CostBudget.WorkerUSD
+	}
+	if err == nil {
 		err = r.runTeam(ctx, team, run)
 	}
 	if err != nil {
@@ -719,10 +743,13 @@ func (r *OpenShellRunner) runTask(ctx context.Context, teamID string, t OpenShel
 	if t.VerifySeconds != 0 {
 		spec["verify_seconds"] = t.VerifySeconds
 	}
-	state, report, err := r.pilot(ctx, spec, t.Profile, t.RepairAttempts, res.Evidence, openShellBudget(t))
+	state, report, err := r.pilot(ctx, spec, t.Profile, t.RepairAttempts, res.Evidence, openShellBudget(t), r.WorkerCostUSD)
 	res.Report = report
 	if err == nil {
 		err = checkOpenShellReport(report, t.ID, openShellTaskChecks)
+	}
+	if err == nil {
+		err = r.checkCostReport(report)
 	}
 	if err == nil {
 		err = r.land(ctx, teamID, t, state, report, res)
@@ -745,8 +772,9 @@ func (r *OpenShellRunner) runTask(ctx context.Context, teamID string, t OpenShel
 // and its report. The process gets a minimal environment and its own process
 // group, so a terminal interrupt reaches Captain alone; Captain then sends
 // the pilot one SIGTERM, which it answers by deleting its sandbox and
-// stopping its gateway.
-func (r *OpenShellRunner) pilot(ctx context.Context, spec map[string]any, profile string, repairs int, evidence string, budget time.Duration) (string, *OpenShellReport, error) {
+// stopping its gateway. Under a strict cap, costUSD is the dollar allocation
+// the pilot's Shield enforces; a verify sandbox calls no model and gets zero.
+func (r *OpenShellRunner) pilot(ctx context.Context, spec map[string]any, profile string, repairs int, evidence string, budget time.Duration, costUSD float64) (string, *OpenShellReport, error) {
 	if err := os.MkdirAll(evidence, 0o700); err != nil {
 		return "", nil, err
 	}
@@ -769,9 +797,12 @@ func (r *OpenShellRunner) pilot(ctx context.Context, spec map[string]any, profil
 	defer logFile.Close()
 	c, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	cmd := exec.CommandContext(c, filepath.Join(state, "venv", "bin", "python"), "-B", filepath.Join(r.Pilot, "task.py"),
-		"--state", state, "--runtime", r.Runtime, "--profile", profile,
-		"--repair-attempts", strconv.Itoa(repairs), "--task", specPath)
+	args := []string{"-B", filepath.Join(r.Pilot, "task.py"), "--state", state, "--runtime", r.Runtime, "--profile", profile,
+		"--repair-attempts", strconv.Itoa(repairs), "--task", specPath}
+	if r.WorkerCostUSD > 0 {
+		args = append(args, "--max-cost-usd", strconv.FormatFloat(costUSD, 'g', -1, 64))
+	}
+	cmd := exec.CommandContext(c, filepath.Join(state, "venv", "bin", "python"), args...)
 	cmd.Env = openShellEnv()
 	out := &cappedWriter{w: logFile, n: openShellFileLimit}
 	cmd.Stdout, cmd.Stderr = out, out
@@ -1320,7 +1351,7 @@ func (r *OpenShellRunner) applyAndVerify(ctx context.Context, team OpenShellTeam
 	spec := map[string]any{"schema": 1, "mode": "verify", "id": "integrated", "repo": r.Repo, "revision": tree,
 		"verify": argv, "baseline": "pass", "verify_seconds": verifySeconds}
 	budget := time.Duration(600+3*verifySeconds) * time.Second
-	state, report, err := r.pilot(ctx, spec, landed[0].Profile, 0, integrated.Evidence, budget)
+	state, report, err := r.pilot(ctx, spec, landed[0].Profile, 0, integrated.Evidence, budget, 0)
 	integrated.Seconds, integrated.Report = seconds(time.Since(start)), report
 	if err == nil {
 		err = checkOpenShellReport(report, "integrated", openShellVerifyChecks)
@@ -1801,6 +1832,10 @@ func openShellResultText(run *OpenShellRun, runDir string) string {
 		fmt.Fprintf(&sb, "attempt usage: %d workers + %d repairs + %d director calls; %d execution(s) unmeasured\n",
 			usage.Workers, usage.Repairs, usage.Directors, usage.Unmeasured)
 	}
+	if budget := run.CostBudget; budget != nil {
+		fmt.Fprintf(&sb, "strict cost cap: $%g, $%g per worker across %d worker(s), enforced per request by each worker's Shield\n",
+			budget.LimitUSD, budget.WorkerUSD, budget.Workers)
+	}
 	for _, res := range run.Tasks {
 		if res == nil {
 			continue
@@ -1809,6 +1844,12 @@ func openShellResultText(run *OpenShellRun, runDir string) string {
 		if rep := res.Report; rep != nil && rep.Shield != nil {
 			if len(rep.Shield.ServedBy) > 0 {
 				detail += " served by " + strings.Join(rep.Shield.ServedBy, "/")
+			}
+			if b := rep.Shield.Budget; b != nil {
+				detail += fmt.Sprintf(", $%.6f of $%g committed", b.CommittedUSD, b.LimitUSD)
+				if b.Refused > 0 {
+					detail += fmt.Sprintf(", %d request(s) refused at the cap", b.Refused)
+				}
 			}
 		}
 		if res.Error != "" {

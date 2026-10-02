@@ -643,16 +643,49 @@ allocation; a tighter current cap can refuse recovery. The CLI/HTTP ledger keeps
 the configured cap and an `attempts_exhausted` stop reason on admission refusal.
 Invalid or negative attempt settings refuse execution; zero means unlimited.
 
-The pilot retains its per-worker deadlines and bounded repair. Strict dollar
-caps remain unsupported: strict `CAPTAIN_MAX_COST` refuses CLI, HTTP, team and
-recovery dispatch. Wall-time settings must be zero (unlimited) or a valid duration
-of at least 1ms; invalid values refuse execution. Shorter caller and worker
-deadlines still apply.
+The pilot retains its per-worker deadlines and bounded repair. Wall-time settings
+must be zero (unlimited) or a valid duration of at least 1ms; invalid values refuse
+execution. Shorter caller and worker deadlines still apply.
+
+**Strict dollar caps.** With `CAPTAIN_STRICT=1` and `CAPTAIN_MAX_COST` (or a strict
+task budget), each worker's Shield holds it to a share of the cap, request by
+request. Admission splits the cap evenly across every worker the plan can start,
+rounded down to a micro-dollar, so the shares never add up to more than the cap.
+Unused shares are not reassigned. Before forwarding a request, Shield reserves its
+worst case: prompt tokens bounded by the forwarded body's bytes plus 4,096, and
+completion tokens by the clamped `max_tokens`, both at the lane's pinned price
+ceiling (`profiles.py`, 25-40% above the 2 October 2026 list prices). Shield also
+sends the ceiling, with a zero per-request fee, as OpenRouter's `max_price`, so a
+provider that raised its price is refused before it generates. A request whose worst case does not fit the rest
+of the share is refused with `shield_budget_exhausted` and never reaches the
+provider.
+
+A priced response replaces its reservation with the provider's bill. An unpriced,
+failed or missing response keeps the whole reservation, so the committed total
+never understates. A bill above its reservation would mean the bound failed:
+Shield then refuses every later request, and Captain fails the worker. A Shield
+restarted for the same worker rebuilds the committed total from its fsync'd audit.
+Captain also fails a worker whose report lacks the budget, names another limit or
+shows more committed than its share.
+
+Strict caps need an OpenRouter lane (`cerebras`, `sambanova`, `together`,
+`deepinfra`, `crusoe` or `parasail`); NIM returns no price and is refused. Host
+calls that are not priced are refused rather than left outside the cap:
+`/team /openshell`, whose planner is a subscription call, and any stage with two
+or more edit workers while `CAPTAIN_OPENSHELL_DIRECTOR` is set, since it could
+need a ruling. Verification sandboxes call no model and get a zero allocation.
+Recovery of a strict-capped run is refused for now (`--resume`, task resume and
+startup recovery): rerunning a stopped stage would need each worker's share less
+what its Shield already committed. An unreadable `CAPTAIN_MAX_COST` under
+`CAPTAIN_STRICT` refuses execution. `run.json` keeps `cost_budget` and each
+worker's `report.shield.budget`. The committed amount is not yet charged to the
+ledger's task budget, so `captain budget` shows the cap but not this spend.
 
 Spend is read at the Shield, not from the worker. Each response's audit row keeps
 the provider's own token counts and, on OpenRouter lanes, its `usage.cost`; no
 content is recorded. Every worker's `report.shield` in `run.json` totals its
-requests, priced responses, prompt, completion and reasoning tokens, and dollars.
+requests, priced responses, prompt, completion and reasoning tokens, and dollars,
+including a worker that failed its checks or was cancelled after it started.
 The run's ledger charge is **measured** only when every request that crossed
 Shield came back priced. A blocked, failed or unpriced call, or a worker stopped
 before its tally, leaves the charge **unknown**, never a false $0. Lanes without a
@@ -702,8 +735,8 @@ unchanged. Cancellation reaches every active controller and waits for cleanup.
 
 The ledger tracks the workflow as one task and one aggregate attempt; the
 linked `run.json` records each worker and repair, its evidence and any ruling,
-with `require_all: true`. Wall-time and conservative whole-plan attempt caps
-apply through both CLI and HTTP. Strict dollar caps remain refused.
+with `require_all: true`. Wall-time limits, conservative whole-plan attempt caps
+and strict dollar caps apply through both CLI and HTTP.
 
 `/team /openshell <task>` lets the director plan up to 4 sandbox stages, with
 1-4 workers per stage and at most 8 workers total. Workers within a stage run
@@ -1070,7 +1103,7 @@ settings.
 |---|---|---|
 | `CAPTAIN_MAX_WALLTIME` | unset (`0` = unlimited) | Shared task wall-time limit, such as `10m`. OpenShell persists its absolute deadline across stages and recovery; downtime counts. |
 | `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries. OpenShell admits the complete worst-case plan before dispatch; other paths use the budget controller. |
-| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch. |
+| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch, and OpenShell workers are held to it request by request at Shield ([strict dollar caps](#openshell-workers-experimental-unreleased)). |
 | `CAPTAIN_STRICT` | off | When set with a cost cap, only cost-reporting adapters may run (see `captain budget`). |
 | `CAPTAIN_MAX_REPAIRS` | `1` | Same-leg objective-failure repairs before escalation. `0` = no repairs. |
 | `CAPTAIN_MAX_EFFORT_ESCALATIONS` | `1` | Between the repair and the leg escalation: the same leg one effort rung up (prompt cache and context survive). `0` = skip straight to the leg. |

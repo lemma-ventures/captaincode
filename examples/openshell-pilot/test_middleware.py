@@ -400,6 +400,98 @@ class ShieldTests(unittest.TestCase):
         self.assertIn(handle.encode(), results[1].body_result.transform.data)
         self.assertNotIn(m.CANARY.encode(), results[1].body_result.transform.data)
 
+    def capped(self, limit):
+        from profiles import profile
+        self.service = m.Shield(self.service.binary, self.signer.public_key(), self.path / "audit.jsonl",
+                                profile("cerebras")["model"], "cerebras", limit)
+        return self.service
+
+    def lane_request(self, request_id, max_tokens=1024):
+        request = self.request()
+        request.context.request_id = request_id
+        request.target.host, request.target.path = "openrouter.ai", "/api/v1/chat/completions"
+        request.body = json.dumps({"model": self.service.model, "max_tokens": max_tokens,
+                                   "messages": [{"role": "user", "content": "fix it"}]}).encode()
+        return request
+
+    def lane_reply(self, request, cost=None, provider="Cerebras", sequence=1):
+        head = m.pb.HttpResponseEvent(preflight=m.pb.HttpResponsePreflight(
+            context=request.context, target=request.target, status_code=200,
+            max_payload_bytes=m.LIMIT, permitted_body_modes=[2],
+            headers=[m.pb.HttpHeader(name="content-type", value="application/json")]))
+        value = {"provider": provider, "model": self.service.model, "usage": {"prompt_tokens": 50, "completion_tokens": 5},
+                 "choices": [{"index": 0, "message": {"role": "assistant", "content": "done"}, "finish_reason": "stop"}]}
+        if cost is not None:
+            value["usage"]["cost"] = cost
+        body = self.response_body(json.dumps(value).encode(), sequence=sequence)
+        return list(self.service.Evaluate(iter([head, body]), self.context()))
+
+    def rows(self):
+        return [json.loads(line) for line in self.service.audit.read_text().splitlines()]
+
+    def test_strict_cap_reserves_the_worst_case_and_settles_to_the_bill(self):
+        from profiles import reservation
+        service = self.capped(0.005)
+        first = self.lane_request("r-1")
+        result = service.EvaluateHttpRequest(first, self.context())
+        self.assertEqual(result.decision, 1)
+        self.assertEqual(json.loads(result.body)["provider"]["max_price"], {"prompt": 0.45, "completion": 0.95, "request": 0})
+        worst = reservation(result.body, 1024, "cerebras")
+        self.assertAlmostEqual(service.committed, worst)
+        request_row = self.rows()[-1]
+        self.assertEqual((request_row["reserved_usd"], request_row["body_bytes"]), (worst, len(result.body)))
+        # The first request is still in flight: its reservation leaves no room for a second.
+        second = self.lane_request("r-2")
+        refused = service.EvaluateHttpRequest(second, self.context())
+        self.assertEqual((refused.decision, refused.reason_code), (2, "shield_budget_exhausted"))
+        self.assertEqual(self.rows()[-1]["phase"], "budget_refused")
+        self.assertNotIn(("s-1", "r-2"), service.pending)
+        results = self.lane_reply(first, cost=0.0004)
+        self.assertTrue(results[1].body_result.HasField("transform"))
+        self.assertAlmostEqual(service.committed, 0.0004)
+        settled = self.rows()[-1]
+        self.assertEqual((settled["phase"], settled["reservation"], settled["settled_usd"]),
+                         ("response", request_row["reservation"], 0.0004))
+        self.assertEqual(service.EvaluateHttpRequest(second, self.context()).decision, 1)
+        self.lane_reply(second)
+        self.assertAlmostEqual(service.committed, 0.0004 + worst, msg="an unpriced reply keeps its reservation")
+        self.assertEqual(m.Shield(service.binary, self.signer.public_key(), service.audit, service.model,
+                                  "cerebras", 0.005).committed, service.committed)
+
+    def test_strict_cap_counts_bills_of_refused_deliveries_and_stops_after_a_breach(self):
+        service = self.capped(0.5)
+        wrong = self.lane_request("wrong")
+        self.assertEqual(service.EvaluateHttpRequest(wrong, self.context()).decision, 1)
+        results = self.lane_reply(wrong, cost=0.001, provider="SambaNova")
+        self.assertTrue(results[1].body_result.HasField("block_delivery"))
+        self.assertEqual((self.rows()[-1]["phase"], self.rows()[-1]["settled_usd"]), ("response_blocked", 0.001))
+        self.assertAlmostEqual(service.committed, 0.001)
+        partial = self.lane_request("partial")
+        self.assertEqual(service.EvaluateHttpRequest(partial, self.context()).decision, 1)
+        reserved = self.rows()[-1]["reserved_usd"]
+        self.lane_reply(partial, cost=0.0001, sequence=2)
+        self.assertAlmostEqual(service.committed, 0.001 + reserved, msg="a malformed reply settles nothing")
+        breach = self.lane_request("breach")
+        self.assertEqual(service.EvaluateHttpRequest(breach, self.context()).decision, 1)
+        self.lane_reply(breach, cost=0.2)
+        self.assertTrue(service.breached)
+        self.assertTrue(self.rows()[-1]["budget_breached"])
+        after = service.EvaluateHttpRequest(self.lane_request("after"), self.context())
+        self.assertEqual((after.decision, after.reason_code), (2, "shield_budget_exhausted"))
+        restarted = m.Shield(service.binary, self.signer.public_key(), service.audit, service.model, "cerebras", 0.5)
+        self.assertTrue(restarted.breached)
+        self.assertAlmostEqual(restarted.committed, service.committed)
+
+    def test_strict_cap_needs_a_priced_lane_and_a_consistent_audit(self):
+        for limit in [-0.01, 1000, float("nan"), True]:
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                self.capped(limit)
+        with self.assertRaisesRegex(ValueError, "priced lane"):
+            m.Shield(self.service.binary, self.signer.public_key(), self.path / "audit.jsonl", "test-model", "nim", 0.5)
+        self.service.audit.write_text(json.dumps({"phase": "response", "reservation": "x", "settled_usd": 0.1}) + "\n")
+        with self.assertRaisesRegex(ValueError, "invalid budget audit"):
+            self.capped(0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

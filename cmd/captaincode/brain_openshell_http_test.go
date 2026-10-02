@@ -310,7 +310,7 @@ func TestOpenShellHTTPDoesNotBypassConfiguredBudgets(t *testing.T) {
 			case "attempts":
 				t.Setenv("CAPTAIN_MAX_ATTEMPTS", "-1")
 			case "cost":
-				t.Setenv("CAPTAIN_MAX_COST", "1")
+				t.Setenv("CAPTAIN_MAX_COST", "NaN")
 				t.Setenv("CAPTAIN_STRICT", "1")
 			}
 			b.runWorkerFn = func(leg captaincode.Leg, _ string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
@@ -321,13 +321,28 @@ func TestOpenShellHTTPDoesNotBypassConfiguredBudgets(t *testing.T) {
 			b.chatCompletions(rec, openShellHTTPRequest(t, t.TempDir(), "openshell", "fix parser", false))
 			assert.Equal(t, http.StatusBadRequest, rec.Code)
 			if mode == "cost" {
-				assert.Contains(t, rec.Body.String(), "budgets are not supported")
+				assert.Contains(t, rec.Body.String(), "CAPTAIN_MAX_COST")
 			} else {
 				assert.Contains(t, rec.Body.String(), "CAPTAIN_MAX_ATTEMPTS")
 			}
 			assert.Empty(t, b.ledger.AttemptStates)
 		})
 	}
+}
+
+func TestOpenShellHTTPCarriesAStrictCostCapToTheSandboxRun(t *testing.T) {
+	b := openShellHTTPBrain(t)
+	t.Setenv("CAPTAIN_MAX_COST", "1")
+	t.Setenv("CAPTAIN_STRICT", "1")
+	var limit float64
+	b.runOpenShellWorkflowFn = func(ctx context.Context, _ captaincode.Workspace, _ captaincode.Workflow, _ string) (captaincode.Result, error) {
+		limit = captaincode.OpenShellCostLimit(ctx)
+		return openShellHTTPResult("/fixture"), nil
+	}
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, openShellHTTPRequest(t, t.TempDir(), "openshell", "/openshell fix a + /openshell fix b", false))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, 1.0, limit, "Shield enforces the cap; the brain must hand it to the run")
 }
 
 func TestOpenShellHTTPWorkflowPersistsAndCancels(t *testing.T) {

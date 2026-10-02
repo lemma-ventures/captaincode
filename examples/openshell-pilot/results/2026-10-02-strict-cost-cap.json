@@ -1,0 +1,149 @@
+{
+  "date": "2026-10-02T12:18:14Z",
+  "fixture": "Public Roman numeral edit (examples/openshell-pilot/team/repo), one worker per run",
+  "host_index_unchanged": true,
+  "limits": "One public fixture on one host and the locally patched VM driver. The refused run shows Shield refusing before the provider; it says nothing about how often real tasks fit a given cap.",
+  "model": "openai/gpt-oss-120b",
+  "price_ceiling_per_million": {
+    "completion": 0.95,
+    "prompt": 0.45
+  },
+  "profile": "cerebras",
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "a444e43013eccf91e7bd948c883ca859045696a41fd8182dc72b74fbb3734ba9",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "979c5d02eace6e83d7a759c072c650fbfb589b37edf898bbcd61ff1e50875dde",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "2ff90df202e9d0d380ed6b74158af7f3841f6ce28edc551e5f20ca4d412d911d",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "f7f783c95c054b57ff408d2eaad7beb3eefcab708a0121a03fc035d0adc33b9f",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "bf057ad489722678bf41636757050c45cefefee603b202c2a209604ee631c5b5",
+      "pilot/task.py": "8a7f8fe9e61d6e129688049c8dd07c55c7c2d6aec119c0027e9445482c07e977",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "runs": {
+    "fits": {
+      "cap_usd": 0.1,
+      "verdict": "pass",
+      "seconds": 54.192545584,
+      "cost_budget": {
+        "limit_usd": 0.1,
+        "worker_usd": 0.1,
+        "workers": 1
+      },
+      "shield": {
+        "requests": 8,
+        "responses": 8,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 8,
+        "prompt_tokens": 48835,
+        "completion_tokens": 1221,
+        "reasoning_tokens": 544,
+        "cost_usd": 0.018008,
+        "budget": {
+          "limit_usd": 0.1,
+          "committed_usd": 0.018008,
+          "refused": 0,
+          "breached": false
+        }
+      },
+      "reserved_usd": [
+        0.03184985,
+        0.018778700000000002,
+        0.0320438,
+        0.032366,
+        0.0326333,
+        0.03317105,
+        0.03397475,
+        0.0342254
+      ],
+      "settled_usd": [
+        0.00045905,
+        0.00229085,
+        0.00228815,
+        0.00241575,
+        0.00236985,
+        0.00283675,
+        0.0026214,
+        0.0027262
+      ],
+      "refused_requests": 0,
+      "integrated_passed": true,
+      "attempt_usage": {
+        "workers": 1,
+        "repairs": 0,
+        "directors": 0,
+        "unmeasured": 0
+      },
+      "run_record_sha256": "50c0482637b5b44774794f050365aa993dd10647dd95606a9259f2f23c3efc84",
+      "patch_sha256": "929bd284940af6f0a5b54afecd14acaab10ad7d3df15ad473caf33443a049852"
+    },
+    "refused": {
+      "cap_usd": 0.01,
+      "verdict": "fail",
+      "seconds": 24.04829675,
+      "error": "openshell: required worker roman failed: pilot verdict fail: worker_exit",
+      "cost_budget": {
+        "limit_usd": 0.01,
+        "worker_usd": 0.01,
+        "workers": 1
+      },
+      "shield": {
+        "requests": 0,
+        "responses": 0,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "budget": {
+          "limit_usd": 0.01,
+          "committed_usd": 0,
+          "refused": 2,
+          "breached": false
+        }
+      },
+      "reserved_usd": null,
+      "settled_usd": null,
+      "refused_requests": 2,
+      "integrated_passed": false,
+      "attempt_usage": {
+        "workers": 1,
+        "repairs": 0,
+        "directors": 0,
+        "unmeasured": 0
+      },
+      "run_record_sha256": "38d971846d4d57491327c04eba2f145fc02f79c49bf17482d2c446872753d6ec"
+    }
+  },
+  "runtime": "vm",
+  "schema": 1,
+  "verdict": "pass"
+}

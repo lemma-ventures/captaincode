@@ -40,6 +40,24 @@ def response_usage(body):
     return found or None
 
 
+def committed_spend(rows):
+    """USD a strict-capped Shield has committed, from its audit rows: each
+    forwarded request's bill once a response settled it, else its whole
+    reservation. Rows pair by reservation token, never by request ID."""
+    reserved, settled, breached = {}, {}, False
+    for row in rows:
+        token = row.get("reservation")
+        if token is not None and "reserved_usd" in row:
+            reserved[token] = row["reserved_usd"]
+        elif token is not None and "settled_usd" in row:
+            settled[token] = row["settled_usd"]
+        breached = breached or bool(row.get("budget_breached"))
+    if any(type(value) not in (int, float) or not 0 <= value < 1000
+           for value in [*reserved.values(), *settled.values()]) or settled.keys() - reserved.keys():
+        raise ValueError("invalid budget audit")
+    return sum(settled.get(token, value) for token, value in reserved.items()), breached
+
+
 def restore_response(body, restore, limit, stream=False, tool_secrets=None, allowed_tools=None):
     if len(body) > limit:
         raise ValueError("response exceeds limit")

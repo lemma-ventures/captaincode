@@ -10,7 +10,112 @@ import (
 	"time"
 )
 
-var ErrOpenShellAttemptCap = errors.New("openshell: attempt cap exceeded")
+var (
+	ErrOpenShellAttemptCap = errors.New("openshell: attempt cap exceeded")
+	ErrOpenShellCostCap    = errors.New("openshell: strict cost cap")
+)
+
+// openShellPricedProfiles are the pilot's OpenRouter lanes (profiles.py
+// LANES): every response carries the provider's bill and each lane has a price
+// ceiling, so Shield can hold a worker to a dollar allocation. NIM returns no
+// price.
+var openShellPricedProfiles = map[string]bool{"cerebras": true, "sambanova": true, "together": true,
+	"deepinfra": true, "crusoe": true, "parasail": true}
+
+// openShellMaxCostUSD bounds a strict cap; Shield refuses larger allocations.
+const openShellMaxCostUSD = 1000
+
+// OpenShellCostBudget is a strict dollar cap's admission: the cap split evenly
+// across every worker the plan can start, rounded down to a micro-dollar, so
+// the allocations never add up to more than the cap. Each worker's Shield
+// forwards a request only if its worst case fits the worker's share. Unused
+// shares are not reassigned.
+type OpenShellCostBudget struct {
+	LimitUSD  float64 `json:"limit_usd"`
+	WorkerUSD float64 `json:"worker_usd"`
+	Workers   int     `json:"workers"`
+}
+
+type openShellCostLimitKey struct{}
+
+// OpenShellCostLimit is the strict dollar cap OpenShellBudgetContext put in
+// ctx, or zero.
+func OpenShellCostLimit(ctx context.Context) float64 {
+	limit, _ := ctx.Value(openShellCostLimitKey{}).(float64)
+	return limit
+}
+
+// openShellStrictCost is the strict cap in force for a call that may happen
+// before OpenShellBudgetContext: the context's, else the environment's.
+func openShellStrictCost(ctx context.Context) float64 {
+	if limit := OpenShellCostLimit(ctx); limit > 0 {
+		return limit
+	}
+	if limits := DefaultBudgetOpts(); limits.Strict && limits.MaxCostUSD > 0 {
+		return limits.MaxCostUSD
+	}
+	return 0
+}
+
+// costBudget admits a plan under a strict cap. Every worker must run on a
+// priced lane, and no host call may go unpriced: a conflict ruling is a
+// subscription call, so a stage that could need one is refused. A runner that
+// already holds a share (a sequence's stage) keeps it rather than splitting
+// the cap again.
+func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam) (*OpenShellCostBudget, error) {
+	limit := OpenShellCostLimit(ctx)
+	if limit == 0 && r.WorkerCostUSD == 0 {
+		return nil, nil
+	}
+	budget := &OpenShellCostBudget{LimitUSD: limit, WorkerUSD: r.WorkerCostUSD}
+	if r.WorkerCostUSD > 0 {
+		budget.LimitUSD = r.MaxCostUSD
+	}
+	for _, team := range teams {
+		edits := 0
+		for _, task := range team.Tasks {
+			if !openShellPricedProfiles[task.Profile] {
+				return nil, fmt.Errorf("%w: profile %s returns no price; use an OpenRouter lane such as cerebras", ErrOpenShellCostCap, task.Profile)
+			}
+			if task.Mode != "review" {
+				edits++
+			}
+		}
+		if r.Director != nil && edits > 1 {
+			return nil, fmt.Errorf("%w: a conflict ruling is an unpriced host call; run one edit worker per stage or unset CAPTAIN_OPENSHELL_DIRECTOR", ErrOpenShellCostCap)
+		}
+		budget.Workers += len(team.Tasks)
+	}
+	if budget.WorkerUSD == 0 {
+		budget.WorkerUSD = math.Floor(limit/float64(budget.Workers)*1e6) / 1e6
+	}
+	if !(budget.WorkerUSD > 0 && budget.WorkerUSD <= budget.LimitUSD) {
+		return nil, fmt.Errorf("%w: $%g cannot be split across %d workers", ErrOpenShellCostCap, budget.LimitUSD, budget.Workers)
+	}
+	return budget, nil
+}
+
+// checkCostReport confirms a worker's Shield enforced its share: a report
+// without the budget, with another limit, or with a breached bound fails the
+// worker rather than being taken on trust.
+func (r *OpenShellRunner) checkCostReport(report *OpenShellReport) error {
+	if r.WorkerCostUSD == 0 {
+		return nil
+	}
+	if report == nil || report.Shield == nil || report.Shield.Budget == nil {
+		return fmt.Errorf("%w: the worker's Shield reported no budget", ErrOpenShellCostCap)
+	}
+	b := report.Shield.Budget
+	switch {
+	case b.LimitUSD != r.WorkerCostUSD:
+		return fmt.Errorf("%w: the worker's Shield enforced $%g, not its $%g share", ErrOpenShellCostCap, b.LimitUSD, r.WorkerCostUSD)
+	case b.Breached:
+		return fmt.Errorf("%w: a provider bill exceeded its reservation", ErrOpenShellCostCap)
+	case !(b.CommittedUSD >= 0 && b.CommittedUSD <= b.LimitUSD):
+		return fmt.Errorf("%w: the worker's Shield committed $%g of a $%g share", ErrOpenShellCostCap, b.CommittedUSD, b.LimitUSD)
+	}
+	return nil
+}
 
 type OpenShellAttemptUsage struct {
 	Workers    int `json:"workers"`
@@ -217,9 +322,29 @@ func OpenShellBudgetContext(ctx context.Context, budget *Budget) (context.Contex
 			return nil, nil, errors.New("openshell: CAPTAIN_MAX_WALLTIME must be zero or a duration of at least 1ms")
 		}
 	}
-	if (limits.Strict && limits.MaxCostUSD > 0) ||
-		(budget != nil && budget.Mode == BudgetStrict && budget.MaxCostUSD > 0) {
-		return nil, nil, errors.New("openshell: strict cost budgets are not supported by the pilot")
+	// A strict dollar cap is enforced per request at each worker's Shield.
+	// An unreadable one refuses: running without it would spend unbounded.
+	cost := OpenShellCostLimit(ctx)
+	if limits.Strict {
+		if raw := os.Getenv("CAPTAIN_MAX_COST"); raw != "" {
+			if v, err := strconv.ParseFloat(raw, 64); err != nil || !(v >= 0 && v < openShellMaxCostUSD) {
+				return nil, nil, fmt.Errorf("openshell: CAPTAIN_MAX_COST must be a dollar amount below %d", openShellMaxCostUSD)
+			}
+		}
+		if limits.MaxCostUSD > 0 && (cost == 0 || limits.MaxCostUSD < cost) {
+			cost = limits.MaxCostUSD
+		}
+	}
+	if budget != nil && budget.Mode == BudgetStrict {
+		if !(budget.MaxCostUSD > 0 && budget.MaxCostUSD < openShellMaxCostUSD) {
+			return nil, nil, errors.New("openshell: invalid strict cost budget")
+		}
+		if cost == 0 || budget.MaxCostUSD < cost {
+			cost = budget.MaxCostUSD
+		}
+	}
+	if cost > 0 {
+		ctx = context.WithValue(ctx, openShellCostLimitKey{}, cost)
 	}
 	cap, _ := ctx.Value(openShellAttemptLimitKey{}).(int)
 	cap = tighterOpenShellLimit(cap, limits.MaxAttempts)
