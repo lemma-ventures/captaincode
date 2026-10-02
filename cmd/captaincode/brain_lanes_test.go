@@ -193,13 +193,19 @@ func TestQualityLaneSpreadsOverTheTopLegs(t *testing.T) {
 	b := teamBrain()
 	noDirector(t, b)
 	seen := map[string]int{}
-	for i := 0; i < 4; i++ {
+	open := 0
+	for i := 0; i < 10; i++ {
 		resp := routeBody(t, b, "refactor the lexer", map[string]any{"prefer": "quality"})
 		assert.Contains(t, resp["rationale"], "quality lane:")
 		assert.Equal(t, "high", resp["effort"])
 		seen[resp["leg"].(string)]++
+		if captaincode.OpenWeights(captaincode.Leg(resp["leg"].(string))) {
+			open++
+		}
 	}
-	assert.Len(t, seen, 2, "the two top legs share the lane: %v", seen)
+	// 2026-10-02: a menu of two sent 68 of 72 turns to claude and grok-max.
+	assert.GreaterOrEqual(t, len(seen), 3, "the top legs share the lane, not just two: %v", seen)
+	assert.Equal(t, 2, open, "open weights take the mix's default 20%%: %v", seen)
 	p := b.pendingDecisions[truncate("refactor the lexer", 120)]
 	assert.Equal(t, captaincode.PathLane, p.dec.Path)
 
@@ -216,11 +222,17 @@ func TestQualityLaneHoldsTheDirectorsLegOnce(t *testing.T) {
 	b := teamBrain()
 	noDirector(t, b)
 	seen := map[string]int{}
-	for i := 0; i < 3; i++ {
+	var last string
+	for i := 0; i < 10; i++ {
 		resp := routeBody(t, b, "audit the security of the auth proxy across the codebase", map[string]any{"prefer": "quality"})
 		seen[resp["leg"].(string)]++
+		if r := resp["rationale"].(string); strings.Contains(r, "·") {
+			last = r // a balanced turn, whose tally lists the band
+		}
 	}
-	assert.Len(t, seen, 2, "two legs, not claude twice: %v", seen)
+	tally := last[strings.LastIndex(last, ";")+1:]
+	assert.Equal(t, 1, strings.Count(tally, "claude "), "claude is on the menu once: %s", last)
+	assert.GreaterOrEqual(t, len(seen), 3, "not a lane of one: %v", seen)
 	assert.Contains(t, seen, "claude", "the director's own leg is on a /quality menu")
 }
 

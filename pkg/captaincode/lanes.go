@@ -161,6 +161,44 @@ type LanePick struct {
 	Reason string
 }
 
+// OSSTurn gives a lane's next turn to open weights when the lane owes them
+// its share: target is the routing mix's oss fraction (/captain more oss,
+// oss=20%), counts the lane's recent turns. When giving this turn to an
+// open-weights leg keeps their share at or under target, the best
+// open-weights candidate within LaneFloor of the best score takes it. ok is
+// false when the target is zero or no open-weights leg is good enough, so
+// quality still comes first. Without it /quality never ran GLM or Kimi: 68
+// of 72 turns went to claude and grok-max (2026-10-02).
+func OSSTurn(lane Lane, cands []LaneCandidate, counts map[Leg]int, target float64) (LanePick, bool) {
+	if target <= 0 || len(cands) == 0 {
+		return LanePick{}, false
+	}
+	total, open := 0, 0
+	for l, n := range counts {
+		total += n
+		if OpenWeights(l) {
+			open += n
+		}
+	}
+	if float64(open+1) > target*float64(total+1)+1e-9 {
+		return LanePick{}, false
+	}
+	ranked := append([]LaneCandidate(nil), cands...)
+	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].Score > ranked[j].Score })
+	floor := ranked[0].Score * LaneFloor()
+	for _, c := range ranked {
+		if c.Score < floor {
+			break
+		}
+		if OpenWeights(c.Leg) {
+			return LanePick{Leg: c.Leg, Band: []Leg{c.Leg}, Reason: fmt.Sprintf(
+				"%s lane: %s (open weights: %d of the last %d turns, mix target %.0f%%)",
+				lane, c.Leg, open, total, target*100)}, true
+		}
+	}
+	return LanePick{}, false
+}
+
 // BalanceLane picks the leg for a lane's next turn. cands may come in any
 // order; equal scores keep the order given. counts is LaneCounts for the
 // lane. ok is false only when there is no candidate.

@@ -44,6 +44,9 @@ import (
 
 const brainAddr = "127.0.0.1:14097"
 
+// priorsStaleAfter is when the brain points out an aging priors.json.
+const priorsStaleAfter = 14 * 24 * time.Hour
+
 // cmdBrain runs the decision API. Called as `captain brain [--addr host:port]`.
 func cmdBrain(args []string) {
 	fs := flag.NewFlagSet("brain", flag.ExitOnError)
@@ -129,6 +132,14 @@ func cmdBrain(args []string) {
 		fmt.Fprintf(os.Stderr, "captain brain: prior overrides: %v\n", err)
 	} else if n > 0 {
 		fmt.Printf("captain brain: %d quality priors overridden from %s\n", n, captaincode.PriorOverridesPath())
+		// The file is written only by `captain priors sync --apply`, so it
+		// ages silently: on 2 October a 22-day-old file scored GLM-5.3 at
+		// 7.5 against the 8.8 the benchmark gave it, and /quality never ran it.
+		if st, err := os.Stat(captaincode.PriorOverridesPath()); err == nil {
+			if age := time.Since(st.ModTime()); age > priorsStaleAfter {
+				fmt.Printf("captain brain: priors.json is %d days old - `captain priors sync` previews what the benchmark says now\n", int(age.Hours()/24))
+			}
+		}
 	}
 
 	// One-shot policy sweep: a legacy or hand-edited context_policy.json is
@@ -2540,10 +2551,8 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				!legInList(dir, order) && (!needVision || captaincode.LegSupportsVision(dir)) {
 				cand = append([]captaincode.Leg{dir}, order...)
 			}
-			if tq := captaincode.TopQuality(cand, st, 2); len(tq) > 0 {
+			if tq := b.qualityMenu(cand, st, req.Task); len(tq) > 0 {
 				order = tq
-			}
-			if tq := captaincode.TopQuality(cand, st, 2); len(tq) > 0 {
 				managerOrder = tq
 			}
 		}
