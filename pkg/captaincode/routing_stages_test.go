@@ -249,9 +249,9 @@ func TestSettleFromObjectiveSignals(t *testing.T) {
 	l.RecordOutcome(OutcomeEvidence{TaskID: "failed-test", Status: AcceptancePending})
 	l.NoteDelivery("failed-test", "/repo", []string{"a.go"}, 900, LegGLM, EffortMedium, "glm-5.3", 1)
 	l.RecordCommitEvidence("failed-test", CommitRecord{SHA: "def"})
-	l.RecordCheckResult("failed-test", CheckResult{Command: "go test ./...", ExitCode: 1, Passed: false, Source: "tests"})
+	l.RecordCheckResult("failed-test", CheckResult{Command: "go test ./...", ExitCode: 1, Passed: false, Source: "tests", Baseline: "passing"})
 
-	assert.Equal(t, 4, l.SettleOutcomes(now))
+	assert.Equal(t, 3, l.SettleOutcomes(now))
 	status := func(id string) (AcceptanceStatus, OutcomeDecider) {
 		o := l.OutcomeFor(id)
 		return o.Status, o.DecidedBy
@@ -262,16 +262,15 @@ func TestSettleFromObjectiveSignals(t *testing.T) {
 	s, by = status("reprompt")
 	assert.Equal(t, AcceptanceRejected, s)
 	assert.Equal(t, DecidedByReprompt, by)
-	s, by = status("silence")
-	assert.Equal(t, AcceptanceAccepted, s)
-	assert.Equal(t, DecidedBySilence, by, "delivered, nothing came back for the window: the weakest honest acceptance")
+	s, _ = status("silence")
+	assert.Equal(t, AcceptancePending, s, "silence is unknown, not acceptance (SCORING.md Phase 1)")
 	s, _ = status("fresh")
 	assert.Equal(t, AcceptancePending, s, "the window has not elapsed")
 	s, _ = status("nothing")
 	assert.Equal(t, AcceptancePending, s, "nothing delivered, nothing checked: nothing to settle")
 	s, by = status("failed-test")
 	assert.Equal(t, AcceptanceRejected, s)
-	assert.Equal(t, DecidedByChecks, by, "a failed check is an objective fact and outranks the commit")
+	assert.Equal(t, DecidedByChecks, by, "a suite that passed before and fails after outranks the commit")
 
 	assert.True(t, CorrectiveReprompt("No, revert that and use the other approach"))
 	assert.True(t, CorrectiveReprompt("still broken after your change"))

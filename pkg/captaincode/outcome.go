@@ -21,6 +21,7 @@ package captaincode
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -49,6 +50,58 @@ type CheckResult struct {
 	Passed   bool      `json:"passed"`
 	Source   string    `json:"source,omitempty"` // "gate" | "solo" | "reviewer" | "external"
 	At       time.Time `json:"at"`
+	// TestsEdited: the run changed test files, so the suite it was checked
+	// against is partly its own - 29 of 39 test-checked turns had
+	// (SCORING.md Phase 1). Such a check is input for a judge, never a label.
+	TestsEdited bool `json:"tests_edited,omitempty"`
+	// Baseline is the suite's last result at the same commit before this
+	// run: "passing", "failing" or "" (unknown). A failure only says the run
+	// broke something when the suite passed before it.
+	Baseline string `json:"baseline,omitempty"`
+}
+
+// JudgeCheck is the command a director's assessment was once recorded
+// under: the judge's opinion, which is not an objective check.
+const JudgeCheck = "director:assess"
+
+// Labels says whether a check is evidence an outcome may settle on. Not
+// the judge's grade, not tests the run itself edited, and not a failure the
+// suite already had (or may have had) before the run.
+func (c CheckResult) Labels() bool {
+	if c.Command == JudgeCheck {
+		return false
+	}
+	if c.Source == "tests" {
+		if c.TestsEdited {
+			return false
+		}
+		if !c.Passed && c.Baseline != "passing" {
+			return false
+		}
+	}
+	return true
+}
+
+// IsTestFile reports whether a repository path is a test: by the common
+// naming conventions of Go, Python, JavaScript/TypeScript, Rust and Java,
+// or by living in a test directory.
+func IsTestFile(path string) bool {
+	p := strings.ToLower(filepath.ToSlash(path))
+	base := p[strings.LastIndex(p, "/")+1:]
+	for _, dir := range []string{"test/", "tests/", "__tests__/", "spec/", "testdata/"} {
+		if strings.HasPrefix(p, dir) || strings.Contains(p, "/"+dir) {
+			return true
+		}
+	}
+	switch {
+	case strings.HasSuffix(base, "_test.go"),
+		strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py"),
+		strings.HasSuffix(base, "_test.py"),
+		strings.Contains(base, ".test."), strings.Contains(base, ".spec."),
+		strings.HasSuffix(base, "test.java"), strings.HasSuffix(base, "tests.rs"):
+		return true
+	}
+	return false
 }
 
 // TaskReview is one human verdict on an actual task (not an eval execution).
@@ -122,6 +175,13 @@ type OutcomeEvidence struct {
 	Escalation     *EscalationOutcome `json:"escalation,omitempty"`
 	Effort         Effort             `json:"effort,omitempty"`
 	Model          string             `json:"model,omitempty"`
+
+	// What the outcome cost the user, stamped when it settles (SCORING.md
+	// Phase 1): rework counts corrections, a corrective reprompt and every
+	// attempt past the first; TimeToDeliveredMs runs from the task's start
+	// to the delivery that settled it.
+	Rework            int   `json:"rework,omitempty"`
+	TimeToDeliveredMs int64 `json:"time_to_delivered_ms,omitempty"`
 }
 
 // deliveredAt is when the settle window starts: the delivery when it was
@@ -266,6 +326,9 @@ type CommitRecord struct {
 	Subject string    `json:"subject,omitempty"`
 	At      time.Time `json:"at"`
 	Files   []string  `json:"files,omitempty"`
+	// Shared is how many outcomes this commit was credited to: one squash
+	// commit accepted 15 tasks on 2 October. Each holds 1/Shared of it.
+	Shared int `json:"shared,omitempty"`
 }
 
 // RepromptRecord is a corrective prompt sent on the same workspace inside

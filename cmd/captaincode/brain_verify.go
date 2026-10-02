@@ -57,6 +57,11 @@ type verifyResult struct {
 	// test` in a 49-crate workspace cannot finish inside any turn's budget,
 	// and the repair went to the same cheap leg at low effort).
 	timedOut bool
+	// testsEdited and baseline decide whether the check is a label
+	// (CheckResult.Labels): the run changed test files, and the suite's last
+	// result at the same commit before the run.
+	testsEdited bool
+	baseline    string
 }
 
 // soloCheck runs the repository's own tests when the worker changed files
@@ -95,20 +100,51 @@ func (b *brain) noteVerifyBase(taskID, dir string) {
 	b.verifyBase[taskID] = state
 }
 
-// turnChanged reports whether the turn's worker changed the working tree.
-// Uncommitted work it found there is not its own: a turn that signed off
-// commits in another repository was "verified" against 199 lines of
-// someone else's work in progress, failed, and bought a high-effort repair
-// of that work (2026-10-01). Without a baseline, any dirty file counts.
-func (b *brain) turnChanged(ctx context.Context, taskID, dir string) bool {
+// takeVerifyBase hands over the working tree's dirty files as the turn's
+// worker started, once. Uncommitted work the turn found there is not its
+// own: a turn that signed off commits in another repository was "verified"
+// against 199 uncommitted lines of someone else's work, failed, and bought a
+// high-effort repair of that work (2026-10-02). Without a baseline, any
+// dirty file counts as the turn's.
+func (b *brain) takeVerifyBase(taskID string) (map[string]string, bool) {
 	b.baseMu.Lock()
+	defer b.baseMu.Unlock()
 	before, ok := b.verifyBase[taskID]
 	delete(b.verifyBase, taskID)
-	b.baseMu.Unlock()
-	if !ok {
-		return true
+	return before, ok
+}
+
+// labelCheck stamps what decides whether a test check may settle the
+// outcome (SCORING.md Phase 1): whether the run changed test files since
+// base, and the suite's last result at the same commit before this run.
+// The result is then remembered for the next run on that commit.
+func (b *brain) labelCheck(ctx context.Context, dir string, base map[string]string, vr verifyResult) verifyResult {
+	if !vr.ran || vr.timedOut || dir == "" {
+		return vr
 	}
-	return !maps.Equal(before, captaincode.DirtyState(ctx, dir))
+	for f, state := range captaincode.DirtyState(ctx, dir) {
+		if captaincode.IsTestFile(f) && (base == nil || base[f] != state) {
+			vr.testsEdited = true
+			break
+		}
+	}
+	head := captaincode.HeadSHA(ctx, dir)
+	if head == "" {
+		return vr
+	}
+	key := dir + "\x00" + head + "\x00" + vr.command
+	b.baseMu.Lock()
+	defer b.baseMu.Unlock()
+	vr.baseline = b.testResults[key]
+	if b.testResults == nil {
+		b.testResults = map[string]string{}
+	}
+	if vr.passed {
+		b.testResults[key] = "passing"
+	} else {
+		b.testResults[key] = "failing"
+	}
+	return vr
 }
 
 // captureTest is CaptureTestEvidence behind the test seam the workflow
@@ -137,11 +173,12 @@ func (b *brain) verifyAndEscalate(ws captaincode.Workspace, leg captaincode.Leg,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
-	if !b.turnChanged(ctx, taskID, ws.Dir) {
+	base, hadBase := b.takeVerifyBase(taskID)
+	if hadBase && maps.Equal(base, captaincode.DirtyState(ctx, ws.Dir)) {
 		return leg, ws, res, nil
 	}
 	note("verifying: running the repository's tests on what changed")
-	check := b.soloCheck(ctx, ws)
+	check := b.labelCheck(ctx, ws.Dir, base, b.soloCheck(ctx, ws))
 	if !check.ran {
 		return leg, ws, res, nil
 	}
@@ -186,7 +223,7 @@ func (b *brain) verifyAndEscalate(ws captaincode.Workspace, leg captaincode.Leg,
 		if err != nil {
 			return r, err, verifyResult{}
 		}
-		vr := b.soloCheck(ctx, w)
+		vr := b.labelCheck(ctx, w.Dir, base, b.soloCheck(ctx, w))
 		b.recordCheck(taskID, vr, attempt)
 		// Recorded in line, not in a goroutine: the next attempt reserves
 		// against the same budget this record settles, and an intermediate
@@ -297,7 +334,8 @@ func (b *brain) recordCheck(taskID string, vr verifyResult, attempt int) {
 		code = 1
 	}
 	b.mu.Lock()
-	b.ledger.RecordCheckResult(taskID, captaincode.CheckResult{Command: vr.command, ExitCode: code, Passed: vr.passed, Source: "tests", At: time.Now()})
+	b.ledger.RecordCheckResult(taskID, captaincode.CheckResult{Command: vr.command, ExitCode: code, Passed: vr.passed, Source: "tests", At: time.Now(),
+		TestsEdited: vr.testsEdited, Baseline: vr.baseline})
 	b.mu.Unlock()
 }
 

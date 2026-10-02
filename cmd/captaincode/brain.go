@@ -447,6 +447,9 @@ type brain struct {
 	// (brain_verify.go): verification judges what the turn changed.
 	baseMu     sync.Mutex
 	verifyBase map[string]map[string]string
+	// testResults is the last test result per (folder, commit, command):
+	// the baseline a later run's result is read against.
+	testResults map[string]string
 
 	// Route-time task identities (ROADMAP M1.2). The director-side calls that
 	// PRECEDE the worker - tier-1 classification and the director's plan -
@@ -1886,19 +1889,11 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 				b.mu.Unlock()
 				journalReview(captaincode.Workspace{Dir: wsDir}, leg, reviewer, task, a.Quality, a.Verdict, a.Notes)
 			}
-			// M5.1: record the assessment as a solo-turn check result so
-			// the outcome evidence carries what the director observed,
-			// not just a pending status. A "poor" verdict is a failed
-			// check the user can see in `captain outcome <id>`.
-			b.mu.Lock()
-			b.ledger.RecordCheckResult(ev.TaskID, captaincode.CheckResult{
-				Command:  "director:assess",
-				ExitCode: assessmentExitCode(a.Verdict),
-				Passed:   a.Verdict != "poor",
-				Source:   "solo",
-				At:       time.Now(),
-			})
-			b.mu.Unlock()
+			// The grade is no longer recorded as a check (it was, as
+			// director:assess, until 2026-10-02): a judge's opinion that
+			// settles the outcome teaches the estimator the judge's own
+			// view as if it were the user's (SCORING.md Phase 1). It stays
+			// on the event, where the quality score reads it.
 		}
 	}
 	// M3.9: one row per stocked skill, graded or not. A run the director
@@ -1947,15 +1942,6 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 }
 
 // chargeTurn writes the task/attempt/call spine for one wrapper turn and
-
-// assessmentExitCode maps a director verdict to an exit-code convention: 0
-// for good/acceptable (the output met the bar), 1 for poor (it did not).
-func assessmentExitCode(verdict string) int {
-	if verdict == "poor" {
-		return 1
-	}
-	return 0
-}
 
 // chargeTurn writes the task/attempt/call spine for one wrapper turn and
 // returns the task and attempt identities to stamp on the decision row. A

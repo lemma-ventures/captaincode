@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func settleLedger(o OutcomeEvidence) *Ledger {
 func TestSettleFailedCheckRejectsAtOnce(t *testing.T) {
 	now := time.Now()
 	l := settleLedger(OutcomeEvidence{TaskID: "t1", Status: AcceptancePending, UpdatedAt: now,
-		Checks: []CheckResult{{Command: "director:assess", Passed: false, ExitCode: 1, At: now}}})
+		Checks: []CheckResult{{Command: "go test ./...", Source: "gate", Passed: false, ExitCode: 1, At: now}}})
 	if n := l.SettleOutcomes(now); n != 1 {
 		t.Fatalf("expected 1 settled, got %d", n)
 	}
@@ -192,5 +193,130 @@ func TestSettledGateRowsProduceAFalsePositiveReading(t *testing.T) {
 	if bar != 0.6 {
 		t.Fatalf("bar %.2f, want 0.60 - below it the mid-confidence false positives pull "+
 			"agreement under the target", bar)
+	}
+}
+
+// SCORING.md Phase 1: the labels an outcome may settle on.
+func TestSettleOnlyOnEvidenceThatLabels(t *testing.T) {
+	t.Setenv(OutcomeSettleEnv, "1h")
+	now := time.Now()
+	old := now.Add(-2 * time.Hour)
+	l := &Ledger{}
+	add := func(id string, checks ...CheckResult) {
+		l.RecordOutcome(OutcomeEvidence{TaskID: id, Status: AcceptancePending})
+		l.NoteDelivery(id, "/repo", nil, 900, LegGLM, EffortMedium, "glm-5.3", 1)
+		l.OutcomeFor(id).DeliveredAt = old
+		for _, c := range checks {
+			l.RecordCheckResult(id, c)
+		}
+	}
+	add("judge-poor", CheckResult{Command: JudgeCheck, Passed: false, ExitCode: 1, Source: "solo"})
+	add("own-tests", CheckResult{Command: "go test ./...", Passed: true, Source: "tests", TestsEdited: true})
+	add("old-failure", CheckResult{Command: "go test ./...", Passed: false, ExitCode: 1, Source: "tests", Baseline: "failing"})
+	add("unknown-failure", CheckResult{Command: "go test ./...", Passed: false, ExitCode: 1, Source: "tests"})
+	add("real-pass", CheckResult{Command: "go test ./...", Passed: true, Source: "tests"})
+	l.SettleOutcomes(now)
+
+	for _, id := range []string{"judge-poor", "own-tests", "old-failure", "unknown-failure"} {
+		if s := l.OutcomeFor(id).Status; s != AcceptancePending {
+			t.Errorf("%s settled as %s on evidence that does not label", id, s)
+		}
+	}
+	if o := l.OutcomeFor("real-pass"); o.Status != AcceptanceAccepted || o.DecidedBy != DecidedByChecks {
+		t.Errorf("a pre-existing suite that passed settles: got %s by %s", o.Status, o.DecidedBy)
+	}
+}
+
+// Outcomes settled on silence or on the judge's grade alone go back to
+// pending, once; a human verdict and objective evidence stand.
+func TestStaleSettlementsAreUnsettled(t *testing.T) {
+	now := time.Now()
+	l := &Ledger{}
+	l.RecordOutcome(OutcomeEvidence{TaskID: "silence", Status: AcceptanceAccepted, DecidedBy: DecidedBySilence, SettledAt: now, AcceptedAt: now})
+	l.RecordOutcome(OutcomeEvidence{TaskID: "judge", Status: AcceptanceAccepted, DecidedBy: DecidedByChecks, SettledAt: now, AcceptedAt: now,
+		Checks: []CheckResult{{Command: JudgeCheck, Passed: true, Source: "solo"}}})
+	l.RecordOutcome(OutcomeEvidence{TaskID: "tested", Status: AcceptanceAccepted, DecidedBy: DecidedByChecks, SettledAt: now, AcceptedAt: now,
+		Checks: []CheckResult{{Command: "go test ./...", Passed: true, Source: "tests"}}})
+	l.RecordOutcome(OutcomeEvidence{TaskID: "reviewed", Status: AcceptanceAccepted, DecidedBy: DecidedBySilence, SettledAt: now, AcceptedAt: now,
+		Review: &TaskReview{Verdict: "accept"}})
+	l.SettleOutcomes(now)
+	if s := l.OutcomeFor("silence").Status; s != AcceptancePending {
+		t.Errorf("silence acceptance kept: %s", s)
+	}
+	if o := l.OutcomeFor("judge"); o.Status != AcceptancePending || !o.AcceptedAt.IsZero() {
+		t.Errorf("judge-only acceptance kept: %s", o.Status)
+	}
+	if s := l.OutcomeFor("tested").Status; s != AcceptanceAccepted {
+		t.Errorf("a passed test suite is still acceptance: %s", s)
+	}
+	if s := l.OutcomeFor("reviewed").Status; s != AcceptanceAccepted {
+		t.Errorf("a human verdict is never overwritten: %s", s)
+	}
+}
+
+// A commit keeps the lines of the last task that wrote them, and its credit
+// is shared among the tasks it accepts.
+func TestCommitCreditsTheLastWriter(t *testing.T) {
+	now := time.Now()
+	orig := CommitsTouching
+	t.Cleanup(func() { CommitsTouching = orig })
+	commitAt := now.Add(-time.Minute)
+	CommitsTouching = func(_ context.Context, dir string, since time.Time, files []string) (CommitRecord, bool) {
+		return CommitRecord{SHA: "squash", At: commitAt, Files: files}, true
+	}
+	l := &Ledger{}
+	deliver := func(id string, at time.Time, files ...string) {
+		l.RecordOutcome(OutcomeEvidence{TaskID: id, Status: AcceptancePending})
+		l.NoteDelivery(id, "/repo", files, 900, LegGLM, EffortMedium, "glm-5.3", 1)
+		l.OutcomeFor(id).DeliveredAt = at
+	}
+	deliver("redone", now.Add(-30*time.Minute), "a.go")
+	deliver("redo", now.Add(-20*time.Minute), "a.go")
+	deliver("other", now.Add(-10*time.Minute), "b.go")
+	l.SweepCommits(context.Background(), now)
+
+	if l.OutcomeFor("redone").Commit != nil {
+		t.Error("a task whose lines a later task rewrote is not kept by the commit")
+	}
+	for _, id := range []string{"redo", "other"} {
+		c := l.OutcomeFor(id).Commit
+		if c == nil {
+			t.Fatalf("%s: the commit kept its lines", id)
+		}
+		if c.Shared != 2 {
+			t.Errorf("%s: shared %d, want 2", id, c.Shared)
+		}
+	}
+}
+
+func TestSettledOutcomesRecordTheirCost(t *testing.T) {
+	now := time.Now()
+	l := &Ledger{}
+	start := now.Add(-10 * time.Minute)
+	l.RecordTaskState(TaskState{TaskID: "t1", State: StateSucceeded, StartedAt: start})
+	l.RecordOutcome(OutcomeEvidence{TaskID: "t1", Status: AcceptancePending, Attempts: 3})
+	l.NoteDelivery("t1", "/repo", []string{"a.go"}, 900, LegGLM, EffortMedium, "glm-5.3", 3)
+	l.OutcomeFor("t1").DeliveredAt = now.Add(-4 * time.Minute)
+	l.RecordCommitEvidence("t1", CommitRecord{SHA: "abc"})
+	l.SettleOutcomes(now)
+	o := l.OutcomeFor("t1")
+	if o.Rework != 2 {
+		t.Errorf("rework %d, want 2 (two attempts past the first)", o.Rework)
+	}
+	if o.TimeToDeliveredMs != (6 * time.Minute).Milliseconds() {
+		t.Errorf("time to delivered %dms, want 6m", o.TimeToDeliveredMs)
+	}
+}
+
+func TestIsTestFile(t *testing.T) {
+	for _, p := range []string{"pkg/a_test.go", "tests/test_x.py", "app/foo_test.py", "src/x.test.ts", "web/a.spec.js", "src/__tests__/a.js", "crates/x/tests/it.rs"} {
+		if !IsTestFile(p) {
+			t.Errorf("%s is a test", p)
+		}
+	}
+	for _, p := range []string{"pkg/a.go", "src/latest.py", "README.md", "src/contest.ts"} {
+		if IsTestFile(p) {
+			t.Errorf("%s is not a test", p)
+		}
 	}
 }
