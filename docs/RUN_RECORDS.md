@@ -84,8 +84,13 @@ owner-only `sequence.json` containing their task assignments and execution setti
 `run.json.sequence_sha256` binds that plan. `captain openshell --resume <run-directory>`
 reuses only fully verified stages and records explicit continuation times in
 `resumptions`. It checks saved runtime fingerprints, worker and integration gates,
-patch scope and hashes, and the complete snapshot chain before dispatch. Failed
-or in-flight stages are not replayed. A completed sequence can be rechecked without
+patch scope and hashes, and the complete snapshot chain before dispatch. A stage
+run that a cancellation stopped has verdict `interrupted`. Recovery moves it to
+`set_aside`, which records its stage, run record, revision, measured `attempts`
+and Shield `requests`, `tokens`, `cost_usd` and `priced`. It then runs the stage
+again in `stage-N-rerun-K`. A stage cancelled before any worker started leaves no
+stage record, so recovery simply starts it. Failed stages, and stages still marked running
+because their controller died, are not replayed. A completed sequence can be rechecked without
 rewriting it or calling a model. The original brain task/attempt stays unchanged;
 task-linked recovery is described below. Mixed host/sandbox workflows remain refused; JSON
 sandbox teams are available through `captain openshell --team`.
@@ -105,8 +110,10 @@ budget once. Failed and cancelled runs still count completed invocations. A
 recovery continuation owns the cumulative count, including reused stages;
 replaying the same settlement does not add it again. `unmeasured` identifies
 executions with unavailable counts, so `captain budget` displays known attempts
-as a lower bound. Verification sandboxes use no model attempt. In-flight usage is
-not yet reconciled; counts are saved when the controller returns.
+as a lower bound. Verification sandboxes use no model attempt. Set-aside runs
+count in `attempt_usage` and in the run's spend; one whose record is missing
+counts as unknown, not zero. In-flight usage is not yet reconciled; counts are
+saved when the controller returns.
 
 For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`
 and `sequence_sha256` before sandbox dispatch. `captain task inspect <id>` shows
@@ -117,8 +124,10 @@ the continuation owns its final export, cumulative sequence usage and handoff.
 Tasks with already-settled call usage are refused to avoid double counting.
 The response means the continuation was accepted, not that verification passed;
 inspect the task for completion and read `captain task artifacts <id>` for the
-export. Invalid or incomplete checkpoints do not become running tasks. Recovery of
-in-flight workers remains unsupported.
+export. Invalid or incomplete checkpoints do not become running tasks. A brain
+stop leaves a checkpointed sequence's attempt running, so the next start marks it
+interrupted and nothing settles until a continuation finishes. A worker is never
+resumed mid-run: a stopped stage runs again from its verified input.
 
 With `CAPTAIN_OPENSHELL_AUTO_RESUME=1`, startup uses the same validation path for
 previously running sandbox sequences with checkpoints from the last 24 hours.

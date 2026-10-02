@@ -301,17 +301,28 @@ type OpenShellShield struct {
 // complete only when each request that crossed Shield came back with a
 // price; a blocked, failed or unpriced call, or a worker that stopped before
 // Shield was tallied, leaves the bill unknown rather than understated.
+// Stage runs that recovery set aside count too.
 func (run *OpenShellRun) Spend() (tokens int, costUSD float64, complete bool) {
-	requests := 0
-	complete = true
-	for _, t := range run.Tasks {
+	requests, tokens, costUSD, complete := openShellSpend(run.Tasks)
+	for _, s := range run.SetAside {
+		requests += s.Requests
+		tokens += s.Tokens
+		costUSD += s.CostUSD
+		complete = complete && s.Priced
+	}
+	return tokens, costUSD, complete && requests > 0
+}
+
+func openShellSpend(tasks []*OpenShellResult) (requests, tokens int, costUSD float64, priced bool) {
+	priced = true
+	for _, t := range tasks {
 		if t == nil || t.Report == nil {
 			continue
 		}
 		s := t.Report.Shield
 		if s == nil {
 			if t.Report.WorkerAttempts == nil || *t.Report.WorkerAttempts > 0 {
-				complete = false
+				priced = false
 			}
 			continue
 		}
@@ -319,10 +330,10 @@ func (run *OpenShellRun) Spend() (tokens int, costUSD float64, complete bool) {
 		tokens += s.PromptTokens + s.CompletionTokens
 		costUSD += s.CostUSD
 		if s.PricedResponses != s.Requests {
-			complete = false
+			priced = false
 		}
 	}
-	return tokens, costUSD, complete && requests > 0
+	return requests, tokens, costUSD, priced
 }
 
 // OpenShellExport describes the patch a task's sandbox exported.
@@ -405,6 +416,7 @@ type OpenShellRun struct {
 	Error          string                  `json:"error,omitempty"`
 	Tasks          []*OpenShellResult      `json:"tasks"`
 	Stages         []OpenShellStageRecord  `json:"stages,omitempty"`
+	SetAside       []OpenShellSetAside     `json:"set_aside,omitempty"`
 	SequenceSHA256 string                  `json:"sequence_sha256,omitempty"`
 	Resumptions    []time.Time             `json:"resumptions,omitempty"`
 	Candidate      *IntegrationCandidate   `json:"candidate,omitempty"`

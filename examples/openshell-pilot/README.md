@@ -441,8 +441,10 @@ The coordinator records each handoff atomically and saves a checksum-bound plan.
 `captain openshell --resume <run-directory>` continues at verified stage boundaries,
 using the saved scope, checks and runtime. It rechecks each completed worker and
 integrated export before running another stage, without repeating completed model
-or director calls. A process lock prevents competing controllers; changed runtime
-inputs and incomplete stages are refused. This is explicit local continuation,
+or director calls. A process lock prevents competing controllers. Changed runtime
+inputs, failed stages, and stages whose controller died are refused. A stage that a
+cancellation stopped runs again from its snapshot, and the stopped run's attempts
+and spend still count. This is explicit local continuation,
 not automatic brain recovery or resumption of an in-flight worker. It does not
 update the original brain attempt. See
 [configuration](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
@@ -475,7 +477,8 @@ Optional startup recovery uses the same task path when the brain environment set
 only after listener binding and saved reconciliation, with a checkpoint from the
 last 24 hours. Waiting tasks, pending cancellations, stale or incomplete evidence,
 changed runtime and unsupported budgets are refused. Repeated startup does not
-recharge completed work. Shutdown stops the active continuation and its queue;
+recharge completed work. Shutdown stops the active continuation and its queue
+and leaves checkpointed sequences resumable;
 there is no background retry loop. See the configuration reference for inspection
 and cancellation commands.
 

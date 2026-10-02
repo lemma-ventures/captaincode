@@ -198,7 +198,13 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	if err == nil && res.Export == nil {
 		err = errors.New("openshell: worker returned no verified export")
 	}
-	saveErr := recordOpenShellSolo(b.ledger, taskID, attemptID, lastUserTurn(prompt), res, err)
+	var saveErr error
+	if b.openShellStoppedByRestart(attemptID, err) {
+		err = fmt.Errorf("%w: the brain is restarting; after it starts, run captain task resume %s %s", err, taskID, attemptID)
+		saveErr = b.ledger.Save()
+	} else {
+		saveErr = recordOpenShellSolo(b.ledger, taskID, attemptID, lastUserTurn(prompt), res, err)
+	}
 	b.mu.Unlock()
 	if saveErr != nil {
 		err = errors.Join(err, fmt.Errorf("openshell: save result: %w", saveErr))

@@ -179,6 +179,31 @@ func (r *OpenShellRunner) attemptBudget(ctx context.Context, teams []OpenShellTe
 	return budget, nil
 }
 
+// rerunFits admits a recovery that runs a stopped stage again only if the
+// attempts already used, every set-aside run included, plus the worst case of
+// the stages left fit the cap. An unknown count cannot be shown to fit.
+func (r *OpenShellRunner) rerunFits(ctx context.Context, teams []OpenShellTeam, recovered []*OpenShellRun, setAside []OpenShellSetAside, pending *OpenShellSetAside) error {
+	used := &OpenShellAttemptUsage{}
+	for _, stage := range recovered {
+		used.add(stage.AttemptUsage)
+	}
+	for i := range setAside {
+		used.add(setAside[i].Attempts)
+	}
+	if pending != nil {
+		used.add(pending.Attempts)
+	}
+	left, err := r.attemptBudget(ctx, teams[len(recovered):])
+	if err != nil {
+		return err
+	}
+	if left.Limit > 0 && (used.Unmeasured > 0 || used.Total()+left.Required > left.Limit) {
+		return fmt.Errorf("%w: resuming at stage %d needs %d more attempt slots after %d used (%d unknown); cap is %d",
+			ErrOpenShellAttemptCap, len(recovered)+1, left.Required, used.Total(), used.Unmeasured, left.Limit)
+	}
+	return nil
+}
+
 func OpenShellBudgetContext(ctx context.Context, budget *Budget) (context.Context, context.CancelFunc, error) {
 	limits := DefaultBudgetOpts()
 	if raw := os.Getenv("CAPTAIN_MAX_ATTEMPTS"); raw != "" {

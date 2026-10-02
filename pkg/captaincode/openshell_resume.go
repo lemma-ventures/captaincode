@@ -127,6 +127,7 @@ type OpenShellRecovery struct {
 	teams     []OpenShellTeam
 	run       *OpenShellRun
 	recovered []*OpenShellRun
+	aside     *OpenShellSetAside // an interrupted stage run to set aside before running it again
 	used      bool
 }
 
@@ -181,6 +182,16 @@ func (r *OpenShellRecovery) Run(ctx context.Context) (Result, error) {
 		return finishOpenShellRun(ctx, runner, run, nil, false)
 	}
 	run.Resumptions = append(run.Resumptions, time.Now())
+	if r.aside != nil {
+		// Saved before dispatch: the stopped run keeps its directory and its
+		// count, and the stage runs again in a directory of its own.
+		run.SetAside = append(run.SetAside, *r.aside)
+		run.Stages = run.Stages[:r.aside.Stage-1]
+		if err := saveOpenShellSequence(runner.RunDir, run); err != nil {
+			return Result{}, err
+		}
+		runner.logf("stage %d/%d: set aside a run a cancellation stopped; running the stage again", r.aside.Stage, len(r.teams))
+	}
 	run.Tasks, run.Integrated = nil, nil
 	run.Verdict, run.Error = "fail", ""
 	err = runner.runSequence(ctx, r.teams, run, r.recovered)
@@ -283,14 +294,22 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 	if !reflect.DeepEqual(provenance, plan.Provenance) {
 		return nil, errors.New("openshell: runtime or pilot changed; start a new workflow")
 	}
-	recovered, err := runner.recoverSequence(ctx, plan.Teams, &run)
+	recovered, aside, err := runner.recoverSequence(ctx, plan.Teams, &run)
 	if err != nil {
 		return nil, err
+	}
+	if len(recovered) < len(plan.Teams) && (aside != nil || len(run.SetAside) > 0) {
+		if err := runner.rerunFits(ctx, plan.Teams, recovered, run.SetAside, aside); err != nil {
+			return nil, err
+		}
 	}
 	if len(recovered) == len(plan.Teams) && run.Verdict == "pass" {
 		last := recovered[len(recovered)-1].Integrated
 		var tasks []*OpenShellResult
 		usage := &OpenShellAttemptUsage{}
+		for i := range run.SetAside {
+			usage.add(run.SetAside[i].Attempts)
+		}
 		for _, stage := range recovered {
 			tasks = append(tasks, stage.Tasks...)
 			usage.add(stage.AttemptUsage)
@@ -316,44 +335,53 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		return nil, err
 	}
 	ready = true
-	return &OpenShellRecovery{lock: lock, runner: runner, teams: plan.Teams, run: &run, recovered: recovered}, nil
+	return &OpenShellRecovery{lock: lock, runner: runner, teams: plan.Teams, run: &run, recovered: recovered, aside: aside}, nil
 }
 
-func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShellTeam, run *OpenShellRun) ([]*OpenShellRun, error) {
+func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShellTeam, run *OpenShellRun) ([]*OpenShellRun, *OpenShellSetAside, error) {
 	snapshot := filepath.Join(r.RunDir, "snapshot")
 	resolved, err := filepath.EvalSymlinks(snapshot)
 	if err != nil || resolved != snapshot {
-		return nil, errors.New("openshell: snapshot is missing or redirected")
+		return nil, nil, errors.New("openshell: snapshot is missing or redirected")
 	}
 	for _, dir := range []string{snapshot, filepath.Join(snapshot, ".git")} {
 		info, err := os.Lstat(dir)
 		if err != nil || !info.IsDir() {
-			return nil, errors.New("openshell: invalid snapshot repository")
+			return nil, nil, errors.New("openshell: invalid snapshot repository")
 		}
 	}
 	hooks, err := gitOutput(ctx, snapshot, nil, nil, "config", "--local", "--get", "core.hooksPath")
 	if err != nil || strings.TrimSpace(string(hooks)) != "/dev/null" {
-		return nil, errors.New("openshell: snapshot hooks must remain disabled")
+		return nil, nil, errors.New("openshell: snapshot hooks must remain disabled")
 	}
 	attributes, err := readOpenShellFile(filepath.Join(snapshot, ".git", "info", "attributes"), 1024)
 	if err != nil || string(attributes) != "* -filter -text -ident -working-tree-encoding -eol\n" {
-		return nil, errors.New("openshell: snapshot filters must remain disabled")
+		return nil, nil, errors.New("openshell: snapshot filters must remain disabled")
 	}
 	var recovered []*OpenShellRun
+	var aside *OpenShellSetAside
 	current := r.Revision
 	missing := false
 	if len(run.Stages) > len(teams) {
-		return nil, errors.New("openshell: unexpected stage checkpoints")
+		return nil, nil, errors.New("openshell: unexpected stage checkpoints")
+	}
+	if err := checkOpenShellSetAside(r.RunDir, len(teams), run); err != nil {
+		return nil, nil, err
 	}
 	for i, team := range teams {
-		dir := filepath.Join(r.RunDir, fmt.Sprintf("stage-%d", i+1))
+		for _, s := range run.SetAside {
+			if s.Stage == i+1 && (missing || s.Revision != current) {
+				return nil, nil, fmt.Errorf("openshell: stage %d: a set-aside run does not match the snapshot lineage", i+1)
+			}
+		}
+		dir := openShellStageDir(r.RunDir, i+1, run.reruns(i+1))
 		info, err := os.Lstat(dir)
 		if errors.Is(err, os.ErrNotExist) && i >= len(run.Stages) {
 			missing = true
 			continue
 		}
-		fail := func(err error) ([]*OpenShellRun, error) {
-			return nil, fmt.Errorf("openshell: stage %d cannot be reused: %w", i+1, err)
+		fail := func(err error) ([]*OpenShellRun, *OpenShellSetAside, error) {
+			return nil, nil, fmt.Errorf("openshell: stage %d cannot be reused: %w", i+1, err)
 		}
 		if err != nil || !info.IsDir() || missing || i >= len(run.Stages) {
 			return fail(errors.New("missing, redirected or out-of-order stage; inspect and clean up before starting a new workflow"))
@@ -361,6 +389,16 @@ func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShell
 		record := run.Stages[i]
 		if record.Stage != i+1 || record.RunRecord != filepath.Join(dir, "run.json") || record.Revision != current {
 			return fail(errors.New("snapshot lineage does not match the checkpoint"))
+		}
+		if record.Verdict == "interrupted" {
+			// A cancellation stopped this run's workers before it was
+			// verified: nothing of it is reused, and the stage runs again.
+			if i != len(run.Stages)-1 {
+				return fail(errors.New("only the last recorded stage can have been interrupted"))
+			}
+			aside = setAsideOpenShellStage(team, record)
+			missing = true
+			continue
 		}
 		var stage OpenShellRun
 		if _, err := decodeOpenShellSequence(record.RunRecord, &stage); err != nil {
@@ -387,10 +425,35 @@ func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShell
 		}
 		recovered = append(recovered, &stage)
 	}
-	if len(recovered) == 0 {
-		return nil, errors.New("openshell: no verified stage to resume")
+	if len(recovered) == 0 && aside == nil {
+		return nil, nil, errors.New("openshell: no verified stage to resume")
 	}
-	return recovered, nil
+	return recovered, aside, nil
+}
+
+// checkOpenShellSetAside validates the stopped stage runs a sequence kept:
+// each names its own directory, in order, and carries sane counts.
+func checkOpenShellSetAside(runDir string, stages int, run *OpenShellRun) error {
+	seen := map[int]int{}
+	for _, s := range run.SetAside {
+		k := seen[s.Stage]
+		seen[s.Stage]++
+		if s.Stage < 1 || s.Stage > stages || s.Stage > len(run.Stages)+1 ||
+			s.RunRecord != filepath.Join(openShellStageDir(runDir, s.Stage, k), "run.json") ||
+			s.Requests < 0 || s.Tokens < 0 || s.CostUSD < 0 {
+			return errors.New("openshell: invalid set-aside stage record")
+		}
+		if s.Attempts != nil {
+			if err := s.Attempts.Validate(); err != nil {
+				return err
+			}
+		}
+		info, err := os.Lstat(filepath.Dir(s.RunRecord))
+		if err != nil || !info.IsDir() {
+			return errors.New("openshell: a set-aside stage directory is missing or redirected")
+		}
+	}
+	return nil
 }
 
 func (r *OpenShellRunner) revalidateSequenceStage(ctx context.Context, team OpenShellTeam, run *OpenShellRun, provenance *OpenShellProvenance) error {

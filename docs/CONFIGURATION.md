@@ -768,9 +768,16 @@ crash. Changed scripts, provider policies or prepared binaries require a new
 workflow; credentials still come from the current environment and are not saved
 in the plan.
 
-Only verified stage boundaries are recoverable. A started stage without a complete
-passing record is refused, so an uncertain worker is never launched twice. Inspect
-and clean up that stage before starting a new workflow. Older runs without a saved
+Recovery reuses only verified stages. When a cancellation or a brain stop halts a
+stage's workers, the controller waits for them to stop and records that stage run
+as `interrupted`. Recovery sets the run aside and runs the stage again from the
+same snapshot, in `stage-N-rerun-K`. The stopped run keeps its directory, and its
+measured attempts and Shield spend still count. With an attempt cap, the attempts
+already used plus the worst case of the remaining stages must fit, and an unknown
+count cannot. A stage that failed its checks, or one still marked running because
+its controller died (its workers may have outlived it), is refused, so an
+uncertain worker is never launched twice. Inspect and clean up that stage before
+starting a new workflow. Older runs without a saved
 plan cannot be resumed. The command updates the sequence's local run record and
 returns an export; it does not rewrite the original brain task or attempt, apply
 files, or enable automatic brain restart recovery.
@@ -795,7 +802,7 @@ accepted continuation. A cancellation withholds exports and stops the controller
 The controller refreshes the attempt checkpoint after each verified stage, including
 resumed stages. A failed ledger save stops progression before another worker starts.
 
-Missing or changed checkpoints, in-flight stages, settled task usage, strict
+Missing or changed checkpoints, stages still marked running, settled task usage, strict
 dollar budgets and expired workflow deadlines are refused before dispatch. Solo
 and single-stage tasks have no sequence checkpoint and cannot use this task-level
 recovery. No exported patch is
@@ -810,21 +817,28 @@ and durable admission as `captain task resume`; it does not rerun completed stag
 
 Only previously running controllers with a checkpoint timestamp in the last 24
 hours are eligible. Restart time does not refresh that age. Waiting-for-input tasks,
-operator interruptions, pending cancellations, changed plans/runtime, incomplete
-stages, settled usage and unsupported budgets are not dispatched. Rejections stay
+operator interruptions, pending cancellations, changed plans/runtime, failed or
+still-running stages, settled usage and unsupported budgets are not dispatched. Rejections stay
 visible in lifecycle records and the brain log for explicit inspection. Cancellation
 intent survives reconciliation and also blocks manual resume; start a new workflow
 if you intend to perform that work again.
 
 Startup continuations are labelled `sandbox restart recovery` in the charge tree.
-Inspect their task and artifacts as above. Shutdown cancels the active startup
-continuation, withholds its export, and stops the queue. This is a single startup
-pass, not a retry loop or mid-worker recovery.
+Inspect their task and artifacts as above. Shutdown stops the active startup
+continuation, withholds its export, leaves it resumable as described below, and
+stops the queue. This is a single startup pass, not a retry loop or mid-worker
+recovery.
 
 Stopping the brain cancels every sandbox controller it started, including HTTP
 runs and accepted `captain task resume` continuations, and refuses new ones. It
-waits up to 3 minutes 30 seconds for their cleanup before exiting. Their attempts
-are recorded as cancelled, without an export.
+waits up to 3 minutes 30 seconds for their cleanup before exiting, and delivers
+no export. A sequence that saved a checkpoint is not recorded as cancelled. Its
+attempt stays running in the ledger, the next start marks it interrupted (`brain
+process restarted`), and `captain task resume` or startup recovery continues it,
+running the stopped stage again. The HTTP error names that command, and the run's
+usage settles when the continuation finishes. Solo and single-stage runs, runs
+past their deadline, and runs with a pending cancellation are recorded as
+cancelled.
 
 Both recovery paths passed live on one public edit-then-review fixture on
 2 October 2026: see the
