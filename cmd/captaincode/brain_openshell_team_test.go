@@ -246,3 +246,33 @@ func TestOpenShellTeamPlanThatCannotBeSavedStartsNoSandbox(t *testing.T) {
 	require.NotNil(t, attempt.OpenShellAttempts)
 	assert.Equal(t, captaincode.OpenShellAttemptUsage{Directors: 1}, *attempt.OpenShellAttempts)
 }
+
+func TestOpenShellTeamStagesAreSavedAndDisplayedBeforeDispatch(t *testing.T) {
+	b := openShellTeamBrain(t)
+	plan := captaincode.OpenShellTeamPlan{DirectorAttempts: 1, Assignments: []string{"edit a", "inspect a"},
+		Stages: []captaincode.OpenShellPlanStage{
+			{Mode: "edit", Assignments: []string{"edit a"}},
+			{Mode: "review", Assignments: []string{"inspect a"}},
+		}, Workflow: captaincode.Workflow{Stages: []captaincode.WorkflowStage{
+			{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegOpenShell, Prompt: "edit a"}}},
+			{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegOpenShell, Prompt: "--review inspect a"}}},
+		}}}
+	b.planOpenShellTeamFn = func(context.Context, string, string, string) (captaincode.OpenShellTeamPlan, error) { return plan, nil }
+	b.runOpenShellWorkflowFn = func(_ context.Context, _ captaincode.Workspace, wf captaincode.Workflow, _ string) (captaincode.Result, error) {
+		assert.Equal(t, plan.Workflow, wf)
+		stored, err := captaincode.LoadLedger()
+		require.NoError(t, err)
+		require.Len(t, stored.AttemptStates, 1)
+		assert.Equal(t, plan.Record(), *stored.AttemptStates[0].OpenShellPlan)
+		res := openShellHTTPResult("/fixture")
+		res.OpenShellAttempts = &captaincode.OpenShellAttemptUsage{Workers: 2}
+		return res, nil
+	}
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, openShellTeamRequest(t, t.TempDir(), "team", "/team /openshell edit then review a", false))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "across 2 stage(s)")
+	assert.Contains(t, rec.Body.String(), "s1-w1 (edit): edit a")
+	assert.Contains(t, rec.Body.String(), "s2-w1 (review): inspect a")
+	assert.Equal(t, []string{"s1-w1 (edit): edit a", "s2-w1 (review): inspect a"}, openShellPlanLines(plan.Record(), 300))
+}

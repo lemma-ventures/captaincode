@@ -430,3 +430,99 @@ func TestOpenShellTaskResumeRefusesExpiredWallTimeBeforeValidation(t *testing.T)
 		})
 	}
 }
+
+func TestOpenShellPlannedStagesResumeKeepsPlanAndCountsPlannerOnce(t *testing.T) {
+	b, task, parent := interruptedOpenShellTask(t)
+	plan := captaincode.OpenShellTeamPlan{DirectorAttempts: 2, Assignments: []string{"edit a", "inspect a"},
+		Stages: []captaincode.OpenShellPlanStage{{Mode: "edit", Assignments: []string{"edit a"}}, {Mode: "review", Assignments: []string{"inspect a"}}}}
+	record := plan.Record()
+	b.ledger.AttemptStateFor(parent).OpenShellPlan = &record
+	require.NoError(t, b.ledger.Save())
+	b.ledger, _ = captaincode.LoadLedger()
+	b.planOpenShellTeamFn = func(context.Context, string, string, string) (captaincode.OpenShellTeamPlan, error) {
+		t.Error("recovery must reuse the saved plan")
+		return captaincode.OpenShellTeamPlan{}, errors.New("unexpected replanning")
+	}
+	for i := 0; i < 2; i++ {
+		life, stop := context.WithCancel(context.Background())
+		b.life = life
+		recovery := &testOpenShellRecovery{run: func(context.Context) (captaincode.Result, error) {
+			if i == 0 {
+				stop()
+				return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Workers: 1}}, context.Canceled
+			}
+			res := openShellHTTPResult("/fixture")
+			res.OpenShellAttempts = &captaincode.OpenShellAttemptUsage{Workers: 2, Directors: 1}
+			return res, nil
+		}}
+		b.prepareOpenShellRecoveryFn = func(context.Context, captaincode.OpenShellCheckpoint) (openShellRecovery, error) {
+			return recovery, nil
+		}
+		response, done, err := b.startOpenShellRecovery(context.Background(), life, task, parent, false)
+		require.NoError(t, err)
+		<-done
+		stop()
+		stored, err := captaincode.LoadLedger()
+		require.NoError(t, err)
+		next := stored.AttemptStateFor(response.AttemptID)
+		require.NotNil(t, next)
+		assert.Equal(t, plan.Record(), *next.OpenShellPlan)
+		assert.Nil(t, stored.AttemptStateFor(parent).OpenShellAttempts)
+		if i == 0 {
+			assert.Nil(t, next.OpenShellAttempts)
+			stored.ReconcileOnStartup()
+			require.NoError(t, stored.Save())
+			b.ledger = stored
+			parent = response.AttemptID
+		} else {
+			assert.Equal(t, &captaincode.OpenShellAttemptUsage{Workers: 2, Directors: 3}, next.OpenShellAttempts)
+			assert.Equal(t, 5, stored.BudgetFor(task).SettledAttempts)
+			assert.Equal(t, captaincode.StateSucceeded, next.State)
+		}
+	}
+}
+
+func TestOpenShellPlannedRecoveryRejectsSpentOrInvalidPlanBudget(t *testing.T) {
+	for _, mode := range []string{"spent", "invalid"} {
+		t.Run(mode, func(t *testing.T) {
+			b, task, parent := interruptedOpenShellTask(t)
+			plan := captaincode.OpenShellPlanRecord{Assignments: []string{"edit a"}, DirectorAttempts: 2}
+			if mode == "spent" {
+				t.Setenv("CAPTAIN_MAX_ATTEMPTS", "2")
+			} else {
+				plan.Stages = []captaincode.OpenShellPlanStage{{Mode: "host", Assignments: []string{"edit a"}}}
+			}
+			b.ledger.AttemptStateFor(parent).OpenShellPlan = &plan
+			b.prepareOpenShellRecoveryFn = func(context.Context, captaincode.OpenShellCheckpoint) (openShellRecovery, error) {
+				t.Error("invalid plan reached controller admission")
+				return nil, errors.New("unexpected admission")
+			}
+			rec := resumeOpenShellRequest(t, b, context.Background(), task, parent)
+			assert.Equal(t, http.StatusConflict, rec.Code)
+			assert.Len(t, b.ledger.AttemptStates, 1)
+			assert.Equal(t, captaincode.StateInterrupted, b.ledger.AttemptStateFor(parent).State)
+		})
+	}
+}
+
+func TestOpenShellPlannedRecoveryPreservesTighterAttemptLimit(t *testing.T) {
+	b, task, parent := interruptedOpenShellTask(t)
+	t.Setenv("CAPTAIN_MAX_ATTEMPTS", "5")
+	plan := captaincode.OpenShellPlanRecord{Assignments: []string{"edit a"}, DirectorAttempts: 2}
+	b.ledger.AttemptStateFor(parent).OpenShellPlan = &plan
+	recovery := &testOpenShellRecovery{run: func(ctx context.Context) (captaincode.Result, error) {
+		_, err := captaincode.WithOpenShellAttemptsSpent(ctx, 3)
+		assert.ErrorIs(t, err, captaincode.ErrOpenShellAttemptCap, "two planner calls leave three slots")
+		res := openShellHTTPResult("/fixture")
+		res.OpenShellAttempts = &captaincode.OpenShellAttemptUsage{Workers: 1}
+		return res, nil
+	}}
+	b.prepareOpenShellRecoveryFn = func(ctx context.Context, _ captaincode.OpenShellCheckpoint) (openShellRecovery, error) {
+		_, err := captaincode.WithOpenShellAttemptsSpent(ctx, 3)
+		assert.ErrorIs(t, err, captaincode.ErrOpenShellAttemptCap, "admission includes the earlier planner calls")
+		return recovery, nil
+	}
+	_, done, err := b.startOpenShellRecovery(context.Background(), context.Background(), task, parent, false)
+	require.NoError(t, err)
+	<-done
+}

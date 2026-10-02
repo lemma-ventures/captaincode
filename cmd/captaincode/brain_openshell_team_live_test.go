@@ -23,8 +23,21 @@ import (
 // splits the task, and the planned workers run in VM sandboxes through
 // Cerebras. Opt in with CAPTAIN_TEST_OPENSHELL_TEAM_LIVE=1.
 func TestOpenShellHTTPPlannedTeamLiveQualification(t *testing.T) {
-	if os.Getenv("CAPTAIN_TEST_OPENSHELL_TEAM_LIVE") != "1" {
-		t.Skip("set CAPTAIN_TEST_OPENSHELL_TEAM_LIVE=1 with prepared VM runtime, provider key and claude")
+	qualifyOpenShellPlannedTeam(t, false)
+}
+
+func TestOpenShellHTTPPlannedStagesLiveQualification(t *testing.T) {
+	qualifyOpenShellPlannedTeam(t, true)
+}
+
+func qualifyOpenShellPlannedTeam(t *testing.T, stages bool) {
+	t.Helper()
+	flag := "CAPTAIN_TEST_OPENSHELL_TEAM_LIVE"
+	if stages {
+		flag = "CAPTAIN_TEST_OPENSHELL_PLANNED_STAGES_LIVE"
+	}
+	if os.Getenv(flag) != "1" {
+		t.Skip("set " + flag + "=1 with prepared VM runtime, provider key and claude")
 	}
 	prepared := os.Getenv("CAPTAIN_OPENSHELL_PREPARED")
 	require.NotEmpty(t, prepared)
@@ -104,6 +117,9 @@ class Numbers(unittest.TestCase):
 	server := httptest.NewServer(http.HandlerFunc(b.chatCompletions))
 	defer server.Close()
 	task := "/team /openshell Refactor factorial.py to compute factorial with an iterative loop instead of recursion, and refactor fibonacci.py to compute fibonacci in linear time with an iterative loop. Keep each function's validation and public API. Run python3 -m unittest -v."
+	if stages {
+		task += " Plan exactly two stages: stage one has two parallel edit workers, one per file; stage two has one read-only review worker that checks the verified combined result and runs the same tests without changing any file."
+	}
 	r := openShellHTTPRequest(t, repo, "team", task, false)
 	r.RequestURI = ""
 	r.URL.Scheme, r.URL.Host = "http", strings.TrimPrefix(server.URL, "http://")
@@ -133,7 +149,7 @@ class Numbers(unittest.TestCase):
 	require.Equal(t, "pass", run.Verdict)
 	require.True(t, run.RequireAll)
 	require.NotEmpty(t, run.Tasks)
-	require.LessOrEqual(t, len(run.Tasks), captaincode.MaxStageWidth)
+	require.LessOrEqual(t, len(run.Tasks), captaincode.MaxWorkflowRuns)
 	usage := run.AttemptUsage
 	require.NotNil(t, usage)
 	planned := attempt.OpenShellAttempts.Directors - usage.Directors
@@ -144,13 +160,36 @@ class Numbers(unittest.TestCase):
 	require.NotNil(t, plan, "the plan is kept with the task")
 	require.Len(t, plan.Assignments, len(run.Tasks))
 	require.Equal(t, planned, plan.DirectorAttempts)
+	if stages {
+		require.Len(t, run.Stages, 2)
+		require.Len(t, plan.Stages, 2)
+		require.Equal(t, "edit", plan.Stages[0].Mode)
+		require.Equal(t, "review", plan.Stages[1].Mode)
+		require.Len(t, plan.Stages[0].Assignments, 2)
+		require.Len(t, plan.Stages[1].Assignments, 1)
+		require.Equal(t, run.Stages[0].NextRevision, run.Stages[1].Revision)
+		require.Equal(t, run.Stages[0].Tree, run.Stages[1].Tree)
+		require.NotNil(t, attempt.OpenShell)
+		require.Equal(t, 2, attempt.OpenShell.VerifiedStages)
+		require.Len(t, run.Tasks, 3)
+		require.Equal(t, captaincode.OpenShellUnchanged, run.Tasks[2].Outcome)
+		for i, worker := range run.Tasks {
+			stage := 0
+			if i == 2 {
+				stage = 1
+			}
+			require.Equal(t, run.Stages[stage].Revision, worker.Manifest.BaseRevision)
+		}
+	}
 	for _, worker := range run.Tasks {
 		require.NotNil(t, worker.Report)
 		require.Len(t, worker.Report.Checks, 17)
 		for name, check := range worker.Report.Checks {
 			require.Equal(t, "pass", check.Verdict, name)
 		}
-		require.Equal(t, run.Revision, worker.Manifest.BaseRevision)
+		if !stages {
+			require.Equal(t, run.Revision, worker.Manifest.BaseRevision)
+		}
 	}
 	require.Len(t, run.Integrated.Report.Checks, 8)
 	for name, check := range run.Integrated.Report.Checks {
@@ -177,6 +216,7 @@ class Numbers(unittest.TestCase):
 		"wall_seconds": wall, "run_record": attempt.Export.RunRecord, "run_seconds": run.Seconds,
 		"planned_workers": len(run.Tasks), "plan_director_attempts": planned, "settled_attempts": attempt.OpenShellAttempts,
 		"changed_files": attempt.Export.Manifest.ChangedFiles, "rulings": rulings, "host_preservation": true,
+		"stages":         run.Stages,
 		"spend_complete": complete, "reported_cost_usd": cost, "reported_tokens": tokens, "plan": plan,
 	}, "", "  ")
 	require.NoError(t, err)

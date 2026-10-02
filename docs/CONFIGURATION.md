@@ -705,9 +705,10 @@ linked `run.json` records each worker and repair, its evidence and any ruling,
 with `require_all: true`. Wall-time and conservative whole-plan attempt caps
 apply through both CLI and HTTP. Strict dollar caps remain refused.
 
-`/team /openshell <task>` lets the director split one task into 1-4 sandbox
-assignments, then runs them as one parallel stage, exactly as if they had been
-typed as `/openshell ... + /openshell ...`. It needs
+`/team /openshell <task>` lets the director plan up to 4 sandbox stages, with
+1-4 workers per stage and at most 8 workers total. Workers within a stage run
+in parallel; later stages receive the preceding verified tree through the same
+runner as typed `/openshell ... + /openshell ... > /openshell ...` workflows. It needs
 `CAPTAIN_OPENSHELL_DIRECTOR=claude`: the same tool-less `claude -p` (no tools,
 MCP servers, customizations or saved session, in an empty directory) plans the
 split and rules on conflicts. Like the rulings, it runs on the host, outside the
@@ -715,7 +716,10 @@ sandbox and Shield, so it receives only the task and the configured editable
 paths: no conversation, memory or repository content.
 Each worker receives the conversation, the team task and its own assignment.
 A plan cannot change the configured profile, edit scope or verification argv,
-and a planned worker always edits; it is never a no-change review.
+and each stage explicitly selects `edit` or `review` mode. Review workers have
+no editable scope or repair attempt, must pass the configured checks, and must
+export an unchanged tree. Review prose is not an approval or an instruction to
+later stages. The planner favors one stage for tasks without dependencies.
 
 The task is saved before the director is asked. Configuration, the attempt cap
 and the prompt size are checked before the planning call. The planner's calls
@@ -723,11 +727,13 @@ and the prompt size are checked before the planning call. The planner's calls
 come off `CAPTAIN_MAX_ATTEMPTS` before the team's own admission and settle with
 the task's attempt usage beside the conflict rulings; the run's `run.json` does
 not include them. Like rulings, their subscription tokens are not priced. The
-rationale and each assignment are saved on the task (`captain task inspect`
-lists them) before any sandbox starts. A plan that fails, spends the attempt
-cap, cannot be saved or is cancelled starts no sandbox. Naming a
+rationale, stage boundaries, modes and assignments are saved on the task
+(`captain task inspect` lists stage/worker IDs) before any sandbox starts.
+A plan that fails, spends the attempt cap, cannot be saved or is cancelled starts no sandbox. Naming a
 host leg beside it (`/team /openshell /claude`) or combining `/team` with typed
-stages is refused before planning.
+stages is refused before planning. Recovery reuses the saved stages without
+asking the planner again. Planning calls remain counted against the root attempt
+cap and settle once with the resumed task, even across repeated restarts.
 
 Use `>` to hand a verified snapshot to the next stage. A workflow accepts up to
 4 stages, 4 workers per stage, and 8 workers total; every worker needs an explicit
@@ -894,7 +900,7 @@ rather than asking a registry for the local-only worker image. Set `DOCKER_HOST`
 explicitly when the brain runs with a `HOME` other than your own.
 
 Mixed host/sandbox workers, host gates and cached workflow IDs remain
-unsupported, and a planned team is one parallel stage. Use
+unsupported. Use
 `captain openshell --team` for a JSON team with distinct per-worker profiles,
 scopes and verification commands.
 

@@ -73,12 +73,15 @@ all requested workers must pass and every conflict must have a valid ruling
 before the combined patch can be verified and exported. Failed workflows keep
 individual evidence without presenting it as a successful combined export.
 A `/team /openshell` turn records the same aggregate attempt for its planned
-stage. Its `openshell_attempts.directors` count also includes the planner's
+stages. Its `openshell_attempts.directors` count also includes the planner's
 calls, which happen before the controller starts and so are not in `run.json`.
 `openshell_plan` on that attempt keeps the director's rationale, each worker's
-assignment and the call count. It is saved before any sandbox starts, because
+assignment, ordered `stages` with their `edit`/`review` modes, and the call count.
+It is saved before any sandbox starts, because
 `run.json` holds only a digest of the worker prompts; `captain task inspect`
-prints it.
+prints it. Older single-stage records retain their flat `assignments` list.
+On task-linked recovery the plan carries into the new attempt; planner calls
+settle once with the cumulative worker/ruling counts, without replanning.
 Sequential `/openshell ... > /openshell ...` workflows retain the same aggregate
 attempt plus a `stages` array in `run.json`. Each entry records its input
 `revision`, verified `tree`, `next_revision` when another stage follows, and a

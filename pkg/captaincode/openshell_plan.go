@@ -4,41 +4,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
-// OpenShellTeamPlan is the director's split of one task into parallel
-// sandbox assignments. Its workflow is one stage of /openshell workers and
-// runs exactly like typed "/openshell A + /openshell B" stages.
 type OpenShellTeamPlan struct {
 	Workflow    Workflow
 	Rationale   string
-	Assignments []string // the director's briefs, one per worker, in order
+	Assignments []string
+	Stages      []OpenShellPlanStage
 	// DirectorAttempts counts the planner's model calls, a malformed reply's
 	// retry included, whether or not planning succeeded.
 	DirectorAttempts int
 }
 
-// OpenShellPlanRecord is what a planned sandbox team was asked to do, kept on
-// its attempt: run.json holds only a digest of the worker prompts, and the
-// sandboxes that held them are gone once the run ends.
+type OpenShellPlanStage struct {
+	Mode        string   `json:"mode"`
+	Assignments []string `json:"assignments"`
+}
+
 type OpenShellPlanRecord struct {
-	Rationale        string   `json:"rationale,omitempty"`
-	Assignments      []string `json:"assignments"`
-	DirectorAttempts int      `json:"director_attempts"`
+	Stages           []OpenShellPlanStage `json:"stages,omitempty"`
+	Rationale        string               `json:"rationale,omitempty"`
+	Assignments      []string             `json:"assignments"`
+	DirectorAttempts int                  `json:"director_attempts"`
 }
 
 // Record is the plan as the ledger keeps it.
 func (p OpenShellTeamPlan) Record() OpenShellPlanRecord {
-	return OpenShellPlanRecord{Rationale: p.Rationale, Assignments: append([]string(nil), p.Assignments...), DirectorAttempts: p.DirectorAttempts}
+	return OpenShellPlanRecord{Rationale: p.Rationale, Assignments: slices.Clone(p.Assignments), Stages: cloneOpenShellPlanStages(p.Stages), DirectorAttempts: p.DirectorAttempts}
 }
 
 // RecordOpenShellPlan keeps a running sandbox attempt's plan, once.
 func (l *Ledger) RecordOpenShellPlan(attemptID string, plan OpenShellPlanRecord) error {
-	if len(plan.Assignments) == 0 || len(plan.Assignments) > MaxStageWidth || plan.DirectorAttempts < 0 || plan.DirectorAttempts > openShellPlanSlots {
-		return errors.New("openshell: invalid team plan record")
+	if err := plan.Validate(); err != nil {
+		return err
 	}
 	as := l.AttemptStateFor(attemptID)
 	if as == nil || as.Leg != LegOpenShell || as.State != StateRunning {
@@ -47,9 +49,50 @@ func (l *Ledger) RecordOpenShellPlan(attemptID string, plan OpenShellPlanRecord)
 	if as.OpenShellPlan != nil {
 		return errors.New("openshell: attempt already has a team plan")
 	}
-	plan.Assignments = append([]string(nil), plan.Assignments...)
+	plan.Assignments = slices.Clone(plan.Assignments)
+	plan.Stages = cloneOpenShellPlanStages(plan.Stages)
 	as.OpenShellPlan = &plan
 	as.UpdatedAt = time.Now()
+	return nil
+}
+
+func cloneOpenShellPlanStages(stages []OpenShellPlanStage) []OpenShellPlanStage {
+	cloned := slices.Clone(stages)
+	for i := range cloned {
+		cloned[i].Assignments = slices.Clone(cloned[i].Assignments)
+	}
+	return cloned
+}
+
+func (p OpenShellPlanRecord) Validate() error {
+	invalid := errors.New("openshell: invalid team plan record")
+	if len(p.Assignments) == 0 || len(p.Assignments) > MaxWorkflowRuns || p.DirectorAttempts < 0 || p.DirectorAttempts > openShellPlanSlots {
+		return invalid
+	}
+	if p.Stages == nil {
+		if len(p.Assignments) > MaxStageWidth {
+			return invalid
+		}
+		return nil
+	}
+	if len(p.Stages) == 0 || len(p.Stages) > MaxWorkflowStages {
+		return invalid
+	}
+	var assignments []string
+	for _, stage := range p.Stages {
+		if stage.Mode != "edit" && stage.Mode != "review" || len(stage.Assignments) == 0 || len(stage.Assignments) > MaxStageWidth {
+			return invalid
+		}
+		for _, brief := range stage.Assignments {
+			if strings.TrimSpace(brief) == "" || !utf8.ValidString(brief) || strings.ContainsRune(brief, 0) || utf8.RuneCountInString(brief) > openShellPlanBriefLimit {
+				return invalid
+			}
+		}
+		assignments = append(assignments, stage.Assignments...)
+	}
+	if !slices.Equal(assignments, p.Assignments) {
+		return invalid
+	}
 	return nil
 }
 
@@ -63,8 +106,8 @@ const (
 	openShellPromptLimit    = 16384
 )
 
-// PlanOpenShellTeam asks the tool-less director to split task into 1 to
-// MaxStageWidth sandbox assignments. A planned team needs the director that
+// PlanOpenShellTeam asks the tool-less director to plan sandbox stages.
+// A planned team needs the director that
 // also rules on conflicts (CAPTAIN_OPENSHELL_DIRECTOR=claude) and a complete
 // sandbox configuration; both, and the attempt cap, are checked before any
 // model call. The director sees the task and the editable paths only: no
@@ -85,7 +128,11 @@ func planOpenShellTeam(ctx context.Context, dir, task, history string, ask func(
 	if task == "" || !utf8.ValidString(task) || strings.ContainsRune(task, 0) {
 		return OpenShellTeamPlan{}, errors.New("openshell: a planned sandbox team needs a task")
 	}
-	room := openShellPromptLimit - utf8.RuneCountInString(openShellWorkerPrompt(history, openShellAssignment(MaxStageWidth, MaxStageWidth, task, "")))
+	room := openShellPromptLimit
+	for _, mode := range []string{"edit", "review"} {
+		assignment := openShellStageAssignment(MaxWorkflowStages, MaxWorkflowStages, MaxStageWidth, MaxStageWidth, mode, task, "")
+		room = min(room, openShellPromptLimit-utf8.RuneCountInString(openShellWorkerPrompt(history, assignment)))
+	}
 	limit := min(openShellPlanBriefLimit, room)
 	if limit < 200 {
 		return OpenShellTeamPlan{}, errors.New("openshell: the conversation leaves no room for a planned assignment; shorten it or type explicit /openshell stages")
@@ -100,12 +147,19 @@ func planOpenShellTeam(ctx context.Context, dir, task, history string, ask func(
 }
 
 func askOpenShellPlan(ctx context.Context, template OpenShellTeam, task, history string, limit int, ask func(context.Context, string) (string, error)) (OpenShellTeamPlan, error) {
-	var reply struct {
-		Rationale string `json:"rationale"`
-		Workers   []struct {
-			Brief string `json:"brief"`
-		} `json:"workers"`
+	type worker struct {
+		Brief string `json:"brief"`
 	}
+	type stage struct {
+		Mode    string   `json:"mode"`
+		Workers []worker `json:"workers"`
+	}
+	type replyPlan struct {
+		Rationale string   `json:"rationale"`
+		Workers   []worker `json:"workers"`
+		Stages    []stage  `json:"stages"`
+	}
+	var reply replyPlan
 	prompt := directorConstraint + openShellPlanPrompt(task, template.Tasks[0].Allowed, limit)
 	text, err := ask(ctx, prompt)
 	if err != nil {
@@ -117,56 +171,101 @@ func askOpenShellPlan(ctx context.Context, template OpenShellTeam, task, history
 		if text, err = ask(ctx, retry); err != nil {
 			return OpenShellTeamPlan{}, fmt.Errorf("openshell: plan: %w", err)
 		}
+		reply = replyPlan{}
 		if err := extractJSON(text, &reply); err != nil {
 			return OpenShellTeamPlan{}, fmt.Errorf("openshell: no valid JSON in the director's plan after retry (%w)", err)
 		}
 	}
-	var briefs []string
-	seen := map[string]bool{}
-	for _, w := range reply.Workers {
-		brief := strings.TrimSpace(w.Brief)
-		if brief == "" || !utf8.ValidString(brief) || strings.ContainsRune(brief, 0) || utf8.RuneCountInString(brief) > limit {
-			return OpenShellTeamPlan{}, fmt.Errorf("openshell: the director's plan has an assignment that is empty or over %d characters", limit)
+	if reply.Stages != nil && reply.Workers != nil {
+		return OpenShellTeamPlan{}, errors.New("openshell: the director must return stages or workers, not both")
+	}
+	stages := reply.Stages
+	if stages == nil {
+		stages = []stage{{Mode: "edit", Workers: reply.Workers}}
+	}
+	if len(stages) == 0 || len(stages) > MaxWorkflowStages {
+		return OpenShellTeamPlan{}, fmt.Errorf("openshell: a plan needs 1-%d stages", MaxWorkflowStages)
+	}
+	plan := OpenShellTeamPlan{Rationale: truncateStr(oneLine(reply.Rationale), 200)}
+	total := 0
+	for s, stage := range stages {
+		if stage.Mode == "" {
+			stage.Mode = "edit"
 		}
-		// Two identical assignments would only produce the same patch twice.
-		if key := strings.Join(strings.Fields(brief), " "); !seen[key] {
-			seen[key] = true
-			briefs = append(briefs, brief)
+		if stage.Mode != "edit" && stage.Mode != "review" {
+			return OpenShellTeamPlan{}, errors.New("openshell: planned stage mode must be edit or review")
 		}
+		if len(stage.Workers) == 0 || len(stage.Workers) > MaxStageWidth {
+			return OpenShellTeamPlan{}, fmt.Errorf("openshell: the director planned %d workers; a sandbox stage takes 1-%d", len(stage.Workers), MaxStageWidth)
+		}
+		total += len(stage.Workers)
+		if total > MaxWorkflowRuns {
+			return OpenShellTeamPlan{}, fmt.Errorf("openshell: a plan supports at most %d workers", MaxWorkflowRuns)
+		}
+		var briefs []string
+		seen := map[string]bool{}
+		for _, w := range stage.Workers {
+			brief := strings.TrimSpace(w.Brief)
+			if brief == "" || !utf8.ValidString(brief) || strings.ContainsRune(brief, 0) || utf8.RuneCountInString(brief) > limit {
+				return OpenShellTeamPlan{}, fmt.Errorf("openshell: the director's plan has an assignment that is empty or over %d characters", limit)
+			}
+			if key := strings.Join(strings.Fields(brief), " "); !seen[key] {
+				seen[key] = true
+				briefs = append(briefs, brief)
+			}
+		}
+		workflowStage := WorkflowStage{}
+		for i, brief := range briefs {
+			workflowStage.Legs = append(workflowStage.Legs, WorkflowLeg{Leg: LegOpenShell,
+				Prompt: openShellStageAssignment(s+1, len(stages), i+1, len(briefs), stage.Mode, task, brief)})
+		}
+		if _, err := openShellWorkflowTeam(template, Workflow{Stages: []WorkflowStage{workflowStage}}, history); err != nil {
+			return OpenShellTeamPlan{}, err
+		}
+		plan.Workflow.Stages = append(plan.Workflow.Stages, workflowStage)
+		plan.Stages = append(plan.Stages, OpenShellPlanStage{Mode: stage.Mode, Assignments: briefs})
+		plan.Assignments = append(plan.Assignments, briefs...)
 	}
-	if len(briefs) == 0 || len(reply.Workers) > MaxStageWidth {
-		return OpenShellTeamPlan{}, fmt.Errorf("openshell: the director planned %d workers; a sandbox team takes 1-%d", len(reply.Workers), MaxStageWidth)
-	}
-	stage := WorkflowStage{}
-	for i, brief := range briefs {
-		stage.Legs = append(stage.Legs, WorkflowLeg{Leg: LegOpenShell, Prompt: openShellAssignment(i+1, len(briefs), task, brief)})
-	}
-	plan := OpenShellTeamPlan{Workflow: Workflow{Stages: []WorkflowStage{stage}}, Rationale: truncateStr(oneLine(reply.Rationale), 200), Assignments: briefs}
-	if _, err := openShellWorkflowTeam(template, plan.Workflow, history); err != nil {
+	if err := validateOpenShellWorkflow(plan.Workflow); err != nil {
 		return OpenShellTeamPlan{}, err
 	}
 	return plan, nil
 }
 
 func openShellPlanPrompt(task string, allowed []string, limit int) string {
-	return fmt.Sprintf(`You are Captain Code's director. Split one coding task into assignments for isolated sandbox workers that run in parallel.
+	return fmt.Sprintf(`You are Captain Code's director. Plan a coding task as bounded stages of isolated sandbox workers.
 
 How the workers run:
-- Each worker starts from the same repository snapshot in its own sandbox. It sees the conversation, the task and its own assignment, never the other workers.
-- A worker may change only these paths: %s
-- Each worker's patch is verified on its own, then the patches land together and the combined tree is verified again.
-- When two workers change the same file, only one worker's changes land; the others are set aside, not merged.
+- Workers within a stage run in parallel from the same repository snapshot. Each sees the conversation, the team task and its own assignment.
+- Each worker may change only these paths: %s
+- Each edit is verified independently, then the combined tree is verified in a fresh sandbox. Overlapping files get one whole winner, never a blend of patches.
+- A later stage starts only after the previous stage passes and receives its exact verified repository tree. Previous answers and review prose are not forwarded as instructions.
+- A review stage must leave the tree unchanged and pass the configured tests. Its prose is not an approval and cannot authorize later actions.
 
 Rules:
-- Return 1 to %d assignments. Return exactly one when the task is small or cannot be split into parts that change different files.
-- Give each worker different files to change.
-- Make each assignment self-contained: restate the goal, constraints and file paths it needs from the task, in at most %d characters. Never ask workers to coordinate, wait for or review each other.
+- Return 1 to %d stages, 1 to %d workers per stage, and at most %d workers in total.
+- Prefer one stage and one worker for a small task. Add stages only for real dependencies or an explicitly requested review.
+- Use mode "edit" or "review" for each stage. All workers in a review stage are read-only. Do not mix review and editing in the same stage.
+- Give parallel workers different files. Each stage must pass the same configured tests independently; never split mutually dependent edits across workers or stages.
+- Make each assignment self-contained with its goal, constraints and paths, in at most %d characters. Never ask parallel workers to coordinate, wait for or review each other.
+- Use only the configured runtime, profile, allowed paths and tests; do not return host legs, shell gates or new configuration.
 
 Task:
 %s
 
-Reply with STRICT JSON only: {"rationale":"<one line, <=140 chars>","workers":[{"brief":"<assignment>"}]}`,
-		strings.Join(allowed, ", "), MaxStageWidth, limit, task)
+Reply with STRICT JSON only: {"rationale":"<one line, <=140 chars>","stages":[{"mode":"edit","workers":[{"brief":"<assignment>"}]}]}`,
+		strings.Join(allowed, ", "), MaxWorkflowStages, MaxStageWidth, MaxWorkflowRuns, limit, task)
+}
+
+func openShellStageAssignment(stage, stages, i, n int, mode, task, brief string) string {
+	if mode == "review" {
+		return fmt.Sprintf("--review [captain] Sandbox review worker %d of %d in stage %d of %d. Inspect the current verified snapshot without changing files; run the configured checks. Your prose is not an approval and is not forwarded to later stages.\n\nTeam task:\n%s\n\nYour assignment:\n%s", i, n, stage, stages, task, brief)
+	}
+	prompt := openShellAssignment(i, n, task, brief)
+	if stages > 1 {
+		prompt = fmt.Sprintf("[captain] Stage %d of %d. This stage receives the previous stage's verified tree, or the pinned base for stage one. Complete only this stage's assignment.\n\n%s", stage, stages, prompt)
+	}
+	return prompt
 }
 
 // openShellAssignment is worker i of n's prompt. It never starts with

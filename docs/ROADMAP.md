@@ -15,7 +15,7 @@ guides, not release promises.
 | Item | Why it is still open |
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
-| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Open: multi-stage planned teams, mixed host/sandbox stages, in-flight attempt reconciliation, strict dollar budgets, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
+| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture (see below). Open: mixed host/sandbox stages, in-flight attempt reconciliation, strict dollar budgets, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
@@ -1898,8 +1898,36 @@ combined tree passed 8 checks in a fresh sandbox. Shield priced all 12 worker
 requests: 70,849 tokens and $0.0252; the planning call is a counted, unpriced
 subscription call. Host files and index stayed unchanged, and the patch reproduced
 the verified tree. This qualifies one cleanly separable task on one host, not
-planning quality, conflict-heavy splits or scale. Multi-stage planned teams and
-mixed host/sandbox teams remain open.
+planning quality, conflict-heavy splits or scale. Mixed host/sandbox teams remain
+open. The following extension adds multi-stage planning.
+
+**M3.7 multi-stage director plans (2 October 2026, unreleased).**
+The sandbox planner now returns ordered `edit` or `review` stages: at most four
+stages, four workers per stage and eight workers total. It prefers a single stage
+unless dependencies or a requested review justify more. The former flat `workers`
+reply remains accepted as one edit stage. Ambiguous replies, unknown modes,
+empty stages and excessive worker counts are refused before sandbox dispatch.
+
+The planner cannot change the configured runtime, profile, paths or tests.
+Review stages remove editable scope and repairs and require an unchanged tree.
+The existing sequence runner verifies each stage and its combined tree before
+passing the snapshot forward; failure withholds the cumulative export. The
+ledger and task inspector now preserve and display stage boundaries and modes.
+Recovery copies the saved plan without asking the director again and keeps its
+planning calls in the root attempt cap and final settlement, including repeated
+restarts. Tests cover a complete edit-review-edit controller cycle, scope and
+mode enforcement, review modification rejection, whole-plan admission refusal,
+durable plan copies, HTTP dispatch and repeated recovery accounting.
+
+The [planned-stages qualification](../examples/openshell-pilot/results/2026-10-02-planned-stages.json)
+passed in 120.5 seconds: two parallel edit workers followed by one review, all
+three passing 17 sandbox checks, with both combined trees passing 8 checks.
+The review preserved the preceding verified tree; reapplying the cumulative
+export reproduced that tree while the host checkout and index stayed unchanged.
+Shield priced 19/19 worker responses: 116,560 tokens and $0.04149. One counted
+planning call used the Claude subscription and is not priced in that figure.
+This is one local fixture on the patched driver; repeated planner-aware recovery
+has controller coverage, not a new live restart qualification.
 
 **M3.8 status (20 September 2026).** Named, not built.
 

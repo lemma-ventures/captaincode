@@ -40,7 +40,7 @@ func (b *brain) openShellResumeState(taskID, attemptID string) (*captaincode.Att
 			return nil, nil, errors.New("openshell: task already has settled usage; refusing to count recovered usage twice")
 		}
 	}
-	_, cancel, err := b.openShellRecoveryBudget(context.Background(), taskID)
+	_, cancel, err := b.openShellRecoveryBudget(context.Background(), taskID, as.OpenShellPlan)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -48,12 +48,23 @@ func (b *brain) openShellResumeState(taskID, attemptID string) (*captaincode.Att
 	return as, ts, as.OpenShell.Validate()
 }
 
-func (b *brain) openShellRecoveryBudget(ctx context.Context, taskID string) (context.Context, context.CancelFunc, error) {
+func (b *brain) openShellRecoveryBudget(ctx context.Context, taskID string, plan *captaincode.OpenShellPlanRecord) (context.Context, context.CancelFunc, error) {
 	budget := b.ledger.BudgetFor(taskID)
 	if budget == nil {
 		budget = &captaincode.Budget{StartedAt: b.ledger.TaskStateFor(taskID).StartedAt}
 	}
-	return captaincode.OpenShellBudgetContext(ctx, budget)
+	ctx, cancel, err := captaincode.OpenShellBudgetContext(ctx, budget)
+	if err != nil || plan == nil {
+		return ctx, cancel, err
+	}
+	if err = plan.Validate(); err == nil {
+		ctx, err = captaincode.WithOpenShellAttemptsSpent(ctx, plan.DirectorAttempts)
+	}
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	return ctx, cancel, nil
 }
 
 // openShellStoppedByRestart reports whether a sandbox run ended only because
@@ -111,7 +122,7 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 	var generation int
 	budgetCancel := func() {}
 	if err == nil {
-		ctx, budgetCancel, err = b.openShellRecoveryBudget(ctx, taskID)
+		ctx, budgetCancel, err = b.openShellRecoveryBudget(ctx, taskID, as.OpenShellPlan)
 	}
 	if budgetCancel != nil {
 		defer budgetCancel()
@@ -155,7 +166,7 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 	if err != nil {
 		return captaincode.ResumeResponse{}, nil, err
 	}
-	runParent, runBudgetCancel, err := b.openShellRecoveryBudget(runParent, taskID)
+	runParent, runBudgetCancel, err := b.openShellRecoveryBudget(runParent, taskID, as.OpenShellPlan)
 	if err != nil {
 		return captaincode.ResumeResponse{}, nil, err
 	}
@@ -173,6 +184,14 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 		return captaincode.ResumeResponse{}, nil, err
 	}
 	b.ledger.RecordAttemptState(next)
+	if as.OpenShellPlan != nil {
+		if err := b.ledger.RecordOpenShellPlan(next.AttemptID, *as.OpenShellPlan); err != nil {
+			b.ledger.RecordAttemptState(oldAttempt)
+			b.ledger.TransitionAttempt(next.AttemptID, captaincode.StateFailed)
+			return captaincode.ResumeResponse{}, nil, err
+		}
+		next = *b.ledger.AttemptStateFor(next.AttemptID)
+	}
 	b.ledger.TransitionTask(taskID, captaincode.StateRunning)
 	label := "sandbox recovery"
 	if automatic {
@@ -210,6 +229,9 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 		defer runBudgetCancel()
 		defer recovery.Close()
 		res, runErr := recovery.Run(runCtx)
+		if next.OpenShellPlan != nil {
+			res = addOpenShellPlanningUsage(res, next.OpenShellPlan.DirectorAttempts)
+		}
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		current := b.ledger.AttemptStateFor(next.AttemptID)

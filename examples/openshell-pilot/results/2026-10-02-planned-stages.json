@@ -1,0 +1,314 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "entrypoint": "POST /v1/chat/completions, model=team, /team /openshell <task>",
+  "harness": "Isolated HTTP handlers, tool-less director, three workers and two integration checks in OpenShell MicroVMs; synthetic public numbers fixture only.",
+  "verdict": "pass",
+  "fixture": "Parallel iterative factorial and Fibonacci refactors followed by an unchanged-tree review; four protected unittest cases.",
+  "runtime": "vm",
+  "profile": "cerebras",
+  "model": "openai/gpt-oss-120b",
+  "source_revision": {
+    "revision": "5bfde7aaaa62792b6491037e7b48dacf58502e02",
+    "modified": true
+  },
+  "entrypoint_sources_sha256": {
+    "pkg/captaincode/openshell_plan.go": "730f9837c52b812d1bd06b768cf750f1efaf576e9198313b436b72f5f27e07ee",
+    "pkg/captaincode/openshell_workflow.go": "f754591cbe295ae5f35941f1fac4392ea6efb90b53f34c440188c13083fe900c",
+    "pkg/captaincode/openshell_sequence.go": "0787fa52186093f88289aab0c9bce19d993c3b6cee5102ceedabeebf3b62da7a",
+    "pkg/captaincode/openshell_resume.go": "acecb76554ddbd6ebea33aeaa5c57c3605bdae8a12fd9fecc6514e3191912820",
+    "pkg/captaincode/openshell_budget.go": "025e58fe3bcb22ce2ed188bd7de40f804ad24fb663e9529291aa57950bad080e",
+    "cmd/captaincode/brain_openshell.go": "730da70b429d9e4a2ae64bd864578750ab63f4bda9db48491c7175f51c40c2e5",
+    "cmd/captaincode/brain_openshell_resume.go": "10780e3e3b1b4bddb7fad51dd8d9b11070a9fa4dab6cf8f9f111738ad82f34d9",
+    "cmd/captaincode/brain_openshell_team_live_test.go": "d6fccf365511e4d37f5a7a112501c7d59d1b93f53cdd007943c08332236d9767"
+  },
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "8702bc00e4135e99f06780eaa8e08af8f01e545a97d32791d94987ccbe6a5772",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "fc33b16aa23f1bd4884f99c4716a6ae3400e76be2b52b69f6ef2e7366d37b46f",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "run_record_sha256": "0733f595a73dae31d8f053ba538da86ceee8715d4cba1715f5cc36e4ba765923",
+  "concurrency": 2,
+  "require_all": true,
+  "wall_seconds": 120.495,
+  "run_seconds": 109.778,
+  "fixture_revision": "7855c9b0277db6b22cc49578787d52aee88b691e",
+  "plan": {
+    "stages": [
+      {
+        "mode": "edit",
+        "assignments": [
+          "Goal: Refactor factorial.py so the factorial function computes its result with an iterative loop instead of recursion.\n\nConstraints:\n- Only modify factorial.py. Do not touch fibonacci.py or any other file (including tests).\n- Keep the public API exactly the same: same function name(s), signature(s), return values and module-level exports.\n- Preserve the existing input validation unchanged: same accepted inputs, same exception types and messages for invalid input (e.g. negative numbers, non-integers, bools if currently rejected).\n- Remove the recursive call; use a simple for/while loop accumulating the product. Edge cases such as 0 and 1 must still return 1 (or whatever the current behavior is).\n- Match the existing code style, naming and comment density; keep docstrings accurate.\n- Do not add new dependencies or configuration.\n\nVerification: run `python3 -m unittest -v` and ensure all tests pass.",
+          "Goal: Refactor fibonacci.py so the fibonacci function computes its result in linear time with an iterative loop (no recursion, no exponential re-computation).\n\nConstraints:\n- Only modify fibonacci.py. Do not touch factorial.py or any other file (including tests).\n- Keep the public API exactly the same: same function name(s), signature(s), return values, indexing convention (e.g. fib(0) and fib(1) values) and module-level exports.\n- Preserve the existing input validation unchanged: same accepted inputs, same exception types and messages for invalid input (e.g. negative numbers, non-integers, bools if currently rejected).\n- Implement with an O(n) loop keeping the two previous values (O(1) extra space); do not use recursion or memoization caches.\n- Match the existing code style, naming and comment density; keep docstrings accurate.\n- Do not add new dependencies or configuration.\n\nVerification: run `python3 -m unittest -v` and ensure all tests pass."
+        ]
+      },
+      {
+        "mode": "review",
+        "assignments": [
+          "Goal: Read-only review of the verified combined repository tree. Do NOT modify, create or delete any file.\n\nCheck:\n- factorial.py: factorial is computed with an iterative loop (no recursion); input validation and public API (names, signatures, return values, exceptions and messages) are preserved; edge cases like 0 and 1 behave as before.\n- fibonacci.py: fibonacci runs in linear time with an iterative loop (no recursion, no exponential work); input validation and public API (names, signatures, indexing convention, exceptions and messages) are preserved.\n- No unrelated changes were introduced in either file.\n\nRun `python3 -m unittest -v` and confirm all tests pass. Report findings in prose only; leave the tree exactly unchanged."
+        ]
+      }
+    ],
+    "rationale": "Two independent single-file refactors run in parallel, then a read-only review verifies the combined tree with the same tests.",
+    "assignments": [
+      "Goal: Refactor factorial.py so the factorial function computes its result with an iterative loop instead of recursion.\n\nConstraints:\n- Only modify factorial.py. Do not touch fibonacci.py or any other file (including tests).\n- Keep the public API exactly the same: same function name(s), signature(s), return values and module-level exports.\n- Preserve the existing input validation unchanged: same accepted inputs, same exception types and messages for invalid input (e.g. negative numbers, non-integers, bools if currently rejected).\n- Remove the recursive call; use a simple for/while loop accumulating the product. Edge cases such as 0 and 1 must still return 1 (or whatever the current behavior is).\n- Match the existing code style, naming and comment density; keep docstrings accurate.\n- Do not add new dependencies or configuration.\n\nVerification: run `python3 -m unittest -v` and ensure all tests pass.",
+      "Goal: Refactor fibonacci.py so the fibonacci function computes its result in linear time with an iterative loop (no recursion, no exponential re-computation).\n\nConstraints:\n- Only modify fibonacci.py. Do not touch factorial.py or any other file (including tests).\n- Keep the public API exactly the same: same function name(s), signature(s), return values, indexing convention (e.g. fib(0) and fib(1) values) and module-level exports.\n- Preserve the existing input validation unchanged: same accepted inputs, same exception types and messages for invalid input (e.g. negative numbers, non-integers, bools if currently rejected).\n- Implement with an O(n) loop keeping the two previous values (O(1) extra space); do not use recursion or memoization caches.\n- Match the existing code style, naming and comment density; keep docstrings accurate.\n- Do not add new dependencies or configuration.\n\nVerification: run `python3 -m unittest -v` and ensure all tests pass.",
+      "Goal: Read-only review of the verified combined repository tree. Do NOT modify, create or delete any file.\n\nCheck:\n- factorial.py: factorial is computed with an iterative loop (no recursion); input validation and public API (names, signatures, return values, exceptions and messages) are preserved; edge cases like 0 and 1 behave as before.\n- fibonacci.py: fibonacci runs in linear time with an iterative loop (no recursion, no exponential work); input validation and public API (names, signatures, indexing convention, exceptions and messages) are preserved.\n- No unrelated changes were introduced in either file.\n\nRun `python3 -m unittest -v` and confirm all tests pass. Report findings in prose only; leave the tree exactly unchanged."
+    ],
+    "director_attempts": 1
+  },
+  "stages": [
+    {
+      "stage": 1,
+      "revision": "7855c9b0277db6b22cc49578787d52aee88b691e",
+      "tree": "e9423ba39a7cb45efeef6255625b72c7fa8cfdfe",
+      "verdict": "pass",
+      "next_revision": "d26cfdf6bc4f6cce401ca7679a88f7b89c4ff6c6",
+      "run_record_sha256": "ffdf7a64688b8319875fbbf39166414bd4d1428b6b521df84d03b8f507e8e376",
+      "integration_check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      },
+      "integration_seconds": 21.603
+    },
+    {
+      "stage": 2,
+      "revision": "d26cfdf6bc4f6cce401ca7679a88f7b89c4ff6c6",
+      "tree": "e9423ba39a7cb45efeef6255625b72c7fa8cfdfe",
+      "verdict": "pass",
+      "run_record_sha256": "7d4a8af316537b3914e7c4006f65e703cffdc76dc315c491b52078583d0cdf7e",
+      "integration_check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "provider_path_denied": "pass",
+        "worker_tools": "pass"
+      },
+      "integration_seconds": 21.586
+    }
+  ],
+  "workers": [
+    {
+      "id": "s1-w1-openshell",
+      "outcome": "landed",
+      "seconds": 33.978,
+      "worker_attempts": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.766,
+        "gateway_ready_recovery": 0.71,
+        "sandbox_create": 15.019,
+        "sandbox_create_attempt": 15.019,
+        "sandbox_restart": 2.251,
+        "worker": 5.186
+      },
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 6,
+        "prompt_tokens": 35803,
+        "completion_tokens": 483,
+        "reasoning_tokens": 181,
+        "cost_usd": 0.0128933
+      }
+    },
+    {
+      "id": "s1-w2-openshell",
+      "outcome": "landed",
+      "seconds": 34.387,
+      "worker_attempts": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 2.535,
+        "gateway_ready_recovery": 0.712,
+        "sandbox_create": 14.981,
+        "sandbox_create_attempt": 14.981,
+        "sandbox_restart": 2.241,
+        "worker": 5.901
+      },
+      "shield": {
+        "requests": 6,
+        "responses": 6,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 6,
+        "prompt_tokens": 35922,
+        "completion_tokens": 600,
+        "reasoning_tokens": 286,
+        "cost_usd": 0.0130227
+      }
+    },
+    {
+      "id": "s2-w1-openshell",
+      "outcome": "unchanged",
+      "seconds": 31.15,
+      "worker_attempts": 1,
+      "check_verdicts": {
+        "baseline": "pass",
+        "cancellation_descendants": "pass",
+        "cancellation_requested": "pass",
+        "checkpoint_reloaded": "pass",
+        "diff_scope": "pass",
+        "export_ready": "pass",
+        "filesystem_denied": "pass",
+        "landlock": "pass",
+        "network_denied": "pass",
+        "protected_unchanged": "pass",
+        "provider_path_denied": "pass",
+        "restart_recovery": "pass",
+        "sandbox_verify": "pass",
+        "shield_mediated": "pass",
+        "shield_unavailable_denied": "pass",
+        "worker_exit": "pass",
+        "worker_tools": "pass"
+      },
+      "timings_seconds": {
+        "gateway_ready": 1.619,
+        "gateway_ready_recovery": 0.717,
+        "sandbox_create": 13.09,
+        "sandbox_create_attempt": 13.09,
+        "sandbox_restart": 2.228,
+        "worker": 5.721
+      },
+      "shield": {
+        "requests": 7,
+        "responses": 7,
+        "blocked": 0,
+        "secrets_masked": 0,
+        "identities_masked": 0,
+        "served_by": [
+          "Cerebras"
+        ],
+        "priced_responses": 7,
+        "prompt_tokens": 43101,
+        "completion_tokens": 651,
+        "reasoning_tokens": 304,
+        "cost_usd": 0.0155736
+      }
+    }
+  ],
+  "settled_attempts": {
+    "workers": 3,
+    "repairs": 0,
+    "directors": 1,
+    "unmeasured": 0
+  },
+  "spend": {
+    "reported_tokens": 116560,
+    "reported_cost_usd": 0.0414896,
+    "complete": true,
+    "requests": 19,
+    "priced_responses": 19,
+    "director_subscription_priced": false
+  },
+  "export": {
+    "changed_files": [
+      "factorial.py",
+      "fibonacci.py"
+    ],
+    "tree": "e9423ba39a7cb45efeef6255625b72c7fa8cfdfe",
+    "patch_sha256": "3ab05abc524d2c87a145788c4f94b830eb7e4fa9caa360a85ad6ea4ee9f04977"
+  },
+  "assertions": {
+    "stage_snapshot_lineage": true,
+    "review_tree_unchanged": true,
+    "host_files_and_index_preserved": true,
+    "export_reproduces_verified_tree": true,
+    "ledger_reloaded": true,
+    "checkpoint_verified_stages": 2
+  },
+  "limits": [
+    "One fixture on one local host; not a reliability or scale estimate.",
+    "Uses the locally patched OpenShell VM driver required by previous qualifications.",
+    "No new synthetic secret-restoration case; this fixture contained no credentials.",
+    "Planning is a counted, unpriced host subscription call outside Shield.",
+    "Repeated planned-task restart accounting has controller tests, not a new live restart qualification.",
+    "Go test binary metadata has no source revision; source_revision and source hashes identify the tested working tree."
+  ]
+}

@@ -285,7 +285,7 @@ func (b *brain) runOpenShellWorkflow(ctx context.Context, ws captaincode.Workspa
 }
 
 // runPlannedOpenShellTeam has the tool-less director split task into sandbox
-// assignments, then runs them as one parallel stage of /openshell workers.
+// assignments, then runs them as verified stages of /openshell workers.
 // The planner's calls are director attempts: they come off the attempt cap
 // before the team's own admission and settle with the task. keep saves the
 // plan on the task before any sandbox starts; if it fails, none does.
@@ -309,21 +309,45 @@ func (b *brain) runPlannedOpenShellTeam(ctx context.Context, ws captaincode.Work
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "the director planned %d sandbox worker(s) in %d call(s)", len(plan.Assignments), plan.DirectorAttempts)
+	if len(plan.Stages) > 1 {
+		fmt.Fprintf(&sb, " across %d stage(s)", len(plan.Stages))
+	}
 	if plan.Rationale != "" {
 		sb.WriteString(" - " + terminalSafe(plan.Rationale, 200))
 	}
-	for i, brief := range plan.Assignments {
-		fmt.Fprintf(&sb, "\n  w%d: %s", i+1, terminalSafe(strings.Join(strings.Fields(brief), " "), 200))
+	for _, line := range openShellPlanLines(plan.Record(), 200) {
+		fmt.Fprintf(&sb, "\n  %s", line)
 	}
 	note := sb.String()
 	status("OpenShell: " + note + "\n")
 	res, err := b.runOpenShellWorkflow(ctx, ws, plan.Workflow, history)
+	res = addOpenShellPlanningUsage(res, plan.DirectorAttempts)
+	res.Text = "[captain/openshell] " + note + "\n\n" + res.Text
+	return res, err
+}
+
+func addOpenShellPlanningUsage(res captaincode.Result, attempts int) captaincode.Result {
 	usage := captaincode.OpenShellAttemptUsage{Unmeasured: 1}
 	if res.OpenShellAttempts != nil {
 		usage = *res.OpenShellAttempts
 	}
-	usage.Directors += plan.DirectorAttempts
+	usage.Directors += attempts
 	res.OpenShellAttempts = &usage
-	res.Text = "[captain/openshell] " + note + "\n\n" + res.Text
-	return res, err
+	return res
+}
+
+func openShellPlanLines(plan captaincode.OpenShellPlanRecord, limit int) []string {
+	var lines []string
+	if len(plan.Stages) > 1 || len(plan.Stages) == 1 && plan.Stages[0].Mode == "review" {
+		for s, stage := range plan.Stages {
+			for i, brief := range stage.Assignments {
+				lines = append(lines, fmt.Sprintf("s%d-w%d (%s): %s", s+1, i+1, terminalSafe(stage.Mode, 20), terminalSafe(strings.Join(strings.Fields(brief), " "), limit)))
+			}
+		}
+		return lines
+	}
+	for i, brief := range plan.Assignments {
+		lines = append(lines, fmt.Sprintf("w%d: %s", i+1, terminalSafe(strings.Join(strings.Fields(brief), " "), limit)))
+	}
+	return lines
 }
