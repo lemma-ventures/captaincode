@@ -115,9 +115,9 @@ count in `attempt_usage` and in the run's spend; one whose record is missing
 counts as unknown, not zero. In-flight usage is not yet reconciled; counts are
 saved when the controller returns.
 
-For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`
-and `sequence_sha256` before sandbox dispatch. `captain task inspect <id>` shows
-that checkpoint after a restart. `captain task resume <task-id> <attempt-id>`
+For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`,
+`sequence_sha256`, `verified_stages` and `evidence_sha256` before sandbox dispatch.
+`captain task inspect <id>` shows that checkpoint after a restart. `captain task resume <task-id> <attempt-id>`
 revalidates it under the run lock and creates a new attempt with `parent_attempt`
 pointing to the interrupted attempt. The original attempt becomes failed, while
 the continuation owns its final export, cumulative sequence usage and handoff.
@@ -138,11 +138,19 @@ are not resumed automatically. A cancellation requested before restart is retain
 in `interrupt_reason` and blocks manual recovery too. The brain log records rejected
 startup candidates, while their lifecycle remains interrupted for inspection.
 
-After each verified stage, the controller saves the same checkpoint binding and
-refreshes the attempt's `checkpoint_at`, including during task recovery. The stage
-record reaches disk first. If the ledger save fails, the next stage does not start
-and no final export is delivered; the verified stage remains available for explicit
-recovery.
+After each newly verified stage, the controller advances the stage count and
+evidence digest and refreshes `checkpoint_at`. The digest binds the original start
+time, snapshot lineage, completed stage report bytes and set-aside usage for those
+stages. Task recovery checks it before admission and again before dispatch; it
+rejects coordinated rewrites of reports and their summaries. Reusing a stage does
+not roll back the checkpoint. The ledger is the trusted anchor, so rewriting both
+it and the run directory is outside this check.
+
+The stage record reaches disk first. If its ledger save fails, no next stage or
+final export is delivered. Task recovery refuses completed stages beyond its saved
+count and legacy checkpoints without an evidence digest. Inspect the retained
+records before choosing `captain openshell --resume <run-directory>`; that explicit
+path validates local consistency without the independent task-ledger anchor.
 
 Explicit review tasks record `tasks[].mode: "review"` and `outcome: "unchanged"`.
 Their report binds an empty patch checksum to the pinned snapshot and successful

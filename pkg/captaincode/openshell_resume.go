@@ -127,6 +127,7 @@ type OpenShellRecovery struct {
 	teams     []OpenShellTeam
 	run       *OpenShellRun
 	recovered []*OpenShellRun
+	expected  *OpenShellCheckpoint
 	aside     *OpenShellSetAside // an interrupted stage run to set aside before running it again
 	used      bool
 }
@@ -178,6 +179,15 @@ func (r *OpenShellRecovery) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	runner, run := r.runner, r.run
+	if r.expected != nil {
+		checkpoint, err := openShellCheckpoint(runner.RunDir, run, r.expected.VerifiedStages)
+		if err != nil {
+			return Result{}, err
+		}
+		if checkpoint != *r.expected {
+			return Result{}, errors.New("openshell: verified-stage evidence changed after recovery admission")
+		}
+	}
 	if len(r.recovered) == len(r.teams) && run.Verdict == "pass" {
 		return finishOpenShellRun(ctx, runner, run, nil, false)
 	}
@@ -241,6 +251,15 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		!run.DeadlineAt.Equal(plan.DeadlineAt) || !run.RequireAll || run.SequenceSHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) {
 		return nil, errors.New("openshell: sequence plan does not match the checkpoint")
 	}
+	if expected != nil {
+		checkpoint, err := openShellCheckpoint(dir, &run, expected.VerifiedStages)
+		if err != nil {
+			return nil, err
+		}
+		if checkpoint != *expected {
+			return nil, errors.New("openshell: verified-stage evidence does not match the task checkpoint")
+		}
+	}
 	ctx, cancel, err := OpenShellBudgetContext(ctx, &Budget{StartedAt: run.StartedAt})
 	if err != nil {
 		return nil, err
@@ -298,6 +317,9 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 	if err != nil {
 		return nil, err
 	}
+	if expected != nil && len(recovered) != expected.VerifiedStages {
+		return nil, errors.New("openshell: completed stage evidence was not saved to the task checkpoint; inspect the run before explicit run-directory recovery")
+	}
 	if len(recovered) < len(plan.Teams) && (aside != nil || len(run.SetAside) > 0) {
 		if err := runner.rerunFits(ctx, plan.Teams, recovered, run.SetAside, aside); err != nil {
 			return nil, err
@@ -335,7 +357,7 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		return nil, err
 	}
 	ready = true
-	return &OpenShellRecovery{lock: lock, runner: runner, teams: plan.Teams, run: &run, recovered: recovered, aside: aside}, nil
+	return &OpenShellRecovery{lock: lock, runner: runner, teams: plan.Teams, run: &run, recovered: recovered, aside: aside, expected: expected}, nil
 }
 
 func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShellTeam, run *OpenShellRun) ([]*OpenShellRun, *OpenShellSetAside, error) {

@@ -799,8 +799,22 @@ new attempt ID immediately; inspect the task for completion or use `captain task
 cancel <task-id>` to stop it. Disconnecting the resume client does not cancel the
 accepted continuation. A cancellation withholds exports and stops the controller.
 
-The controller refreshes the attempt checkpoint after each verified stage, including
-resumed stages. A failed ledger save stops progression before another worker starts.
+Each newly verified stage advances `verified_stages` and `evidence_sha256` in the
+attempt checkpoint. The digest binds the original start time, snapshot lineage,
+exact completed stage reports (including checks, patch digests and measured usage),
+and the set-aside attempt summaries for those stages. Task and startup recovery
+compare this digest before admission and again before dispatch. Reused stages do
+not roll the checkpoint back; replacing a digest at the same stage is refused.
+
+A failed ledger save stops progression before another worker starts. If a stage
+completed on disk but its evidence checkpoint was not saved, task recovery refuses
+to adopt that unanchored result. Older task checkpoints without the evidence digest
+are also refused. Inspect the retained records before choosing explicit
+`captain openshell --resume <run-directory>`, which performs local consistency
+checks but has no independent ledger anchor. This protects completed-stage evidence
+against changes confined to the run directory; it does not protect against an
+actor who can also rewrite the trusted ledger. An interrupted stage's unverified
+usage remains subject to the existing reconciliation limits.
 
 Missing or changed checkpoints, stages still marked running, settled task usage, strict
 dollar budgets and expired workflow deadlines are refused before dispatch. Solo

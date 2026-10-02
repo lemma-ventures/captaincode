@@ -1834,10 +1834,30 @@ uncommitted work found and fixed these defects, each with a regression test:
   `/openshell` turn is refused, an undispatched task cannot stay "running",
   and Shield no longer crashes on an oversized `usage.cost`.
 
-Still open from the review: the ledger checkpoint anchors only the plan
-digest, so consistent edits to every record inside the owner-only run
-directory are not detected, and a retry that attaches to a running HTTP
-request receives no keepalive until the run ends.
+The ledger evidence anchor described below closes the plan-only checkpoint gap.
+Still open from the review: a retry that attaches to a running HTTP request
+receives no keepalive until the run ends.
+
+**M3.7 ledger-bound recovery evidence (2 October 2026, unreleased).**
+Task checkpoints now bind a verified-stage count and evidence digest as well as
+the plan checksum. The digest covers the original start time, snapshot lineage,
+exact completed stage reports and set-aside usage for those stages. Rewriting
+worker attempt counts together with their summaries no longer passes recovery.
+The task and startup paths compare the anchor before admission and again before
+dispatch; checkpoint updates cannot replace, skip or roll back a verified stage.
+Reusing several stages on resume does not regress the saved checkpoint.
+
+A completed stage whose ledger save failed, or a legacy task checkpoint without
+an evidence digest, requires inspection before explicit run-directory recovery.
+That explicit command still checks local consistency and runtime provenance, but
+has no independent ledger anchor. The ledger itself remains trusted. This binds
+completed-stage evidence; it does not solve unknown usage from an interrupted
+worker or recovery after a controller crash mid-stage.
+
+Local controller regressions cover the previously accepted rewrite, durable
+ledger reload, three-stage continuation, stopped-stage reruns, altered evidence
+after admission, checkpoint rollback and failed-save refusal. No new live-provider
+or MicroVM benchmark is claimed for this change.
 
 **M3.8 status (20 September 2026).** Named, not built.
 
