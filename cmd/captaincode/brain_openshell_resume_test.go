@@ -227,7 +227,9 @@ func TestOpenShellBrainShutdownStopsResumedSandboxes(t *testing.T) {
 		assert.Nil(t, as.Export)
 		states[as.State]++
 	}
-	assert.Equal(t, map[captaincode.LifecycleState]int{captaincode.StateFailed: 1, captaincode.StateCancelled: 1}, states)
+	assert.Equal(t, map[captaincode.LifecycleState]int{captaincode.StateFailed: 1, captaincode.StateRunning: 1}, states,
+		"a brain stop is not a cancellation: the continuation waits for the next start")
+	assertOpenShellResumableAfterRestart(t, b, stored, task)
 
 	b2, task2, attempt2 := interruptedOpenShellTask(t)
 	b2.life = life
@@ -240,6 +242,77 @@ func TestOpenShellBrainShutdownStopsResumedSandboxes(t *testing.T) {
 	rec = httptest.NewRecorder()
 	b2.chatCompletions(rec, openShellHTTPRequest(t, t.TempDir(), "openshell", "fix parser", false))
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+}
+
+// assertOpenShellResumableAfterRestart checks what the next start makes of a
+// sandbox run a brain stop left behind: an interrupted attempt with nothing
+// settled yet, which captain task resume accepts.
+func assertOpenShellResumableAfterRestart(t *testing.T, b *brain, stored *captaincode.Ledger, task string) {
+	t.Helper()
+	for _, charge := range stored.Charges {
+		assert.False(t, charge.TaskID == task && charge.Kind == captaincode.KindCall, "usage settles when the run finishes")
+	}
+	stored.ReconcileOnStartup()
+	var stopped []captaincode.AttemptState
+	for _, as := range stored.AttemptStatesFor(task) {
+		if as.State == captaincode.StateInterrupted {
+			stopped = append(stopped, as)
+		}
+	}
+	require.Len(t, stopped, 1)
+	assert.Equal(t, "brain process restarted", stopped[0].InterruptReason)
+	b.ledger = stored
+	_, _, err := b.openShellResumeState(task, stopped[0].AttemptID)
+	assert.NoError(t, err, "the next start can resume the run")
+}
+
+func TestOpenShellHTTPBrainStopLeavesSequenceResumable(t *testing.T) {
+	for _, checkpointed := range []bool{true, false} {
+		t.Run(map[bool]string{true: "sequence", false: "no checkpoint"}[checkpointed], func(t *testing.T) {
+			b := openShellHTTPBrain(t)
+			life, stopLife := context.WithCancel(context.Background())
+			defer stopLife()
+			b.life = life
+			started := make(chan string, 1)
+			b.runOpenShellWorkflowFn = func(ctx context.Context, _ captaincode.Workspace, _ captaincode.Workflow, _ string) (captaincode.Result, error) {
+				b.mu.Lock()
+				attempt := b.ledger.AttemptStates[0].AttemptID
+				var err error
+				if checkpointed {
+					err = b.ledger.RecordOpenShellCheckpoint(attempt, captaincode.OpenShellCheckpoint{
+						RunDir: "/tmp/fixture-run", SequenceSHA256: strings.Repeat("a", 64),
+					})
+				}
+				b.mu.Unlock()
+				assert.NoError(t, err)
+				started <- attempt
+				<-ctx.Done()
+				return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Workers: 1}}, captaincode.ErrInterrupted
+			}
+			req := openShellHTTPRequest(t, t.TempDir(), "openshell", "/openshell edit a > /openshell edit b", false)
+			done := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				rec := httptest.NewRecorder()
+				b.chatCompletions(rec, req)
+				done <- rec
+			}()
+			attempt := <-started
+			stopLife()
+			rec := <-done
+			assert.NotEqual(t, http.StatusOK, rec.Code)
+			stored, err := captaincode.LoadLedger()
+			require.NoError(t, err)
+			as := stored.AttemptStateFor(attempt)
+			require.NotNil(t, as)
+			if !checkpointed {
+				assert.Equal(t, captaincode.StateCancelled, as.State, "without a checkpoint there is nothing to resume")
+				return
+			}
+			assert.Equal(t, captaincode.StateRunning, as.State)
+			assert.Contains(t, rec.Body.String(), "captain task resume "+as.TaskID+" "+attempt)
+			assertOpenShellResumableAfterRestart(t, b, stored, as.TaskID)
+		})
+	}
 }
 
 func TestOpenShellTaskResumeCancelledDuringValidation(t *testing.T) {

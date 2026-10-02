@@ -331,6 +331,7 @@ func fakeOpenShellPilot(args []string) int {
 		Hang     bool              `json:"hang"`
 		SHA      string            `json:"sha"`
 		Attempts *int              `json:"attempts"`
+		HangOnce string            `json:"hang_once"` // hang only while this marker file does not exist
 	}
 	if json.Unmarshal([]byte(spec.Prompt), &do) != nil {
 		return 2
@@ -343,6 +344,12 @@ func fakeOpenShellPilot(args []string) int {
 		if err != nil || string(out) != expected {
 			report["verdict"], report["error"] = "fail", "worker did not receive the verified predecessor snapshot"
 			return finish(1)
+		}
+	}
+	if do.HangOnce != "" {
+		if _, err := os.Stat(do.HangOnce); os.IsNotExist(err) {
+			os.WriteFile(do.HangOnce, nil, 0o600)
+			do.Hang = true
 		}
 	}
 	switch {

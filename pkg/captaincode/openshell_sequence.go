@@ -23,6 +23,53 @@ type OpenShellStageRecord struct {
 	Verdict      string `json:"verdict"`
 }
 
+// OpenShellSetAside is a stage run that a cancellation stopped before it was
+// verified. Recovery runs the stage again from the same snapshot; the stopped
+// run's directory stays for inspection, and what it used still counts.
+type OpenShellSetAside struct {
+	Stage     int                    `json:"stage"`
+	RunRecord string                 `json:"run_record"`
+	Revision  string                 `json:"revision"`
+	Attempts  *OpenShellAttemptUsage `json:"attempts"` // nil: unknown
+	Requests  int                    `json:"requests"`
+	Tokens    int                    `json:"tokens"`
+	CostUSD   float64                `json:"cost_usd"`
+	Priced    bool                   `json:"priced"` // every request came back with a price
+}
+
+// openShellStageDir is the directory of stage n's run k (0 is the first run).
+func openShellStageDir(runDir string, stage, rerun int) string {
+	if rerun == 0 {
+		return filepath.Join(runDir, fmt.Sprintf("stage-%d", stage))
+	}
+	return filepath.Join(runDir, fmt.Sprintf("stage-%d-rerun-%d", stage, rerun))
+}
+
+// reruns counts the stopped runs of a stage that recovery set aside.
+func (run *OpenShellRun) reruns(stage int) int {
+	n := 0
+	for _, s := range run.SetAside {
+		if s.Stage == stage {
+			n++
+		}
+	}
+	return n
+}
+
+// setAsideOpenShellStage records what an interrupted stage run used. A
+// missing or foreign record leaves the attempts unknown and the bill unpriced.
+func setAsideOpenShellStage(team OpenShellTeam, record OpenShellStageRecord) *OpenShellSetAside {
+	aside := &OpenShellSetAside{Stage: record.Stage, RunRecord: record.RunRecord, Revision: record.Revision}
+	var stage OpenShellRun
+	if _, err := decodeOpenShellSequence(record.RunRecord, &stage); err != nil ||
+		stage.Team != team.ID || stage.Revision != record.Revision {
+		return aside
+	}
+	aside.Attempts = stage.measuredAttempts(team.Tasks...)
+	aside.Requests, aside.Tokens, aside.CostUSD, aside.Priced = openShellSpend(stage.Tasks)
+	return aside
+}
+
 func runOpenShellSequence(ctx context.Context, runner *OpenShellRunner, teams []OpenShellTeam, steer *Steer) (Result, error) {
 	ctx, cancel, err := OpenShellBudgetContext(ctx, nil)
 	if err != nil {
@@ -128,8 +175,20 @@ func validateOpenShellSequence(teams []OpenShellTeam) ([]string, error) {
 
 func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam, run *OpenShellRun, recovered []*OpenShellRun) error {
 	run.AttemptUsage = &OpenShellAttemptUsage{}
+	for i := range run.SetAside {
+		run.AttemptUsage.add(run.SetAside[i].Attempts)
+	}
 	started, elapsed := time.Now(), run.Seconds
 	defer func() { run.Seconds = elapsed + seconds(time.Since(started)) }()
+	// pending is the stage this call dispatched and has not checkpointed. If
+	// a cancellation stopped its workers, it never earned a verdict of its
+	// own: it is marked interrupted, and recovery may run it again.
+	pending, cancelled := -1, false
+	defer func() {
+		if cancelled && pending >= 0 && pending < len(run.Stages) {
+			run.Stages[pending].Verdict = "interrupted"
+		}
+	}()
 	save := func() error {
 		run.Seconds = elapsed + seconds(time.Since(started))
 		return saveOpenShellSequence(r.RunDir, run)
@@ -196,7 +255,7 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 		}
 		stage := &OpenShellRunner{Pilot: r.Pilot, Prepared: r.Prepared, StateRoot: r.StateRoot,
 			Runtime: r.Runtime, Repo: snapshot, Revision: current, Concurrency: r.Concurrency,
-			RunDir: filepath.Join(r.RunDir, fmt.Sprintf("stage-%d", i+1)), RequireAll: true,
+			RunDir: openShellStageDir(r.RunDir, i+1, run.reruns(i+1)), RequireAll: true,
 			MaxAttempts: r.MaxAttempts, Pinned: run.Provenance,
 			Director: r.Director, DirectorName: r.DirectorName, Log: r.Log}
 		var result *OpenShellRun
@@ -215,12 +274,19 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 			return err
 		}
 		if result == nil {
+			pending = i
 			r.logf("stage %d/%d: snapshot %s", i+1, len(teams), current)
 			result, err = stage.RunTeam(ctx, team)
+			cancelled = errors.Is(ctx.Err(), context.Canceled)
 		} else {
 			r.logf("stage %d/%d: reused verified export", i+1, len(teams))
 		}
 		if result == nil {
+			// Refused before any worker started: there is no run to keep or
+			// set aside, so the stage is left as if it never began.
+			if pending == i && os.Remove(stage.RunDir) == nil {
+				run.Stages, pending = run.Stages[:i], -1
+			}
 			return fmt.Errorf("openshell: stage %d returned no result: %w", i+1, err)
 		}
 		record := &run.Stages[i]
@@ -253,6 +319,7 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 		if err := save(); err != nil {
 			return err
 		}
+		pending = -1
 		if err := recordOpenShellCheckpoint(ctx, r.RunDir, run.SequenceSHA256); err != nil {
 			return fmt.Errorf("openshell: persist task checkpoint after stage %d: %w", i+1, err)
 		}

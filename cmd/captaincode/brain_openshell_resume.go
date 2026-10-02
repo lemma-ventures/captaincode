@@ -56,6 +56,25 @@ func (b *brain) openShellRecoveryBudget(ctx context.Context, taskID string) (con
 	return captaincode.OpenShellBudgetContext(ctx, budget)
 }
 
+// openShellStoppedByRestart reports whether a sandbox run ended only because
+// the brain is stopping: nobody asked to cancel it, its deadline had not
+// passed, and it saved a sequence checkpoint. Such a run is not recorded as
+// cancelled; it stays running in the ledger, the next start marks it
+// interrupted (ReconcileOnStartup), and captain task resume or startup
+// recovery runs the stage the stop cut short again. The caller holds b.mu.
+func (b *brain) openShellStoppedByRestart(attemptID string, runErr error) bool {
+	if runErr == nil || errors.Is(runErr, context.DeadlineExceeded) || b.lifeContext().Err() == nil {
+		return false
+	}
+	as := b.ledger.AttemptStateFor(attemptID)
+	if as == nil || as.Leg != captaincode.LegOpenShell || as.State != captaincode.StateRunning ||
+		as.OpenShell == nil || as.Export != nil {
+		return false
+	}
+	ts := b.ledger.TaskStateFor(as.TaskID)
+	return ts != nil && ts.State == captaincode.StateRunning
+}
+
 // lifeContext is the brain's lifetime: cancelled when shutdown begins.
 func (b *brain) lifeContext() context.Context {
 	if b.life == nil {
@@ -207,6 +226,12 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 		}
 		if runErr == nil && res.Export == nil {
 			runErr = errors.New("openshell: recovery returned no verified export")
+		}
+		if b.openShellStoppedByRestart(next.AttemptID, runErr) {
+			if err := b.ledger.Save(); err != nil {
+				log.Printf("openshell: save stopped recovery %s: %v", next.AttemptID, err)
+			}
+			return
 		}
 		if err := recordOpenShellSolo(b.ledger, taskID, next.AttemptID, oldTask.Label, res, runErr); err != nil {
 			log.Printf("openshell: save recovery result for %s: %v", next.AttemptID, err)
