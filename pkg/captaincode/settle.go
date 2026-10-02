@@ -95,18 +95,20 @@ func (o OutcomeEvidence) settle(ts *TaskState, now time.Time) (AcceptanceStatus,
 	if ts != nil && (ts.State == StateFailed || ts.State == StateExhausted) {
 		return AcceptanceRejected, DecidedByLifecycle
 	}
+	labelling := 0
 	for _, c := range o.Checks {
+		if !c.Labels() {
+			continue // the judge, tests the run edited, a failure it may not have caused
+		}
+		labelling++
 		if !c.Passed {
 			return AcceptanceRejected, DecidedByChecks
 		}
 	}
-	// Objective signals captain observes itself (stage 1). A commit that
-	// touched the worker's files is the user keeping the work: accepted at
-	// once, whatever else is on the record. A corrective re-prompt inside
-	// the window is the user sending it back: rejected at once.
-	if o.Commit != nil {
-		return AcceptanceAccepted, DecidedByCommit
-	}
+	// Objective signals captain observes itself (stage 1). A corrective
+	// re-prompt inside the window is the user sending it back: rejected at
+	// once, and read before any commit - a commit that followed a
+	// correction kept the corrected work, not this delivery (SCORING.md).
 	if o.Reprompt != nil {
 		return AcceptanceRejected, DecidedByReprompt
 	}
@@ -118,17 +120,20 @@ func (o OutcomeEvidence) settle(ts *TaskState, now time.Time) (AcceptanceStatus,
 		// human to call.
 		return AcceptancePending, ""
 	}
+	// A commit that kept the worker's lines is the user keeping the work.
+	if o.Commit != nil {
+		return AcceptanceAccepted, DecidedByCommit
+	}
 	if now.Sub(o.deliveredAt()) < OutcomeSettleWindow() {
 		return AcceptancePending, ""
 	}
-	if len(o.Checks) > 0 {
+	if labelling > 0 {
 		return AcceptanceAccepted, DecidedByChecks
 	}
-	if o.Delivered() {
-		// Nothing was checked and nothing came back: the weakest honest
-		// acceptance, labelled so nobody reads it as a passed test.
-		return AcceptanceAccepted, DecidedBySilence
-	}
+	// Nothing checked it and nothing came back. That used to settle as
+	// accepted by silence - 42 of 151 acceptances on 2 October - and made a
+	// 96%-accepted label that could not tell legs apart. Silence is unknown:
+	// the outcome stays pending, out of every label.
 	return AcceptancePending, ""
 }
 
@@ -140,6 +145,10 @@ func (l *Ledger) SettleOutcomes(now time.Time) int {
 	changed := 0
 	for i := range l.Outcomes {
 		o := &l.Outcomes[i]
+		if o.unsettleStale(now) {
+			changed++
+			l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: o.TaskID, Outcome: o})
+		}
 		if o.Settled() {
 			continue
 		}
@@ -154,6 +163,7 @@ func (l *Ledger) SettleOutcomes(now time.Time) int {
 		case AcceptanceRejected:
 			o.RejectedAt = now
 		}
+		o.stampEffort(l.TaskStateFor(o.TaskID))
 		changed++
 		l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: o.TaskID, Outcome: o})
 	}
@@ -202,4 +212,48 @@ func SettleGateRows(rows []ShadowRecord, outcomes []OutcomeEvidence) int {
 		}
 	}
 	return settled
+}
+
+// unsettleStale returns an outcome to pending when it was settled on
+// evidence that no longer settles anything: silence, or checks none of
+// which label (the judge's grade recorded as a check carried 17 of 38
+// check acceptances on 2 October). A human verdict, a commit, a reprompt,
+// a regression and a lifecycle failure stand. Reports whether it changed.
+func (o *OutcomeEvidence) unsettleStale(now time.Time) bool {
+	if !o.Settled() || o.Review != nil {
+		return false
+	}
+	stale := o.DecidedBy == DecidedBySilence
+	if o.DecidedBy == DecidedByChecks {
+		stale = true
+		for _, c := range o.Checks {
+			if c.Labels() {
+				stale = false
+				break
+			}
+		}
+	}
+	if !stale {
+		return false
+	}
+	o.Status, o.DecidedBy = AcceptancePending, ""
+	o.SettledAt, o.AcceptedAt, o.RejectedAt = time.Time{}, time.Time{}, time.Time{}
+	o.UpdatedAt = now
+	return true
+}
+
+// stampEffort records what the settled outcome cost the user: how much
+// rework it took and how long until the answer that settled it arrived.
+func (o *OutcomeEvidence) stampEffort(ts *TaskState) {
+	rework := len(o.Corrections)
+	if o.Reprompt != nil {
+		rework++
+	}
+	if o.Attempts > 1 {
+		rework += o.Attempts - 1 // repairs and escalations re-did the work
+	}
+	o.Rework = rework
+	if ts != nil && !ts.StartedAt.IsZero() && !o.DeliveredAt.IsZero() && o.DeliveredAt.After(ts.StartedAt) {
+		o.TimeToDeliveredMs = o.DeliveredAt.Sub(ts.StartedAt).Milliseconds()
+	}
 }

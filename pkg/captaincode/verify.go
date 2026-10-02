@@ -142,11 +142,68 @@ func (l *Ledger) SweepCommits(ctx context.Context, now time.Time) int {
 			break
 		}
 		looked++
-		if c, ok := CommitsTouching(ctx, o.Dir, o.deliveredAt(), o.ChangedFiles); ok {
-			o.Commit = &c
-			o.UpdatedAt = now
-			found++
+		c, ok := CommitsTouching(ctx, o.Dir, o.deliveredAt(), o.ChangedFiles)
+		if !ok || l.overwrittenBefore(i, c.At) {
+			continue
 		}
+		o.Commit = &c
+		o.UpdatedAt = now
+		found++
+	}
+	if found > 0 {
+		l.countCommitShares()
 	}
 	return found
+}
+
+// overwrittenBefore reports whether every file outcome i changed was changed
+// again by a later task in the same folder before the commit at: the commit
+// kept that later task's lines, not this one's. Any commit touching the
+// files used to accept every task that had ever written them - including
+// runs a later leg had to redo (SCORING.md Phase 1).
+func (l *Ledger) overwrittenBefore(i int, at time.Time) bool {
+	o := l.Outcomes[i]
+	if at.IsZero() {
+		return false
+	}
+	left := map[string]bool{}
+	for _, f := range o.ChangedFiles {
+		left[f] = true
+	}
+	for j, p := range l.Outcomes {
+		if j == i || p.Dir != o.Dir || !p.deliveredAt().After(o.deliveredAt()) || p.deliveredAt().After(at) {
+			continue
+		}
+		for _, f := range p.ChangedFiles {
+			delete(left, f)
+		}
+	}
+	return len(left) == 0
+}
+
+// countCommitShares stamps on every commit record how many outcomes it was
+// credited to, so a squash commit's credit can be split among them.
+func (l *Ledger) countCommitShares() {
+	n := map[string]int{}
+	for _, o := range l.Outcomes {
+		if o.Commit != nil {
+			n[o.Commit.SHA]++
+		}
+	}
+	for i := range l.Outcomes {
+		if c := l.Outcomes[i].Commit; c != nil {
+			c.Shared = n[c.SHA]
+		}
+	}
+}
+
+// HeadSHA is dir's checked-out commit, "" outside a repository.
+func HeadSHA(ctx context.Context, dir string) string {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

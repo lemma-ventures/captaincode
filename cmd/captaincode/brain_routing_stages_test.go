@@ -422,3 +422,46 @@ func TestSoloVerifyJudgesOnlyWhatTheTurnChanged(t *testing.T) {
 	require.NotNil(t, rec)
 	assert.Equal(t, 1, checks, "the turn's own edit is checked")
 }
+
+// SCORING.md Phase 1: a test check settles the outcome only when the suite
+// is not the run's own work and a failure is new on that commit.
+func TestSoloVerifyLabelsTestChecks(t *testing.T) {
+	t.Setenv("CAPTAIN_SOLO_VERIFY", "1")
+	dir := gitRepoWithChange(t)
+	b := teamBrain()
+	b.escalation = captaincode.EscalationPolicy{Version: 1} // no repairs: one check per turn
+	passed := true
+	b.captureTestFn = func(ctx context.Context, d string) (*captaincode.CheckEvidence, error) {
+		return &captaincode.CheckEvidence{Command: []string{"go", "test", "./..."}, Passed: passed}, nil
+	}
+	turn := func(task string, edit func()) captaincode.CheckResult {
+		t.Helper()
+		taskID := b.openTask(task)
+		b.noteVerifyBase(taskID, dir)
+		edit()
+		b.verifyAndEscalate(captaincode.Workspace{Dir: dir}, captaincode.LegGLM, "[user]\n"+task+"\n\n", captaincode.Result{Text: "done"}, taskID, nil, nil)
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		o := b.ledger.OutcomeFor(taskID)
+		require.NotNil(t, o)
+		require.NotEmpty(t, o.Checks)
+		return o.Checks[len(o.Checks)-1]
+	}
+	write := func(name, body string) func() {
+		return func() { require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644)) }
+	}
+
+	c := turn("first change", write("a.go", "package a // one\n"))
+	assert.False(t, c.TestsEdited)
+	assert.Empty(t, c.Baseline, "no earlier result on this commit")
+
+	passed = false
+	c = turn("second change", write("a.go", "package a // two\n"))
+	assert.Equal(t, "passing", c.Baseline, "the suite passed on this commit before")
+	assert.True(t, c.Labels(), "a new failure is the run's")
+
+	c = turn("third change", write("a_test.go", "package a // weakened\n"))
+	assert.True(t, c.TestsEdited, "the run edited a test")
+	assert.Equal(t, "failing", c.Baseline)
+	assert.False(t, c.Labels(), "its own tests, or an old failure: not a label")
+}
