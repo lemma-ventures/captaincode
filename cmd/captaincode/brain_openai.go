@@ -604,7 +604,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// housekeeping and gets none of it.
 	taskID := ""
 	if !titleReq && !internal {
-		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt))
+		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt), lastUserRaw(req.Messages))
 		taskID = b.openTask(lastUserTurn(prompt))
 		b.noteVerifyBase(taskID, req.ws.Dir)
 	}
@@ -665,6 +665,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		// text is a degraded success, not 15 discarded minutes (live
 		// r0824-2121d5). AFTER the nudge check so a salvaged stub can never
 		// trigger a narration rerun and burn a second cap.
+		if errors.Is(err, captaincode.ErrInterrupted) {
+			b.noteStopped(req.ws.Dir, taskID, lastUserTurn(prompt))
+		}
 		if r2, e2, note := b.salvagePartial(ranLeg, res, err); note != "" {
 			res, err = r2, e2
 			res.Text = "[captain: " + note + "]\n\n" + res.Text
@@ -811,6 +814,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// marker in the success tail (prefixing res.Text would re-send nothing);
 	// text NOT yet streamed goes out whole below, so prefix it here.
 	partialNote := ""
+	if errors.Is(err, captaincode.ErrInterrupted) {
+		b.noteStopped(req.ws.Dir, taskID, lastUserTurn(prompt))
+	}
 	if r2, e2, note := b.salvagePartial(leg, res, err); note != "" {
 		res, err, partialNote = r2, e2, note
 		if first {

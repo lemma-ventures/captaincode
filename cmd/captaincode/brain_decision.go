@@ -101,27 +101,87 @@ func (b *brain) noteDelivered(dir, taskID string) {
 	b.lastDelivered[dir] = deliveredTask{taskID: taskID, at: time.Now()}
 }
 
-// noteFollowUp reads the next prompt on a workspace against what it last
-// delivered: a corrective opener inside the settle window is the user
-// sending the work back, and settles that task as rejected (settle.go).
-// Any other prompt is a new task and says nothing.
-func (b *brain) noteFollowUp(dir, text string) {
-	if dir == "" || strings.TrimSpace(text) == "" || !captaincode.CorrectiveReprompt(text) {
+// stoppedTask is a task the user stopped mid-run, for the follow-up read.
+type stoppedTask struct {
+	taskID, task string
+	at           time.Time
+}
+
+// noteStopped remembers the task a workspace's user just stopped.
+func (b *brain) noteStopped(dir, taskID, task string) {
+	if dir == "" || taskID == "" {
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	d, ok := b.lastDelivered[dir]
-	if !ok || time.Since(d.at) > captaincode.OutcomeSettleWindow() {
+	if b.lastStopped == nil {
+		b.lastStopped = map[string]stoppedTask{}
+	}
+	b.lastStopped[dir] = stoppedTask{taskID: taskID, task: task, at: time.Now()}
+}
+
+// followUpWindow is how soon a re-ask must follow to count against the
+// earlier run.
+const followUpWindow = 30 * time.Minute
+
+// sameAsk is how alike two prompts must be to be the same request asked
+// again (TaskVector cosine).
+const sameAsk = 0.6
+
+// noteFollowUp reads the next prompt on a workspace against what it last
+// delivered or stopped. Each of these is the user sending the work back,
+// settled as a rejection through the reprompt record (settle.go):
+//   - a corrective opener inside the settle window;
+//   - the same request redone on a different leg, named at its head
+//     (SCORING.md Phase 1: rework);
+//   - the same request asked again after the user stopped the run.
+//
+// Any other prompt is a new task and says nothing.
+func (b *brain) noteFollowUp(dir, text, raw string) {
+	if dir == "" || strings.TrimSpace(text) == "" {
 		return
 	}
-	delete(b.lastDelivered, dir)
-	b.ledger.RecordReprompt(d.taskID, truncate(text, 160), time.Now())
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	if s, ok := b.lastStopped[dir]; ok && now.Sub(s.at) <= followUpWindow {
+		delete(b.lastStopped, dir)
+		if similarAsk(s.task, text) {
+			b.recordFollowUpLocked(s.taskID, "asked again after a stop: "+text)
+			return
+		}
+	}
+	d, ok := b.lastDelivered[dir]
+	if !ok || now.Sub(d.at) > captaincode.OutcomeSettleWindow() {
+		return
+	}
+	if captaincode.CorrectiveReprompt(text) {
+		delete(b.lastDelivered, dir)
+		b.recordFollowUpLocked(d.taskID, text)
+		return
+	}
+	forced := captaincode.Leg(captaincode.LeadingForced(captaincode.HoistLeading(raw)))
+	if o := b.ledger.OutcomeFor(d.taskID); o != nil && forced != "" && o.Leg != "" && forced != o.Leg &&
+		now.Sub(d.at) <= followUpWindow && similarAsk(o.Task, text) {
+		delete(b.lastDelivered, dir)
+		b.recordFollowUpLocked(d.taskID, "redone on "+string(forced)+": "+text)
+	}
+}
+
+// similarAsk reports whether two prompts are the same request.
+func similarAsk(a, b string) bool {
+	return strings.TrimSpace(a) != "" && captaincode.Cosine(captaincode.TaskVector(a), captaincode.TaskVector(b)) >= sameAsk
+}
+
+// recordFollowUpLocked records a follow-up that sends taskID's work back.
+// Caller holds b.mu.
+func (b *brain) recordFollowUpLocked(taskID, text string) {
+	b.ledger.RecordReprompt(taskID, truncate(text, 160), time.Now())
 	b.ledger.SettleOutcomes(time.Now())
 	if err := b.ledger.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save reprompt: %v\n", err)
 	}
-	fmt.Printf("captain brain: follow-up read as a correction of task %s (%q)\n", d.taskID, promptPeek(text))
+	fmt.Printf("captain brain: follow-up read as a correction of task %s (%q)\n", taskID, promptPeek(text))
 }
 
 // attachDecision stamps the task identity onto this turn's parked decision and
