@@ -14,7 +14,7 @@ import jwt
 import supervisor_middleware_pb2 as pb
 import supervisor_middleware_pb2_grpc as rpc
 from profiles import PROFILES, canonical_calls, pin_request, profile, response_provider
-from response import encode, restore_response
+from response import encode, response_usage, restore_response
 
 LIMIT = 4 * 1024 * 1024
 AUDIENCE = "urn:openshell:extension:middleware:captain-shield"
@@ -197,6 +197,7 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                         raise ValueError("invalid whole response unit")
                     stage = "provider"
                     observed_provider = response_provider(unit.data, self.inference, preflight.status_code)
+                    usage = response_usage(unit.data)
                     with self.lock:
                         stage = "restore"
                         body, identities, restored_count = restore_response(
@@ -207,6 +208,8 @@ class Shield(rpc.SupervisorMiddlewareServicer):
                                  "request_id": preflight.context.request_id, "phase": "response",
                                  "provider": observed_provider, "upstream_body_sha256": hashlib.sha256(unit.data).hexdigest(),
                                  "identities": identities, "tool_secrets_restored": restored_count, "bytes": len(body), "mode": "whole_body"}
+                        if usage:
+                            audit["usage"] = usage
                         with self.audit.open("a") as stream:
                             stream.write(json.dumps(audit) + "\n")
                             stream.flush()

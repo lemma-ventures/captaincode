@@ -19,6 +19,27 @@ def functions(value):
             yield call["function"]
 
 
+def response_usage(body):
+    """The provider's own token counts and bill for one whole response: numbers, never content."""
+    try:
+        value = json.loads(body)
+    except (ValueError, RecursionError):
+        return None
+    usage = value.get("usage") if isinstance(value, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("completion_tokens_details")
+    counts = {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
+              "reasoning_tokens": details.get("reasoning_tokens") if isinstance(details, dict) else None}
+    found = {key: n for key, n in counts.items() if type(n) is int and 0 <= n < 1 << 32}
+    cost = usage.get("cost")
+    # A range check, not math.isfinite: it also refuses NaN and infinity, and
+    # isfinite raises OverflowError on a huge integer.
+    if type(cost) in (int, float) and 0 <= cost < 1000:
+        found["cost"] = float(cost)
+    return found or None
+
+
 def restore_response(body, restore, limit, stream=False, tool_secrets=None, allowed_tools=None):
     if len(body) > limit:
         raise ValueError("response exceeds limit")

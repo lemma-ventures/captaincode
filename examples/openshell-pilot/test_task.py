@@ -52,6 +52,14 @@ def result(output=b"", code=0):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_review_mode_requires_no_edit_scope_and_passing_baseline(self):
+        value = task.validate_task(spec("/repo", "a" * 40, mode="review", allowed=[]))
+        self.assertEqual(value["baseline"], "pass")
+        self.assertEqual(task.validate_task(value), value)
+        for overrides in [{"allowed": ["calc.py"]}, {"baseline": "fail"}, {"baseline": "any"}]:
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                task.validate_task(dict(value, **overrides))
+
     def test_valid_spec_gets_defaults_and_is_idempotent(self):
         value = task.validate_task(spec("/repo", "a" * 40))
         self.assertEqual((value["mode"], value["baseline"], value["deadline_seconds"], value["verify_seconds"]), ("edit", "fail", 600, 120))
@@ -153,6 +161,51 @@ class TaskPilotTests(unittest.TestCase):
 
     def build(self, **kwargs):
         return task.TaskPilot(self.state, task=kwargs.pop("task", self.spec_path), runtime="vm", **kwargs)
+
+    def test_review_exports_only_an_unchanged_verified_snapshot(self):
+        self.spec_path.write_text(json.dumps(spec(self.repo, self.revision, mode="review", allowed=[])))
+        instance = self.build()
+        instance.prepare_snapshot()
+        self.assertIn("Do not change repository files", instance.worker_prompt())
+        self.assertNotIn("make it pass", instance.worker_prompt())
+        exported = self.recover(instance, lambda work: None)
+        self.assertEqual(exported, b"")
+        self.assertEqual(instance.report["export"]["changed_files"], [])
+        self.assertEqual(instance.report["export"]["patch_sha256"], hashlib.sha256(b"").hexdigest())
+        self.assertEqual(instance.report["verdict"], "pass")
+        with self.assertRaisesRegex(RuntimeError, "review.*changed"):
+            instance.validate_export(b"untrusted patch")
+
+    def test_edit_requires_a_patch_and_review_never_repairs(self):
+        with self.assertRaisesRegex(RuntimeError, "edit.*no change"):
+            self.build().validate_export(b"")
+        self.spec_path.write_text(json.dumps(spec(self.repo, self.revision, mode="review", allowed=[])))
+        with self.assertRaisesRegex((RuntimeError, ValueError), "review.*repair"):
+            task.TaskPilot(self.root / "review", task=self.spec_path, runtime="vm", repair_attempts=1)
+
+    def test_review_failure_never_repairs_or_exports(self):
+        self.spec_path.write_text(json.dumps(spec(self.repo, self.revision, mode="review", allowed=[])))
+        instance = self.build()
+        instance.prepare_snapshot()
+        with (patch.object(instance, "remote", return_value=result(code=1)),
+              self.assertRaisesRegex(AssertionError, "baseline")):
+            instance.check_baseline()
+        with (patch.object(instance, "remote", return_value=result()),
+              patch.object(instance, "verify_attempt", return_value=(result(code=1), False)),
+              patch.object(instance, "repair_prompt") as repair,
+              self.assertRaisesRegex(AssertionError, "sandbox_verify")):
+            instance.edit_and_verify()
+        repair.assert_not_called()
+        self.assertEqual(instance.report["worker_attempts"], 1)
+        self.assertNotIn("export", instance.report)
+
+    def test_review_recovery_rejects_changed_files(self):
+        self.spec_path.write_text(json.dumps(spec(self.repo, self.revision, mode="review", allowed=[])))
+        instance = self.build()
+        instance.prepare_snapshot()
+        with self.assertRaisesRegex(AssertionError, "diff_scope"):
+            self.recover(instance, lambda work: (work / "calc.py").write_text(FIXED))
+        self.assertNotIn("export", instance.report)
 
     def test_checkpoint_pins_the_task_and_mode(self):
         instance = self.build()
@@ -317,12 +370,31 @@ class TaskPilotTests(unittest.TestCase):
                     instance.run_worker()
                     seal.assert_called_once()
                     self.assertEqual(instance.report["shield"], {"requests": 1, "responses": 1, "blocked": 0, "secrets_masked": 1,
-                                                                 "identities_masked": 2, "served_by": ["Cerebras"]})
+                                                                 "identities_masked": 2, "served_by": ["Cerebras"],
+                                                                 "priced_responses": 0, "prompt_tokens": 0, "completion_tokens": 0,
+                                                                 "reasoning_tokens": 0, "cost_usd": 0})
                     self.assertEqual((instance.state / "answer.txt").read_text(), "fixed")
                 else:
                     with self.assertRaisesRegex(AssertionError, "shield_mediated"):
                         instance.run_worker()
                     seal.assert_not_called()
+
+    def test_shield_totals_what_the_provider_billed(self):
+        request = {"model": "openai/gpt-oss-120b", "body_sha256": "0" * 64, "secrets": 0, "identities": 0}
+        priced = {"phase": "response", "provider": "Cerebras", "identities": 0,
+                  "usage": {"prompt_tokens": 100, "completion_tokens": 20, "reasoning_tokens": 5, "cost": 0.25}}
+        unpriced = {"phase": "response", "provider": "Cerebras", "identities": 0, "usage": {"prompt_tokens": 7}}
+        instance = task.TaskPilot(self.root / "lane-usage", task=self.spec_path, runtime="vm", inference="cerebras")
+        self.state = instance.state
+        self.audit([request, priced, request, unpriced])
+        with (patch.object(instance, "edit_and_verify", return_value=result(b'{"type":"text","part":{"text":"fixed"}}\n')),
+              patch.object(instance, "seal_and_export")):
+            instance.run_worker()
+        shield = instance.report["shield"]
+        self.assertEqual({key: shield[key] for key in ["requests", "priced_responses", "prompt_tokens", "completion_tokens",
+                                                        "reasoning_tokens", "cost_usd"]},
+                         {"requests": 2, "priced_responses": 1, "prompt_tokens": 107, "completion_tokens": 20,
+                          "reasoning_tokens": 5, "cost_usd": 0.25})
 
     def recover(self, instance, change, verify_code=0):
         work = self.root / "sandbox-repo"

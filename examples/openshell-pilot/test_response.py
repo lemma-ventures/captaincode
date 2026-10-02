@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from response import encode, restore_response
+from response import encode, response_usage, restore_response
 
 
 class ResponseTests(unittest.TestCase):
@@ -77,6 +77,20 @@ class ResponseTests(unittest.TestCase):
         output, count, _ = restore_response(encode(value), self.restore, 1024)
         self.assertEqual(count, 1)
         self.assertEqual(json.loads(output)["error"]["message"], 'Pilot "Person" 7d84 [[secret:nvidia:123456]]')
+
+    def test_usage_keeps_the_provider_counts_and_bill_only(self):
+        value = self.completion()
+        value["usage"] = {"prompt_tokens": 69, "completion_tokens": 16, "total_tokens": 85, "cost": 3.615e-05,
+                          "completion_tokens_details": {"reasoning_tokens": 13}, "note": "identity-1"}
+        self.assertEqual(response_usage(encode(value)),
+                         {"prompt_tokens": 69, "completion_tokens": 16, "reasoning_tokens": 13, "cost": 3.615e-05})
+        self.assertEqual(response_usage(encode(dict(value, usage={"prompt_tokens": 5, "cost": 0}))), {"prompt_tokens": 5, "cost": 0.0})
+        for usage in [{"prompt_tokens": True, "completion_tokens": -1, "cost": "0.1"},
+                      {"prompt_tokens": 1 << 40, "cost": float("nan")}, {"cost": -0.5}, {"cost": 10 ** 400},
+                      {"cost": float("inf")}, [], None]:
+            self.assertIsNone(response_usage(json.dumps(dict(value, usage=usage)).encode()))
+        for body in [b"not json", b"[]", encode({"choices": []})]:
+            self.assertIsNone(response_usage(body))
 
     def test_bad_json_or_incomplete_completions_are_refused(self):
         for body in [b"{", b"[]", b"data: [DONE]\n\n", b"NaN", b"{} {}"]:

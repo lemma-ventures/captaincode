@@ -65,8 +65,12 @@ def validate_task(spec):
     if type(spec) is not dict or set(spec) - FIELDS or spec.get("schema") != 1:
         raise ValueError("task spec must be a schema 1 object with known fields only")
     mode = spec.get("mode", "edit")
-    if mode not in ("edit", "verify"):
-        raise ValueError("task mode must be edit or verify")
+    if mode not in ("edit", "review", "verify"):
+        raise ValueError("task mode must be edit, review or verify")
+    if mode == "review":
+        if spec.get("allowed", []) != [] or spec.get("baseline", "pass") != "pass":
+            raise ValueError("review mode takes no edit scope and its tree must pass")
+        spec = dict(spec, allowed=[], baseline="pass")
     if mode == "verify":
         if (spec.get("prompt", "") != "" or spec.get("allowed", []) != [] or spec.get("protected", []) != []
                 or spec.get("baseline", "pass") != "pass"):
@@ -88,7 +92,7 @@ def validate_task(spec):
         raise ValueError("verify must be an argv list of 1-32 non-empty strings")
     allowed = spec.get("allowed")
     protected = spec.get("protected", [])
-    if (type(allowed) is not list or not (mode == "verify" or 1 <= len(allowed)) or len(allowed) > 64
+    if (type(allowed) is not list or not (mode in ("review", "verify") or 1 <= len(allowed)) or len(allowed) > 64
             or type(protected) is not list or len(protected) > 256):
         raise ValueError("allowed needs 1-64 paths and protected at most 256")
     allowed = [relative_path(path) for path in allowed]
@@ -148,6 +152,8 @@ class TaskPilot(pilot.Pilot):
         if self.requested is not None and self.requested != self.checkpoint["task"]:
             raise RuntimeError("cannot change the task for an existing checkpoint")
         self.task = validate_task(self.checkpoint["task"])
+        if self.task["mode"] == "review" and self.repair_attempts:
+            raise ValueError("review mode does not permit repair attempts")
         self.worker_deadline = self.task["deadline_seconds"]
         self.resume_timeout = 240 + self.task["verify_seconds"]
         self.report["mode"] = "task"
@@ -225,6 +231,10 @@ class TaskPilot(pilot.Pilot):
 
     def worker_prompt(self):
         task = self.task
+        if task["mode"] == "review":
+            return (task["prompt"] + "\n\nRules: Do not change repository files, commit, or install packages. "
+                    "Inspect the snapshot and run " + shlex.join(task["verify"]) + ". "
+                    "Report findings and the verification result. Do not repair failures.")
         rules = "\n\nRules: change only " + ", ".join(task["allowed"]) + "."
         if task["protected"]:
             rules += " Never modify " + ", ".join(task["protected"]) + "."
@@ -259,11 +269,17 @@ class TaskPilot(pilot.Pilot):
         responses = [row for row in rows if row.get("phase") == "response"]
         served = sorted({row["provider"] for row in responses if row.get("provider")})
         expected = self.profile.get("served_by")
+        usage = [row["usage"] for row in responses if isinstance(row.get("usage"), dict)]
         self.report["shield"] = {"requests": len(requests), "responses": len(responses),
                                  "blocked": sum(row.get("phase") == "response_blocked" for row in rows),
                                  "secrets_masked": sum(row.get("secrets", 0) for row in requests),
                                  "identities_masked": sum(row.get("identities", 0) for row in requests),
-                                 "served_by": served}
+                                 "served_by": served,
+                                 "priced_responses": sum("cost" in row for row in usage),
+                                 "prompt_tokens": sum(row.get("prompt_tokens", 0) for row in usage),
+                                 "completion_tokens": sum(row.get("completion_tokens", 0) for row in usage),
+                                 "reasoning_tokens": sum(row.get("reasoning_tokens", 0) for row in usage),
+                                 "cost_usd": sum(row.get("cost", 0.0) for row in usage)}
         self.check("shield_mediated", bool(requests) and bool(responses)
                    and all(row.get("model") == self.model for row in requests)
                    and served == ([expected] if expected else []),
@@ -315,8 +331,12 @@ class TaskPilot(pilot.Pilot):
 
     def validate_export(self, patch):
         repo = self.state / "landing"
-        if not patch:
+        if self.task["mode"] == "review":
+            if patch:
+                raise RuntimeError("review changed repository files")
             return []
+        if not patch:
+            raise RuntimeError("edit produced no change")
         with tempfile.TemporaryDirectory(dir=self.state) as temporary:
             index_env = dict(os.environ, GIT_INDEX_FILE=str(Path(temporary) / "index"))
             pilot.command(["git", "read-tree", self.checkpoint["revision"]], cwd=repo, env=index_env)
