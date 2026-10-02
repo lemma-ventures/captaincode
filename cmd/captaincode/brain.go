@@ -492,6 +492,9 @@ type brain struct {
 	// lastDelivered maps a workspace to the task it last delivered, so the
 	// next prompt there can be read as a follow-up (brain_openai.go).
 	lastDelivered map[string]deliveredTask
+	// lastStopped maps a workspace to the task the user last stopped, so
+	// asking it again counts against the stopped run (brain_decision.go).
+	lastStopped map[string]stoppedTask
 
 	// processID identifies this brain process for ownership claims (M3.3).
 	// A brain restart mints a new one; an interrupted attempt's owner is stale.

@@ -302,11 +302,11 @@ func TestACorrectiveFollowUpSettlesTheLastDeliveryAsRejected(t *testing.T) {
 	b.mu.Lock()
 	taskID := b.ledger.Events[0].TaskID
 	b.mu.Unlock()
-	b.noteFollowUp(dir, "now translate it to French")
+	b.noteFollowUp(dir, "now translate it to French", "now translate it to French")
 	b.mu.Lock()
 	assert.Equal(t, captaincode.AcceptancePending, b.ledger.OutcomeFor(taskID).Status, "the next task is not a verdict")
 	b.mu.Unlock()
-	b.noteFollowUp(dir, "no, that's not what I asked - keep my wording")
+	b.noteFollowUp(dir, "no, that's not what I asked - keep my wording", "no, that's not what I asked - keep my wording")
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	o := b.ledger.OutcomeFor(taskID)
@@ -464,4 +464,46 @@ func TestSoloVerifyLabelsTestChecks(t *testing.T) {
 	assert.True(t, c.TestsEdited, "the run edited a test")
 	assert.Equal(t, "failing", c.Baseline)
 	assert.False(t, c.Labels(), "its own tests, or an old failure: not a label")
+}
+
+// SCORING.md Phase 1: the same request redone on a different leg sends the
+// first leg's work back; asking a different question does not.
+func TestARedoOnAnotherLegRejectsTheFirstDelivery(t *testing.T) {
+	b := teamBrain()
+	dir := t.TempDir()
+	task := "tighten the wording of this paragraph about the parser"
+	b.recordRunAt(captaincode.LegGLM, "[user]\n"+task+"\n\n", captaincode.Result{Text: "tightened", Tokens: 10, DurationMs: 100}, captaincode.Workspace{Dir: dir}, "", 1, "", "")
+	b.mu.Lock()
+	taskID := b.ledger.Events[0].TaskID
+	b.mu.Unlock()
+
+	b.noteFollowUp(dir, "write a changelog entry", "/claude write a changelog entry")
+	b.mu.Lock()
+	assert.Equal(t, captaincode.AcceptancePending, b.ledger.OutcomeFor(taskID).Status, "another request on another leg is a new task")
+	b.mu.Unlock()
+
+	b.noteFollowUp(dir, task, "/claude "+task)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	o := b.ledger.OutcomeFor(taskID)
+	assert.Equal(t, captaincode.AcceptanceRejected, o.Status)
+	require.NotNil(t, o.Reprompt)
+	assert.Contains(t, o.Reprompt.Text, "redone on claude")
+	assert.Equal(t, 1, o.Rework)
+}
+
+// A run the user stopped and then asked for again counts against the run.
+func TestAskingAgainAfterAStopRejectsTheStoppedRun(t *testing.T) {
+	b := teamBrain()
+	dir := t.TempDir()
+	task := "audit the auth proxy for token leaks"
+	taskID := b.openTask(task)
+	b.noteStopped(dir, taskID, task)
+	b.noteFollowUp(dir, "audit the auth proxy for token leaks, focus on logs", "audit the auth proxy for token leaks, focus on logs")
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	o := b.ledger.OutcomeFor(taskID)
+	require.NotNil(t, o)
+	require.NotNil(t, o.Reprompt)
+	assert.Contains(t, o.Reprompt.Text, "asked again after a stop")
 }
