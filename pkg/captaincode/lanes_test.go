@@ -241,3 +241,41 @@ func TestFrontierLaneIsTheFrontierLegsByPerf(t *testing.T) {
 		}
 	}
 }
+
+// /quality never ran an open-weights leg: 68 of 72 turns went to claude and
+// grok-max (2026-10-02). The lane now owes open weights the routing mix's
+// oss share, when one is good enough.
+func TestOSSTurnFollowsTheMixShare(t *testing.T) {
+	cands := []LaneCandidate{{Leg: LegClaude, Score: 9.5}, {Leg: LegGrokMax, Score: 9.4}, {Leg: LegGLM, Score: 9.1}}
+
+	pick, ok := OSSTurn(LaneQuality, cands, map[Leg]int{LegClaude: 2, LegGrokMax: 2}, 0.2)
+	require.True(t, ok, "4 turns, none open: the 5th is open weights' 20%")
+	assert.Equal(t, LegGLM, pick.Leg)
+	assert.Contains(t, pick.Reason, "mix target 20%")
+
+	_, ok = OSSTurn(LaneQuality, cands, map[Leg]int{LegClaude: 2, LegGrokMax: 2, LegGLM: 1}, 0.2)
+	assert.False(t, ok, "at its share: the lane balances as before")
+
+	_, ok = OSSTurn(LaneQuality, cands, map[Leg]int{LegClaude: 1}, 0.5)
+	assert.True(t, ok, "/captain more oss raises the share")
+
+	_, ok = OSSTurn(LaneQuality, cands, map[Leg]int{LegClaude: 9}, 0)
+	assert.False(t, ok, "oss=0% turns it off")
+
+	weak := []LaneCandidate{{Leg: LegClaude, Score: 9.5}, {Leg: LegGLM, Score: 6.0}}
+	_, ok = OSSTurn(LaneQuality, weak, map[Leg]int{LegClaude: 9}, 0.2)
+	assert.False(t, ok, "quality first: an open leg below the lane's floor gets nothing")
+}
+
+// /quality ranked every task by the general prior; a leg's coding prior can
+// sit well above it.
+func TestTopQualityForUsesTheDomainPrior(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "priors.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"gemini": {"all": 7.0, "code": 9.4, "research": 7.0}}`), 0o644))
+	t.Cleanup(func() { resetPriors() })
+	_, err := LoadPriorOverridesFrom(path)
+	require.NoError(t, err)
+	order := []Leg{LegGemini, LegGrokMax}
+	assert.Equal(t, []Leg{LegGrokMax}, TopQualityFor(order, nil, DomainResearch, 1))
+	assert.Equal(t, []Leg{LegGemini}, TopQualityFor(order, nil, DomainCode, 1))
+}

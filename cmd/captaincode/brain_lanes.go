@@ -57,6 +57,47 @@ func reliableLane(cands []captaincode.LaneCandidate, stats map[captaincode.Leg]c
 	return out
 }
 
+// qualityMenuSize is how many legs /quality offers. Two meant claude and
+// grok-max took 68 of 72 turns with near-equal scores; the lane's floor,
+// not the menu, decides who shares the lane.
+const qualityMenuSize = 4
+
+// qualityMenu is /quality's menu: the best legs for the task's domain, plus
+// the best open-weights leg when the routing mix owes open weights turns,
+// so OSSTurn has one to give them to.
+func (b *brain) qualityMenu(cand []captaincode.Leg, st map[captaincode.Leg]captaincode.LegStats, task string) []captaincode.Leg {
+	d := captaincode.TriageTask(task).Domain
+	menu := captaincode.TopQualityFor(cand, st, d, qualityMenuSize)
+	if b.ossTarget() <= 0 {
+		return menu
+	}
+	for _, l := range menu {
+		if captaincode.OpenWeights(l) {
+			return menu
+		}
+	}
+	var open []captaincode.Leg
+	for _, l := range cand {
+		if captaincode.OpenWeights(l) {
+			open = append(open, l)
+		}
+	}
+	if best := captaincode.TopQualityFor(open, st, d, 1); len(best) == 1 && !captaincode.Unreliable(st[best[0]]) {
+		menu = append(menu, best[0])
+	}
+	return menu
+}
+
+// ossTarget is the open-weights share /quality owes the routing mix: the
+// saved mix, else the default 20%. CAPTAIN_STEER=0 turns it off with the
+// rest of the mix.
+func (b *brain) ossTarget() float64 {
+	if !captaincode.SteerEnabled() || b.ledger == nil {
+		return 0
+	}
+	return b.ledger.Steer.Resolved().OSS / 100
+}
+
 // frontierLead picks the leg a /frontier turn runs on and notes it: the
 // frontier legs that are allowed, open and able to serve the task, ranked
 // by perf index and evened out over the lane's recent turns. claude leads
@@ -103,9 +144,18 @@ func (b *brain) pickLane(lane captaincode.Lane, task string, order []captaincode
 	var cands []captaincode.LaneCandidate
 	switch lane {
 	case captaincode.LaneQuality:
-		for _, l := range order {
-			cands = append(cands, captaincode.LaneCandidate{Leg: l, Score: captaincode.BlendedQuality(l, stats[l])})
+		if d == "" {
+			d = captaincode.TriageTask(task).Domain
 		}
+		for _, l := range order {
+			cands = append(cands, captaincode.LaneCandidate{Leg: l, Score: captaincode.BlendedQualityFor(l, stats[l], d)})
+		}
+		cands = reliableLane(cands, stats)
+		counts := b.ledger.LaneCounts(lane, captaincode.LaneWindow())
+		if pick, ok := captaincode.OSSTurn(lane, cands, counts, b.ossTarget()); ok {
+			return pick, true
+		}
+		return captaincode.BalanceLane(lane, cands, counts)
 	case captaincode.LaneCheap:
 		if d == "" {
 			d = captaincode.TriageTask(task).Domain

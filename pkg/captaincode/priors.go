@@ -98,6 +98,24 @@ func BlendedQuality(l Leg, s LegStats) float64 {
 // when nothing reliable is left. Live 2026-09-18: kimi (prior 8.0, 11 NIM
 // stalls, 0 successes) headed every /quality menu and each simple prompt
 // waited four minutes for the stall before rerouting.
+// TopQualityFor is TopQuality scored for one domain: Gemini's and Kimi's
+// coding priors sit well above their general ones, and /quality ranked
+// every task by the general score.
+func TopQualityFor(order []Leg, stats map[Leg]LegStats, d Domain, n int) []Leg {
+	out := append([]Leg(nil), order...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ui, uj := Unreliable(stats[out[i]]), Unreliable(stats[out[j]])
+		if ui != uj {
+			return !ui
+		}
+		return BlendedQualityFor(out[i], stats[out[i]], d) > BlendedQualityFor(out[j], stats[out[j]], d)
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
 func TopQuality(order []Leg, stats map[Leg]LegStats, n int) []Leg {
 	out := append([]Leg(nil), order...)
 	sort.SliceStable(out, func(i, j int) bool {

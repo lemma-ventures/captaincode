@@ -568,7 +568,7 @@ func TestBrainRoute_QualityConstrainsMenu(t *testing.T) {
 	b.route(rec, httptest.NewRequest(http.MethodPost, "/v1/route", bytes.NewReader(body)))
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	require.NotEmpty(t, gotOpen)
-	assert.LessOrEqual(t, len(gotOpen), 2, "menu holds only the strongest legs")
+	assert.LessOrEqual(t, len(gotOpen), qualityMenuSize+1, "menu holds the strongest legs, plus the best open-weights leg")
 	for _, l := range gotOpen {
 		assert.NotEqual(t, captaincode.LegFree, l, "/quality can never offer the free leg")
 	}
