@@ -153,6 +153,7 @@ type AttemptState struct {
 	Export            *VerifiedExport        `json:"export,omitempty"`
 	OpenShell         *OpenShellCheckpoint   `json:"openshell,omitempty"`
 	OpenShellAttempts *OpenShellAttemptUsage `json:"openshell_attempts,omitempty"`
+	OpenShellPlan     *OpenShellPlanRecord   `json:"openshell_plan,omitempty"`
 }
 
 // TaskState is the roll-up view of a task's lifecycle: its own state plus the

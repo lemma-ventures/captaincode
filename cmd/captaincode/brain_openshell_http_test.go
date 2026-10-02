@@ -506,3 +506,62 @@ func TestOpenShellHTTPPersistsAttemptCapAndAdmissionFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenShellHTTPAttachedStreamingRetryKeepsTheStreamAlive(t *testing.T) {
+	old := sseKeepaliveEvery
+	sseKeepaliveEvery = 10 * time.Millisecond
+	defer func() { sseKeepaliveEvery = old }()
+	for _, outcome := range []string{"export", "failure"} {
+		t.Run(outcome, func(t *testing.T) {
+			b := openShellHTTPBrain(t)
+			dir := t.TempDir()
+			started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var calls atomic.Int32
+			b.runWorkerFn = func(leg captaincode.Leg, _ string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+				if calls.Add(1) == 1 {
+					close(started)
+				}
+				<-release
+				if outcome == "failure" {
+					return leg, captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Workers: 1}}, errors.New("verification failed")
+				}
+				return leg, openShellHTTPResult(dir), nil
+			}
+			go func() {
+				defer close(done)
+				b.chatCompletions(httptest.NewRecorder(), openShellHTTPRequest(t, dir, "openshell", "fix parser", false))
+			}()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("worker did not start")
+			}
+			rec := httptest.NewRecorder()
+			retried := make(chan struct{})
+			go func() {
+				defer close(retried)
+				b.chatCompletions(rec, openShellHTTPRequest(t, dir, "openshell", "fix parser", true))
+			}()
+			time.Sleep(150 * time.Millisecond)
+			close(release)
+			for _, ch := range []chan struct{}{done, retried} {
+				select {
+				case <-ch:
+				case <-time.After(5 * time.Second):
+					t.Fatal("a request did not finish")
+				}
+			}
+			assert.Equal(t, int32(1), calls.Load(), "the retry attached instead of starting a second sandbox")
+			body := rec.Body.String()
+			assert.Contains(t, body, "already running")
+			assert.Contains(t, body, ": keepalive")
+			assert.Contains(t, body, "[DONE]")
+			if outcome == "export" {
+				assert.Contains(t, body, "exported (not applied)")
+			} else {
+				assert.Contains(t, body, "verification failed")
+				assert.NotContains(t, body, "exported (not applied)")
+			}
+		})
+	}
+}

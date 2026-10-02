@@ -383,6 +383,7 @@ type brain struct {
 	// runWorkerFn stubs worker execution in tests; nil → the real runner.
 	runWorkerFn                func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error)
 	runOpenShellWorkflowFn     func(context.Context, captaincode.Workspace, captaincode.Workflow, string) (captaincode.Result, error)
+	planOpenShellTeamFn        func(ctx context.Context, dir, task, history string) (captaincode.OpenShellTeamPlan, error)
 	prepareOpenShellRecoveryFn func(context.Context, captaincode.OpenShellCheckpoint) (openShellRecovery, error)
 	// assessMultiFn stubs Manager.AssessMulti in tests; nil → real director call.
 	assessMultiFn func(task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error)

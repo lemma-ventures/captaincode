@@ -78,9 +78,10 @@ func (b *brain) takeTeamPlan(task string) (captaincode.Plan, bool) {
 	return p, ok
 }
 
-// errOpenShellTeam refuses OpenShell in a director-planned team, before the
-// director is asked when the user named it, whatever the plan's size.
-var errOpenShellTeam = errors.New("openshell workers cannot join director-planned teams yet; use explicit /openshell ... + /openshell ... stages or captain openshell --team")
+// errOpenShellTeam refuses OpenShell in a host team, before the director is
+// asked when the user named it, whatever the plan's size. "/team /openshell"
+// alone never gets here: openShellChat plans a sandbox-only team.
+var errOpenShellTeam = errors.New("openshell workers cannot join a host team; use /team /openshell <task> for a sandbox-only team, typed /openshell ... + /openshell ... stages, or captain openshell --team")
 
 // runWorker executes one team worker; stubbed in tests. The default carries
 // the full resilience stack (stall watchdog, provider-down reroute).
@@ -187,7 +188,8 @@ func (b *brain) teamPlanFor(ws captaincode.Workspace, task, prefer string, requi
 func teamRequired(raw string) []captaincode.Leg {
 	var out []captaincode.Leg
 	for {
-		m := captainDirective.FindString(raw)
+		probe := raw + " " // a directive needs a separator, even at the end
+		m := captainDirective.FindString(probe)
 		if m == "" {
 			return out
 		}
@@ -198,7 +200,7 @@ func teamRequired(raw string) []captaincode.Leg {
 		case captaincode.KnownLeg(captaincode.Leg(word)):
 			out = appendLegOnce(out, captaincode.Leg(word))
 		}
-		raw = strings.TrimSpace(raw[len(m):])
+		raw = strings.TrimSpace(probe[len(m):])
 	}
 }
 

@@ -339,7 +339,10 @@ the snapshot, file list, checksum, verification and evidence location after
 restart, with the label **exported (not applied)**. The sandbox's export does
 not include unrelated host edits. Brain teams/workflows that mix this leg with
 host workers or host gates are rejected before dispatch; use sandbox-only
-`/openshell` workflows or the standalone team command above.
+`/openshell` workflows, `/team /openshell <task>` or the standalone team command
+above. With `CAPTAIN_OPENSHELL_DIRECTOR=claude`, `/team /openshell` has the
+tool-less director split the task into 1-4 assignments and runs them as one
+parallel sandbox stage; its planning calls count as director attempts.
 
 ### HTTP entry qualification
 

@@ -72,6 +72,13 @@ each worker's manifest, report, repairs and evidence. `require_all: true` means
 all requested workers must pass and every conflict must have a valid ruling
 before the combined patch can be verified and exported. Failed workflows keep
 individual evidence without presenting it as a successful combined export.
+A `/team /openshell` turn records the same aggregate attempt for its planned
+stage. Its `openshell_attempts.directors` count also includes the planner's
+calls, which happen before the controller starts and so are not in `run.json`.
+`openshell_plan` on that attempt keeps the director's rationale, each worker's
+assignment and the call count. It is saved before any sandbox starts, because
+`run.json` holds only a digest of the worker prompts; `captain task inspect`
+prints it.
 Sequential `/openshell ... > /openshell ...` workflows retain the same aggregate
 attempt plus a `stages` array in `run.json`. Each entry records its input
 `revision`, verified `tree`, `next_revision` when another stage follows, and a

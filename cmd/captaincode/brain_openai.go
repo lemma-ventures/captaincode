@@ -363,7 +363,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.Model = string(leg)
 	}
 
-	if !titleReq && (req.Model == string(captaincode.LegOpenShell) || captaincode.LeadingForced(lastUserRaw(req.Messages)) == string(captaincode.LegOpenShell)) {
+	if !titleReq && (req.Model == string(captaincode.LegOpenShell) || captaincode.LeadingForced(lastUserRaw(req.Messages)) == string(captaincode.LegOpenShell) ||
+		openShellTeamTurn(req.Model, lastUserRaw(req.Messages))) {
 		b.openShellChat(w, r, req, prompt)
 		return
 	}

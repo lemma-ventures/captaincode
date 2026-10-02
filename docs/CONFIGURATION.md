@@ -556,10 +556,11 @@ dialog (`ctrl+x p`) before the running turn ends.
 Name `openshell` explicitly to run one task through the prepared OpenShell pilot.
 It is excluded from automatic routing and escalation ladders. Both
 `captain with openshell "<task>"` and the brain's `/openshell` path use the
-sandbox runner. A failed sandbox worker never reroutes to a host worker.
-Any other route is refused before a sandbox starts, including a director-planned
-`/team` that names or picks it, because only these entries save the task first,
-bind cancellation to the controller and keep the verified export.
+sandbox runner, and `/team /openshell <task>` runs a sandbox-only team the
+director plans (below). A failed sandbox worker never reroutes to a host worker.
+Any other route is refused before a sandbox starts, including a host `/team`
+that picks it or names it beside host legs, because only these entries save the
+task first, bind cancellation to the controller and keep the verified export.
 
 | Variable | Default | Effect |
 |---|---|---|
@@ -574,7 +575,7 @@ bind cancellation to the controller and keep the verified export.
 | `CAPTAIN_OPENSHELL_PROTECTED` | empty | Additional comma-separated file paths whose content must stay unchanged; Git metadata is always outside the writable scope |
 | `CAPTAIN_OPENSHELL_BASELINE` | `any` | Expected baseline result: `fail` for a regression task, `pass`, or `any`; final verification must pass in every mode |
 | `CAPTAIN_OPENSHELL_CONCURRENCY` | `1` | Maximum simultaneous sandbox workers, 1-8; an explicit parallel stage accepts 2-4 workers |
-| `CAPTAIN_OPENSHELL_DIRECTOR` | `none` | `none` or `claude`; arbitration is only needed for teams with overlapping patches |
+| `CAPTAIN_OPENSHELL_DIRECTOR` | `none` | `none` or `claude`; arbitration is only needed for teams with overlapping patches. `/team /openshell` needs `claude`, which also plans the split |
 
 There is no default verification command. JSON preserves spaces, commas and
 quoting inside arguments. An operator who explicitly supplies a no-op check
@@ -703,6 +704,30 @@ The ledger tracks the workflow as one task and one aggregate attempt; the
 linked `run.json` records each worker and repair, its evidence and any ruling,
 with `require_all: true`. Wall-time and conservative whole-plan attempt caps
 apply through both CLI and HTTP. Strict dollar caps remain refused.
+
+`/team /openshell <task>` lets the director split one task into 1-4 sandbox
+assignments, then runs them as one parallel stage, exactly as if they had been
+typed as `/openshell ... + /openshell ...`. It needs
+`CAPTAIN_OPENSHELL_DIRECTOR=claude`: the same tool-less `claude -p` (no tools,
+MCP servers, customizations or saved session, in an empty directory) plans the
+split and rules on conflicts. Like the rulings, it runs on the host, outside the
+sandbox and Shield, so it receives only the task and the configured editable
+paths: no conversation, memory or repository content.
+Each worker receives the conversation, the team task and its own assignment.
+A plan cannot change the configured profile, edit scope or verification argv,
+and a planned worker always edits; it is never a no-change review.
+
+The task is saved before the director is asked. Configuration, the attempt cap
+and the prompt size are checked before the planning call. The planner's calls
+(one, or two after a reply with no valid JSON) count as director attempts. They
+come off `CAPTAIN_MAX_ATTEMPTS` before the team's own admission and settle with
+the task's attempt usage beside the conflict rulings; the run's `run.json` does
+not include them. Like rulings, their subscription tokens are not priced. The
+rationale and each assignment are saved on the task (`captain task inspect`
+lists them) before any sandbox starts. A plan that fails, spends the attempt
+cap, cannot be saved or is cancelled starts no sandbox. Naming a
+host leg beside it (`/team /openshell /claude`) or combining `/team` with typed
+stages is refused before planning.
 
 Use `>` to hand a verified snapshot to the next stage. A workflow accepts up to
 4 stages, 4 workers per stage, and 8 workers total; every worker needs an explicit
@@ -868,8 +893,8 @@ otherwise the active `docker context`, and refuses an endpoint without a socket
 rather than asking a registry for the local-only worker image. Set `DOCKER_HOST`
 explicitly when the brain runs with a `HOME` other than your own.
 
-Mixed host/sandbox workers, host gates, cached workflow IDs and director-planned
-ordinary teams remain unsupported. Use
+Mixed host/sandbox workers, host gates and cached workflow IDs remain
+unsupported, and a planned team is one parallel stage. Use
 `captain openshell --team` for a JSON team with distinct per-worker profiles,
 scopes and verification commands.
 

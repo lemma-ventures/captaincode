@@ -333,7 +333,13 @@ func fakeOpenShellPilot(args []string) int {
 		Attempts *int              `json:"attempts"`
 		HangOnce string            `json:"hang_once"` // hang only while this marker file does not exist
 	}
-	if json.Unmarshal([]byte(spec.Prompt), &do) != nil {
+	instruction := spec.Prompt
+	// A director-planned worker's prompt carries its instruction as the
+	// assignment section (openShellAssignment).
+	if _, rest, ok := strings.Cut(instruction, "\nYour assignment:\n"); ok {
+		instruction, _, _ = strings.Cut(rest, "\n\n")
+	}
+	if json.Unmarshal([]byte(instruction), &do) != nil {
 		return 2
 	}
 	if do.Attempts != nil {
