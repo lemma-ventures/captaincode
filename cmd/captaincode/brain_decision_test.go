@@ -145,3 +145,46 @@ func captureStdout(t *testing.T, fn func()) string {
 	require.NoError(t, err)
 	return string(b)
 }
+
+// SCORING.md Phase 0: Explored meant "not the value ranking's first row",
+// which marked 51 of 81 expected-policy decisions as explored when that
+// policy simply ranked differently. It now means the exploration draw.
+func TestExploredMeansTheExplorationDraw(t *testing.T) {
+	b := teamBrain()
+	rows := []captaincode.Scored{{Leg: captaincode.LegGLM, Quality: 8, Value: 0.5}, {Leg: captaincode.LegGemini, Quality: 8, Value: 0.4}}
+	tr := captaincode.TriageResult{Class: captaincode.ClassMedium, Domain: captaincode.DomainCode}
+	d := b.valueDecision(tr, captaincode.LegGemini, rows, 1, "the expected policy ranked gemini first", false, "")
+	assert.False(t, d.Explored, "a policy that ranks differently is not exploring")
+	d = b.valueDecision(tr, captaincode.LegGemini, rows, 1, "explored", true, captaincode.LegGLM)
+	assert.True(t, d.Explored)
+	assert.Equal(t, captaincode.LegGLM, d.PassedOver)
+}
+
+// Evidence a router collected is only comparable across legs when weighted
+// by how likely each leg was to be tried: every decision says.
+func TestDecisionsRecordPickProbabilities(t *testing.T) {
+	t.Setenv("CAPTAIN_VALUE_ROUTING", "")
+	t.Setenv("CAPTAIN_VALUE_TAU", "5,7")
+	captaincode.SetDirector(captaincode.LegClaude)
+	t.Cleanup(func() { captaincode.SetDirector(captaincode.LegGrok) })
+	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegGLM: true, captaincode.LegGemini: true}
+	b.exploreFn = func(captaincode.Class) bool { return true }
+
+	task := "tighten the wording of this paragraph and keep the argument intact"
+	routeLeg(t, b, task)
+	d, ok := b.ledger.DecisionFor(b.openTask(task))
+	require.True(t, ok)
+	require.NotEmpty(t, d.Propensities)
+	var sum float64
+	for _, p := range d.Propensities {
+		sum += p
+	}
+	assert.InDelta(t, 1.0, sum, 1e-9, "the probabilities cover the policy: %v", d.Propensities)
+	assert.Greater(t, d.Propensities[d.Chosen], 0.0, "the explored leg had a chance: %v", d.Propensities)
+
+	b.recordDecision("a forced task", captaincode.Decision{Chosen: captaincode.LegGLM, Path: captaincode.PathForced})
+	d, ok = b.ledger.DecisionFor(b.openTask("a forced task"))
+	require.True(t, ok)
+	assert.Equal(t, map[captaincode.Leg]float64{captaincode.LegGLM: 1}, d.Propensities, "a deterministic pick")
+}
