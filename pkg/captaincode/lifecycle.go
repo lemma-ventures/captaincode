@@ -148,8 +148,12 @@ type AttemptState struct {
 	// but it may still have produced file changes. ChangedFiles and DiffDigest
 	// capture what the worker changed in the user's workspace, so the handoff
 	// brief carries the same artifact evidence a parallel workflow does.
-	ChangedFiles []string `json:"changed_files,omitempty"` // files the solo worker touched
-	DiffDigest   string   `json:"diff_digest,omitempty"`   // sha256 of the solo worker's diff
+	ChangedFiles      []string               `json:"changed_files,omitempty"` // files the solo worker touched
+	DiffDigest        string                 `json:"diff_digest,omitempty"`   // sha256 of the solo worker's diff
+	Export            *VerifiedExport        `json:"export,omitempty"`
+	OpenShell         *OpenShellCheckpoint   `json:"openshell,omitempty"`
+	OpenShellAttempts *OpenShellAttemptUsage `json:"openshell_attempts,omitempty"`
+	OpenShellPlan     *OpenShellPlanRecord   `json:"openshell_plan,omitempty"`
 }
 
 // TaskState is the roll-up view of a task's lifecycle: its own state plus the
@@ -263,6 +267,8 @@ func (l *Ledger) InterruptedAttempts() []AttemptState {
 	return out
 }
 
+const InterruptCancelled = "cancellation requested before brain restart"
+
 // ReconcileOnStartup walks persisted attempt states and marks any that were
 // running, waiting, or cancel-requested as interrupted, because the process
 // that owned them is gone (this is a fresh brain start). The ownership
@@ -279,8 +285,18 @@ func (l *Ledger) ReconcileOnStartup() int {
 		if as.State.IsTerminal() || as.State == StateInterrupted {
 			continue
 		}
-		as.State = StateInterrupted
 		as.InterruptReason = "brain process restarted"
+		if as.Leg == LegOpenShell {
+			ts := l.TaskStateFor(as.TaskID)
+			if as.State == StateCancelRequested || (ts != nil && (ts.State == StateCancelRequested || ts.State == StateCancelled)) {
+				as.InterruptReason = InterruptCancelled
+			} else if as.State != StateRunning {
+				as.InterruptReason = "brain restarted while sandbox was " + string(as.State)
+			} else if ts == nil || ts.State != StateRunning {
+				as.InterruptReason = "brain restarted without a running sandbox task"
+			}
+		}
+		as.State = StateInterrupted
 		as.UpdatedAt = now
 		count++
 	}
@@ -467,6 +483,25 @@ func (l *Ledger) RecordSoloArtifact(attemptID string, changedFiles []string, dif
 	as.ChangedFiles = changedFiles
 	as.DiffDigest = diffDigest
 	as.DiffPath = diffPath
+	as.UpdatedAt = time.Now()
+}
+
+func (l *Ledger) RecordVerifiedExport(attemptID string, export VerifiedExport) {
+	as := l.AttemptStateFor(attemptID)
+	if as == nil {
+		return
+	}
+	export.Manifest.TaskID = as.TaskID
+	export.Manifest.StageID = as.StageID
+	export.Manifest.AttemptID = as.AttemptID
+	export.Manifest.Leg = string(as.Leg)
+	export.Manifest.ChangedFiles = append([]string(nil), export.Manifest.ChangedFiles...)
+	if export.Manifest.Check != nil {
+		check := *export.Manifest.Check
+		check.Command = append([]string(nil), check.Command...)
+		export.Manifest.Check = &check
+	}
+	as.Export = &export
 	as.UpdatedAt = time.Now()
 }
 

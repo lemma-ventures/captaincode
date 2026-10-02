@@ -6,18 +6,20 @@ package captaincode
 // a network call on the hot path: a worker starting a task reads a catalog
 // that was fetched, vetted and hashed at some earlier, deliberate moment.
 //
-// Three sources, each a publisher shipping its own work. [anthropics/skills]
+// Four sources, each a publisher shipping its own work. [anthropics/skills]
 // is the primary - the standard's author publishing its own reference
 // implementation, most of it Apache-2.0. [openai/plugins] is the secondary,
 // where skills live inside plugins under a `.codex-plugin/plugin.json`
 // manifest (`openai/skills` is deprecated and must not be pinned).
 // [cloudflare/security-audit-skill] is one skill, MIT, from the company that
-// wrote it - and it is the one PINNED IN CODE, because it is the skill every
+// wrote it - and it is PINNED IN CODE, because it is the skill every
 // worker is stocked with whatever the task says (AlwaysSkills). The commit
 // below was read in full before it was admitted: the frontmatter, every
 // reference, both validators (plain Node that reads the files it is pointed
 // at - no network, no install, no child process). A newer head is a new
-// review, not a sync.
+// review, not a sync. [lemma-ventures/captaincode] is this repository's
+// own skills/ directory - the procedures distilled from running captain -
+// pinned in code the same way, so a shelf names the commit it came from.
 //
 // This is NOT a marketplace and it does not read community catalogs: a 2026
 // audit found prompt injection in 36% of tested community skills, and the
@@ -77,6 +79,13 @@ func SkillSources() []SkillSource {
 			Repo:    "cloudflare/security-audit-skill",
 			URL:     "https://github.com/cloudflare/security-audit-skill.git",
 			Commit:  "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8", // reviewed 2026-09-22
+			Roots:   []string{"skills"},
+			License: "MIT",
+		},
+		{
+			Repo:    "lemma-ventures/captaincode",
+			URL:     "https://github.com/lemma-ventures/captaincode.git",
+			Commit:  "1b4572d956b816dbb7f19a6fd91455fc1ca5ccf3", // skills/ as published in 4af2176
 			Roots:   []string{"skills"},
 			License: "MIT",
 		},

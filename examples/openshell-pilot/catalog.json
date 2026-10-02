@@ -1,0 +1,1590 @@
+{
+  "schema": 1,
+  "source": "https://openrouter.ai/api/v1/endpoints/zdr",
+  "generated": "2026-10-02T19:00:23Z",
+  "profiles": {
+    "deepseek-azure-us": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "azure/us",
+      "served_by": "Azure",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        2.39,
+        4.79
+      ]
+    },
+    "deepseek-cheap-azure-us": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "azure/us",
+      "served_by": "Azure",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.27,
+        0.7
+      ]
+    },
+    "deepseek-cheap-deepinfra-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "deepinfra/fp8",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.12,
+        0.23
+      ]
+    },
+    "deepseek-cheap-digitalocean": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.13,
+        0.25
+      ]
+    },
+    "deepseek-cheap-mancer-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "mancer/fp8",
+      "served_by": "Mancer 2",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.24,
+        0.63
+      ]
+    },
+    "deepseek-cheap-novita-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "novita/fp8",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.18,
+        0.35
+      ]
+    },
+    "deepseek-cheap-open-inference-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "open-inference/fp8",
+      "served_by": "OpenInference",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.01,
+        1.5
+      ]
+    },
+    "deepseek-cheap-parasail-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.18,
+        0.35
+      ]
+    },
+    "deepseek-cheap-reka": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "reka",
+      "served_by": "Reka",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.17,
+        0.33
+      ]
+    },
+    "deepseek-cheap-relace-fp4": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "relace/fp4",
+      "served_by": "Relace",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.01,
+        1.6
+      ]
+    },
+    "deepseek-cheap-siliconflow-fp8": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "siliconflow/fp8",
+      "served_by": "SiliconFlow",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.17,
+        0.35
+      ]
+    },
+    "deepseek-cheap-venice": {
+      "leg": "deepseek",
+      "tier": "cheap",
+      "model": "deepseek/deepseek-v4-flash",
+      "route": "venice",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 1000000,
+      "ceiling": [
+        0.13,
+        0.25
+      ]
+    },
+    "deepseek-deepinfra-fp8": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "deepinfra/fp8",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.63,
+        3.25
+      ]
+    },
+    "deepseek-digitalocean": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.31,
+        2.61
+      ]
+    },
+    "deepseek-nextbit-fp8": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "nextbit/fp8",
+      "served_by": "NextBit",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        2.18,
+        4.35
+      ]
+    },
+    "deepseek-novita-fp8": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "novita/fp8",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        2,
+        4
+      ]
+    },
+    "deepseek-parasail-fp8": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        2.18,
+        4.35
+      ]
+    },
+    "deepseek-relace-fp4": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "relace/fp4",
+      "served_by": "Relace",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.13,
+        3.38
+      ]
+    },
+    "deepseek-siliconflow-fp8": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "siliconflow/fp8",
+      "served_by": "SiliconFlow",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.88,
+        3.92
+      ]
+    },
+    "deepseek-venice": {
+      "leg": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "route": "venice",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 1000000,
+      "ceiling": [
+        2.07,
+        4.13
+      ]
+    },
+    "glm-akashml-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "akashml/fp8",
+      "served_by": "AkashML",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.32,
+        4.46
+      ]
+    },
+    "glm-baseten-fast": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "baseten/fast",
+      "served_by": "BaseTen",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        2.63,
+        8.25
+      ]
+    },
+    "glm-baseten-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "baseten/fp4",
+      "served_by": "BaseTen",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-cheap-baseten-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "baseten/fp8",
+      "served_by": "BaseTen",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-coreweave-nvfp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "coreweave/nvfp4",
+      "served_by": "CoreWeave",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-crusoe-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "crusoe/fp4",
+      "served_by": "Crusoe",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-decart-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "decart/fp4",
+      "served_by": "Decart",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.16,
+        0.54
+      ]
+    },
+    "glm-cheap-deepinfra-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "deepinfra/fp4",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.1,
+        0.32
+      ]
+    },
+    "glm-cheap-dekallm": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "dekallm",
+      "served_by": "DekaLLM",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.13,
+        0.5
+      ]
+    },
+    "glm-cheap-digitalocean": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-fireworks": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "fireworks",
+      "served_by": "Fireworks",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-fireworks-us": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "fireworks/us",
+      "served_by": "Fireworks",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.29,
+        0.94
+      ]
+    },
+    "glm-cheap-inceptron-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "inceptron/fp8",
+      "served_by": "Inceptron",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.29,
+        0.57
+      ]
+    },
+    "glm-cheap-inference-net-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "inference-net/fp4",
+      "served_by": "InferenceNet",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.06,
+        0.75
+      ]
+    },
+    "glm-cheap-io-net-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "io-net/fp8",
+      "served_by": "Io Net",
+      "output": 16384,
+      "context": 262124,
+      "ceiling": [
+        0.17,
+        0.57
+      ]
+    },
+    "glm-cheap-modal-nvfp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "modal/nvfp4",
+      "served_by": "Modal",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-morph-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "morph/fp8",
+      "served_by": "Morph",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.18,
+        0.6
+      ]
+    },
+    "glm-cheap-near-ai-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "near-ai/fp8",
+      "served_by": "Near AI",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.14,
+        0.44
+      ]
+    },
+    "glm-cheap-nextbit-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "nextbit/fp8",
+      "served_by": "NextBit",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.21,
+        0.69
+      ]
+    },
+    "glm-cheap-novita-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "novita/fp8",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.11,
+        0.35
+      ]
+    },
+    "glm-cheap-open-inference-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "open-inference/fp4",
+      "served_by": "OpenInference",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.04,
+        0.75
+      ]
+    },
+    "glm-cheap-parasail-fp4": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "parasail/fp4",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-phala-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "phala/fp8",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.15,
+        0.5
+      ]
+    },
+    "glm-cheap-reka": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "reka",
+      "served_by": "Reka",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-relace": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "relace",
+      "served_by": "Relace",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.05,
+        0.63
+      ]
+    },
+    "glm-cheap-sail-research-us": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "sail-research/us",
+      "served_by": "Sail Research",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.06,
+        0.75
+      ]
+    },
+    "glm-cheap-siliconflow-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "siliconflow/fp8",
+      "served_by": "SiliconFlow",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-together": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "together",
+      "served_by": "Together",
+      "output": 16384,
+      "context": 1048575,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-venice": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "venice",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-cheap-wafer": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "wafer",
+      "served_by": "Wafer",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.13,
+        0.63
+      ]
+    },
+    "glm-cheap-z-ai-fp8": {
+      "leg": "glm",
+      "tier": "cheap",
+      "model": "z-ai/glm-5.3-flash",
+      "route": "z-ai/fp8",
+      "served_by": "Z.AI",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        0.63
+      ]
+    },
+    "glm-crusoe-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "crusoe/fp4",
+      "served_by": "Crusoe",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-decart-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "decart/fp4",
+      "served_by": "Decart",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.49,
+        4.68
+      ]
+    },
+    "glm-deepinfra-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "deepinfra/fp4",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.71,
+        3.13
+      ]
+    },
+    "glm-digitalocean": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.14,
+        3.58
+      ]
+    },
+    "glm-fireworks": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "fireworks",
+      "served_by": "Fireworks",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-inceptron-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "inceptron/fp4",
+      "served_by": "Inceptron",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.75,
+        4.24
+      ]
+    },
+    "glm-inference-net": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "inference-net",
+      "served_by": "InferenceNet",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.19,
+        3.74
+      ]
+    },
+    "glm-makora-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "makora/fp4",
+      "served_by": "Makora",
+      "output": 16384,
+      "context": 980000,
+      "ceiling": [
+        0.3,
+        4.92
+      ]
+    },
+    "glm-mistral-nvfp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "mistral/nvfp4",
+      "served_by": "Mistral",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.93,
+        6.05
+      ]
+    },
+    "glm-mistral-zdr": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "mistral/zdr",
+      "served_by": "Mistral",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-modal": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "modal",
+      "served_by": "Modal",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-morph-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "morph/fp8",
+      "served_by": "Morph",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.24,
+        3.74
+      ]
+    },
+    "glm-nebius-fp4": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "nebius/fp4",
+      "served_by": "Nebius",
+      "output": 16384,
+      "context": 1024000,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-novita-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "novita/fp8",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.53,
+        1.65
+      ]
+    },
+    "glm-parasail-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-phala": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "phala",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.05,
+        3.3
+      ]
+    },
+    "glm-primeintellect": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "primeintellect",
+      "served_by": "PrimeIntellect",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-reka": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "reka",
+      "served_by": "Reka",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.22,
+        3.75
+      ]
+    },
+    "glm-relace": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "relace",
+      "served_by": "Relace",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.15,
+        5
+      ]
+    },
+    "glm-sail-research-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "sail-research/fp8",
+      "served_by": "Sail Research",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.25,
+        4.25
+      ]
+    },
+    "glm-sail-research-us": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "sail-research/us",
+      "served_by": "Sail Research",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.25,
+        4.25
+      ]
+    },
+    "glm-siliconflow-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "siliconflow/fp8",
+      "served_by": "SiliconFlow",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.88,
+        2.75
+      ]
+    },
+    "glm-together": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "together",
+      "served_by": "Together",
+      "output": 16384,
+      "context": 1048575,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-venice": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "venice",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 1000000,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "glm-wafer": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "wafer",
+      "served_by": "Wafer",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.28,
+        4.24
+      ]
+    },
+    "glm-wafer-us": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "wafer/us",
+      "served_by": "Wafer",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        0.28,
+        4.24
+      ]
+    },
+    "glm-z-ai-fp8": {
+      "leg": "glm",
+      "model": "z-ai/glm-5.3",
+      "route": "z-ai/fp8",
+      "served_by": "Z.AI",
+      "output": 16384,
+      "context": 1048576,
+      "ceiling": [
+        1.75,
+        5.5
+      ]
+    },
+    "gpt-oss-akashml-bf16": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "akashml/bf16",
+      "served_by": "AkashML",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.05,
+        0.24
+      ]
+    },
+    "gpt-oss-baseten-fp4": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "baseten/fp4",
+      "served_by": "BaseTen",
+      "output": 16384,
+      "context": 128072,
+      "ceiling": [
+        0.13,
+        0.63
+      ]
+    },
+    "gpt-oss-cerebras-fp16": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "cerebras/fp16",
+      "served_by": "Cerebras",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.44,
+        0.94
+      ]
+    },
+    "gpt-oss-coreweave-fp4": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "coreweave/fp4",
+      "served_by": "CoreWeave",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.04,
+        0.22
+      ]
+    },
+    "gpt-oss-crusoe-bf16": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "crusoe/bf16",
+      "served_by": "Crusoe",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.07,
+        0.32
+      ]
+    },
+    "gpt-oss-deepinfra-turbo": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "deepinfra/turbo",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.19,
+        0.75
+      ]
+    },
+    "gpt-oss-dekallm-bf16": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "dekallm/bf16",
+      "served_by": "DekaLLM",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.04,
+        0.23
+      ]
+    },
+    "gpt-oss-groq": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "groq",
+      "served_by": "Groq",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.19,
+        0.75
+      ]
+    },
+    "gpt-oss-parasail-fp4": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "parasail/fp4",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.13,
+        0.94
+      ]
+    },
+    "gpt-oss-phala": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "phala",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.19,
+        0.75
+      ]
+    },
+    "gpt-oss-sambanova": {
+      "leg": "gpt-oss",
+      "model": "openai/gpt-oss-120b",
+      "route": "sambanova",
+      "served_by": "SambaNova",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.18,
+        1.19
+      ]
+    },
+    "kimi-akashml-fp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "akashml/fp4",
+      "served_by": "AkashML",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-baseten-fp8": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "baseten/fp8",
+      "served_by": "BaseTen",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-decart-mxfp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "decart/mxfp4",
+      "served_by": "Decart",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-deepinfra-bf16": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "deepinfra/bf16",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.57,
+        17.82
+      ]
+    },
+    "kimi-digitalocean": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.19,
+        16.19
+      ]
+    },
+    "kimi-fireworks": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "fireworks",
+      "served_by": "Fireworks",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-fireworks-us": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "fireworks/us",
+      "served_by": "Fireworks",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        5.63,
+        28.13
+      ]
+    },
+    "kimi-inference-net-fp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "inference-net/fp4",
+      "served_by": "InferenceNet",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        1.68,
+        16.25
+      ]
+    },
+    "kimi-makora": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "makora",
+      "served_by": "Makora",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        2.55,
+        15.94
+      ]
+    },
+    "kimi-modal-mxfp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "modal/mxfp4",
+      "served_by": "Modal",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-morph-fp8": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "morph/fp8",
+      "served_by": "Morph",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        2.66,
+        14.2
+      ]
+    },
+    "kimi-parasail-fp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "parasail/fp4",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.75,
+        18.75
+      ]
+    },
+    "kimi-phala": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "phala",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        2.82,
+        14.07
+      ]
+    },
+    "kimi-relace-fp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "relace/fp4",
+      "served_by": "Relace",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        2,
+        14
+      ]
+    },
+    "kimi-sail-research-fp4": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "sail-research/fp4",
+      "served_by": "Sail Research",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.5,
+        17.5
+      ]
+    },
+    "kimi-together": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "together",
+      "served_by": "Together",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.38,
+        16.88
+      ]
+    },
+    "kimi-wafer": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "wafer",
+      "served_by": "Wafer",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        1.81,
+        17.5
+      ]
+    },
+    "kimi-wafer-us": {
+      "leg": "kimi",
+      "model": "moonshotai/kimi-k3",
+      "route": "wafer/us",
+      "served_by": "Wafer",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        3.5,
+        17.5
+      ]
+    },
+    "minimax-coreweave-fp4": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "coreweave/fp4",
+      "served_by": "CoreWeave",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.29,
+        1.2
+      ]
+    },
+    "minimax-deepinfra-fp8": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "deepinfra/fp8",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.35,
+        1.38
+      ]
+    },
+    "minimax-mara": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "mara",
+      "served_by": "Mara",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.75,
+        3
+      ]
+    },
+    "minimax-modelrun-fp4": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "modelrun/fp4",
+      "served_by": "ModelRun",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.94,
+        3.75
+      ]
+    },
+    "minimax-novita-fp8": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "novita/fp8",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.38,
+        1.5
+      ]
+    },
+    "minimax-parasail-fp8": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.38,
+        1.5
+      ]
+    },
+    "minimax-sambanova": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "sambanova",
+      "served_by": "SambaNova",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.75,
+        3
+      ]
+    },
+    "minimax-together": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "together",
+      "served_by": "Together",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.38,
+        1.5
+      ]
+    },
+    "minimax-venice-fp8": {
+      "leg": "minimax",
+      "model": "minimax/minimax-m3",
+      "route": "venice/fp8",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.38,
+        1.5
+      ]
+    },
+    "qwen-cheap-akashml-fp8": {
+      "leg": "qwen",
+      "tier": "cheap",
+      "model": "qwen/qwen3.6-35b-a3b",
+      "route": "akashml/fp8",
+      "served_by": "AkashML",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.13,
+        1.13
+      ]
+    },
+    "qwen-cheap-deepinfra-fp8": {
+      "leg": "qwen",
+      "tier": "cheap",
+      "model": "qwen/qwen3.6-35b-a3b",
+      "route": "deepinfra/fp8",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.13,
+        1.19
+      ]
+    },
+    "qwen-cheap-parasail-fp8": {
+      "leg": "qwen",
+      "tier": "cheap",
+      "model": "qwen/qwen3.6-35b-a3b",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.19,
+        1.25
+      ]
+    },
+    "qwen-cheap-phala": {
+      "leg": "qwen",
+      "tier": "cheap",
+      "model": "qwen/qwen3.6-35b-a3b",
+      "route": "phala",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.25,
+        1.59
+      ]
+    },
+    "qwen-cheap-venice-fp8": {
+      "leg": "qwen",
+      "tier": "cheap",
+      "model": "qwen/qwen3.6-35b-a3b",
+      "route": "venice/fp8",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 256000,
+      "ceiling": [
+        0.13,
+        1.25
+      ]
+    },
+    "qwen-deepinfra-fp8": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "deepinfra/fp8",
+      "served_by": "DeepInfra",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.57,
+        3.75
+      ]
+    },
+    "qwen-digitalocean": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "digitalocean",
+      "served_by": "DigitalOcean",
+      "output": 16384,
+      "context": 131072,
+      "ceiling": [
+        0.69,
+        4.38
+      ]
+    },
+    "qwen-novita": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "novita",
+      "served_by": "Novita",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.75,
+        4.5
+      ]
+    },
+    "qwen-parasail-fp8": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "parasail/fp8",
+      "served_by": "Parasail",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.63,
+        4.5
+      ]
+    },
+    "qwen-phala": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "phala",
+      "served_by": "Phala",
+      "output": 16384,
+      "context": 262144,
+      "ceiling": [
+        0.69,
+        4.38
+      ]
+    },
+    "qwen-venice": {
+      "leg": "qwen",
+      "model": "qwen/qwen3.5-397b-a17b",
+      "route": "venice",
+      "served_by": "Venice",
+      "output": 16384,
+      "context": 128000,
+      "ceiling": [
+        0.94,
+        5.63
+      ]
+    }
+  },
+  "skipped": [
+    "free: subscription login, not an API key",
+    "grok: subscription login, not an API key",
+    "step: provider huggingface has no per-request ZDR control",
+    "luna: subscription login, not an API key",
+    "ds4-flash: provider huggingface has no per-request ZDR control",
+    "ds-flash: no OpenRouter ZDR endpoint for deepseek-ai/deepseek-v4.1-flash takes tool calls",
+    "gemini: no OpenRouter ZDR endpoint for google/gemini-3.8-flash takes tool calls",
+    "gemini: no OpenRouter ZDR endpoint for google/gemini-3.5-flash-lite takes tool calls",
+    "cursor: subscription login, not an API key",
+    "codex: subscription login, not an API key",
+    "grok-max: subscription login, not an API key",
+    "codex-cli: subscription login, not an API key",
+    "claude: subscription login, not an API key"
+  ]
+}

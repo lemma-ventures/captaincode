@@ -1,0 +1,204 @@
+{
+  "schema": 1,
+  "id": "fixture-both-lanes",
+  "tasks": [
+    {
+      "id": "roman.cerebras",
+      "profile": "cerebras",
+      "prompt": "to_roman(number) in roman.py only writes additive numerals, so 4 comes out as IIII instead of IV. Make it return standard Roman numerals, including the subtractive forms IV, IX, XL, XC, CD and CM, for 1 to 3999, and raise ValueError for any number outside that range. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_roman"],
+      "allowed": ["roman.py"],
+      "protected": ["test_roman.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "roman.sambanova",
+      "profile": "sambanova",
+      "prompt": "to_roman(number) in roman.py only writes additive numerals, so 4 comes out as IIII instead of IV. Make it return standard Roman numerals, including the subtractive forms IV, IX, XL, XC, CD and CM, for 1 to 3999, and raise ValueError for any number outside that range. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_roman"],
+      "allowed": ["roman.py"],
+      "protected": ["test_roman.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "wrap.cerebras",
+      "profile": "cerebras",
+      "prompt": "wrap(text, width) in wrap.py should greedily fill lines of at most width characters with words separated by single spaces. It ignores the separating space when it measures a line, keeps empty words from runs of spaces, and emits an empty line before a word longer than width. Fix it: an over-long word goes on its own line, blank text gives an empty list, and a width below 1 raises ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_wrap"],
+      "allowed": ["wrap.py"],
+      "protected": ["test_wrap.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "wrap.sambanova",
+      "profile": "sambanova",
+      "prompt": "wrap(text, width) in wrap.py should greedily fill lines of at most width characters with words separated by single spaces. It ignores the separating space when it measures a line, keeps empty words from runs of spaces, and emits an empty line before a word longer than width. Fix it: an over-long word goes on its own line, blank text gives an empty list, and a width below 1 raises ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_wrap"],
+      "allowed": ["wrap.py"],
+      "protected": ["test_wrap.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "interval.cerebras",
+      "profile": "cerebras",
+      "prompt": "merge(intervals) in interval.py should merge a list of (start, end) tuples into sorted, non-overlapping intervals. It assumes the input is sorted and does not merge intervals that only touch, such as (1, 2) and (2, 3). Fix it without modifying the caller's list, and raise ValueError for an interval whose start is greater than its end. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_interval"],
+      "allowed": ["interval.py"],
+      "protected": ["test_interval.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "interval.sambanova",
+      "profile": "sambanova",
+      "prompt": "merge(intervals) in interval.py should merge a list of (start, end) tuples into sorted, non-overlapping intervals. It assumes the input is sorted and does not merge intervals that only touch, such as (1, 2) and (2, 3). Fix it without modifying the caller's list, and raise ValueError for an interval whose start is greater than its end. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_interval"],
+      "allowed": ["interval.py"],
+      "protected": ["test_interval.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "csvline.cerebras",
+      "profile": "cerebras",
+      "prompt": "split_csv_line(line) in csvline.py splits one CSV line into fields but ignores quoting. Implement RFC 4180 quoting: a quoted field may contain commas, a doubled quote inside a quoted field stands for one quote character, empty fields are kept (an empty line is one empty field), and an unterminated quote raises ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_csvline"],
+      "allowed": ["csvline.py"],
+      "protected": ["test_csvline.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "csvline.sambanova",
+      "profile": "sambanova",
+      "prompt": "split_csv_line(line) in csvline.py splits one CSV line into fields but ignores quoting. Implement RFC 4180 quoting: a quoted field may contain commas, a doubled quote inside a quoted field stands for one quote character, empty fields are kept (an empty line is one empty field), and an unterminated quote raises ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_csvline"],
+      "allowed": ["csvline.py"],
+      "protected": ["test_csvline.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "duration.cerebras",
+      "profile": "cerebras",
+      "prompt": "parse_duration(text) in duration.py only understands a single unit such as 90s. Make it parse hours, minutes and seconds written in that order, such as 1h30m15s or 1h15s, and return the total in seconds. Each unit may appear at most once. Raise ValueError for empty text, a number without a unit, an unknown unit, units out of order, a repeated unit, a sign or whitespace. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_duration"],
+      "allowed": ["duration.py"],
+      "protected": ["test_duration.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "duration.sambanova",
+      "profile": "sambanova",
+      "prompt": "parse_duration(text) in duration.py only understands a single unit such as 90s. Make it parse hours, minutes and seconds written in that order, such as 1h30m15s or 1h15s, and return the total in seconds. Each unit may appear at most once. Raise ValueError for empty text, a number without a unit, an unknown unit, units out of order, a repeated unit, a sign or whitespace. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_duration"],
+      "allowed": ["duration.py"],
+      "protected": ["test_duration.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "semver.cerebras",
+      "profile": "cerebras",
+      "prompt": "compare(a, b) in semver.py compares version strings as plain strings. Make it follow Semantic Versioning 2.0.0 precedence and return -1, 0 or 1. Compare major, minor and patch numerically. A pre-release version is lower than the release. Pre-release identifiers compare numerically when both are numeric and lexically otherwise, numeric identifiers are lower than alphanumeric ones, and a shorter identifier list is lower when all earlier identifiers are equal. Ignore build metadata after +. Raise ValueError for a string that is not a valid semantic version, including leading zeros and missing or extra components. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_semver"],
+      "allowed": ["semver.py"],
+      "protected": ["test_semver.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "semver.sambanova",
+      "profile": "sambanova",
+      "prompt": "compare(a, b) in semver.py compares version strings as plain strings. Make it follow Semantic Versioning 2.0.0 precedence and return -1, 0 or 1. Compare major, minor and patch numerically. A pre-release version is lower than the release. Pre-release identifiers compare numerically when both are numeric and lexically otherwise, numeric identifiers are lower than alphanumeric ones, and a shorter identifier list is lower when all earlier identifiers are equal. Ignore build metadata after +. Raise ValueError for a string that is not a valid semantic version, including leading zeros and missing or extra components. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_semver"],
+      "allowed": ["semver.py"],
+      "protected": ["test_semver.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "rle.cerebras",
+      "profile": "cerebras",
+      "prompt": "encode(text) in rle.py drops the last run, and decode(data) accepts malformed input. Fix both. encode writes each run as its count followed by the character (aaabcc becomes 3a1b2c) and raises ValueError if the text contains a digit. decode reverses encode, accepts multi-digit counts, and raises ValueError for a character without a count or a trailing count. Keep the function names and signatures.",
+      "verify": ["python", "-m", "unittest", "-q", "test_rle"],
+      "allowed": ["rle.py"],
+      "protected": ["test_rle.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "rle.sambanova",
+      "profile": "sambanova",
+      "prompt": "encode(text) in rle.py drops the last run, and decode(data) accepts malformed input. Fix both. encode writes each run as its count followed by the character (aaabcc becomes 3a1b2c) and raises ValueError if the text contains a digit. decode reverses encode, accepts multi-digit counts, and raises ValueError for a character without a count or a trailing count. Keep the function names and signatures.",
+      "verify": ["python", "-m", "unittest", "-q", "test_rle"],
+      "allowed": ["rle.py"],
+      "protected": ["test_rle.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "camel.cerebras",
+      "profile": "cerebras",
+      "prompt": "to_snake(name) in camel.py converts camelCase or PascalCase names to snake_case, but it puts an underscore before every capital letter. Fix it so an acronym stays one word (parseHTTPResponse becomes parse_http_response, userID becomes user_id), the result never starts with an underscore, a capital after a digit starts a new word (version2Update becomes version2_update), and a name already in snake_case is returned unchanged. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_camel"],
+      "allowed": ["camel.py"],
+      "protected": ["test_camel.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "camel.sambanova",
+      "profile": "sambanova",
+      "prompt": "to_snake(name) in camel.py converts camelCase or PascalCase names to snake_case, but it puts an underscore before every capital letter. Fix it so an acronym stays one word (parseHTTPResponse becomes parse_http_response, userID becomes user_id), the result never starts with an underscore, a capital after a digit starts a new word (version2Update becomes version2_update), and a name already in snake_case is returned unchanged. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_camel"],
+      "allowed": ["camel.py"],
+      "protected": ["test_camel.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "hexcolor.cerebras",
+      "profile": "cerebras",
+      "prompt": "parse_hex(color) in hexcolor.py parses a CSS hex color into an (r, g, b) tuple, but it accepts malformed input and does not support the three-digit form. Accept exactly one leading # followed by three or six hexadecimal digits in either case (#FA0 means #FFAA00), and raise ValueError for anything else. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_hexcolor"],
+      "allowed": ["hexcolor.py"],
+      "protected": ["test_hexcolor.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "hexcolor.sambanova",
+      "profile": "sambanova",
+      "prompt": "parse_hex(color) in hexcolor.py parses a CSS hex color into an (r, g, b) tuple, but it accepts malformed input and does not support the three-digit form. Accept exactly one leading # followed by three or six hexadecimal digits in either case (#FA0 means #FFAA00), and raise ValueError for anything else. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_hexcolor"],
+      "allowed": ["hexcolor.py"],
+      "protected": ["test_hexcolor.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "humanize.cerebras",
+      "profile": "cerebras",
+      "prompt": "human_bytes(size) in humanize.py formats a byte count. Sizes below 1024 are an integer number of bytes (1023 B). Larger sizes use KiB, MiB, GiB, TiB or PiB with one decimal (1100 is 1.1 KiB). When rounding to one decimal reaches 1024, use the next unit instead (1048575 is 1.0 MiB). PiB is the largest unit, so bigger sizes stay in PiB. Negative sizes raise ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_humanize"],
+      "allowed": ["humanize.py"],
+      "protected": ["test_humanize.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "humanize.sambanova",
+      "profile": "sambanova",
+      "prompt": "human_bytes(size) in humanize.py formats a byte count. Sizes below 1024 are an integer number of bytes (1023 B). Larger sizes use KiB, MiB, GiB, TiB or PiB with one decimal (1100 is 1.1 KiB). When rounding to one decimal reaches 1024, use the next unit instead (1048575 is 1.0 MiB). PiB is the largest unit, so bigger sizes stay in PiB. Negative sizes raise ValueError. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_humanize"],
+      "allowed": ["humanize.py"],
+      "protected": ["test_humanize.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "ordinal.cerebras",
+      "profile": "cerebras",
+      "prompt": "ordinal(number) in ordinal.py returns the English ordinal of a non-negative integer (1st, 2nd, 3rd, 4th) but gets the teens wrong: 11, 12, 13, 111, 112 and 113 end in th. Fix it, and raise ValueError for a negative number. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_ordinal"],
+      "allowed": ["ordinal.py"],
+      "protected": ["test_ordinal.py"],
+      "repair_attempts": 1
+    },
+    {
+      "id": "ordinal.sambanova",
+      "profile": "sambanova",
+      "prompt": "ordinal(number) in ordinal.py returns the English ordinal of a non-negative integer (1st, 2nd, 3rd, 4th) but gets the teens wrong: 11, 12, 13, 111, 112 and 113 end in th. Fix it, and raise ValueError for a negative number. Keep the function name and signature.",
+      "verify": ["python", "-m", "unittest", "-q", "test_ordinal"],
+      "allowed": ["ordinal.py"],
+      "protected": ["test_ordinal.py"],
+      "repair_attempts": 1
+    }
+  ]
+}

@@ -797,10 +797,11 @@ func TestFreeLegModel_DefaultAndEnvOverride(t *testing.T) {
 	assert.Equal(t, "nemotron-3.5-lightning-free", def.Model, "default must track the live zen catalog - rotated twice in a week")
 	assert.NotEqual(t, "deepseek-v4-flash-free", def.Model, "retired 2026-08")
 
-	// NIM retired its entire GLM line (HTTP 410, 2026-08-24) - the glm leg's
-	// default must not point at a provider that serves no GLM.
-	assert.Equal(t, "openrouter", legModels[LegGLM].Provider)
-	assert.Equal(t, "z-ai/glm-5.3", legModels[LegGLM].Model, "same model id as NIM served - scorecard continuity")
+	// NIM listed GLM-5.3 and GLM-5.3 Flash again (catalog 2026-09-26). The
+	// 2026-08-24 410 was the 5.2 line. Same model id as the OpenRouter pin,
+	// so the scorecard stays on this leg.
+	assert.Equal(t, "nim", legModels[LegGLM].Provider)
+	assert.Equal(t, "z-ai/glm-5.3", legModels[LegGLM].Model, "same model id NIM serves - scorecard continuity")
 
 	t.Setenv("CAPTAIN_FREE_PROVIDER", "nim")
 	t.Setenv("CAPTAIN_FREE_MODEL", "some/other-model")
@@ -810,9 +811,9 @@ func TestFreeLegModel_DefaultAndEnvOverride(t *testing.T) {
 	assert.Equal(t, "some/other-model", legModels[LegFree].Model)
 }
 
-// The 2026-08-24 legs. Provider policy: NIM first when the model invokes
-// there (free with the NVIDIA key) - kimi-k3 does; OpenRouter (paid) for the
-// rest (deepseek/gemini/qwen/glm are absent or dead on NIM, invoke-probed).
+// Provider policy: NIM first when the model is on the free NVIDIA catalog
+// (kimi-k3, glm-5.3, deepseek-v4.1-flash, checked 2026-09-26). OpenRouter
+// (paid) for the rest. MiniMax left NIM on 2026-09-09 (410) and stays paid.
 func TestOpenRouterLegs(t *testing.T) {
 	for leg, want := range map[Leg]struct{ Provider, Model string }{
 		LegDeepSeek: {"openrouter", "deepseek/deepseek-v4-pro"},

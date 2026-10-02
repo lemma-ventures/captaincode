@@ -21,7 +21,7 @@ jobs:
           go-version: '1.24'
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l cmd pkg)
+          unformatted=$(gofmt -l cmd pkg examples/openshell-pilot/shield)
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt needed: $unformatted"
             exit 1
@@ -29,6 +29,20 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
+
+  openshell-pilot:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Controller and artifact recovery
+        working-directory: examples/openshell-pilot
+        run: python -m unittest test_controller test_pilot test_landing test_worker test_response test_tool_secrets test_profiles test_task -v
 
   secrets:
     runs-on: ubuntu-latest

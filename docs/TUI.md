@@ -12,10 +12,11 @@ Everything below narrows or steers that.
 
 | Word | What it does |
 |---|---|
-| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
+| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
 | `/frontier <task>` | The frontier lane at maximum effort: the frontier legs near the top of the perf index (claude and codex-cli today) take turns; `/frontier /codex …` runs that leg's frontier model instead |
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |
+| `/team /openshell <task>` | Sandbox-only team: the tool-less director splits the task into 1-4 assignments that run as one parallel OpenShell stage (experimental; see [CONFIGURATION](CONFIGURATION.md#openshell-workers-experimental-unreleased)) |
 | `/quality` (`/q`, `/best`) · `/speed` (`/fast`) · `/save` (`/cheap`) | A preference for this turn, before or after a leg prefix. `/quality` takes turns across the two best legs by blended quality, at high effort; `/save` across the open-weight legs that clear the quality bar, each on its own model at medium effort rather than its flash sibling (the whole ladder only when no open-weight leg is open); the director picks inside `/speed` |
 | `/oss` (`/open`) | Open-weight models only |
 | `/deterministic` (`/det`, `/adi`) | Only legs green in the Agentic Determinism Index, pinned to the measured serving tuple ([ADI.md](ADI.md)) |

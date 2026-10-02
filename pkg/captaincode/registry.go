@@ -34,6 +34,12 @@ const (
 	// it can never take a task (ServesTasks), so it is no worker rung, no
 	// model in the TUI's picker and no stage in a workflow.
 	TransportSystemOne Transport = "system-one" // POST /v1/systemone
+	// TransportOpencodeShell is NVIDIA OpenShell: a sandboxed edit–test–export
+	// cycle executed inside MicroVMs, with Shield masking, Landlock and network
+	// isolation, restart recovery, and a director tie-break on overlapping
+	// changes. Requires CAPTAIN_OPENSHELL_PREPARED, CAPTAIN_OPENSHELL_PILOT,
+	// CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
+	TransportOpencodeShell Transport = "opencode-shell"
 )
 
 // LegSpec is one registry entry.
@@ -101,7 +107,7 @@ var defaultLegSpecs = []LegSpec{
 		Note: "Step 3.5 Flash via Hugging Face router (~$0.10/M in, 256k ctx); cheap open-weight reasoning worker, tool-calling, no vision"},
 	{ID: LegGPTOSS, Transport: TransportOpencode, Provider: "openrouter", Model: "openai/gpt-oss-120b", AA: "gpt-oss-120b",
 		PriceIn: 0.15, PriceOut: 0.6, Ctx: 131072, Prior: 6.9, Display: "gpt-oss 120B (captain · OpenRouter, Cerebras)",
-		Note: "gpt-oss-120b (OpenAI open weights) via OpenRouter; served by Cerebras it is the one serving tuple the Agentic Determinism Index scores byte-exact run after run (streak 10, 2026-09-17) - the /deterministic pick, pinned to that tuple; a capable mid-tier coder, not a frontier reasoner"},
+		Note: "gpt-oss-120b (OpenAI open weights) via OpenRouter, pinned to Cerebras when that tuple is green; ADI scored it byte-exact on 19 reference runs from 2026-09-07 through 2026-09-26, then not green on 2026-09-27, so /deterministic does not pick it until the feed is green again; a capable mid-tier coder, not a frontier reasoner"},
 	{ID: LegGrok, Transport: TransportOpencode, Provider: "xai", Model: "grok-build-0.1", AA: "grok-build-0-1-06-16",
 		Ctx: 262144, Vision: true, Subscription: true, Prior: 7.0, Display: "Grok (captain · opencode)",
 		Tiers: map[Tier]string{TierFrontier: "grok-4.7"},
@@ -112,6 +118,9 @@ var defaultLegSpecs = []LegSpec{
 	{ID: LegDS4Flash, Transport: TransportOpencode, Provider: "huggingface", Model: "deepseek-ai/DeepSeek-V4-Flash",
 		PriceIn: 0.14, PriceOut: 0.28, Ctx: 1048576, Prior: 7.2, Open: boolp(true), Display: "DeepSeek V4 Flash (captain · Hugging Face)",
 		Note: "DeepSeek V4 Flash via Hugging Face router (~$0.14/M in, 1M ctx); the cheap V4 lane under the OpenRouter V4 Pro leg; tool-calling, no vision"},
+	{ID: LegDSFlash, Transport: TransportOpencode, Provider: "nim", Model: "deepseek-ai/deepseek-v4.1-flash", AA: "deepseek-v4-1-flash",
+		Ctx: 1048576, Prior: 7.4, Open: boolp(true), Display: "DeepSeek V4.1 Flash (captain · NIM)",
+		Note: "DeepSeek V4.1 Flash via NVIDIA NIM (free with the NVIDIA key, deepseek-ai/deepseek-v4.1-flash); cheap open-weight generalist, no vision; single-host, watch for NIM stalls"},
 	{ID: LegMiniMax, Transport: TransportOpencode, Provider: "openrouter", Model: "minimax/minimax-m3", AA: "minimax-m3",
 		PriceIn: 0.3, PriceOut: 1.2, Ctx: 131072, Prior: 7.5, Display: "MiniMax M3 (captain · opencode)",
 		Note: "MiniMax M3 via OpenRouter (~$0.30/M in); strong OSS agentic worker a notch below GLM-5.3; overflow lane when subscription legs are cooling. NIM retired every MiniMax model on 2026-09-09 (410 Gone), so the free lane is gone"},
@@ -119,10 +128,10 @@ var defaultLegSpecs = []LegSpec{
 		PriceIn: 0.52, PriceOut: 1.6, Ctx: 1048576, Prior: 7.6, Display: "DeepSeek V4 Pro (captain · opencode)",
 		Tiers: map[Tier]string{TierCheap: "deepseek/deepseek-v4-flash"},
 		Note:  "DeepSeek V4 Pro (OpenRouter, ~$0.52/M in); strong cheap coder/reasoner with 1M context; good grok alternative when xAI wobbles"},
-	{ID: LegGLM, Transport: TransportOpencode, Provider: "openrouter", Model: "z-ai/glm-5.3", AA: "glm-5-3",
-		PriceIn: 1.09, PriceOut: 3.43, Ctx: 1310720, Prior: 8.2, Display: "GLM-5.3 (captain · opencode)",
+	{ID: LegGLM, Transport: TransportOpencode, Provider: "nim", Model: "z-ai/glm-5.3", AA: "glm-5-3",
+		Ctx: 1310720, Prior: 8.2, Open: boolp(true), Display: "GLM-5.3 (captain · NIM)",
 		Tiers: map[Tier]string{TierCheap: "z-ai/glm-5.3-flash"},
-		Note:  "GLM-5.3 (z-ai) via OpenRouter (~$1.09/M in, 1.3M ctx), the best open-weights model (AA index 44.9, a point above grok-4.6 and kimi-k3, 2026-09-13); near-frontier agentic coder without burning Claude/Codex quota; the open-weights fallback of /frontier"},
+		Note:  "GLM-5.3 via NVIDIA NIM (free with the NVIDIA key; cheap tier z-ai/glm-5.3-flash on the same key); near-frontier open-weights coder; single-host, watch for NIM stalls. NIM listed both models again on 2026-09-26 (the 2026-08-24 410 was the 5.2 line)"},
 	{ID: LegGemini, Transport: TransportOpencode, Provider: "openrouter", Model: "google/gemini-3.7-flash", AA: "gemini-3-7-flash",
 		PriceIn: 0.38, PriceOut: 2.0, Ctx: 1048576, Vision: true, Prior: 7.8, Display: "Gemini 3.7 Flash (captain · opencode)",
 		Tiers: map[Tier]string{TierCheap: "google/gemini-3.5-flash-lite", TierFrontier: "google/gemini-3.8-flash"},
@@ -149,6 +158,11 @@ var defaultLegSpecs = []LegSpec{
 		Ctx: 1000000, Vision: true, Subscription: true, Prior: 9.5, Display: "Claude (captain · claude -p)",
 		Tiers: map[Tier]string{TierCheap: "sonnet", TierFrontier: "opus"},
 		Note:  "Claude Opus 5.5 via Max sub (the `opus` alias on Claude Code 2.1.280+; 5h+weekly windows, no extra-usage spend); Anthropic's go-to for long-running agentic coding, /frontier runs it at max effort (reads the Opus 5 AA row when the feed lacks 5.5; CAPTAIN_FRONTIER_MODEL=fable brings Fable 5.1 back); architecture, gnarly debugging, escalation apex"},
+	// openshell carries no prior (0): it is a sandbox around a worker, not a
+	// model, so it sits at the foot of AllLegs and AutoRoutes keeps it off the
+	// ladder and the failover chain.
+	{ID: LegOpenShell, Transport: TransportOpencodeShell, Provider: "openshell", Model: "team",
+		Note: "NVIDIA OpenShell sandboxed execution (requires CAPTAIN_OPENSHELL_PREPARED, CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY env vars; runs one task in a MicroVM with Landlock, Shield and verified patch export)"},
 }
 
 // specs is the ACTIVE registry (defaults + overlay), keyed by id; specOrder
@@ -171,6 +185,17 @@ func Spec(l Leg) (LegSpec, bool) {
 func ServesTasks(l Leg) bool {
 	s, ok := specs[l]
 	return ok && s.Transport != TransportSystemOne
+}
+
+// AutoRoutes reports whether the router may hand a leg work on its own: a
+// worker rung, a /frontier failover link, a leg on Jev's menu. An OpenShell
+// leg serves tasks but only when named ("captain with openshell"): it is an
+// execution backend, not a model with a benchmark prior, and it needs an
+// operator-prepared sandbox (CAPTAIN_OPENSHELL_PREPARED) that a cold
+// escalation cannot assume.
+func AutoRoutes(l Leg) bool {
+	s, ok := specs[l]
+	return ok && ServesTasks(l) && s.Transport != TransportOpencodeShell
 }
 
 func boolp(b bool) *bool { return &b }

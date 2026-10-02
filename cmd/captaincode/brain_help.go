@@ -20,7 +20,7 @@ import (
 const captainHelp = `### Captain Code - commands
 
 **Pick who runs it**
-- ` + "`/claude` `/codex` `/codex-cli` `/luna` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds4-flash` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/free`" + ` - force one leg
+- ` + "`/claude` `/codex` `/codex-cli` `/luna` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds-flash` `/ds4-flash` `/kimi` `/glm` `/minimax` `/qwen` `/step` `/gpt-oss` `/free`" + ` - force one leg
 - ` + "`/team <task>`" + ` - director plans an ensemble · ` + "`/team /quality <task>`" + ` binds it to the best-rated legs
 - ` + "`/team /frontier <task>`" + ` (or ` + "`/team /codex-cli …`" + `, any leg) - that member is binding, the director fills the rest
 - ` + "`/frontier <task>`" + ` - maximum effort; the frontier legs (claude and codex-cli today) take turns, the one behind its share of recent turns going next

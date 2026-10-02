@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -15,6 +16,23 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Setenv("HOME", home)
+	// A request that names no workspace falls back to CAPTAIN_CWD, else the
+	// process cwd: this checkout. Test turns then diffed the developer's
+	// uncommitted work and reset their index, and team turns cut worktrees
+	// from it (2026-09-30). The fallback is a throwaway repository instead.
+	ws, err := os.MkdirTemp("", "captain-test-workspace")
+	if err != nil {
+		os.Exit(1)
+	}
+	for _, args := range [][]string{
+		{"init", "--quiet"},
+		{"-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "seed"},
+	} {
+		if err := exec.Command("git", append([]string{"-C", ws}, args...)...).Run(); err != nil {
+			os.Exit(1)
+		}
+	}
+	os.Setenv("CAPTAIN_CWD", ws)
 	// Never start an opencode serve from a test: one spawned on the live
 	// port with this throwaway HOME was adopted by the running brain and
 	// broke every opencode leg (2026-09-18).
@@ -28,5 +46,6 @@ func TestMain(m *testing.M) {
 	os.Setenv("CAPTAIN_TRIAGE_SHADOW_RATE", "0")
 	code := m.Run()
 	os.RemoveAll(home)
+	os.RemoveAll(ws)
 	os.Exit(code)
 }

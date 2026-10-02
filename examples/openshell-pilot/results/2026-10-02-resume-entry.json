@@ -1,0 +1,91 @@
+{
+  "completed_resume_idempotent": true,
+  "controller_exit_code": 87,
+  "cumulative_patch_reproduces_verified_tree": true,
+  "first_stage_reused_unchanged": true,
+  "fixture": "Public Roman numeral edit followed by a no-change review",
+  "host_files_and_index_unchanged": true,
+  "initial_stage_seconds": 56.41360675,
+  "integrated_checks_per_stage": 8,
+  "limits": "One public fixture on one host. Recovery at verified stage boundaries only; no mid-worker or automatic brain recovery.",
+  "model": "openai/gpt-oss-120b",
+  "patch_sha256": "729cfdc80da9a350ead42ca211dbfe2ef8ccad92e12b9962deac826ae75206b7",
+  "profile": "cerebras",
+  "provenance": {
+    "captain": {
+      "go_version": "go1.25.4",
+      "modified": false
+    },
+    "shield": {
+      "go_version": "go1.25.4",
+      "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+      "modified": true
+    },
+    "files": {
+      "captain/binary": "333d555e00b7425f214fe9173ad4c1237e97764a1cc8c489a9eb17fd8c3911df",
+      "pilot/Dockerfile": "d95e3f3b3b78d2c9f2ba574472fb114d4c5ace62f14058ed317486552935641d",
+      "pilot/artifacts.lock.json": "2b596ef281d56f780ad82ff8d4f28aec4bc9897b660de4d876cd8864aceed0a0",
+      "pilot/middleware.py": "163363b9b8e69bef3eba6a12f97ec806e0b01117ceb372ecb30f7bc7cc10ec41",
+      "pilot/nvidia.yaml": "9a593f66860d481e58fb516f98ca28fe4f94d0a752304cc6ac47c3d2e9ee0d31",
+      "pilot/openrouter.yaml": "037780d30c55ad1008037ffc72777fea62e620da930a4fca81028c7637a85797",
+      "pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a",
+      "pilot/policy.yaml": "239cbd2b04a3eac774e97676f96e71029d2cbcd45199d9833de606579b9c91b0",
+      "pilot/prepare.py": "8bf35c378620e1a6d544c66ac0a4115cf7c09b22591b07edfe52ddba9bd06938",
+      "pilot/profiles.py": "08d8e86f6731ab1621c0c84d26031bd5ee02c8b4aa5562032446cfa757dbf0c1",
+      "pilot/requirements.txt": "bdc6cdf881de283b2fc11611c1f8787e8c939d4e2ddedb044090ff3740bc3028",
+      "pilot/response.py": "5a77ea4aad73a1c1f341825952f62a1ea50ca7956cc28e1bc9e7a99733e244e4",
+      "pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+      "prepared/bin/openshell": "789093ba9278271f2617642cadfabe58d3c08f9f8a5a11c29dcbd4ab60d6611f",
+      "prepared/bin/openshell-driver-vm": "5b9544dcdd3a028ac5a091707ab39d837f41776cfbb4036f4c6bc9951c142fc8",
+      "prepared/bin/openshell-gateway": "b4ac81f235daa12a9168fccaa5558aecfe738b1c3779ea72cb0c66b9b8253e25",
+      "prepared/bin/openshell-prover": "53420df83cf7c30625e4e5af672494394f690d693ec29a07b1463490b649c538",
+      "prepared/generated/extension_pb2.py": "e263db7cf7c875b0954489876529bfd9cb16af057bfd993d70012931713a5195",
+      "prepared/generated/extension_pb2_grpc.py": "731b963d39e02970d1f2dfce7c11de3f0e2ec5d55c9208cd0d883c4d8e5ab12b",
+      "prepared/generated/supervisor_middleware_pb2.py": "8b0f0fd1a157a993212bdc50ba1240dec23c619dad07e4398cee856809a1dd26",
+      "prepared/generated/supervisor_middleware_pb2_grpc.py": "cf1bdb61baa4e20360662f6d51fd434d1f5924c59c75713d3fd1ed2e9286fcb3",
+      "prepared/shield": "962b8d9a31306049ef6385ce042cb8cca5b75b5b8ff2a3a1e7e2163e28fa3fc1",
+      "prepared/venv/bin/python": "642c27ed39a41a917b080779bcb9c99284a21f1e57cbc0659f67730b13787299"
+    }
+  },
+  "resume_seconds": 52.119874666,
+  "run_record_sha256": "1969e3560ae5fd1420ec2c36d3e412d1b317ed9b0ecff722fd181af28e988903",
+  "runtime": "vm",
+  "schema": 1,
+  "snapshot_lineage_matches": true,
+  "spend": {
+    "complete": true,
+    "cost_usd": 0.022979399999999997,
+    "tokens": 64116
+  },
+  "stage_count": 2,
+  "verdict": "pass",
+  "worker_checks_per_stage": 17,
+  "date": "2026-10-02",
+  "entrypoint": "Explicit sequence recovery after coordinator process exit at a verified stage boundary",
+  "wall_seconds": 109.15,
+  "source_revision": {
+    "revision": "cbd15cbf27cd49e154b6f71517f6205c3d1efd72",
+    "modified": true
+  },
+  "sources_sha256": {
+    "pkg/captaincode/openshell.go": "9c628ac9b27486473216b62b043bd804a729b5d3600c4a6ad58f4deaaf866125",
+    "pkg/captaincode/openshell_sequence.go": "95cba4bc4634ebb69fe031a210a96fdb6fa6e3e6b087a32bce8418ed0f15233f",
+    "pkg/captaincode/openshell_resume.go": "df760b25eaf3ab184a90d30edcd2f0295a6e34d995d9c01274a0c6b11f22ee75",
+    "pkg/captaincode/openshell_resume_live_test.go": "cfdece374013c7054465f4bce9f17ca1120a4b261fbf954597a614cf3f4350dc",
+    "cmd/captaincode/openshell_cmd.go": "6f5cb14d1d2e5b40ef2f4b8d41f2f3236507d589950138ac420e00d2c7d6abf9",
+    "examples/openshell-pilot/task.py": "56268c696c537bcefe8c63a894681791b19ef5c71cc400fb76a22c2cbe93efe2",
+    "examples/openshell-pilot/pilot.py": "259658dd1273fb81a368cdbcc52cd58a716673b344427e4cc6a6aaf4a32ad76a"
+  },
+  "model_requests": 11,
+  "run_seconds": 108.165,
+  "earlier_attempts": [
+    {
+      "verdict": "inconclusive",
+      "reason": "Explicit Docker socket path was unavailable; stopped before sandbox creation. The next run resolved the current account home socket."
+    },
+    {
+      "verdict": "fail",
+      "reason": "Recovery incorrectly compared the worker report starting tree with the edited tree. The real pilot exposed the mismatch in the fake pilot; recovery now checks the starting tree and replays the final export against the separately verified integrated tree."
+    }
+  ]
+}

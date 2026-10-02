@@ -46,7 +46,7 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	assert.Equal(t, "claude-cli", byLeg["claude"].Label)
 	assert.Equal(t, "cursor-cli", byLeg["cursor"].Label)
 	assert.Equal(t, "grok-max-xai", byLeg["grok-max"].Label)
-	assert.Equal(t, "glm-orouter", byLeg["glm"].Label)
+	assert.Equal(t, "glm-nim", byLeg["glm"].Label)
 	assert.Equal(t, "kimi-nim", byLeg["kimi"].Label)
 	assert.Equal(t, "free-zen", byLeg["free"].Label)
 	assert.False(t, byLeg["glm"].Frontier, "glm ranks near grok-max but stays in Models")

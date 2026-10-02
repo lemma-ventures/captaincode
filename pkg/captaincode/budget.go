@@ -61,13 +61,14 @@ const (
 // 8 attempts" rather than "stopped". The reason is a machine-readable token;
 // the human-readable form is StopReasonText.
 const (
-	StopAttemptsExhausted = "attempts_exhausted"
-	StopCostExhausted     = "cost_exhausted"
-	StopTimeExhausted     = "time_exhausted"
-	StopAllLegsFailed     = "all_legs_failed"
-	StopObjectiveMet      = "objective_met"
-	StopObjectiveFailed   = "objective_failed"
-	StopUserCancelled     = "user_cancelled"
+	StopAttemptsExhausted   = "attempts_exhausted"
+	StopAttemptUsageUnknown = "attempt_usage_unknown"
+	StopCostExhausted       = "cost_exhausted"
+	StopTimeExhausted       = "time_exhausted"
+	StopAllLegsFailed       = "all_legs_failed"
+	StopObjectiveMet        = "objective_met"
+	StopObjectiveFailed     = "objective_failed"
+	StopUserCancelled       = "user_cancelled"
 )
 
 // StopReasonText maps a stopping token to a human-readable sentence.
@@ -75,6 +76,8 @@ func StopReasonText(reason string) string {
 	switch reason {
 	case StopAttemptsExhausted:
 		return "attempt cap reached"
+	case StopAttemptUsageUnknown:
+		return "attempt usage incomplete"
 	case StopCostExhausted:
 		return "cost cap reached"
 	case StopTimeExhausted:
@@ -96,20 +99,21 @@ func StopReasonText(reason string) string {
 // After a restart, outstanding reservations are what they were when last saved
 // — M2 does not automatically continue; M3 adds safe recovery (ROADMAP).
 type Budget struct {
-	Version          int       `json:"version"`
-	TaskID           string    `json:"task_id"`
-	Label            string    `json:"label,omitempty"`
-	Mode             string    `json:"mode,omitempty"`
-	MaxAttempts      int       `json:"max_attempts"` // 0 = unlimited
-	MaxCostUSD       float64   `json:"max_cost_usd"` // 0 = no cap (not enforced without adapter support)
-	MaxWallMs        int64     `json:"max_wall_ms"`  // 0 = unlimited
-	SettledAttempts  int       `json:"settled_attempts"`
-	SettledCostUSD   float64   `json:"settled_cost_usd"`
-	ReservedAttempts int       `json:"reserved_attempts"`
-	ReservedCostUSD  float64   `json:"reserved_cost_usd"`
-	StartedAt        time.Time `json:"started_at"`
-	StoppedAt        time.Time `json:"stopped_at,omitempty"`
-	StopReason       string    `json:"stop_reason,omitempty"`
+	Version              int       `json:"version"`
+	TaskID               string    `json:"task_id"`
+	Label                string    `json:"label,omitempty"`
+	Mode                 string    `json:"mode,omitempty"`
+	MaxAttempts          int       `json:"max_attempts"` // 0 = unlimited
+	MaxCostUSD           float64   `json:"max_cost_usd"` // 0 = no cap (not enforced without adapter support)
+	MaxWallMs            int64     `json:"max_wall_ms"`  // 0 = unlimited
+	SettledAttempts      int       `json:"settled_attempts"`
+	UnmeasuredExecutions int       `json:"unmeasured_executions,omitempty"`
+	SettledCostUSD       float64   `json:"settled_cost_usd"`
+	ReservedAttempts     int       `json:"reserved_attempts"`
+	ReservedCostUSD      float64   `json:"reserved_cost_usd"`
+	StartedAt            time.Time `json:"started_at"`
+	StoppedAt            time.Time `json:"stopped_at,omitempty"`
+	StopReason           string    `json:"stop_reason,omitempty"`
 }
 
 // BudgetOpts configures a new budget from environment defaults.
@@ -407,6 +411,9 @@ func FormatBudget(b Budget) string {
 	}
 	fmt.Fprintf(&sb, "    attempts: %d settled + %d reserved (cap %s)\n",
 		b.SettledAttempts, b.ReservedAttempts, cap)
+	if b.UnmeasuredExecutions > 0 {
+		fmt.Fprintf(&sb, "    coverage: %d execution(s) with unknown attempt counts; settled is a lower bound\n", b.UnmeasuredExecutions)
+	}
 	fmt.Fprintf(&sb, "    cost:     $%.4f settled", b.SettledCostUSD)
 	if b.MaxCostUSD > 0 {
 		fmt.Fprintf(&sb, " / $%.4f cap", b.MaxCostUSD)

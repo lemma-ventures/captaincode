@@ -1,0 +1,14 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /bin, /lib, /lib64, /etc, /proc, /dev/urandom, /app, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: hard_requirement
+network_policies: {}
+network_middlewares:
+  captain-shield:
+    middleware: captain-shield
+    on_error: fail_closed
+    endpoints:
+      include: [integrate.api.nvidia.com]

@@ -146,6 +146,33 @@ func TestSaveMergesChargesAcrossProcesses(t *testing.T) {
 	assert.True(t, os.IsNotExist(leftover), "the atomic temp file is renamed away")
 }
 
+func TestSaveKeepsTheNewestLifecycleRowAcrossProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	brain := &Ledger{Cooldowns: map[Leg]time.Time{}, path: path}
+	cli := &Ledger{Cooldowns: map[Leg]time.Time{}, path: path}
+	cli.RecordTaskState(TaskState{TaskID: "t1", State: StateRunning, StartedAt: time.Now()})
+	cli.RecordAttemptState(AttemptState{TaskID: "t1", AttemptID: "a1", Leg: LegOpenShell, State: StateRunning, StartedAt: time.Now()})
+	require.NoError(t, cli.Save())
+	require.NoError(t, brain.Save()) // merges the CLI's running rows into the brain's memory
+
+	require.NoError(t, cli.TransitionAttempt("a1", StateSucceeded))
+	require.NoError(t, cli.TransitionTask("t1", StateSucceeded))
+	cli.RecordVerifiedExport("a1", VerifiedExport{Repository: "/fixture"})
+	require.NoError(t, cli.Save())
+	brain.RecordCharge(Charge{ID: "brain-1", TaskID: "t2", Kind: KindCall, Leg: LegClaude})
+	require.NoError(t, brain.Save())
+
+	restored := &Ledger{Cooldowns: map[Leg]time.Time{}}
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, restored))
+	assert.Equal(t, StateSucceeded, restored.TaskStateFor("t1").State)
+	attempt := restored.AttemptStateFor("a1")
+	assert.Equal(t, StateSucceeded, attempt.State)
+	require.NotNil(t, attempt.Export, "the brain's stale running copy does not erase the CLI's export")
+	assert.Equal(t, StateSucceeded, brain.AttemptStateFor("a1").State, "the brain's memory catches up too")
+}
+
 // An in-memory ledger (tests, throwaway brains) has no file and must not try
 // to write to an empty path.
 func TestSaveWithoutPathIsANoop(t *testing.T) {
