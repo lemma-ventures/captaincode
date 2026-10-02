@@ -1849,6 +1849,12 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 			ev.Model = captaincode.ModelIDAt(leg, d.Effort)
 		}
 	}
+	// The model the worker reported beats the one configuration names
+	// (SCORING.md Phase 0): claude's `opus` alias hid Opus 5 vs 5.5.
+	if res.Model != "" {
+		ev.Model, ev.ModelResolved = res.Model, "observed"
+		b.ledger.SetChargeModel(ev.AttemptID, res.Model)
+	}
 	b.mu.Unlock()
 	// M3.5: capture what the solo worker changed in the user's workspace so
 	// the handoff brief carries the same artifact evidence a parallel workflow
