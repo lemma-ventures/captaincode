@@ -1638,7 +1638,10 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 // deliverableContract is appended to every worker prompt: agentic models
 // (observed live with cursor-agent 2026-07-25) sometimes end their turn after
 // NARRATING intent - "Drafting the plan…" with no plan - and the user has to
-// type "do it, you stopped". The contract forecloses it up front.
+// type "do it, you stopped". The contract forecloses it up front. It also
+// covers background work: a claude worker wrote its final report, then sat
+// idle 11 minutes because a `tail -f` watch on a job that had already
+// finished kept `claude -p` from exiting until the watch expired (2026-10-02).
 // workerContext states plainly what the worker is being asked to do. Captain's
 // prompts carried a task and nothing else, so a worker met an instruction with
 // no setting - which invites misreading ordinary engineering as something else
@@ -1708,7 +1711,9 @@ func securityContract() string {
 	return s
 }
 
-const deliverableContract = "\n\n[captain] End-of-turn contract: your FINAL message must contain the complete deliverable itself - the answer, plan, code, or verdict in full. Never end your turn describing what you are about to do. Format the deliverable for scanning: markdown with short paragraphs (≤4 lines each), bullet or numbered lists for enumerations, ### section headers when the answer runs long, and fenced code blocks for code/commands - never one large paragraph."
+const deliverableContract = "\n\n[captain] End-of-turn contract: your FINAL message must contain the complete deliverable itself - the answer, plan, code, or verdict in full. Never end your turn describing what you are about to do. Format the deliverable for scanning: markdown with short paragraphs (≤4 lines each), bullet or numbered lists for enumerations, ### section headers when the answer runs long, and fenced code blocks for code/commands - never one large paragraph." +
+	" Your turn ends only when every background job, watch and monitor you started has ended: stop or cancel them before your final message." +
+	" To wait for one job, use a command that exits when the job is done (a loop that checks for it), never `tail -f` or another stream that runs until it is killed."
 
 // narrationOnly detects an intention-only output: short, opens with an
 // intent phrase, and contains no structured content. Deliberately narrow -
