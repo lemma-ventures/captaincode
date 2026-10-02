@@ -230,12 +230,13 @@ func providerAuthError(msg string) bool {
 var ErrSessionNotFound = errors.New("opencode session not found")
 
 type Result struct {
-	Export     *VerifiedExport
-	Text       string
-	Tokens     int
-	CostUSD    float64 // real $ cost when the leg reports it (claude -p); 0 for subscription legs with no per-call price
-	DurationMs int64
-	Streamed   bool // output was already live-printed; don't reprint
+	OpenShellAttempts *OpenShellAttemptUsage
+	Export            *VerifiedExport
+	Text              string
+	Tokens            int
+	CostUSD           float64 // real $ cost when the leg reports it (claude -p); 0 for subscription legs with no per-call price
+	DurationMs        int64
+	Streamed          bool // output was already live-printed; don't reprint
 	// Partial marks output salvaged from a run that hit its time cap. Eight
 	// minutes of a paper audit must not evaporate because the ninth was not
 	// allowed (live 2026-07-30: claude and codex both hit the cap on a

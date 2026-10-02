@@ -325,14 +325,18 @@ func fakeOpenShellPilot(args []string) int {
 	}
 
 	var do struct {
-		Write  map[string]string `json:"write"`
-		Expect map[string]string `json:"expect"`
-		Fail   bool              `json:"fail"`
-		Hang   bool              `json:"hang"`
-		SHA    string            `json:"sha"`
+		Write    map[string]string `json:"write"`
+		Expect   map[string]string `json:"expect"`
+		Fail     bool              `json:"fail"`
+		Hang     bool              `json:"hang"`
+		SHA      string            `json:"sha"`
+		Attempts *int              `json:"attempts"`
 	}
 	if json.Unmarshal([]byte(spec.Prompt), &do) != nil {
 		return 2
+	}
+	if do.Attempts != nil {
+		report["worker_attempts"] = *do.Attempts
 	}
 	for name, expected := range do.Expect {
 		out, err := exec.Command("git", "-C", spec.Repo, "show", spec.Revision+":"+name).Output()
@@ -655,6 +659,7 @@ func TestOpenShellRunTeamCancels(t *testing.T) {
 	assert.Equal(t, OpenShellFailed, run.Tasks[0].Outcome)
 	assert.FileExists(t, filepath.Join(run.Tasks[0].State, "cleaned"), "the pilot got SIGTERM and cleaned up")
 	assert.Equal(t, "not started: context canceled", run.Tasks[1].Error)
+	assert.Equal(t, &OpenShellAttemptUsage{Workers: 1}, run.AttemptUsage)
 	assert.Nil(t, run.Integrated)
 	assert.FileExists(t, filepath.Join(r.RunDir, "run.json"))
 }

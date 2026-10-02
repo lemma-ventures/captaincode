@@ -290,8 +290,10 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 	if len(recovered) == len(plan.Teams) && run.Verdict == "pass" {
 		last := recovered[len(recovered)-1].Integrated
 		var tasks []*OpenShellResult
+		usage := &OpenShellAttemptUsage{}
 		for _, stage := range recovered {
 			tasks = append(tasks, stage.Tasks...)
+			usage.add(stage.AttemptUsage)
 		}
 		if run.Integrated == nil || run.Integrated.Tree != last.Tree ||
 			!slices.Equal(run.Integrated.Verify, last.Verify) || !reflect.DeepEqual(run.Tasks, tasks) {
@@ -300,6 +302,10 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		if _, err := runner.verifiedExport(ctx, &run); err != nil {
 			return nil, err
 		}
+		if run.AttemptUsage != nil && *run.AttemptUsage != *usage {
+			return nil, errors.New("openshell: cumulative attempt usage does not match verified stages")
+		}
+		run.AttemptUsage = usage
 	}
 	if _, err := os.Lstat(filepath.Join(dir, "integrated.patch")); err == nil && len(recovered) != len(plan.Teams) {
 		return nil, errors.New("openshell: unexpected cumulative patch on an incomplete sequence")
@@ -401,7 +407,7 @@ func (r *OpenShellRunner) revalidateSequenceStage(ctx context.Context, team Open
 	for i, task := range team.Tasks {
 		res := run.Tasks[i]
 		if res == nil || res.Task != task.ID || res.Profile != task.Profile || res.Mode != task.Mode ||
-			res.Error != "" || res.State != "" || res.Report == nil ||
+			res.Error != "" || res.State != "" || res.Report == nil || res.NotStarted ||
 			(res.Outcome != OpenShellLanded && res.Outcome != OpenShellDropped && res.Outcome != OpenShellUnchanged) {
 			return errors.New("worker identity, completion or cleanup is unverified")
 		}
@@ -446,6 +452,11 @@ func (r *OpenShellRunner) revalidateSequenceStage(ctx context.Context, team Open
 		}
 		allowed = append(allowed, task.Allowed...)
 	}
+	usage := run.measuredAttempts(team.Tasks...)
+	if run.AttemptUsage != nil && *run.AttemptUsage != *usage {
+		return errors.New("stage attempt usage does not match worker reports and rulings")
+	}
+	run.AttemptUsage = usage
 	in := run.Integrated
 	if in.Report == nil || in.State != "" || in.Error != "" || !slices.Equal(in.Verify, team.Tasks[0].Verify) {
 		return errors.New("integrated verification or cleanup is unverified")

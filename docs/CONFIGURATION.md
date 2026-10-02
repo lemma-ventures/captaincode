@@ -619,9 +619,21 @@ Admission is conservative: the complete worst-case plan must fit, even if worker
 pass first try or write disjoint files. Unused repair/ruling slots are not
 redistributed. The default solo edit needs two slots; an edit followed by a review
 needs three. JSON teams can set `repair_attempts: 0`. `run.json` reports
-`attempt_budget.limit` and `attempt_budget.required` as an admission bound,
-not measured usage. Actual worker counts remain in each task's report; they are
-not yet reconciled into the generic ledger's settled/reserved attempt counters.
+`attempt_budget.limit` and `attempt_budget.required` as an admission bound.
+`attempt_usage` separately records actual worker sessions, repairs and director
+invocations, including a malformed-JSON retry. CLI/HTTP completion reconciles
+these counts into the ledger's settled attempts, even after failure or cancellation;
+unused slots are not charged. Task-linked recovery totals completed and resumed
+stages once, on the continuation attempt. Verification sandboxes are excluded.
+
+Missing or invalid counts are unknown, never zero; a refusal before any sandbox
+starts settles a known zero. `unmeasured` counts executions whose attempt count
+is unavailable; the ledger's `unmeasured_executions` and
+`captain budget` label the settled total as a lower bound and stop further budget
+admission. Older director records and custom directors without instrumentation
+have unknown counts. Reconciliation occurs when the controller returns, not while
+it is running; a process killed before returning still needs recovery or inspection.
+The reserved counter does not represent OpenShell's static plan admission.
 
 New sequence plans checksum-bind the original cap. Recovery checks the whole
 original plan, including completed stages, so restarting never grants another

@@ -45,7 +45,7 @@ func runOpenShellSolo(ctx context.Context, ledger *captaincode.Ledger, ws captai
 	}
 	ctx, budgetCancel, err := captaincode.OpenShellBudgetContext(ctx, ledger.BudgetFor(taskID))
 	if err != nil {
-		return errors.Join(err, recordOpenShellSolo(ledger, taskID, attemptID, task, captaincode.Result{}, err))
+		return errors.Join(err, recordOpenShellSolo(ledger, taskID, attemptID, task, openShellNotDispatched(), err))
 	}
 	defer budgetCancel()
 	ctx = captaincode.WithOpenShellCheckpoint(ctx, func(checkpoint captaincode.OpenShellCheckpoint) error {
@@ -110,6 +110,12 @@ func beginOpenShellSolo(ledger *captaincode.Ledger, task, processID string) (str
 	return taskID, attemptID, nil
 }
 
+// openShellNotDispatched is the result recorded when no sandbox started: zero
+// model attempts, known. An empty Result would settle as unknown usage.
+func openShellNotDispatched() captaincode.Result {
+	return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{}}
+}
+
 func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task string, res captaincode.Result, runErr error) error {
 	if errors.Is(runErr, context.DeadlineExceeded) {
 		if budget := ledger.BudgetFor(taskID); budget != nil {
@@ -121,6 +127,9 @@ func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task str
 			budget.Stop(captaincode.StopAttemptsExhausted)
 		}
 	}
+	if err := ledger.ReconcileOpenShellAttempts(attemptID, res.OpenShellAttempts); err != nil {
+		return err
+	}
 	state, outcome := captaincode.StateSucceeded, "ok"
 	errText := ""
 	if runErr != nil {
@@ -130,7 +139,7 @@ func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task str
 		}
 	}
 	usage := captaincode.CallUsage(captaincode.LegOpenShell, res.Tokens, res.CostUSD, nil)
-	ledger.RecordCharge(captaincode.Charge{Parent: attemptID, TaskID: taskID, Kind: captaincode.KindCall,
+	ledger.RecordCharge(captaincode.Charge{ID: attemptID + ":openshell-call", Parent: attemptID, TaskID: taskID, Kind: captaincode.KindCall,
 		Leg: captaincode.LegOpenShell, Label: "worker", DurationMs: res.DurationMs, Usage: usage})
 	ledger.Record(captaincode.Event{TaskID: taskID, AttemptID: attemptID, Task: truncate(task, 120),
 		Class: captaincode.Classify(task), Leg: captaincode.LegOpenShell, Reason: "explicit sandbox",

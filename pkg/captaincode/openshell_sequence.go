@@ -26,7 +26,7 @@ type OpenShellStageRecord struct {
 func runOpenShellSequence(ctx context.Context, runner *OpenShellRunner, teams []OpenShellTeam, steer *Steer) (Result, error) {
 	ctx, cancel, err := OpenShellBudgetContext(ctx, nil)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	defer cancel()
 	ctx, stop := runner.deadlineContext(ctx)
@@ -34,20 +34,20 @@ func runOpenShellSequence(ctx context.Context, runner *OpenShellRunner, teams []
 	ctx, stopped, detach := interruptible(ctx, steer, LegOpenShell)
 	defer detach()
 	if !steer.Interrupted().IsZero() {
-		return Result{}, ErrInterrupted
+		return openShellRefused(ErrInterrupted)
 	}
 	lock, err := lockOpenShellSequence(runner.RunDir, true)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	defer lock.Close()
 	runner.RunDir, err = filepath.EvalSymlinks(runner.RunDir)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	for _, name := range []string{"sequence.json", "run.json"} {
 		if _, err := os.Lstat(filepath.Join(runner.RunDir, name)); !errors.Is(err, os.ErrNotExist) {
-			return Result{}, errors.New("openshell: sequence already has state; use --resume")
+			return openShellRefused(errors.New("openshell: sequence already has state; use --resume"))
 		}
 	}
 	run := &OpenShellRun{Version: ArtifactVersion, Team: filepath.Base(runner.RunDir), Repo: runner.Repo,
@@ -127,6 +127,7 @@ func validateOpenShellSequence(teams []OpenShellTeam) ([]string, error) {
 }
 
 func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam, run *OpenShellRun, recovered []*OpenShellRun) error {
+	run.AttemptUsage = &OpenShellAttemptUsage{}
 	started, elapsed := time.Now(), run.Seconds
 	defer func() { run.Seconds = elapsed + seconds(time.Since(started)) }()
 	save := func() error {
@@ -225,6 +226,7 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 		record := &run.Stages[i]
 		record.Verdict = result.Verdict
 		run.Tasks = append(run.Tasks, result.Tasks...)
+		run.AttemptUsage.add(result.AttemptUsage)
 		if err != nil {
 			return fmt.Errorf("openshell: stage %d: %w", i+1, err)
 		}

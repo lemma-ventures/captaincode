@@ -263,7 +263,7 @@ type OpenShellReport struct {
 	TaskID           string                    `json:"task_id"`
 	Inference        string                    `json:"inference,omitempty"`
 	Model            string                    `json:"model,omitempty"`
-	WorkerAttempts   int                       `json:"worker_attempts"`
+	WorkerAttempts   *int                      `json:"worker_attempts"`
 	TaskSuccesses    int                       `json:"task_successes"`
 	BaselineExitCode *int                      `json:"baseline_exit_code,omitempty"`
 	Timings          map[string]float64        `json:"timings_seconds,omitempty"`
@@ -310,7 +310,7 @@ func (run *OpenShellRun) Spend() (tokens int, costUSD float64, complete bool) {
 		}
 		s := t.Report.Shield
 		if s == nil {
-			if t.Report.WorkerAttempts > 0 {
+			if t.Report.WorkerAttempts == nil || *t.Report.WorkerAttempts > 0 {
 				complete = false
 			}
 			continue
@@ -341,16 +341,17 @@ type OpenShellExport struct {
 
 // OpenShellResult is one task's outcome in a team run.
 type OpenShellResult struct {
-	Task     string           `json:"task"`
-	Mode     string           `json:"mode,omitempty"`
-	Profile  string           `json:"profile"`
-	Outcome  string           `json:"outcome"`
-	Error    string           `json:"error,omitempty"`
-	Seconds  float64          `json:"seconds"`
-	State    string           `json:"state,omitempty"` // kept after a failure, for inspection
-	Evidence string           `json:"evidence"`
-	Report   *OpenShellReport `json:"report,omitempty"`
-	Manifest *PatchManifest   `json:"manifest,omitempty"`
+	NotStarted bool             `json:"not_started,omitempty"`
+	Task       string           `json:"task"`
+	Mode       string           `json:"mode,omitempty"`
+	Profile    string           `json:"profile"`
+	Outcome    string           `json:"outcome"`
+	Error      string           `json:"error,omitempty"`
+	Seconds    float64          `json:"seconds"`
+	State      string           `json:"state,omitempty"` // kept after a failure, for inspection
+	Evidence   string           `json:"evidence"`
+	Report     *OpenShellReport `json:"report,omitempty"`
+	Manifest   *PatchManifest   `json:"manifest,omitempty"`
 
 	task     OpenShellTask
 	answer   string
@@ -360,6 +361,7 @@ type OpenShellResult struct {
 // OpenShellRuling is the outcome of one group of tasks that changed the same
 // files: one winner lands whole, the others are dropped whole.
 type OpenShellRuling struct {
+	Attempts   *int     `json:"attempts,omitempty"`
 	Contenders []string `json:"contenders"`
 	Files      []string `json:"files"`
 	Winner     string   `json:"winner,omitempty"`
@@ -397,6 +399,7 @@ type OpenShellRun struct {
 	StartedAt      time.Time               `json:"started_at"`
 	DeadlineAt     time.Time               `json:"deadline_at,omitempty"`
 	AttemptBudget  *OpenShellAttemptBudget `json:"attempt_budget,omitempty"`
+	AttemptUsage   *OpenShellAttemptUsage  `json:"attempt_usage,omitempty"`
 	Seconds        float64                 `json:"seconds"`
 	Verdict        string                  `json:"verdict"`
 	Error          string                  `json:"error,omitempty"`
@@ -596,6 +599,7 @@ func (r *OpenShellRunner) RunTeam(ctx context.Context, team OpenShellTeam) (*Ope
 		run.Error = err.Error()
 	}
 	run.Seconds = seconds(time.Since(run.StartedAt))
+	run.AttemptUsage = run.measuredAttempts()
 	data, _ := json.MarshalIndent(run, "", "  ")
 	if werr := writeOpenShellFile(filepath.Join(r.RunDir, "run.json"), append(data, '\n')); werr != nil && err == nil {
 		err = werr
@@ -630,7 +634,7 @@ func (r *OpenShellRunner) runTeam(ctx context.Context, team OpenShellTeam, run *
 				t := team.Tasks[i]
 				if err := ctx.Err(); err != nil {
 					run.Tasks[i] = &OpenShellResult{Task: t.ID, Profile: t.Profile, Outcome: OpenShellFailed,
-						Error: "not started: " + err.Error(), task: t}
+						Error: "not started: " + err.Error(), NotStarted: true, task: t}
 					continue
 				}
 				run.Tasks[i] = r.runTask(ctx, team.ID, t)
@@ -1228,8 +1232,8 @@ func (r *OpenShellRunner) arbitrate(ctx context.Context, teamID string, group []
 		fmt.Fprintf(&brief, "- %s: %s\n", m.Worker, truncateStr(oneLine(res.task.Prompt), 400))
 		diff, _ := readOpenShellFile(m.DiffPath, openShellPatchLimit)
 		evidence := fmt.Sprintf("verified in its sandbox after a restart (%s exit 0)", strings.Join(res.task.Verify, " "))
-		if rep := res.Report; rep != nil {
-			evidence += fmt.Sprintf("; %d worker attempt(s); inference %s", rep.WorkerAttempts, rep.Inference)
+		if rep := res.Report; rep != nil && rep.WorkerAttempts != nil {
+			evidence += fmt.Sprintf("; %d worker attempt(s); inference %s", *rep.WorkerAttempts, rep.Inference)
 		}
 		contenders[m.Worker] = Contender{Leg: Leg(m.Leg), Files: m.ChangedFiles, Evidence: evidence,
 			Text: "Patch:\n" + truncateStr(string(diff), 2000) + "\n\nThe worker's own report (unverified):\n" + res.answer}
@@ -1239,12 +1243,18 @@ func (r *OpenShellRunner) arbitrate(ctx context.Context, teamID string, group []
 	}
 	sort.Strings(ruling.Files)
 	if r.Director == nil {
+		ruling.Attempts = new(int)
 		ruling.Dropped = ruling.Contenders
 		ruling.Error = "no director: tasks that changed the same files are not landed"
 		return ruling
 	}
 	candidate := BuildIntegrationCandidate(teamID, "openshell", r.Revision, group)
+	attempts := &openShellDirectorAttempts{}
+	ctx = context.WithValue(ctx, openShellDirectorAttemptsKey{}, attempts)
 	verdict, err := r.Director(ctx, brief.String(), contenders)
+	if attempts.known {
+		ruling.Attempts = &attempts.count
+	}
 	if err == nil {
 		candidate, err = candidate.Resolve(verdict.Winner, verdict.Reason)
 	}
@@ -1394,6 +1404,9 @@ func shellJoin(argv []string) string {
 // with: its reply can only name one of the contenders (checkRuling), and the
 // change that lands is verified again in a fresh sandbox.
 func ToolLessClaudeDirector(ctx context.Context, task string, contenders map[string]Contender) (Ruling, error) {
+	if attempts, ok := ctx.Value(openShellDirectorAttemptsKey{}).(*openShellDirectorAttempts); ok {
+		attempts.known = true
+	}
 	if len(contenders) < 2 {
 		return Ruling{}, fmt.Errorf("arbitrate: need two or more contenders, got %d", len(contenders))
 	}
@@ -1417,6 +1430,9 @@ func ToolLessClaudeDirector(ctx context.Context, task string, contenders map[str
 }
 
 func toolLessClaude(ctx context.Context, prompt string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	dir, err := os.MkdirTemp("", "captain-director-")
 	if err != nil {
 		return "", err
@@ -1430,6 +1446,9 @@ func toolLessClaude(ctx context.Context, prompt string) (string, error) {
 	cmd.Stdin = strings.NewReader(prompt)
 	var stderr bytes.Buffer
 	cmd.Stderr = &cappedWriter{w: &stderr, n: 4096}
+	if attempts, ok := ctx.Value(openShellDirectorAttemptsKey{}).(*openShellDirectorAttempts); ok {
+		attempts.count++
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("director: claude: %w: %s", err, truncateStr(oneLine(stderr.String()), 200))
@@ -1599,21 +1618,21 @@ func runOpenShell(dir, task string, base, ceil time.Duration, steer *Steer) (Res
 func (ws Workspace) RunOpenShell(ctx context.Context, task string) (Result, error) {
 	ctx, cancel, err := OpenShellBudgetContext(ctx, nil)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	defer cancel()
 	ctx, stop := context.WithTimeout(ctx, workerTimeout())
 	defer stop()
 	runner, team, err := openShellConfig(ctx, ws.Dir, task)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	return runConfiguredOpenShell(ctx, runner, team, ws.Steer)
 }
 
 func runConfiguredOpenShell(ctx context.Context, runner *OpenShellRunner, team OpenShellTeam, steer *Steer) (Result, error) {
 	if err := configureOpenShellRunDir(runner, team.ID); err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	return runOpenShellTeam(ctx, runner, team, steer)
 }
@@ -1641,7 +1660,7 @@ func runOpenShellTeam(ctx context.Context, runner *OpenShellRunner, team OpenShe
 	ctx, stopped, detach := interruptible(ctx, steer, LegOpenShell)
 	defer detach()
 	if !steer.Interrupted().IsZero() {
-		return Result{}, ErrInterrupted
+		return openShellRefused(ErrInterrupted)
 	}
 	run, err := runner.RunTeam(ctx, team)
 	return finishOpenShellRun(ctx, runner, run, err, stopped.Load())
@@ -1649,11 +1668,15 @@ func runOpenShellTeam(ctx context.Context, runner *OpenShellRunner, team OpenShe
 
 func finishOpenShellRun(ctx context.Context, runner *OpenShellRunner, run *OpenShellRun, err error, stopped bool) (Result, error) {
 	if run == nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	ctx, cancel := runner.deadlineContext(ctx)
 	defer cancel()
 	res := Result{Text: openShellResultText(run, runner.RunDir), DurationMs: int64(run.Seconds * 1000)}
+	if run.AttemptUsage != nil {
+		usage := *run.AttemptUsage
+		res.OpenShellAttempts = &usage
+	}
 	if tokens, cost, complete := run.Spend(); complete {
 		res.Tokens, res.CostUSD = tokens, cost
 	}
@@ -1761,6 +1784,10 @@ func openShellResultText(run *OpenShellRun, runDir string) string {
 	sb.WriteString(fmt.Sprintf("OpenShell %s: %d/%d task(s) passed in %.1fs\n", run.Verdict, passed, len(run.Tasks), run.Seconds))
 	if budget := run.AttemptBudget; budget != nil && budget.Limit > 0 {
 		fmt.Fprintf(&sb, "attempt admission: %d worst-case slots / %d cap (not measured usage)\n", budget.Required, budget.Limit)
+	}
+	if usage := run.AttemptUsage; usage != nil {
+		fmt.Fprintf(&sb, "attempt usage: %d workers + %d repairs + %d director calls; %d execution(s) unmeasured\n",
+			usage.Workers, usage.Repairs, usage.Directors, usage.Unmeasured)
 	}
 	for _, res := range run.Tasks {
 		if res == nil {

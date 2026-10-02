@@ -52,7 +52,7 @@ func openShellHTTPRequest(t *testing.T, dir, model, task string, stream bool) *h
 }
 
 func openShellHTTPResult(dir string) captaincode.Result {
-	return captaincode.Result{Text: "OpenShell pass: exported (not applied)", Export: &captaincode.VerifiedExport{
+	return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Workers: 1}, Text: "OpenShell pass: exported (not applied)", Export: &captaincode.VerifiedExport{
 		Repository: dir, Runtime: "vm", RunRecord: filepath.Join(dir, "run.json"),
 		Manifest: captaincode.PatchManifest{
 			BaseRevision: strings.Repeat("a", 40), ChangedFiles: []string{"parser.py"},
@@ -480,7 +480,7 @@ func TestOpenShellHTTPPersistsAttemptCapAndAdmissionFailure(t *testing.T) {
 				require.NotNil(t, budget)
 				assert.Equal(t, 2, budget.MaxAttempts)
 				if refused {
-					return leg, captaincode.Result{}, captaincode.ErrOpenShellAttemptCap
+					return leg, captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{}}, captaincode.ErrOpenShellAttemptCap
 				}
 				return leg, openShellHTTPResult(dir), nil
 			}
@@ -495,6 +495,8 @@ func TestOpenShellHTTPPersistsAttemptCapAndAdmissionFailure(t *testing.T) {
 			if refused {
 				assert.Equal(t, captaincode.StateFailed, task.State)
 				assert.Equal(t, captaincode.StopAttemptsExhausted, budget.StopReason)
+				assert.Zero(t, budget.UnmeasuredExecutions, "an admission refusal ran nothing; its count is known")
+				assert.Zero(t, budget.SettledAttempts)
 				assert.Nil(t, stored.AttemptStates[0].Export)
 			} else {
 				assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())

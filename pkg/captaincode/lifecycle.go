@@ -148,10 +148,11 @@ type AttemptState struct {
 	// but it may still have produced file changes. ChangedFiles and DiffDigest
 	// capture what the worker changed in the user's workspace, so the handoff
 	// brief carries the same artifact evidence a parallel workflow does.
-	ChangedFiles []string             `json:"changed_files,omitempty"` // files the solo worker touched
-	DiffDigest   string               `json:"diff_digest,omitempty"`   // sha256 of the solo worker's diff
-	Export       *VerifiedExport      `json:"export,omitempty"`
-	OpenShell    *OpenShellCheckpoint `json:"openshell,omitempty"`
+	ChangedFiles      []string               `json:"changed_files,omitempty"` // files the solo worker touched
+	DiffDigest        string                 `json:"diff_digest,omitempty"`   // sha256 of the solo worker's diff
+	Export            *VerifiedExport        `json:"export,omitempty"`
+	OpenShell         *OpenShellCheckpoint   `json:"openshell,omitempty"`
+	OpenShellAttempts *OpenShellAttemptUsage `json:"openshell_attempts,omitempty"`
 }
 
 // TaskState is the roll-up view of a task's lifecycle: its own state plus the

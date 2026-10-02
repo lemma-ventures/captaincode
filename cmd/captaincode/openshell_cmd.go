@@ -163,7 +163,10 @@ func printOpenShellRun(run *captaincode.OpenShellRun, dir string) {
 					startup = append(startup, g+s)
 				}
 			}
-			detail = fmt.Sprintf("%d attempt(s)", rep.WorkerAttempts)
+			detail = "attempts unknown"
+			if rep.WorkerAttempts != nil {
+				detail = fmt.Sprintf("%d attempt(s)", *rep.WorkerAttempts)
+			}
 			if rep.Shield != nil {
 				shield.Requests += rep.Shield.Requests
 				shield.Blocked += rep.Shield.Blocked

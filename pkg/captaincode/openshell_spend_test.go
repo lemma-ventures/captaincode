@@ -10,15 +10,17 @@ import (
 )
 
 func spendWorker(requests, priced int, cost float64) *OpenShellResult {
-	return &OpenShellResult{Report: &OpenShellReport{WorkerAttempts: 1, Shield: &OpenShellShield{
+	attempts := 1
+	return &OpenShellResult{Report: &OpenShellReport{WorkerAttempts: &attempts, Shield: &OpenShellShield{
 		Requests: requests, Responses: requests, PricedResponses: priced,
 		PromptTokens: 100 * requests, CompletionTokens: 10 * requests, ReasoningTokens: 5 * requests, CostUSD: cost}}}
 }
 
 func TestOpenShellSpendIsCompleteOnlyWhenEveryRequestWasPriced(t *testing.T) {
 	neverStarted := &OpenShellResult{Error: "not started: context canceled"}
-	noSandbox := &OpenShellResult{Report: &OpenShellReport{Verdict: "inconclusive"}}
-	untallied := &OpenShellResult{Report: &OpenShellReport{WorkerAttempts: 1}}
+	noSandbox := &OpenShellResult{Report: &OpenShellReport{Verdict: "inconclusive", WorkerAttempts: new(int)}}
+	attempts := 1
+	untallied := &OpenShellResult{Report: &OpenShellReport{WorkerAttempts: &attempts}}
 	for _, tc := range []struct {
 		name     string
 		tasks    []*OpenShellResult
