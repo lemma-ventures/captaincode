@@ -315,6 +315,16 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	req.ws = workspaceOf(r)
 	req.internal = r.Context().Value(noDedupeKey{}) != nil
+	// A prompt the user deleted while it was queued never runs: when it is
+	// all that waits, the turn says so and ends; otherwise it is dropped
+	// from the transcript the turn replays.
+	if onlyDeleted(req.Messages) {
+		emit, _, finish := newCompletionWriter(w, req, "captain")
+		emit("[captain] The queued prompt was deleted - nothing ran.")
+		finish()
+		return
+	}
+	req.Messages = dropDeleted(req.Messages)
 	// Several prompts queued behind the previous turn arrive as one request
 	// with several trailing user messages: each is its own turn, in order
 	// (brain_queue.go). A round the brain issued itself never splits.
