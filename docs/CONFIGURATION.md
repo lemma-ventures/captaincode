@@ -570,7 +570,7 @@ task first, bind cancellation to the controller and keep the verified export.
 | `CAPTAIN_OPENSHELL_PILOT` | required | `examples/openshell-pilot` of a Captain checkout you trust. Its controller runs on the host, so it never defaults to the repository being sandboxed |
 | `CAPTAIN_OPENSHELL_REPO` | current workspace | Repository to snapshot; resolved to its top level |
 | `CAPTAIN_OPENSHELL_REVISION` | `HEAD` | Commit or ref, resolved once to a full commit ID before execution |
-| `CAPTAIN_OPENSHELL_PROFILE` | `cerebras` | Pilot inference profile; use `nim` for the NIM profile |
+| `CAPTAIN_OPENSHELL_PROFILE` | `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI's ZDR endpoint) | Pilot inference profile: `nim`, a kept gpt-oss lane, or a registry-generated profile from the pilot's `catalog.json` (`captain openshell profiles`). A new task runs only on a profile that passed the pilot's 18-check fixture 3 times out of 3, with the one repair a task gets, in the last 30 days (`captain openshell qualify`); `python3 <pilot>/profiles.py` lists which are |
 | `CAPTAIN_OPENSHELL_RUNTIME` | `vm` | `vm` or `docker`; the runtime must pass the pilot's enforcement gates |
 | `CAPTAIN_OPENSHELL_PROTECTED` | empty | Additional comma-separated file paths whose content must stay unchanged; Git metadata is always outside the writable scope |
 | `CAPTAIN_OPENSHELL_BASELINE` | `any` | Expected baseline result: `fail` for a regression task, `pass`, or `any`; final verification must pass in every mode |

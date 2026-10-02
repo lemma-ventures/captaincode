@@ -193,6 +193,58 @@ for every task. Results from different lanes are not pooled as one serving tuple
 These lanes are experimental. Their live qualification and scale measurements
 must be reported separately from the earlier NIM results above.
 
+### Profiles from the registry, and qualification
+
+Beyond the seven kept profiles above (`nim` and the six gpt-oss lanes),
+`catalog.json` lists one profile per registry model and OpenRouter
+zero-data-retention endpoint. `captain openshell profiles --pilot <dir>` rebuilds
+it from Captain's active registry and OpenRouter's public ZDR list
+(`https://openrouter.ai/api/v1/endpoints/zdr`, fetched without a key):
+
+- Only API-key legs on `openrouter` or `nim`, and their cheap and frontier
+  tiers. Subscription logins (Claude, Codex, Cursor, Grok, Luna, the free
+  roster) and Hugging Face are left out and listed under `skipped`.
+- Only ZDR endpoints that are up and accept `tools`, `max_tokens` and
+  `temperature`. A NIM leg's model is listed when OpenRouter serves the same
+  model id on a ZDR endpoint; NIM itself offers no per-request ZDR control.
+- Each profile pins one route with the same Shield controls as the kept lanes
+  (`only`, `order`, no fallbacks, `zdr: true`, `data_collection: deny`). Its
+  output cap is the endpoint's limit up to 16,384 tokens, and its strict-cap
+  ceiling is the list price plus 25%, rounded up to the cent.
+- The catalog names a model and a route only. `profiles.py` supplies the host,
+  key and OpenShell policy, so an edited catalog cannot point Shield away from
+  `openrouter.ai`; a malformed entry fails the load. A generated profile that
+  repeats a kept lane (such as `cerebras/fp16`) is dropped in favour of it.
+
+Listing is not selection. `task.py`, and so every Captain `/openshell` run,
+refuses a new task on a profile until this fixture passed all 18 checks on it
+three times in a row:
+
+```sh
+captain openshell qualify --pilot examples/openshell-pilot --prepared /tmp/cc-prep --profile glm-cheap-z-ai-fp8
+python3 examples/openshell-pilot/profiles.py        # every profile, and whether it is selectable
+```
+
+`qualify` runs `pilot.py --qualify` three times, each in a fresh state and with
+the one repair a real task gets (`--repair-attempts 1`; `--qualify` refuses any
+other budget). All three runs are made even after a failure, so the result is a
+pass count. Only at 3 of 3 does `profiles.py record` write the profile to
+`qualified.json`, keeping the three reports under `results/qualify/` with their
+SHA-256s; it refuses fewer or more reports, a report counted twice, a report
+without the repair budget, and any run short of verdict `pass` with every check
+passed. The record binds the model, host, route, provider name and key
+variable, the check list, the repair budget and the run count. A changed model
+or route, a changed check list, a record made under the earlier one-run rule,
+or a record older than 30 days makes the profile unselectable again; a changed
+ceiling or token cap does not. A task already started on a profile resumes even
+if its qualification has since aged. This applies to the kept profiles too.
+
+Three runs are three samples only for a model that varies. gpt-oss-120b on
+Cerebras is deterministic here: on 2 October its first attempt took the same
+path in all three runs (read the canary, hash it, find `slugify.py`, then
+report a fix it never wrote) and its repair passed each time. For such a lane
+the gate says the repair path is reliable, not that the first attempt is.
+
 ### Bounded verification feedback
 
 `--repair-attempts 1` permits one fresh worker invocation after independent
@@ -318,7 +370,8 @@ captain with openshell "Fix the parser regression covered by the tests"
 
 `pilot_source` is the absolute path to this directory. Set these variables in
 the brain's environment to use `/openshell`. The default inference profile is
-Cerebras; set `CAPTAIN_OPENSHELL_PROFILE=nim` for NIM. Baseline `fail` requires a
+`glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI's ZDR endpoint); set
+`CAPTAIN_OPENSHELL_PROFILE` to any other qualified profile. Baseline `fail` requires a
 failing regression test before editing; the solo default is `any` for general
 changes. Both require passing final and integrated checks.
 

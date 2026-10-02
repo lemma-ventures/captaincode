@@ -1,3 +1,7 @@
+import contextlib
+import datetime
+import hashlib
+import io
 import json
 import os
 import subprocess
@@ -7,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pilot
+import profiles
 from profiles import (
     CEILINGS,
     LANES,
@@ -93,7 +98,7 @@ class ProfileTests(unittest.TestCase):
         self.assertIsNone(response_provider(b'{"error":{}}', "cerebras", 503))
 
     def test_each_lane_pins_one_provider_behind_the_same_openshell_endpoint(self):
-        lanes = {name: profile(name) for name in PROFILES if name != "nim"}
+        lanes = {name: profile(name) for name in profiles.KEPT if name != "nim"}
         self.assertEqual({lane["route"] for lane in lanes.values()},
                          {"cerebras", "sambanova", "together", "deepinfra/bf16", "crusoe/bf16", "parasail/fp4"})
         for name, lane in lanes.items():
@@ -190,6 +195,190 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "cannot change inference"):
                 pilot.Pilot(state, inference="nim")
             self.assertEqual((state / "checkpoint.json").read_bytes(), before)
+
+
+def catalog_entry(**overrides):
+    entry = {"leg": "glm", "model": "z-ai/glm-5.3", "route": "z-ai/fp8", "served_by": "Z.AI",
+             "output": 16384, "context": 1048576, "ceiling": [0.75, 2.5]}
+    entry.update(overrides)
+    return entry
+
+
+def passing_report(name, run=1):
+    return {"verdict": "pass", "inference": name, "openshell": "0.1.2", "compute_driver": "vm", "run": run,
+            "max_worker_attempts": 1 + profiles.QUALIFY_REPAIRS,
+            "checks": {check: {"verdict": "pass", "detail": ""} for check in pilot.CHECKS}}
+
+
+def passing_runs(name):
+    return [passing_report(name, run) for run in range(1, profiles.QUALIFY_RUNS + 1)]
+
+
+class CatalogTests(unittest.TestCase):
+    def write(self, temporary, profiles_, schema=1):
+        path = Path(temporary) / "catalog.json"
+        path.write_text(json.dumps({"schema": schema, "profiles": profiles_}))
+        return path
+
+    def test_kept_profiles_stay(self):
+        self.assertEqual(profiles.KEPT["nim"]["model"], "z-ai/glm-5.3-flash")
+        self.assertEqual(set(LANES) | {"nim"}, set(profiles.KEPT))
+        for name in profiles.KEPT:
+            self.assertEqual(PROFILES[name], profiles.KEPT[name])
+            self.assertEqual(PROFILES[name]["source"], "kept")
+
+    def test_generated_profiles_reach_only_openrouter(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.write(temporary, {"glm-z-ai-fp8": catalog_entry(host="evil.example", key_env="NVIDIA_API_KEY",
+                                                                         base_path="/x", file="nvidia.yaml")})
+            loaded = profiles.load_catalog(path)["glm-z-ai-fp8"]
+        self.assertEqual((loaded["host"], loaded["base_path"], loaded["key_env"], loaded["file"], loaded["type"]),
+                         ("openrouter.ai", "/api/v1", "OPENROUTER_API_KEY", "openrouter.yaml", "captain-openrouter-pilot"))
+        self.assertEqual((loaded["model"], loaded["route"], loaded["served_by"], loaded["ceiling"], loaded["context"]),
+                         ("z-ai/glm-5.3", "z-ai/fp8", "Z.AI", (0.75, 2.5), 1048576))
+        self.assertEqual(loaded["source"], "registry")
+
+    def test_malformed_catalog_fails_closed(self):
+        bad = [{"Bad Name": catalog_entry()}, {"x": catalog_entry(route="z-ai/fp8?x=1")},
+               {"x": catalog_entry(model="../etc")}, {"x": catalog_entry(output=999999)},
+               {"x": catalog_entry(ceiling=[float("nan"), 1])}, {"x": catalog_entry(ceiling=[1])},
+               {"x": catalog_entry(served_by="")}, {"x": catalog_entry(context=1024)},
+               {"x": catalog_entry(tier="max")}, {"x": "not an object"}]
+        with tempfile.TemporaryDirectory() as temporary:
+            for entries in bad:
+                with self.subTest(entries=entries), self.assertRaises(ValueError):
+                    profiles.load_catalog(self.write(temporary, entries))
+            with self.assertRaises(ValueError):
+                profiles.load_catalog(self.write(temporary, {}, schema=2))
+            self.assertEqual(profiles.load_catalog(Path(temporary) / "missing.json"), {})
+
+    def test_kept_lanes_are_not_duplicated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.write(temporary, {
+                "cerebras": catalog_entry(),
+                "gpt-oss-cerebras-fp16": catalog_entry(leg="gpt-oss", model="openai/gpt-oss-120b", route="cerebras/fp16"),
+                "gpt-oss-deepinfra-bf16": catalog_entry(leg="gpt-oss", model="openai/gpt-oss-120b", route="deepinfra/bf16"),
+                "gpt-oss-deepinfra-turbo": catalog_entry(leg="gpt-oss", model="openai/gpt-oss-120b", route="deepinfra/turbo"),
+                "gpt-oss-groq": catalog_entry(leg="gpt-oss", model="openai/gpt-oss-120b", route="groq")})
+            self.assertEqual(set(profiles.load_catalog(path)), {"gpt-oss-deepinfra-turbo", "gpt-oss-groq"})
+
+
+class QualificationTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        for name, value in [("QUALIFIED_FILE", self.root / "qualified.json"), ("EVIDENCE_DIR", self.root / "results/qualify")]:
+            patcher = patch.object(profiles, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_unqualified_profiles_cannot_run_tasks(self):
+        allowed, reason = profiles.qualification("cerebras", pilot.CHECKS)
+        self.assertFalse(allowed)
+        self.assertIn("not qualified", reason)
+        with self.assertRaisesRegex(ValueError, "profile cerebras cannot run tasks"):
+            profiles.require_qualified("cerebras", pilot.CHECKS)
+        self.assertFalse(profiles.qualification("unknown", pilot.CHECKS)[0])
+
+    def test_only_three_full_passes_with_the_task_repair_qualify(self):
+        partial = passing_report("cerebras", 3)
+        partial["checks"]["network_denied"]["verdict"] = "inconclusive"
+        missing = passing_report("cerebras", 3)
+        del missing["checks"]["diff_landed"]
+        no_repair = dict(passing_report("cerebras", 3), max_worker_attempts=1)
+        first_two = passing_runs("cerebras")[:2]
+        for third in [dict(passing_report("cerebras", 3), verdict="fail"), partial, missing, no_repair,
+                      passing_report("sambanova", 3), passing_report("cerebras", 1)]:
+            with self.subTest(third=third), self.assertRaises(ValueError):
+                profiles.record_qualification("cerebras", first_two + [third], pilot.CHECKS)
+        for runs in [first_two, passing_runs("cerebras") + [passing_report("cerebras", 4)], passing_report("cerebras")]:
+            with self.subTest(runs=runs), self.assertRaisesRegex(ValueError, "exactly 3"):
+                profiles.record_qualification("cerebras", runs, pilot.CHECKS)
+        self.assertFalse(profiles.QUALIFIED_FILE.exists())
+
+    def test_a_recorded_qualification_holds_until_it_ages_or_the_profile_changes(self):
+        now = datetime.datetime(2026, 10, 2, 12, tzinfo=datetime.timezone.utc)
+        record = profiles.record_qualification("cerebras", passing_runs("cerebras"), pilot.CHECKS, now=now)
+        self.assertEqual(len(record["runs"]), 3)
+        for run in record["runs"]:
+            kept = self.root / run["report"]
+            self.assertEqual(run["report_sha256"], hashlib.sha256(kept.read_bytes()).hexdigest())
+        self.assertEqual(record["identity"], profiles.identity("cerebras"))
+        self.assertEqual(record["repair_attempts"], 1)
+        self.assertTrue(profiles.qualification("cerebras", pilot.CHECKS, now=now + datetime.timedelta(days=30))[0])
+        self.assertFalse(profiles.qualification("sambanova", pilot.CHECKS, now=now)[0])
+        stale = profiles.qualification("cerebras", pilot.CHECKS, now=now + datetime.timedelta(days=31))
+        self.assertEqual(stale, (False, "qualification is older than 30 days; qualify it again"))
+        self.assertIn("another check set", profiles.qualification("cerebras", pilot.CHECKS[:-1], now=now)[1])
+        moved = dict(PROFILES, cerebras=dict(PROFILES["cerebras"], route="cerebras/fp8"))
+        with patch.object(profiles, "PROFILES", moved):
+            self.assertIn("another model or route", profiles.qualification("cerebras", pilot.CHECKS, now=now)[1])
+        repriced = dict(PROFILES, cerebras=dict(PROFILES["cerebras"], ceiling=(9, 9)))
+        with patch.object(profiles, "PROFILES", repriced):
+            self.assertTrue(profiles.qualification("cerebras", pilot.CHECKS, now=now)[0])
+
+    def test_a_single_run_record_from_the_older_rule_lapses(self):
+        now = datetime.datetime(2026, 10, 2, 12, tzinfo=datetime.timezone.utc)
+        profiles.QUALIFIED_FILE.write_text(json.dumps({"schema": 1, "profiles": {"cerebras": {
+            "identity": profiles.identity("cerebras"), "checks": sorted(pilot.CHECKS),
+            "qualified_at": now.isoformat(), "report": "results/qualify/x.json", "report_sha256": "0" * 64}}}))
+        allowed, reason = profiles.qualification("cerebras", pilot.CHECKS, now=now)
+        self.assertFalse(allowed)
+        self.assertIn("older rule", reason)
+
+    def test_record_command_counts_three_reports(self):
+        paths = []
+        for report in passing_runs("cerebras"):
+            path = self.root / f"report-{report['run']}.json"
+            path.write_text(json.dumps(report))
+            paths.append(str(path))
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(profiles.main(["record", "cerebras"] + paths[:2]), 1)
+            self.assertFalse(profiles.qualification("cerebras", pilot.CHECKS)[0])
+            self.assertEqual(profiles.main(["record", "cerebras"] + paths), 0)
+        self.assertTrue(profiles.qualification("cerebras", pilot.CHECKS)[0])
+
+    def test_task_mode_refuses_an_unqualified_profile_before_writing_state(self):
+        class Gated(pilot.Pilot):
+            task_mode = True
+        state = self.root / "state"
+        with self.assertRaisesRegex(ValueError, "cannot run tasks"):
+            Gated(state, runtime="vm", inference="cerebras")
+        self.assertFalse((state / "checkpoint.json").exists())
+        pilot.Pilot(self.root / "fixture", runtime="vm", inference="cerebras")
+
+    def test_fixture_run_with_qualify_gets_the_task_repair_and_records_nothing(self):
+        repairs = []
+
+        def passed(instance):
+            repairs.append(instance.repair_attempts)
+            instance.report.update(passing_report("cerebras"))
+        args = pilot.arguments().parse_args(["--state", str(self.root / "fixture"), "--runtime", "vm",
+                                             "--profile", "cerebras", "--qualify"])
+        steps = ["preflight", "start_services", "prepare_snapshot", "create_sandbox", "acceptance_checks", "cleanup"]
+        with contextlib_exit_stack(steps) as _, patch.object(pilot.Pilot, "run_worker", autospec=True, side_effect=passed), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(pilot.main(args), 0)
+        self.assertEqual(repairs, [profiles.QUALIFY_REPAIRS])
+        self.assertFalse(profiles.QUALIFIED_FILE.exists())
+
+    def test_qualify_refuses_another_repair_budget(self):
+        args = pilot.arguments().parse_args(["--state", str(self.root / "s"), "--qualify", "--repair-attempts", "0"])
+        with self.assertRaisesRegex(RuntimeError, "task repair budget"):
+            pilot.run_controller(args, build=lambda a: self.fail("built a pilot"))
+
+    def test_qualify_needs_a_fresh_fixture_state(self):
+        args = pilot.arguments().parse_args(["--state", str(self.root / "s"), "--resume", "--qualify"])
+        with self.assertRaisesRegex(RuntimeError, "fresh state"):
+            pilot.run_controller(args, build=lambda a: pilot.Pilot(a.state, runtime="vm", inference="cerebras"))
+
+
+def contextlib_exit_stack(names):
+    stack = contextlib.ExitStack()
+    for name in names:
+        stack.enter_context(patch.object(pilot.Pilot, name, autospec=True))
+    return stack
 
 
 if __name__ == "__main__":

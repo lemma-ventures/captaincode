@@ -16,7 +16,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from profiles import PROFILES, profile
+from profiles import PROFILES, QUALIFY_REPAIRS, profile, require_qualified
 
 HERE = Path(__file__).resolve().parent
 MODEL = "z-ai/glm-5.3-flash"
@@ -196,6 +196,10 @@ class Pilot:
                 self.report.pop("error", None)
         else:
             runtime = runtime or "docker"
+            # A task runs only on a profile that passed this fixture's checks;
+            # the fixture itself is how a profile qualifies.
+            if self.task_mode:
+                require_qualified(inference or "nim", CHECKS)
             self.checkpoint = {"name": "cc-" + os.urandom(5).hex(), "phase": "new", "runtime": runtime,
                                "inference": inference or "nim",
                                **({"max_cost_usd": max_cost_usd} if max_cost_usd is not None else {}),
@@ -440,7 +444,8 @@ timeout = "5s"
             "permission": {"*": "allow", "external_directory": "allow"},
             "provider": {"pilot": {"npm": "@ai-sdk/openai-compatible", "name": self.inference,
                 "options": {"baseURL": self.base_url, "apiKey": "{env:" + self.profile["key_env"] + "}"},
-                "models": {self.model: {"name": self.model, "limit": {"context": 131072, "output": self.profile["output"]}}}}}}
+                "models": {self.model: {"name": self.model, "limit": {"context": self.profile.get("context", 131072),
+                                                                      "output": self.profile["output"]}}}}}}
 
     def create_sandbox(self):
         key_env = self.profile["key_env"]
@@ -737,9 +742,19 @@ timeout = "5s"
 
 
 def run_controller(args, build=None):
+    repairs = getattr(args, "repair_attempts", None)
+    if getattr(args, "qualify", False):
+        # A qualifying run gets the repair a real task gets, no more, no less.
+        if repairs not in (None, QUALIFY_REPAIRS):
+            raise RuntimeError(f"--qualify runs with the task repair budget ({QUALIFY_REPAIRS})")
+        repairs = None if args.resume else QUALIFY_REPAIRS
     pilot = build(args) if build else Pilot(args.state, runtime=args.runtime, inference=getattr(args, "profile", None),
-                                            repair_attempts=getattr(args, "repair_attempts", None),
+                                            repair_attempts=repairs,
                                             max_cost_usd=getattr(args, "max_cost_usd", None))
+    if getattr(args, "qualify", False):
+        if pilot.task_mode or args.resume or pilot.checkpoint["phase"] != "new":
+            raise RuntimeError("--qualify runs the fixture in a fresh state")
+        pilot.checkpoint["qualify"] = True
     if args.resume:
         if pilot.checkpoint["phase"] not in ["export_pending", "landing_pending", "complete"]:
             raise RuntimeError("resume requires a completed worker with a saved export or landing")
@@ -784,6 +799,8 @@ def arguments():
     parser.add_argument("--runtime", choices=["docker", "vm"])
     parser.add_argument("--repair-attempts", type=int, choices=[0, 1])
     parser.add_argument("--max-cost-usd", type=float)
+    parser.add_argument("--qualify", action="store_true",
+                        help="run the fixture fresh with the task repair budget; profiles.py record counts it")
     return parser
 
 

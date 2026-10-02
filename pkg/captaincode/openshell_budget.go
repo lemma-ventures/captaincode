@@ -15,10 +15,11 @@ var (
 	ErrOpenShellCostCap    = errors.New("openshell: strict cost cap")
 )
 
-// openShellPricedProfiles are the pilot's OpenRouter lanes (profiles.py
-// LANES): every response carries the provider's bill and each lane has a price
-// ceiling, so Shield can hold a worker to a dollar allocation. NIM returns no
-// price.
+// openShellPricedProfiles are the pilot's hand-kept OpenRouter lanes
+// (profiles.py LANES): every response carries the provider's bill and each
+// lane has a price ceiling, so Shield can hold a worker to a dollar
+// allocation. NIM returns no price. The registry-generated profiles in the
+// pilot's catalog.json are priced the same way (openShellCatalogPriced).
 var openShellPricedProfiles = map[string]bool{"cerebras": true, "sambanova": true, "together": true,
 	"deepinfra": true, "crusoe": true, "parasail": true}
 
@@ -74,7 +75,7 @@ func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam)
 	for _, team := range teams {
 		edits := 0
 		for _, task := range team.Tasks {
-			if !openShellPricedProfiles[task.Profile] {
+			if !openShellPricedProfiles[task.Profile] && !openShellCatalogPriced(r.Pilot, task.Profile) {
 				return nil, fmt.Errorf("%w: profile %s returns no price; use an OpenRouter lane such as cerebras", ErrOpenShellCostCap, task.Profile)
 			}
 			if task.Mode != "review" {
