@@ -23,6 +23,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 import pilot
+from response import committed_spend
 
 TASK_CHECKS = ["landlock", "worker_tools", "baseline", "filesystem_denied", "network_denied", "provider_path_denied",
                "cancellation_requested", "cancellation_descendants", "worker_exit", "protected_unchanged",
@@ -144,11 +145,12 @@ class TaskPilot(pilot.Pilot):
     verified_check = "sandbox_verify"
     task_mode = True
 
-    def __init__(self, state, task=None, runtime=None, inference=None, repair_attempts=None):
+    def __init__(self, state, task=None, runtime=None, inference=None, repair_attempts=None, max_cost_usd=None):
         self.requested = load_task(task) if task is not None else None
         if self.requested is not None and self.requested["mode"] == "verify":
             self.checks = VERIFY_CHECKS
-        super().__init__(state, runtime=runtime, inference=inference, repair_attempts=repair_attempts)
+        super().__init__(state, runtime=runtime, inference=inference, repair_attempts=repair_attempts,
+                         max_cost_usd=max_cost_usd)
         if self.requested is not None and self.requested != self.checkpoint["task"]:
             raise RuntimeError("cannot change the task for an existing checkpoint")
         self.task = validate_task(self.checkpoint["task"])
@@ -262,24 +264,11 @@ class TaskPilot(pilot.Pilot):
             self.report["verdict"] = "pass"
             self.save("complete")
             return
-        result = self.edit_and_verify()
-        audit = self.state / "shield-audit.jsonl"
-        rows = [json.loads(line) for line in audit.read_text().splitlines()] if audit.exists() else []
-        requests = [row for row in rows if "body_sha256" in row]
-        responses = [row for row in rows if row.get("phase") == "response"]
-        served = sorted({row["provider"] for row in responses if row.get("provider")})
+        try:
+            result = self.edit_and_verify()
+        finally:
+            requests, responses, served = self.tally_shield()
         expected = self.profile.get("served_by")
-        usage = [row["usage"] for row in responses if isinstance(row.get("usage"), dict)]
-        self.report["shield"] = {"requests": len(requests), "responses": len(responses),
-                                 "blocked": sum(row.get("phase") == "response_blocked" for row in rows),
-                                 "secrets_masked": sum(row.get("secrets", 0) for row in requests),
-                                 "identities_masked": sum(row.get("identities", 0) for row in requests),
-                                 "served_by": served,
-                                 "priced_responses": sum("cost" in row for row in usage),
-                                 "prompt_tokens": sum(row.get("prompt_tokens", 0) for row in usage),
-                                 "completion_tokens": sum(row.get("completion_tokens", 0) for row in usage),
-                                 "reasoning_tokens": sum(row.get("reasoning_tokens", 0) for row in usage),
-                                 "cost_usd": sum(row.get("cost", 0.0) for row in usage)}
         self.check("shield_mediated", bool(requests) and bool(responses)
                    and all(row.get("model") == self.model for row in requests)
                    and served == ([expected] if expected else []),
@@ -294,6 +283,33 @@ class TaskPilot(pilot.Pilot):
                 continue
         (self.state / "answer.txt").write_text((answers[-1] if answers else "")[-8192:])
         self.seal_and_export()
+
+    def tally_shield(self):
+        """Totals what crossed this worker's Shield, from its audit. It runs when
+        the worker failed too: those calls were made and billed."""
+        audit = self.state / "shield-audit.jsonl"
+        rows = [json.loads(line) for line in audit.read_text().splitlines()] if audit.exists() else []
+        requests = [row for row in rows if "body_sha256" in row]
+        responses = [row for row in rows if row.get("phase") == "response"]
+        served = sorted({row["provider"] for row in responses if row.get("provider")})
+        usage = [row["usage"] for row in responses if isinstance(row.get("usage"), dict)]
+        self.report["shield"] = {"requests": len(requests), "responses": len(responses),
+                                 "blocked": sum(row.get("phase") == "response_blocked" for row in rows),
+                                 "secrets_masked": sum(row.get("secrets", 0) for row in requests),
+                                 "identities_masked": sum(row.get("identities", 0) for row in requests),
+                                 "served_by": served,
+                                 "priced_responses": sum("cost" in row for row in usage),
+                                 "prompt_tokens": sum(row.get("prompt_tokens", 0) for row in usage),
+                                 "completion_tokens": sum(row.get("completion_tokens", 0) for row in usage),
+                                 "reasoning_tokens": sum(row.get("reasoning_tokens", 0) for row in usage),
+                                 "cost_usd": sum(row.get("cost", 0.0) for row in usage)}
+        if self.max_cost_usd is not None:
+            committed, breached = committed_spend(rows)
+            self.report["shield"]["budget"] = {
+                "limit_usd": self.max_cost_usd, "committed_usd": committed, "breached": breached,
+                "refused": sum(row.get("phase") == "budget_refused" for row in rows)}
+        self.save()
+        return requests, responses, served
 
     def recover_and_land(self):
         saved = json.loads((self.state / "checkpoint.json").read_text())
@@ -345,7 +361,7 @@ class TaskPilot(pilot.Pilot):
 
 def build(args):
     return TaskPilot(args.state, task=args.task, runtime=args.runtime, inference=args.profile,
-                     repair_attempts=args.repair_attempts)
+                     repair_attempts=args.repair_attempts, max_cost_usd=getattr(args, "max_cost_usd", None))
 
 
 def main():

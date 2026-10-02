@@ -15,7 +15,7 @@ guides, not release promises.
 | Item | Why it is still open |
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
-| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture (see below). Open: mixed host/sandbox stages, in-flight attempt reconciliation, strict dollar budgets, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
+| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture, and strict dollar caps are enforced per request at each worker's Shield (see below). Open: mixed host/sandbox stages, in-flight attempt reconciliation, recovery of strict-capped runs, priced director calls under a cap, charging the committed amount to the ledger budget, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
@@ -1928,6 +1928,33 @@ Shield priced 19/19 worker responses: 116,560 tokens and $0.04149. One counted
 planning call used the Claude subscription and is not priced in that figure.
 This is one local fixture on the patched driver; repeated planner-aware recovery
 has controller coverage, not a new live restart qualification.
+
+**M3.7 strict dollar caps (2 October 2026, unreleased).**
+Strict `CAPTAIN_MAX_COST` no longer refuses sandbox dispatch. Admission splits the
+cap evenly across every worker the plan can start, rounded down to a micro-dollar,
+and each worker's Shield enforces its share per request. Shield reserves a
+request's worst case before forwarding it (body bytes plus 4,096 prompt tokens,
+the clamped completion limit, both at a pinned per-lane ceiling that OpenRouter
+also enforces as `max_price`), refuses what does not fit, and settles each priced
+response at the provider's bill. Unpriced and failed responses keep their whole
+reservation; a bill above its reservation stops the Shield and fails the worker.
+A restarted Shield rebuilds the committed total from its audit. Host calls that
+are not priced are refused rather than left outside the cap: the `/team /openshell`
+planner, and stages that could need a conflict ruling while a director is set.
+
+Recovery of a capped run is refused for now, the committed amount is not yet
+charged to the ledger's task budget, and NIM has no price, so it is refused under
+a cap. A worker that fails now still reports what crossed its Shield, so its
+spend is measured rather than unknown. Tests cover the reservation bound, refusal,
+settlement, breach, audit rebuild, checkpoint pinning, admission refusals, the
+per-worker hand-off and the recovery refusal.
+
+The [strict-cap qualification](../examples/openshell-pilot/results/2026-10-02-strict-cost-cap.json)
+ran one public worker on Cerebras twice. Under $0.10 it passed every check with
+8 of 8 requests priced and $0.018008 committed, exactly the bill. Under $0.01
+Shield refused both requests, none reached the provider and nothing was spent.
+Requests reserved $0.019-0.034 against bills of $0.0005-0.0028. This is one fixture
+on the patched driver, not evidence of how often real tasks fit a cap.
 
 **M3.8 status (20 September 2026).** Named, not built.
 

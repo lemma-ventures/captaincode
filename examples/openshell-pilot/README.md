@@ -443,9 +443,52 @@ replenish an existing sequence. Caller and worker deadlines may stop work earlie
 
 Expiry triggers controller cleanup, skips queued workers and withholds the export;
 earlier evidence is retained. Cleanup can extend past the deadline by the existing
-shutdown grace. Strict dollar caps remain refused. Controller
-regressions cover deadline persistence and expiry; this change has not yet received
-a separate live MicroVM qualification.
+shutdown grace. Controller regressions cover deadline persistence and expiry;
+this change has not yet received a separate live MicroVM qualification.
+
+### Strict dollar caps (experimental, unreleased)
+
+With `CAPTAIN_STRICT=1` and `CAPTAIN_MAX_COST`, Captain splits the cap evenly across
+every worker the plan can start and passes each share to that worker's controller
+(`task.py --max-cost-usd`). The checkpoint pins it, so the recovery process's
+Shield enforces the same share. Shield holds it request by request:
+
+- Before forwarding, it reserves the request's worst case: the forwarded body's
+  bytes plus 4,096 bound the prompt tokens, the clamped `max_tokens` bounds the
+  completion, both priced at the lane's ceiling in `profiles.py`. The ceiling goes
+  to OpenRouter as `max_price` with a zero per-request fee, so a lane that costs
+  more is refused before it generates.
+- A request that does not fit the rest of the share is refused with
+  `shield_budget_exhausted` and never reaches the provider.
+- A priced response settles at the provider's bill; anything else keeps the whole
+  reservation. A bill above its reservation stops the Shield and fails the
+  worker. A restarted Shield rebuilds its committed total from the fsync'd audit.
+
+Strict caps need an OpenRouter lane. They refuse `/team /openshell` and stages that
+could need an unpriced conflict ruling, give verification sandboxes a zero share,
+and cannot be resumed yet. See the
+[configuration contract](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+
+The [2 October qualification](results/2026-10-02-strict-cost-cap.json) ran the
+public Roman numeral worker on Cerebras twice, one VM sandbox each, in 78 seconds:
+
+| Cap | Result | Requests forwarded | Refused at Shield | Committed |
+|---|---|---:|---:|---:|
+| $0.10 | passed all checks, integrated tree verified | 8 (8 priced) | 0 | $0.018008, the provider's bill |
+| $0.01 | worker failed, no export | 0 | 2 | $0 |
+
+Each forwarded request reserved $0.019-0.034 and was billed $0.0005-0.0028:
+prompts ran about 5 bytes per token, and the reservation assumes all 16,384
+completion tokens. opencode sends a short title request beside the main one, so
+two reservations can be open at once. opencode's first request reserved $0.032
+here, so a smaller share refuses it. This is one fixture on one host with the
+locally patched VM driver; it shows where the cap bites, not how often real tasks
+fit a given cap.
+
+```sh
+CAPTAIN_TEST_OPENSHELL_COST_LIVE=1 CAPTAIN_OPENSHELL_PREPARED="$pilot_state" \
+  go test ./pkg/captaincode -run '^TestOpenShellStrictCapLiveQualification$' -count=1 -v -timeout 25m
+```
 
 ### Sequential snapshot handoffs (experimental, unreleased)
 
@@ -488,8 +531,9 @@ unmeasured executions. CLI/HTTP completion settles the measured count once in th
 ledger, including failures and cancellations; missing counts remain unknown.
 Recovery counts completed and resumed stages once. It keeps the original
 checksum-bound cap and checks all stages; it cannot reset the allocation.
-Strict dollar budgets remain unsupported. These controls have local regression
-coverage; the live reports below predate attempt-cap admission.
+Strict dollar caps are separate (see [strict dollar caps](#strict-dollar-caps-experimental-unreleased)).
+These controls have local regression coverage; the live reports below predate
+attempt-cap admission.
 
 New sequential tasks entered through Captain's CLI or HTTP endpoint also bind
 the plan checksum and run directory to their ledger attempt before dispatch.
@@ -1045,9 +1089,10 @@ PYTHONPATH="$pilot_state/generated" PILOT_SHIELD_BIN="$pilot_state/shield" \
 
 Adapter tests cover cancellation on both remote and local deadlines, real Captain masking, malformed input, credential identity,
 JWT expiry/audience/signature, protocol negotiation, closed request/response scope,
-redactor/audit failure, patch validation, checkpoint persistence and a
-middleware started without gRPC fork handlers. These are not substitutes for
-live OpenShell enforcement tests.
+redactor/audit failure, patch validation, checkpoint persistence, strict-cap
+reservation, refusal, settlement, breach and audit rebuild, and a middleware
+started without gRPC fork handlers. These are not substitutes for live OpenShell
+enforcement tests.
 
 Landing regressions cover mismatched exports without modifying the checkout,
 interruptions on either side of atomic replacement, repeated completion in a

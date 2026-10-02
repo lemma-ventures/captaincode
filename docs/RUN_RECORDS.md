@@ -125,6 +125,20 @@ count in `attempt_usage` and in the run's spend; one whose record is missing
 counts as unknown, not zero. In-flight usage is not yet reconciled; counts are
 saved when the controller returns.
 
+Under a strict dollar cap, `run.json.cost_budget` records the cap (`limit_usd`),
+each worker's share (`worker_usd`) and the workers it was split across; a
+sequence's `sequence.json` binds `max_cost_usd` into its checksum. Each worker's
+`report.shield.budget` gives the share its Shield enforced (`limit_usd`), what it
+`committed_usd`, how many requests it `refused`, and whether a bill `breached`
+its reservation. Committed counts a request at its bill once a priced response
+settled it, else at its whole reservation, so it is an upper bound on what the
+provider charged. The worker's `shield-audit.jsonl` holds the rows behind it:
+each forwarded request has a random `reservation` token, `reserved_usd` and
+`body_bytes`; the response or blocked-delivery row repeats the token with
+`settled_usd`; a refused request has a `budget_refused` row with its
+`reserve_usd`, the `committed_usd` before it and the `limit_usd`. No content is
+recorded.
+
 For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`,
 `sequence_sha256`, `verified_stages` and `evidence_sha256` before sandbox dispatch.
 `captain task inspect <id>` shows that checkpoint after a restart. `captain task resume <task-id> <attempt-id>`

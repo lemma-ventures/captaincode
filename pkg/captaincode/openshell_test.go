@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -307,6 +308,9 @@ func fakeOpenShellPilot(args []string) int {
 	if spec.Mode == "verify" {
 		pass(openShellVerifyChecks)
 		log := fmt.Sprintf("argv=%q\n", spec.Verify)
+		if limit, ok := flags["--max-cost-usd"]; ok {
+			log += "max_cost_usd=" + limit + "\n"
+		}
 		code := 0
 		for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
 			out, _ := exec.Command("git", "-C", spec.Repo, "show", spec.Revision+":"+name).Output()
@@ -332,6 +336,10 @@ func fakeOpenShellPilot(args []string) int {
 		SHA      string            `json:"sha"`
 		Attempts *int              `json:"attempts"`
 		HangOnce string            `json:"hang_once"` // hang only while this marker file does not exist
+		// Under a strict cap: what the fake Shield reports it committed, and
+		// whether a bill exceeded its reservation.
+		Committed *float64 `json:"committed"`
+		Breach    bool     `json:"breach"`
 	}
 	instruction := spec.Prompt
 	// A director-planned worker's prompt carries its instruction as the
@@ -393,7 +401,22 @@ func fakeOpenShellPilot(args []string) int {
 	}
 	sort.Strings(changed)
 	pass(openShellTaskChecks)
-	report["shield"] = map[string]any{"requests": 3, "responses": 3, "served_by": []string{"FakeProvider"}}
+	shield := map[string]any{"requests": 3, "responses": 3, "served_by": []string{"FakeProvider"}}
+	if limit, ok := flags["--max-cost-usd"]; ok {
+		v, err := strconv.ParseFloat(limit, 64)
+		if err != nil {
+			return 2
+		}
+		committed := 0.001
+		if v < committed {
+			committed = v
+		}
+		if do.Committed != nil {
+			committed = *do.Committed
+		}
+		shield["budget"] = map[string]any{"limit_usd": v, "committed_usd": committed, "refused": 0, "breached": do.Breach}
+	}
+	report["shield"] = shield
 	report["export"] = map[string]any{"patch": "result.patch", "patch_sha256": sum, "changed_files": changed,
 		"base_revision": spec.Revision, "tree": strings.TrimSpace(string(baseTree)),
 		"verify": map[string]any{"argv": spec.Verify, "exit_code": 0, "seconds": 0.5}}

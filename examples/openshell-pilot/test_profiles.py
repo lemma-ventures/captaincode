@@ -7,7 +7,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pilot
-from profiles import PROFILES, canonical_calls, pin_request, profile, response_provider
+from profiles import (
+    CEILINGS,
+    LANES,
+    PROFILES,
+    PROMPT_MARGIN,
+    canonical_calls,
+    pin_request,
+    profile,
+    reservation,
+    response_provider,
+)
 
 
 class ProfileTests(unittest.TestCase):
@@ -105,6 +115,47 @@ class ProfileTests(unittest.TestCase):
         self.assertIsNone(response_provider(b"not json", "nim", 200))
         with self.assertRaises(ValueError):
             pin_request({}, "unlisted")
+
+    def test_strict_cap_pins_price_ceilings_and_reserves_the_worst_case(self):
+        self.assertEqual(CEILINGS.keys(), LANES.keys())
+        request = {"model": profile("cerebras")["model"], "max_tokens": 1024,
+                   "provider": {"max_price": {"prompt": 99, "completion": 99}}}
+        uncapped = pin_request(request, "cerebras")
+        self.assertNotIn("max_price", uncapped["provider"])
+        capped = pin_request(request, "cerebras", capped=True)
+        self.assertEqual(capped["provider"], dict(uncapped["provider"], max_price={"prompt": 0.45, "completion": 0.95, "request": 0}))
+        self.assertEqual(json.dumps(pin_request(request, "cerebras")), json.dumps(uncapped))
+        with self.assertRaisesRegex(ValueError, "priced lane"):
+            pin_request({"model": "any"}, "nim", capped=True)
+        body = b"x" * 1000
+        self.assertAlmostEqual(reservation(body, 1024, "cerebras"), ((1000 + PROMPT_MARGIN) * 0.45 + 1024 * 0.95) / 1e6)
+        # A live 2 October probe: a 295-byte body capped at 32 completion
+        # tokens came back as 74 prompt and 32 completion tokens, $0.0000499.
+        self.assertGreater(reservation(b"x" * 295, 32, "cerebras"), 4.99e-05)
+        self.assertGreaterEqual(PROMPT_MARGIN + 295, 74)
+
+    def test_strict_cap_is_pinned_with_the_checkpoint_and_needs_a_priced_lane(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "capped"
+            instance = pilot.Pilot(state, runtime="vm", inference="cerebras", max_cost_usd=0.25)
+            instance.save()
+            self.assertEqual(json.loads((state / "checkpoint.json").read_text())["max_cost_usd"], 0.25)
+            self.assertEqual((instance.max_cost_usd, instance.report["cost_limit_usd"]), (0.25, 0.25))
+            self.assertEqual(pilot.Pilot(state).max_cost_usd, 0.25)
+            with self.assertRaisesRegex(RuntimeError, "cannot change cost cap"):
+                pilot.Pilot(state, max_cost_usd=0.5)
+            plain = pilot.Pilot(Path(temporary) / "plain", runtime="vm", inference="cerebras")
+            self.assertIsNone(plain.max_cost_usd)
+            self.assertNotIn("max_cost_usd", plain.checkpoint)
+            with self.assertRaisesRegex(RuntimeError, "cannot change cost cap"):
+                pilot.Pilot(plain.state, max_cost_usd=0.25)
+            with self.assertRaisesRegex(ValueError, "priced profile"):
+                pilot.Pilot(Path(temporary) / "nim", runtime="vm", inference="nim", max_cost_usd=0.25)
+            for value in [-1, 1000, float("nan"), True, "0.25"]:
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    pilot.Pilot(Path(temporary) / "bad", runtime="vm", inference="cerebras", max_cost_usd=value)
+            args = pilot.arguments().parse_args(["--state", str(state), "--max-cost-usd", "0.25"])
+            self.assertEqual(args.max_cost_usd, 0.25)
 
     def test_lane_sandbox_uses_the_shared_provider_type_without_exposing_the_key(self):
         with tempfile.TemporaryDirectory() as temporary:

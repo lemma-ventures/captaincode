@@ -396,6 +396,43 @@ class TaskPilotTests(unittest.TestCase):
                          {"requests": 2, "priced_responses": 1, "prompt_tokens": 107, "completion_tokens": 20,
                           "reasoning_tokens": 5, "cost_usd": 0.25})
 
+    def test_shield_reports_what_a_strict_cap_committed(self):
+        request = {"model": "openai/gpt-oss-120b", "body_sha256": "0" * 64, "secrets": 0, "identities": 0}
+        settled = {"phase": "response", "provider": "Cerebras", "identities": 0, "reservation": "a", "settled_usd": 0.003,
+                   "usage": {"prompt_tokens": 100, "completion_tokens": 20, "cost": 0.003}}
+        refused = {"phase": "budget_refused", "reserve_usd": 0.02, "committed_usd": 0.023, "limit_usd": 0.03}
+        instance = task.TaskPilot(self.root / "capped-usage", task=self.spec_path, runtime="vm", inference="cerebras",
+                                  max_cost_usd=0.03)
+        self.state = instance.state
+        self.audit([dict(request, reservation="a", reserved_usd=0.02), settled,
+                    dict(request, reservation="b", reserved_usd=0.02), refused])
+        with (patch.object(instance, "edit_and_verify", return_value=result(b'{"type":"text","part":{"text":"fixed"}}\n')),
+              patch.object(instance, "seal_and_export")):
+            instance.run_worker()
+        budget = instance.report["shield"]["budget"]
+        self.assertAlmostEqual(budget.pop("committed_usd"), 0.023)
+        self.assertEqual(budget, {"limit_usd": 0.03, "breached": False, "refused": 1})
+        self.assertEqual(instance.report["shield"]["requests"], 2, "a refused request never reached the provider")
+        args = argparse.Namespace(state=self.root / "capped-cli", task=self.spec_path, runtime="vm", profile="cerebras",
+                                  repair_attempts=0, max_cost_usd=0.03)
+        self.assertEqual(task.build(args).max_cost_usd, 0.03)
+
+    def test_failed_worker_still_records_what_crossed_shield(self):
+        request = {"model": "openai/gpt-oss-120b", "body_sha256": "0" * 64, "secrets": 0, "identities": 0,
+                   "reservation": "a", "reserved_usd": 0.02}
+        refused = {"phase": "budget_refused", "reserve_usd": 0.02, "committed_usd": 0.02, "limit_usd": 0.03}
+        instance = task.TaskPilot(self.root / "failed-usage", task=self.spec_path, runtime="vm", inference="cerebras",
+                                  max_cost_usd=0.03)
+        self.state = instance.state
+        self.audit([request, refused])
+        with (patch.object(instance, "edit_and_verify", side_effect=AssertionError("worker_exit")),
+              self.assertRaises(AssertionError)):
+            instance.run_worker()
+        saved = json.loads((instance.state / "report.json").read_text())
+        self.assertEqual(saved["shield"]["requests"], 1)
+        self.assertEqual(saved["shield"]["budget"], {"limit_usd": 0.03, "committed_usd": 0.02, "breached": False, "refused": 1})
+        self.assertEqual(saved["checks"]["shield_mediated"]["verdict"], "inconclusive", "mediation is judged only after a passing worker")
+
     def recover(self, instance, change, verify_code=0):
         work = self.root / "sandbox-repo"
         shutil.copytree(self.state / "payload/repo", work)

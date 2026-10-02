@@ -9,12 +9,25 @@ LANES = {
     "together": ("together", "Together"), "deepinfra": ("deepinfra/bf16", "DeepInfra"),
     "crusoe": ("crusoe/bf16", "Crusoe"), "parasail": ("parasail/fp4", "Parasail"),
 }
+# A strict dollar cap prices each lane at a ceiling, in USD per million prompt
+# and completion tokens. Shield sends it as OpenRouter's max_price, so a lane
+# that costs more is refused before it generates, and reserves against it.
+# List prices on 2 October 2026: Cerebras 0.35/0.75, SambaNova 0.14/0.95,
+# Together 0.15/0.60, DeepInfra 0.037/0.17, Crusoe 0.05/0.25, Parasail 0.10/0.75.
+CEILINGS = {
+    "cerebras": (0.45, 0.95), "sambanova": (0.18, 1.20), "together": (0.19, 0.75),
+    "deepinfra": (0.05, 0.22), "crusoe": (0.07, 0.32), "parasail": (0.13, 0.95),
+}
+# Template tokens a provider adds around the forwarded messages; gpt-oss adds
+# about 70. Byte-level tokenizers emit at most one token per body byte.
+PROMPT_MARGIN = 4096
 PROFILES = {
     "nim": {
         "model": "z-ai/glm-5.3-flash", "host": "integrate.api.nvidia.com", "base_path": "/v1",
         "key_env": "NVIDIA_API_KEY", "file": "nvidia.yaml", "type": "captain-nim-pilot", "output": 4096,
     },
-    **{name: dict(OPENROUTER, route=route, served_by=served_by) for name, (route, served_by) in LANES.items()},
+    **{name: dict(OPENROUTER, route=route, served_by=served_by, ceiling=CEILINGS[name])
+       for name, (route, served_by) in LANES.items()},
 }
 
 
@@ -24,15 +37,21 @@ def profile(name):
     return dict(PROFILES[name])
 
 
-def pin_request(body, name):
+def pin_request(body, name, capped=False):
     selected = profile(name)
+    if capped and "ceiling" not in selected:
+        raise ValueError("a strict cost cap needs a priced lane")
     if "route" in selected:
         if body.get("model") != selected["model"] or any(key in body for key in ("models", "route")):
             raise ValueError("request does not name the pinned model")
-        body = dict(body, temperature=0, provider={
+        provider = {
             "only": [selected["route"]], "order": [selected["route"]], "allow_fallbacks": False,
             "data_collection": "deny", "zdr": True,
-        })
+        }
+        if capped:
+            # No per-request fee: the reservation prices tokens only.
+            provider["max_price"] = {"prompt": selected["ceiling"][0], "completion": selected["ceiling"][1], "request": 0}
+        body = dict(body, temperature=0, provider=provider)
         maximum = body.get("max_tokens", selected["output"])
         if type(maximum) is not int or maximum < 1:
             raise ValueError("invalid token limit")
@@ -40,6 +59,14 @@ def pin_request(body, name):
             raise ValueError("alternate token limit is not supported")
         body["max_tokens"] = min(maximum, selected["output"])
     return body
+
+
+def reservation(body, max_tokens, name):
+    """The most one forwarded request can cost, in USD: prompt tokens bounded by
+    the body's bytes plus the template margin, completion tokens by the clamped
+    max_tokens, both at the lane's ceilings."""
+    prompt, completion = profile(name)["ceiling"]
+    return ((len(body) + PROMPT_MARGIN) * prompt + max_tokens * completion) / 1_000_000
 
 
 def canonical_calls(body):

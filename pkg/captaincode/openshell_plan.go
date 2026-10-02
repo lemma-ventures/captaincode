@@ -117,6 +117,9 @@ func PlanOpenShellTeam(ctx context.Context, dir, task, history string) (OpenShel
 }
 
 func planOpenShellTeam(ctx context.Context, dir, task, history string, ask func(context.Context, string) (string, error)) (OpenShellTeamPlan, error) {
+	if openShellStrictCost(ctx) > 0 {
+		return OpenShellTeamPlan{}, fmt.Errorf("%w: the planner is an unpriced host call; type explicit /openshell stages instead", ErrOpenShellCostCap)
+	}
 	runner, template, err := openShellConfig(ctx, dir, "sandbox team plan")
 	if err != nil {
 		return OpenShellTeamPlan{}, err

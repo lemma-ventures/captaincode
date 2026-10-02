@@ -161,9 +161,11 @@ class Pilot:
     resume_timeout = 240
     task_mode = False
 
-    def __init__(self, state, runtime=None, inference=None, repair_attempts=None):
+    def __init__(self, state, runtime=None, inference=None, repair_attempts=None, max_cost_usd=None):
         if repair_attempts is not None and (type(repair_attempts) is not int or repair_attempts not in (0, 1)):
             raise ValueError("repair attempts must be zero or one")
+        if max_cost_usd is not None and (type(max_cost_usd) not in (int, float) or not 0 <= max_cost_usd < 1000):
+            raise ValueError("a cost cap must be 0-1000 USD")
         self.state = state.resolve()
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.state.chmod(0o700)
@@ -196,6 +198,7 @@ class Pilot:
             runtime = runtime or "docker"
             self.checkpoint = {"name": "cc-" + os.urandom(5).hex(), "phase": "new", "runtime": runtime,
                                "inference": inference or "nim",
+                               **({"max_cost_usd": max_cost_usd} if max_cost_usd is not None else {}),
                                "host": "127.0.0.1" if runtime == "vm" else host_address(),
                                "gateway_port": available_port(), "middleware_port": available_port(),
                                **self.initial_checkpoint()}
@@ -221,6 +224,17 @@ class Pilot:
         self.repair_attempts = saved_repairs if existing_checkpoint else (repair_attempts or 0)
         self.checkpoint["repair_attempts"] = self.repair_attempts
         self.report["max_worker_attempts"] = 1 + self.repair_attempts
+        # A strict cap is fixed with the state: every Shield it starts, the
+        # recovery process's included, enforces the same allocation.
+        saved_cap = self.checkpoint.get("max_cost_usd")
+        if existing_checkpoint and max_cost_usd is not None and max_cost_usd != saved_cap:
+            raise RuntimeError("cannot change cost cap for an existing checkpoint")
+        if saved_cap is not None and (type(saved_cap) not in (int, float) or not 0 <= saved_cap < 1000
+                                      or "ceiling" not in self.profile):
+            raise ValueError("a strict cost cap needs 0-1000 USD and a priced profile")
+        self.max_cost_usd = saved_cap
+        if saved_cap is not None:
+            self.report["cost_limit_usd"] = saved_cap
         self.runtime = runtime
         self.report["compute_driver"] = runtime
         self.env["OPENSHELL_GATEWAY_ENDPOINT"] = f"https://{self.checkpoint['host']}:{self.checkpoint['gateway_port']}"
@@ -307,8 +321,10 @@ class Pilot:
         shader_env = dict(self.env, PYTHONPATH=str(self.state / "generated"), HOME=str(self.state / "shield-home"),
                           CAPTAIN_REDACT_IDENTITY=IDENTITY_CANARY, GRPC_ENABLE_FORK_SUPPORT="0")
         (self.state / "shield-home").mkdir(exist_ok=True)
+        cap = ["--max-cost-usd", repr(float(self.max_cost_usd))] if self.max_cost_usd is not None else []
         self.middleware = self.spawn([self.state / "venv/bin/python", HERE / "middleware.py", "--state", self.state,
-                                      "--port", str(self.checkpoint["middleware_port"]), "--model", self.model, "--profile", self.inference],
+                                      "--port", str(self.checkpoint["middleware_port"]), "--model", self.model,
+                                      "--profile", self.inference, *cap],
                                      "middleware.log", shader_env)
         for _ in range(50):
             if self.middleware.poll() is not None:
@@ -722,7 +738,8 @@ timeout = "5s"
 
 def run_controller(args, build=None):
     pilot = build(args) if build else Pilot(args.state, runtime=args.runtime, inference=getattr(args, "profile", None),
-                                            repair_attempts=getattr(args, "repair_attempts", None))
+                                            repair_attempts=getattr(args, "repair_attempts", None),
+                                            max_cost_usd=getattr(args, "max_cost_usd", None))
     if args.resume:
         if pilot.checkpoint["phase"] not in ["export_pending", "landing_pending", "complete"]:
             raise RuntimeError("resume requires a completed worker with a saved export or landing")
@@ -766,6 +783,7 @@ def arguments():
     parser.add_argument("--profile", choices=PROFILES)
     parser.add_argument("--runtime", choices=["docker", "vm"])
     parser.add_argument("--repair-attempts", type=int, choices=[0, 1])
+    parser.add_argument("--max-cost-usd", type=float)
     return parser
 
 

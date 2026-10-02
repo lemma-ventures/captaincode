@@ -31,6 +31,7 @@ type openShellSequencePlan struct {
 	Concurrency int                  `json:"concurrency"`
 	DeadlineAt  time.Time            `json:"deadline_at,omitempty"`
 	MaxAttempts int                  `json:"max_attempts,omitempty"`
+	MaxCostUSD  float64              `json:"max_cost_usd,omitempty"`
 	Teams       []OpenShellTeam      `json:"teams"`
 	Provenance  *OpenShellProvenance `json:"provenance"`
 }
@@ -78,7 +79,7 @@ func (r *OpenShellRunner) saveSequencePlan(teams []OpenShellTeam, run *OpenShell
 	}
 	plan := openShellSequencePlan{Version: 1, Pilot: r.Pilot, Prepared: r.Prepared, StateRoot: r.StateRoot,
 		RunDir: r.RunDir, Repo: r.Repo, Revision: r.Revision, Runtime: r.Runtime,
-		Director: r.DirectorName, Concurrency: r.Concurrency, DeadlineAt: r.DeadlineAt, MaxAttempts: r.MaxAttempts, Teams: teams, Provenance: provenance}
+		Director: r.DirectorName, Concurrency: r.Concurrency, DeadlineAt: r.DeadlineAt, MaxAttempts: r.MaxAttempts, MaxCostUSD: r.MaxCostUSD, Teams: teams, Provenance: provenance}
 	data, err := json.MarshalIndent(plan, "", "  ")
 	if err != nil {
 		return err
@@ -171,6 +172,9 @@ func (r *OpenShellRecovery) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	defer stop()
+	if OpenShellCostLimit(ctx) > 0 || r.run.CostBudget != nil {
+		return Result{}, fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
+	}
 	ctx, deadlineCancel := r.runner.deadlineContext(ctx)
 	defer deadlineCancel()
 	ctx, cancel := context.WithTimeout(ctx, workerTimeout())
@@ -265,6 +269,11 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		return nil, err
 	}
 	defer cancel()
+	// A rerun would need each stopped worker's share less what its Shield
+	// already committed; until that exists, a capped plan is not resumed.
+	if plan.MaxCostUSD > 0 || run.CostBudget != nil || OpenShellCostLimit(ctx) > 0 {
+		return nil, fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
+	}
 	if !plan.DeadlineAt.IsZero() {
 		var stop context.CancelFunc
 		ctx, stop = context.WithDeadline(ctx, plan.DeadlineAt)
