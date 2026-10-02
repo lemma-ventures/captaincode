@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +19,29 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpenShellRecordsMeasuredAttempts(t *testing.T) {
+	for _, runErr := range []error{nil, errors.New("verification failed"), context.Canceled} {
+		t.Run(fmt.Sprint(runErr), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("CAPTAIN_MAX_ATTEMPTS", "5")
+			t.Setenv("CAPTAIN_MAX_COST", "0")
+			t.Setenv("CAPTAIN_MAX_WALLTIME", "0s")
+			ledger, err := captaincode.LoadLedger()
+			require.NoError(t, err)
+			task, attempt, err := beginOpenShellSolo(ledger, "fix fixture", "test")
+			require.NoError(t, err)
+			var result captaincode.Result
+			require.NoError(t, json.Unmarshal([]byte(`{"OpenShellAttempts":{"workers":1,"repairs":1,"directors":1,"unmeasured":0}}`), &result))
+			require.NoError(t, recordOpenShellSolo(ledger, task, attempt, "fix fixture", result, runErr))
+			stored, err := captaincode.LoadLedger()
+			require.NoError(t, err)
+			require.NotNil(t, stored.BudgetFor(task))
+			assert.Equal(t, 3, stored.BudgetFor(task).SettledAttempts)
+			assert.Zero(t, stored.BudgetFor(task).ReservedAttempts)
+		})
+	}
+}
 
 func TestOpenShellSoloCLIHelper(t *testing.T) {
 	if os.Getenv("CAPTAIN_TEST_SOLO_HELPER") != "1" {

@@ -138,8 +138,14 @@ func TestOpenShellLegReturnsOnlyVerifiedExports(t *testing.T) {
 func TestOpenShellLegRequiresVerificationBeforeStarting(t *testing.T) {
 	r := openShellLegEnv(t)
 	t.Setenv("CAPTAIN_OPENSHELL_VERIFY", "")
-	_, err := runOpenShell(r.Repo, "fix a.txt", time.Minute, time.Minute, nil)
+	res, err := runOpenShell(r.Repo, "fix a.txt", time.Minute, time.Minute, nil)
 	require.ErrorContains(t, err, "CAPTAIN_OPENSHELL_VERIFY")
+	assert.Equal(t, &OpenShellAttemptUsage{}, res.OpenShellAttempts, "a refusal before dispatch is a known zero, not unknown usage")
+	wf, err := ParseOpenShellWorkflow("/openshell fix a.txt > /openshell fix b.txt")
+	require.NoError(t, err)
+	res, err = (Workspace{Dir: r.Repo, Steer: NewSteer(r.Repo)}).RunOpenShellWorkflow(context.Background(), wf, "")
+	require.ErrorContains(t, err, "CAPTAIN_OPENSHELL_VERIFY")
+	assert.Equal(t, &OpenShellAttemptUsage{}, res.OpenShellAttempts)
 }
 
 func TestOpenShellLegDispatchRequiresVerification(t *testing.T) {

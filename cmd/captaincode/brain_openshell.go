@@ -121,7 +121,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 			ctx, cancel = b.cancelTree.Register(taskID, attemptID, "openshell", ctx)
 			b.sandboxes.Add(1)
 		} else {
-			err = errors.Join(err, recordOpenShellSolo(b.ledger, taskID, attemptID, lastUserTurn(prompt), captaincode.Result{}, err))
+			err = errors.Join(err, recordOpenShellSolo(b.ledger, taskID, attemptID, lastUserTurn(prompt), openShellNotDispatched(), err))
 		}
 	}
 	b.mu.Unlock()
@@ -163,6 +163,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	var res captaincode.Result
 	if ctx.Err() != nil || !req.ws.Steer.Interrupted().IsZero() {
 		err = captaincode.ErrInterrupted
+		res = openShellNotDispatched()
 	} else if len(wf.Stages) > 0 {
 		var history string
 		for i := len(req.Messages) - 1; i >= 0; i-- {

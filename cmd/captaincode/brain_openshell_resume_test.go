@@ -72,7 +72,9 @@ func TestOpenShellTaskResumeCreatesDurableLinkedAttempt(t *testing.T) {
 		case <-ctx.Done():
 			return captaincode.Result{}, ctx.Err()
 		}
-		return openShellHTTPResult("/fixture"), nil
+		result := openShellHTTPResult("/fixture")
+		result.OpenShellAttempts = &captaincode.OpenShellAttemptUsage{Workers: 2, Repairs: 1}
+		return result, nil
 	}}
 	b.prepareOpenShellRecoveryFn = func(ctx context.Context, checkpoint captaincode.OpenShellCheckpoint) (openShellRecovery, error) {
 		assert.Equal(t, "/tmp/fixture-run", checkpoint.RunDir)
@@ -111,6 +113,10 @@ func TestOpenShellTaskResumeCreatesDurableLinkedAttempt(t *testing.T) {
 	assert.Equal(t, task, next.Export.Manifest.TaskID)
 	assert.Contains(t, captaincode.FormatHandoffBrief(*stored.HandoffFor(task)), "exported (not applied)")
 	assert.Equal(t, int32(1), calls.Load())
+	assert.Nil(t, stored.AttemptStateFor(parent).OpenShellAttempts)
+	assert.Equal(t, &captaincode.OpenShellAttemptUsage{Workers: 2, Repairs: 1}, next.OpenShellAttempts)
+	require.NotNil(t, stored.BudgetFor(task))
+	assert.Equal(t, 3, stored.BudgetFor(task).SettledAttempts)
 	assert.Empty(t, b.cancelTree.TaskIDs())
 }
 

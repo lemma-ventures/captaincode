@@ -453,8 +453,11 @@ per possible conflict group (one ruling plus a malformed-JSON retry). Reviews
 count once; verification sandboxes do not call a model. A default edit then review
 requires three slots. Unused slots are not reassigned. `attempt_budget` in
 `run.json` records the cap and worst-case requirement separately from actual
-worker usage. Recovery keeps the original checksum-bound cap and checks all
-stages, including those already completed; it cannot reset the allocation.
+worker usage. `attempt_usage` records workers, repairs, director invocations and
+unmeasured executions. CLI/HTTP completion settles the measured count once in the
+ledger, including failures and cancellations; missing counts remain unknown.
+Recovery counts completed and resumed stages once. It keeps the original
+checksum-bound cap and checks all stages; it cannot reset the allocation.
 Strict dollar budgets remain unsupported. These controls have local regression
 coverage; the live reports below predate attempt-cap admission.
 

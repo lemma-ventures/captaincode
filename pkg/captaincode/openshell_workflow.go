@@ -95,24 +95,24 @@ func openShellWorkflowTeam(template OpenShellTeam, wf Workflow, history string) 
 
 func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, history string) (Result, error) {
 	if err := validateOpenShellWorkflow(wf); err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	ctx, stop, err := OpenShellBudgetContext(ctx, nil)
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, workerTimeout())
 	defer cancel()
 	runner, template, err := openShellConfig(ctx, ws.Dir, "sandbox workflow")
 	if err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	teams := make([]OpenShellTeam, 0, len(wf.Stages))
 	for i, stage := range wf.Stages {
 		team, err := openShellWorkflowTeam(template, Workflow{Stages: []WorkflowStage{stage}}, history)
 		if err != nil {
-			return Result{}, err
+			return openShellRefused(err)
 		}
 		if len(wf.Stages) > 1 {
 			team.ID = fmt.Sprintf("s%d-%s", i+1, team.ID)
@@ -130,7 +130,7 @@ func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, histo
 		return runConfiguredOpenShell(ctx, runner, teams[0], ws.Steer)
 	}
 	if err := configureOpenShellRunDir(runner, "workflow"); err != nil {
-		return Result{}, err
+		return openShellRefused(err)
 	}
 	return runOpenShellSequence(ctx, runner, teams, ws.Steer)
 }

@@ -98,6 +98,16 @@ their root start time and limit in the ledger budget; expiry during execution
 records `time_exhausted`, fails the task and withholds its verified export.
 Expired recovery is refused before dispatch and retains earlier evidence.
 
+`run.json.attempt_usage` separates worker sessions, repair sessions and director
+invocations from the worst-case `attempt_budget` admission bound. CLI/HTTP results
+persist this breakdown in `AttemptState.openshell_attempts` and settle the root
+budget once. Failed and cancelled runs still count completed invocations. A
+recovery continuation owns the cumulative count, including reused stages;
+replaying the same settlement does not add it again. `unmeasured` identifies
+executions with unavailable counts, so `captain budget` displays known attempts
+as a lower bound. Verification sandboxes use no model attempt. In-flight usage is
+not yet reconciled; counts are saved when the controller returns.
+
 For new sequential CLI and HTTP tasks, `AttemptState.openshell` stores `run_dir`
 and `sequence_sha256` before sandbox dispatch. `captain task inspect <id>` shows
 that checkpoint after a restart. `captain task resume <task-id> <attempt-id>`

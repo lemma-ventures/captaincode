@@ -12,6 +12,127 @@ import (
 
 var ErrOpenShellAttemptCap = errors.New("openshell: attempt cap exceeded")
 
+type OpenShellAttemptUsage struct {
+	Workers    int `json:"workers"`
+	Repairs    int `json:"repairs"`
+	Directors  int `json:"directors"`
+	Unmeasured int `json:"unmeasured"`
+}
+
+func (u OpenShellAttemptUsage) Total() int {
+	return u.Workers + u.Repairs + u.Directors
+}
+
+func (u OpenShellAttemptUsage) Validate() error {
+	limit := openShellMaxTasks * MaxWorkflowStages
+	if u.Workers < 0 || u.Workers > limit || u.Repairs < 0 || u.Repairs > u.Workers ||
+		u.Directors < 0 || u.Directors > limit || u.Unmeasured < 0 || u.Unmeasured > 2*limit {
+		return errors.New("openshell: invalid attempt usage")
+	}
+	return nil
+}
+
+// openShellRefused is the result of a refusal before any sandbox started. No
+// model was called, so the count is a known zero; a nil count means unknown.
+func openShellRefused(err error) (Result, error) {
+	return Result{OpenShellAttempts: &OpenShellAttemptUsage{}}, err
+}
+
+func (u *OpenShellAttemptUsage) add(other *OpenShellAttemptUsage) {
+	if other == nil {
+		u.Unmeasured++
+		return
+	}
+	u.Workers += other.Workers
+	u.Repairs += other.Repairs
+	u.Directors += other.Directors
+	u.Unmeasured += other.Unmeasured
+}
+
+func (run *OpenShellRun) measuredAttempts(tasks ...OpenShellTask) *OpenShellAttemptUsage {
+	usage := &OpenShellAttemptUsage{}
+	for _, task := range run.Tasks {
+		if task != nil && task.NotStarted && task.Report == nil {
+			continue
+		}
+		if task == nil || task.Report == nil || task.Report.WorkerAttempts == nil {
+			usage.Unmeasured++
+			continue
+		}
+		n := *task.Report.WorkerAttempts
+		maxAttempts := 1 + task.task.RepairAttempts
+		for _, spec := range tasks {
+			if spec.ID == task.Task {
+				maxAttempts = 1 + spec.RepairAttempts
+				break
+			}
+		}
+		if n < 0 || n > maxAttempts {
+			usage.Unmeasured++
+			continue
+		}
+		if n > 0 {
+			usage.Workers++
+			usage.Repairs += n - 1
+		}
+	}
+	for _, ruling := range run.Rulings {
+		if ruling.Attempts == nil || *ruling.Attempts < 0 || *ruling.Attempts > 2 {
+			usage.Unmeasured++
+		} else {
+			usage.Directors += *ruling.Attempts
+		}
+	}
+	return usage
+}
+
+func (l *Ledger) ReconcileOpenShellAttempts(attemptID string, usage *OpenShellAttemptUsage) error {
+	as := l.AttemptStateFor(attemptID)
+	if as == nil || as.Leg != LegOpenShell {
+		return errors.New("openshell: attempt usage requires a sandbox attempt")
+	}
+	if usage == nil {
+		usage = &OpenShellAttemptUsage{Unmeasured: 1}
+	}
+	if err := usage.Validate(); err != nil {
+		return err
+	}
+	if as.OpenShellAttempts != nil {
+		if *as.OpenShellAttempts != *usage {
+			return errors.New("openshell: settled attempt usage changed")
+		}
+		return nil
+	}
+	budget := l.BudgetFor(as.TaskID)
+	if budget == nil {
+		budget = NewBudget(as.TaskID, "sandbox", BudgetOpts{})
+		if task := l.TaskStateFor(as.TaskID); task != nil {
+			budget.StartedAt, budget.Label = task.StartedAt, task.Label
+		}
+		l.RecordBudget(budget)
+		budget = l.BudgetFor(as.TaskID)
+	}
+	if budget.ReservedAttempts != 0 {
+		return errors.New("openshell: cannot settle usage against unrelated reservations")
+	}
+	budget.Reconcile(usage.Total(), 0)
+	budget.UnmeasuredExecutions += usage.Unmeasured
+	if usage.Unmeasured > 0 {
+		budget.Stop(StopAttemptUsageUnknown)
+	}
+	copy := *usage
+	as.OpenShellAttempts = &copy
+	as.UpdatedAt = time.Now()
+	return nil
+}
+
+type openShellDirectorAttemptsKey struct{}
+
+type openShellDirectorAttempts struct {
+	count int
+	known bool
+}
+
 type OpenShellAttemptBudget struct {
 	Limit    int `json:"limit"`
 	Required int `json:"required"`
@@ -79,7 +200,7 @@ func OpenShellBudgetContext(ctx context.Context, budget *Budget) (context.Contex
 	cap = tighterOpenShellLimit(cap, limits.MaxAttempts)
 	started := time.Now()
 	if budget != nil {
-		if budget.MaxAttempts < 0 || budget.SettledAttempts != 0 || budget.ReservedAttempts != 0 {
+		if budget.MaxAttempts < 0 || budget.SettledAttempts != 0 || budget.ReservedAttempts != 0 || budget.UnmeasuredExecutions != 0 {
 			return nil, nil, errors.New("openshell: plan admission needs an unused root attempt budget")
 		}
 		cap = tighterOpenShellLimit(cap, budget.MaxAttempts)
