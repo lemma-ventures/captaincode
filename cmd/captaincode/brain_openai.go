@@ -609,7 +609,10 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// retry of an 8-minute run used to start a SECOND 8-minute run while the
 	// first answer went to an abandoned request (live 2026-07-30). A repeat
 	// within soloResultTTL is served the same answer.
-	dedupeKey := string(leg) + "\x00" + lastUserTurn(prompt)
+	// The folder is part of the identity: "continue where we stopped" typed
+	// in strategy attached to the codex-cli run of the same words in zorvex and
+	// showed its answer (2026-10-03). A retry comes from the same folder.
+	dedupeKey := req.ws.Dir + "\x00" + string(leg) + "\x00" + lastUserTurn(prompt)
 	// A /repeat iteration is real work: attaching it to the previous
 	// iteration's cached answer would make the whole thread a no-op.
 	internal := r.Context().Value(noDedupeKey{}) != nil
@@ -638,7 +641,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// connection). Delivered answers are never replayed: asking again after
 	// you SAW the answer means run it again. Nor is a run cut off by ctrl+c
 	// preserved: the user stopped it, and a resend means run it.
-	if orphan, ok := findAbandonedAnswer(lastUserTurn(prompt)); ok {
+	if orphan, ok := findAbandonedAnswer(req.ws.Dir, lastUserTurn(prompt)); ok {
 		fmt.Printf("captain brain: serving preserved answer %s (previous request abandoned mid-run)\n", orphan.ID)
 		emit, _, finish := newCompletionWriter(w, req, string(leg))
 		defer finish() // idempotent; a missed teardown feeds the keepalive-panic class
@@ -713,7 +716,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		b.recordSolo(dedupeKey, res, nil)
 		if !titleReq { // a session title is housekeeping, not work
 			recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
-				Task: lastUserTurn(prompt), Output: res.Text, DurationMs: elapsed.Milliseconds(),
+				Task: lastUserTurn(prompt), Dir: req.ws.Dir, Output: res.Text, DurationMs: elapsed.Milliseconds(),
 				Abandoned: r.Context().Err() != nil && !res.Partial, Logs: logPaths(res)})
 		}
 		fmt.Printf("captain brain: %s wrapper done in %s (%d chars)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))
@@ -872,7 +875,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	b.recordSolo(dedupeKey, res, nil)
 	if !titleReq { // a session title is housekeeping, not work
 		recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
-			Task: lastUserTurn(prompt), Output: res.Text, DurationMs: elapsed.Milliseconds(),
+			Task: lastUserTurn(prompt), Dir: req.ws.Dir, Output: res.Text, DurationMs: elapsed.Milliseconds(),
 			Abandoned: r.Context().Err() != nil && !res.Partial, Logs: logPaths(res)})
 	}
 	fmt.Printf("captain brain: %s wrapper done in %s (%d chars, streamed)\n", leg, elapsed.Round(time.Millisecond), len(res.Text))

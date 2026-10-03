@@ -41,6 +41,7 @@ type runRecord struct {
 	Model      string         `json:"model,omitempty"`
 	Legs       []string       `json:"legs,omitempty"`
 	Task       string         `json:"task"`
+	Dir        string         `json:"dir,omitempty"` // the folder the turn ran in; a recovered answer is only served there
 	Output     string         `json:"output,omitempty"`
 	Error      string         `json:"error,omitempty"`
 	DurationMs int64          `json:"duration_ms"`
@@ -189,7 +190,7 @@ func searchRuns(needle string, limit int) []runRecord {
 const abandonedAnswerTTL = 15 * time.Minute
 
 // findAbandonedAnswer returns a recent orphaned answer for exactly this task.
-func findAbandonedAnswer(task string) (runRecord, bool) {
+func findAbandonedAnswer(dir, task string) (runRecord, bool) {
 	task = strings.TrimSpace(task)
 	if task == "" {
 		return runRecord{}, false
@@ -199,7 +200,7 @@ func findAbandonedAnswer(task string) (runRecord, bool) {
 		return runRecord{}, false
 	}
 	for _, r := range recs {
-		if r.Abandoned && strings.TrimSpace(r.Output) != "" &&
+		if r.Abandoned && strings.TrimSpace(r.Output) != "" && r.Dir == dir &&
 			strings.TrimSpace(r.Task) == task && time.Since(r.At) <= abandonedAnswerTTL {
 			return r, true
 		}

@@ -127,7 +127,7 @@ func TestAbandonedTurnIsMarkedInHistory(t *testing.T) {
 func TestResendRecoversTheAbandonedAnswerAcrossRestarts(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	recordRunHistory(runRecord{Kind: "solo", Legs: []string{"codex"}, Task: "address the improvements",
-		Output: "RECOVERED ANSWER", DurationMs: 355000, Abandoned: true})
+		Dir: defaultWorkspace().Dir, Output: "RECOVERED ANSWER", DurationMs: 355000, Abandoned: true})
 
 	b := teamBrain() // fresh brain: the in-memory dedupe map is empty (restart)
 	ran := false
@@ -197,4 +197,45 @@ func TestResendAfterAnInterruptRunsAgain(t *testing.T) {
 	b.chatCompletions(rec, wfReq(false, "act as an investor"))
 	assert.Equal(t, int32(2), runs.Load(), "the resend runs again")
 	assert.Contains(t, answerOf(t, rec), "the full investor verdict")
+}
+
+// The same words in another folder are another task: "continue where we
+// stopped" in strategy attached to the zorvex run of the same words and showed
+// its answer (2026-10-03). Neither the running turn nor a recovered answer
+// crosses folders.
+func TestTheSamePromptInAnotherFolderRunsItsOwnWorker(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	zorvex, strategy, hum := t.TempDir(), t.TempDir(), t.TempDir()
+	recordRunHistory(runRecord{Kind: "solo", Legs: []string{"claude"}, Task: "continue where we stopped",
+		Dir: hum, Output: "HUM ANSWER", DurationMs: 5000, Abandoned: true})
+	b := teamBrain()
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var dirs []string
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		mu.Lock()
+		dirs = append(dirs, prompt)
+		mu.Unlock()
+		<-release
+		return leg, captaincode.Result{Text: "fresh", DurationMs: 5}, nil
+	}
+	send := func(dir string) *httptest.ResponseRecorder {
+		r := wfReq(false, "continue where we stopped")
+		r.Header.Set(workspaceHeader, dir)
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, r)
+		return rec
+	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); send(zorvex) }()
+	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(dirs) == 1 }, 2*time.Second, 10*time.Millisecond)
+	wg.Add(1)
+	var other *httptest.ResponseRecorder
+	go func() { defer wg.Done(); other = send(strategy) }()
+	require.Eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(dirs) == 2 },
+		2*time.Second, 10*time.Millisecond, "strategy starts its own worker instead of joining zorvex's")
+	close(release)
+	wg.Wait()
+	assert.NotContains(t, other.Body.String(), "HUM ANSWER", "nor is either served another folder's recovered answer")
 }
