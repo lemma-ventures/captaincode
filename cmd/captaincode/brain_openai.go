@@ -795,6 +795,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		chunk(map[string]any{"reasoning_content": s}, nil)
 	})
 	defer feed.close()
+	feed.narrate(req.ws.Steer, lastUserTurn(prompt), b.narrateSteps)
 	// A background /parallel run that landed since the last turn is announced
 	// here - on the progress channel, never spliced into the answer text.
 	// …but never into a detached round's own stream (a /repeat or /parallel

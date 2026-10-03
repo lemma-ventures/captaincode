@@ -608,6 +608,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// the only thing standing between the user and an apparently dead turn.
 	feed := newProgressFeed("frontier", status)
 	defer feed.close()
+	feed.narrate(req.ws.Steer, lastUserTurn(prompt), b.narrateSteps)
 	// Through the reroute net like every other leg: a rate-limited claude
 	// cools down and the task moves to the next-best leg (codex-cli), the
 	// way a /team /frontier plan already did. Calling the frontier runner

@@ -325,6 +325,14 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 					onStatus(s)
 				}
 			}
+			if ev.Type == "item.completed" && codexItemIsTool(it.Type) {
+				st := Step{Tool: it.Type, Input: unwrapShell(pickDetail(ev.Item, "command")), Output: it.AggregatedOutput}
+				if st.Input == "" {
+					st.Input = strings.TrimPrefix(codexItemStatus(it.Type, ev.Item), "⚙ ")
+				}
+				st.Failed = it.Status == "failed" || (it.ExitCode != nil && *it.ExitCode != 0)
+				steer.RecordStep(st)
+			}
 			if ev.Type == "item.completed" && onStatus != nil && it.Type == "command_execution" {
 				code := 0
 				if it.ExitCode != nil {
