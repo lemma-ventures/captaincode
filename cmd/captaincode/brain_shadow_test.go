@@ -404,3 +404,26 @@ func TestWhyPrintsTheShadow(t *testing.T) {
 	assert.Contains(t, out, "value → glm (trivial/editorial)")
 	assert.Contains(t, out, "shadow: jev-1.13.0 240ms · class trivial 0.93 ✓ · leg free 0.55 ✗ (glm by value)")
 }
+
+// The sampled triage shadow lands its row and its charge and lets go of
+// b.mu. It used to call the charge hook - which takes b.mu - while still
+// holding it, and the brain stopped answering (2026-10-03).
+func TestTheTriageShadowReleasesTheBrainLock(t *testing.T) {
+	t.Setenv("CAPTAIN_TRIAGE_SHADOW_RATE", "1")
+	b := teamBrain()
+	noDirector(t, b)
+	b.jev = jevFakeServer(t, 200, map[string]string{"class": "medium", "domain": "code"}, 0.9).client
+	b.mu.Lock() // the caller holds it, as route does
+	b.sampleTriageShadow("rename the helper in pkg/a.go", captaincode.TriageResult{Class: captaincode.ClassMedium, Domain: captaincode.DomainCode, By: "heuristic"})
+	b.mu.Unlock()
+
+	landed := func() bool {
+		if !b.mu.TryLock() {
+			return false
+		}
+		defer b.mu.Unlock()
+		return len(b.ledger.Shadows) == 1
+	}
+	require.Eventually(t, landed, 2*time.Second, 10*time.Millisecond, "the shadow row never landed with b.mu free")
+	assert.Equal(t, 1, jevCallsLabelled(b, "shadow"), "the jev call is charged")
+}
