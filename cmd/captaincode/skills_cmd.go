@@ -89,6 +89,12 @@ func skillsSync(args []string) {
 	scripts := fs.String("allow-scripts", "", "comma-separated skills whose scripts/ directory ships too - arbitrary code, allowlisted by name")
 	dry := fs.Bool("dry-run", false, "fetch and vet, write nothing")
 	_ = fs.Parse(args)
+	// Flags stop at the first bare word, so `sync openai/plugins --commit x`
+	// dropped both and synced anthropics/skills at its head instead
+	// (2026-10-03). A bare word is refused, not guessed at.
+	if fs.NArg() > 0 {
+		fatal(fmt.Errorf("unexpected argument %q - name the catalog with --source (%s)", fs.Arg(0), strings.Join(skillSourceNames(), ", ")))
+	}
 
 	src, ok := captaincode.FindSkillSource(*source)
 	if !ok {
