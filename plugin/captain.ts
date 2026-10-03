@@ -17,6 +17,7 @@
 // is listed in plugin/README.md beside what it replaces.
 
 import { appendFileSync } from "node:fs"
+import { customCommands, unknownCommand } from "./commands"
 import { spawnSync } from "node:child_process"
 
 const BRAIN = process.env["CAPTAIN_BRAIN_URL"] ?? "http://127.0.0.1:14097"
@@ -148,6 +149,9 @@ function log(line: string) {
 
 let legs: string[] | null = null
 let legsAt = 0
+// Every /word the brain accepts at the head of a turn (GET /v1/commands).
+// Null until the brain has answered: with no list, nothing is refused.
+let commands: Set<string> | null = null
 
 // legPattern builds the forced-prefix matcher from the legs the brain actually
 // serves, longest first so `/codex-cli` is never read as `/codex`.
@@ -166,6 +170,11 @@ async function refreshLegs(): Promise<void> {
     const body = (await r.json()) as { data?: { id?: string }[] }
     const ids = (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === "string")
     if (ids.length) legs = ids
+    const c = await fetch(`${BRAIN}/v1/commands`, { signal: AbortSignal.timeout(2000) })
+    if (c.ok) {
+      const words = ((await c.json()) as { commands?: string[] }).commands ?? []
+      if (words.length) commands = new Set(words.map((w) => w.toLowerCase()))
+    }
   } catch {
     /* brain down: the static roster still routes forced prefixes */
   }
@@ -291,6 +300,12 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     let text: string = textPart?.text ?? ""
     const wrapped = text.length > 1 && text.startsWith('"') && text.endsWith('"')
     if (wrapped) text = text.slice(1, -1)
+
+    const unknown = unknownCommand(text, commands, customCommands(input?.directory ?? process.env["CAPTAIN_CWD"] ?? ""))
+    if (unknown) {
+      log(`refused unknown command: ${text.slice(0, 40)}`)
+      throw new Error(unknown)
+    }
 
     // Control words answered OUT OF BAND are never queued as turns: the
     // brain acts the moment the word is typed, the toast says what it did,

@@ -1,6 +1,8 @@
 package captaincode
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,4 +35,28 @@ func TestFrontierBeforeALegIsAModifier(t *testing.T) {
 	// Before a control word it hoists past it, as every modifier does.
 	assert.Equal(t, "/team /frontier plan the migration", HoistLeading("/frontier /team plan the migration"))
 	assert.Equal(t, "team", LeadingForced("/team /frontier plan the migration"))
+}
+
+// The plugin refuses a turn whose head is not one of these; every word the
+// brain acts on must be here, or a real command would be refused.
+func TestSlashCommandsHoldEveryWordTheBrainActsOn(t *testing.T) {
+	got := map[string]bool{}
+	for _, w := range SlashCommands() {
+		got[w] = true
+	}
+	for _, w := range []string{"auto", "frontier", "quality", "q", "save", "speed", "fast", "oss", "deterministic", "noslop",
+		"repeat", "parallel", "team", "wf", "workflow", "run", "wfrun", "openshell", "btw", "interrupt", "rename",
+		"captain", "help", "init", "euclid", "context", "claude", "codex-cli", "grok-max"} {
+		if !got[w] {
+			t.Errorf("/%s is missing: the plugin would refuse it", w)
+		}
+	}
+	for _, m := range []*regexp.Regexp{modifierWordRe, controlHeadRe} {
+		src := m.String()
+		for _, w := range strings.Split(src[strings.Index(src, "^/(")+3:strings.Index(src, ")\\b")], "|") {
+			if !got[w] {
+				t.Errorf("/%s is parsed by %s but missing from SlashCommands", w, m)
+			}
+		}
+	}
 }

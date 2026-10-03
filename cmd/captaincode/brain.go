@@ -221,6 +221,10 @@ func cmdBrain(args []string) {
 	// model wrappers (claude via claude -p). See brain_openai.go.
 	mux.HandleFunc("/v1/chat/completions", b.chatCompletions)
 	mux.HandleFunc("/v1/models", b.models)
+	// Every /word a turn may start with, for the plugin's unknown-command check.
+	mux.HandleFunc("/v1/commands", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]any{"commands": captaincode.SlashCommands()})
+	})
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		// cwd is the brain's own folder. It no longer pins anything: every
 		// request names its workspace (brain_workspace.go), so a launcher in

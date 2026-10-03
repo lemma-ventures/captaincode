@@ -126,3 +126,32 @@ func headFollows(rest string) bool {
 	}
 	return controlHeadRe.MatchString(rest) || leadingLeg(rest) != ""
 }
+
+// slashControlWords are the words a turn may start with besides a leg: the
+// modifiers above, the control words, and the brain's own commands. The
+// plugin refuses a turn that starts with any other /word and suggests the
+// nearest (2026-10-03: /fontier ×3 and /codex-ai ran on auto routing with the
+// word left in the text, and the lane the user meant never applied).
+var slashControlWords = []string{
+	// modifiers (modifierWordRe)
+	"quality", "q", "best", "speed", "fast", "save", "cheap", "oss", "open",
+	"deterministic", "det", "adi", "noslop", "frontier",
+	// control words (controlHeadRe and the workflow compiler)
+	"repeat", "parallel", "team", "wf", "workflow", "run", "wfrun", "openshell",
+	// the brain's and the plugin's own commands
+	"btw", "interrupt", "rename", "captain", "help", "init", "euclid", "context",
+}
+
+// SlashCommands is every /word a turn may start with: the control words and
+// every active leg.
+func SlashCommands() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, w := range append(append([]string{"auto"}, slashControlWords...), LegIDs()...) {
+		if w = strings.ToLower(w); w != "" && !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	return out
+}

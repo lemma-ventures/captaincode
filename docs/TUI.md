@@ -24,6 +24,8 @@ Everything below narrows or steers that.
 
 Modifiers compose in any order: `/oss /repeat 5 <task>`, `/team /deterministic <task>`, `/noslop /openshell <task>`.
 
+A turn that starts with a `/word` captain does not know is refused before anything is sent, with the nearest commands: "/fontier is not a command - nothing was sent. Did you mean /frontier?". Remove the slash to send the text as is. opencode's own commands and your custom command files are never refused.
+
 `/frontier`, `/quality` and `/save` are lanes: each counts where its last 40
 turns went and sends the next to the leg furthest behind an equal share, among
 the legs scoring within 85% of the lane's best. The best leg runs a lane's
