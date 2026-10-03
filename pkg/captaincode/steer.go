@@ -47,6 +47,9 @@ type Steer struct {
 	announce    func(string)   // writes into the turn's visible output (the completion writer sets it)
 	briefs      map[Leg]string // what each worker of the turn was assigned (team, workflow) - how a note is routed
 	taskID      string         // the turn's task identity once opened (M1.2): joins a note's shadow to the task's outcome
+
+	smu   sync.Mutex // guards steps
+	steps []Step     // finished tool calls, for the narrator (steps.go)
 }
 
 type steerChannel struct {

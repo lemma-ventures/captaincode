@@ -420,10 +420,12 @@ type brain struct {
 
 	// roundSummaryFn stubs the per-round digest in tests; nil → compaction leg.
 	roundSummaryFn func(text string) string
-	rmu            sync.Mutex
-	repeats        map[string]*repeatThread // detached /repeat threads
-	pmu            sync.Mutex
-	parallels      map[string]*parallelRun // detached /parallel runs
+	// narrateFn stubs the step narrator in tests (brain_narrate.go).
+	narrateFn func(task string, steps []captaincode.Step) ([]string, error)
+	rmu       sync.Mutex
+	repeats   map[string]*repeatThread // detached /repeat threads
+	pmu       sync.Mutex
+	parallels map[string]*parallelRun // detached /parallel runs
 	// classifyLLMFn stubs triage tier 1 (free-leg classify) in tests.
 	classifyLLMFn func(task string) (captaincode.Class, captaincode.Domain, error)
 	// jev is triage tier 1 on the decision leg (TypeSafe System One) when

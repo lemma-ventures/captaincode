@@ -1110,6 +1110,11 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 			}
 			if p.Type == "tool" && d.OnStatus != nil && toolSeen[p.ID] && !toolDone[p.ID] && (p.State.Status == "completed" || p.State.Status == "error") {
 				toolDone[p.ID] = true
+				out := p.State.Output
+				if p.State.Error != "" {
+					out = p.State.Error
+				}
+				d.Steer.RecordStep(Step{Tool: p.Tool, Input: stepInput(p.State.Title, p.State.Input), Output: out, Failed: p.State.Status == "error"})
 				if p.Tool == "bash" || p.State.Status == "error" {
 					out := p.State.Output
 					if p.State.Status == "error" && p.State.Error != "" {
@@ -2319,6 +2324,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	observed := ""                  // the model claude reported running
 	blockOpen := false              // a text block is mid-stream: deltas continue the same paragraph
 	shellCalls := map[string]bool{} // tool_use ids of Bash calls: their results are worth a peek
+	calls := map[string]Step{}      // tool_use id → what it ran, recorded as a step on its result
 	for sc.Scan() {
 		prog.touch() // progress stamp: any output line counts as activity
 		var ev claudeStreamLine
@@ -2334,6 +2340,11 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 					continue
 				}
 				prog.toolEnd()
+				if st, ok := calls[blk.ToolUseID]; ok {
+					st.Output, st.Failed = toolResultText(blk.Content), blk.IsError
+					steer.RecordStep(st)
+					delete(calls, blk.ToolUseID)
+				}
 				if onStatus != nil && (shellCalls[blk.ToolUseID] || blk.IsError) {
 					if s := Outcome(toolResultText(blk.Content), 0, blk.IsError); s != "" {
 						onStatus(s)
@@ -2400,6 +2411,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 				if blk.Name == "Bash" {
 					shellCalls[blk.ID] = true
 				}
+				calls[blk.ID] = Step{Tool: blk.Name, Input: stepInput("", blk.Input)}
 				if onStatus == nil {
 					continue
 				}
