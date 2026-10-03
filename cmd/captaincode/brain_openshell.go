@@ -42,6 +42,10 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	}
 	budgetCheckCancel()
 	raw := lastUserRaw(req.Messages)
+	// Every sandbox worker gets the plain-writing rules inline (/noslop, or
+	// on by default): the turn's own record keeps the prompt as typed.
+	req.ws.Asked = captaincode.AskedSkills(raw)
+	rules := openShellRules(req.ws)
 	if req.WorkflowID != "" {
 		writeErr(w, http.StatusBadRequest, "openshell: cached workflows are unsupported; provide explicit /openshell stages")
 		return
@@ -60,7 +64,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 		writeErr(w, http.StatusBadRequest, "openshell: /team /openshell plans its own workers; drop /team to run typed /openshell stages")
 		return
 	}
-	if openShellTaskEmpty(raw) || utf8.RuneCountInString(prompt) > 16384 || strings.ContainsRune(prompt, 0) {
+	if openShellTaskEmpty(raw) || utf8.RuneCountInString(prompt+rules) > 16384 || strings.ContainsRune(prompt, 0) {
 		writeErr(w, http.StatusBadRequest, "openshell: provide a user task and at most 16384 characters of conversation; host compaction is disabled")
 		return
 	}
@@ -206,17 +210,17 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 			}
 			return b.ledger.Save()
 		}
-		res, err = b.runPlannedOpenShellTeam(ctx, req.ws, lastUserTurn(prompt), openShellHistory(req.Messages), status, keep)
+		res, err = b.runPlannedOpenShellTeam(ctx, req.ws, lastUserTurn(prompt), openShellHistory(req.Messages)+rules, status, keep)
 	} else if len(wf.Stages) > 0 {
-		res, err = b.runOpenShellWorkflow(ctx, req.ws, wf, openShellHistory(req.Messages))
+		res, err = b.runOpenShellWorkflow(ctx, req.ws, wf, openShellHistory(req.Messages)+rules)
 	} else if b.runWorkerFn != nil {
 		var leg captaincode.Leg
-		leg, res, err = b.runWorkerFn(captaincode.LegOpenShell, prompt, nil, nil)
+		leg, res, err = b.runWorkerFn(captaincode.LegOpenShell, prompt+rules, nil, nil)
 		if leg != captaincode.LegOpenShell {
 			err = errors.New("openshell: refused a result from a host worker")
 		}
 	} else {
-		res, err = req.ws.RunOpenShell(ctx, prompt)
+		res, err = req.ws.RunOpenShell(ctx, prompt+rules)
 	}
 	b.mu.Lock()
 	if ctx.Err() != nil || !req.ws.Steer.Interrupted().IsZero() {
@@ -253,6 +257,16 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	turnSpend.add(req.ws.Steer, captaincode.LegOpenShell, res)
 	emit(text)
 	finish()
+}
+
+// openShellRules is clarityRules as a block of a sandbox prompt, which is
+// laid out in "[role]\ntext\n\n" blocks.
+func openShellRules(ws captaincode.Workspace) string {
+	r := strings.TrimSpace(clarityRules(ws))
+	if r == "" {
+		return ""
+	}
+	return r + "\n\n"
 }
 
 // openShellTeamTurn reports a "/team /openshell <task>" turn: a team whose

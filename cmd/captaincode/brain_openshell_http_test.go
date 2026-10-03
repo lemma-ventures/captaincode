@@ -77,7 +77,7 @@ func TestOpenShellHTTPPersistsBeforeResponding(t *testing.T) {
 				b.runWorkerFn = func(leg captaincode.Leg, prompt string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
 					calls++
 					assert.Equal(t, captaincode.LegOpenShell, leg)
-					assert.Equal(t, "[user]\nfix parser\n\n", prompt)
+					assert.Equal(t, "[user]\nfix parser\n\n"+openShellRules(captaincode.Workspace{}), prompt)
 					stored, err := captaincode.LoadLedger()
 					require.NoError(t, err)
 					require.Len(t, stored.AttemptStates, 1)
@@ -369,7 +369,7 @@ func TestOpenShellHTTPWorkflowPersistsAndCancels(t *testing.T) {
 						require.Len(t, wf.Stages, 2)
 						assert.Equal(t, "edit b", wf.Stages[1].Legs[0].Prompt)
 					}
-					assert.Equal(t, "[system]\nkeep public APIs stable\n\n", history)
+					assert.Equal(t, "[system]\nkeep public APIs stable\n\n"+openShellRules(captaincode.Workspace{}), history)
 					stored, err := captaincode.LoadLedger()
 					require.NoError(t, err)
 					require.Len(t, stored.AttemptStates, 1)
@@ -433,7 +433,7 @@ func TestOpenShellHTTPSingleReviewUsesWorkflowBoundary(t *testing.T) {
 		require.Len(t, wf.Stages, 1)
 		require.Len(t, wf.Stages[0].Legs, 1)
 		assert.Equal(t, "--review inspect parser", wf.Stages[0].Legs[0].Prompt)
-		assert.Empty(t, history)
+		assert.Equal(t, openShellRules(captaincode.Workspace{}), history, "no conversation: only the plain-writing rules")
 		res := openShellHTTPResult(dir)
 		res.Export.Manifest.ChangedFiles = nil
 		res.Text = "verified unchanged snapshot; nothing to apply"

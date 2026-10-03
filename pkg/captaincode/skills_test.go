@@ -540,3 +540,35 @@ func TestFormatCatalogFitsItsSourcesAndFootnotes(t *testing.T) {
 		t.Errorf("footnote with no skill it is about:\n%s", out)
 	}
 }
+
+// /noslop stocks the plain-writing skill whatever the task says, and only
+// when it is a word of the turn - not a path that starts with it.
+func TestNoslopStocksThePlainWritingSkill(t *testing.T) {
+	t.Setenv(SkillsAlwaysEnv, "off")
+	cat := []Skill{
+		{Name: "pdf", Description: "Read, merge, split and fill PDF documents and forms"},
+		{Name: "public-clarity-output", Description: "Workers format output in ASD-STE100 simplified English"},
+	}
+	picks := SelectSkills(cat, "/noslop write the design doc", ClassMedium, DomainEditorial, 8)
+	if len(picks) != 1 || picks[0].Skill.Name != "public-clarity-output" || picks[0].Why != "asked for with /noslop" {
+		t.Fatalf("/noslop at the head stocks the skill; got %+v", picks)
+	}
+	if picks := SelectSkills(cat, "write the design doc", ClassMedium, DomainEditorial, 8, AskedSkills("/noslop write the design doc")...); len(picks) != 1 {
+		t.Errorf("the word read from the turn as typed stocks it too; got %+v", picks)
+	}
+	if got := SelectSkills(cat, "write the doc, keep it plain /noslop", ClassMedium, DomainEditorial, 8); len(got) != 1 {
+		t.Errorf("a mid-prompt /noslop counts; got %+v", got)
+	}
+	if got := SelectSkills(cat, "tidy /noslop/notes.md", ClassMedium, DomainEditorial, 8); got != nil {
+		t.Errorf("a path is not the word; got %+v", got)
+	}
+	if got := SelectSkills(cat[:1], "/noslop write the design doc", ClassMedium, DomainEditorial, 8); got != nil {
+		t.Errorf("a skill the catalog does not hold stocks nothing; got %+v", got)
+	}
+}
+
+func TestNoslopHoistsPastAControlWord(t *testing.T) {
+	if got := HoistLeading("/noslop /repeat 3 tighten the README"); got != "/repeat 3 /noslop tighten the README" {
+		t.Errorf("got %q", got)
+	}
+}

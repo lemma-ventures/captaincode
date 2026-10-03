@@ -33,7 +33,8 @@ import (
 // stockShelf selects and stages the skills for one worker. The returned
 // shelf must be Removed by the caller (defer at the dispatch site); a nil
 // shelf is the normal, empty case and Remove on it is a no-op.
-func (b *brain) stockShelf(dir, task string) *captaincode.Shelf {
+func (b *brain) stockShelf(ws captaincode.Workspace, task string) *captaincode.Shelf {
+	dir := ws.Dir
 	if dir == "" {
 		return nil
 	}
@@ -42,7 +43,7 @@ func (b *brain) stockShelf(dir, task string) *captaincode.Shelf {
 		return nil
 	}
 	tr := captaincode.TriageTask(task)
-	picks := captaincode.SelectSkills(cat, task, tr.Class, tr.Domain, captaincode.SkillCap())
+	picks := captaincode.SelectSkills(cat, task, tr.Class, tr.Domain, captaincode.SkillCap(), ws.Asked...)
 	if len(picks) == 0 {
 		return nil
 	}

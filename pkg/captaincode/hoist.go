@@ -19,7 +19,7 @@ var (
 	// /claude X > /grok > /codex-cli" asks each leg for its most performant
 	// settings, it does not ask claude to answer with "/claude X" as its
 	// text (live 2026-09-21).
-	modifierWordRe = regexp.MustCompile(`(?i)^/(quality|q|best|speed|fast|save|cheap|oss|open|deterministic|det|adi|frontier)\b[\s:]*`)
+	modifierWordRe = regexp.MustCompile(`(?i)^/(quality|q|best|speed|fast|save|cheap|oss|open|deterministic|det|adi|noslop|frontier)\b[\s:]*`)
 	controlHeadRe  = regexp.MustCompile(`(?i)^/(repeat|parallel|team|frontier|wf|run)\b[\s:]*`)
 	countRe        = regexp.MustCompile(`^\d+\s*`)
 )

@@ -106,7 +106,8 @@ func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief s
 		workerContext(ws) +
 		deliverableContract +
 		callbackContract(ws, leg) +
-		securityContract()
+		securityContract() +
+		clarityContract(ws)
 }
 
 // skills, when the stage staged a shelf, adds M3.9's second question to the
@@ -286,7 +287,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		fmt.Printf("captain brain: %s wrapper running (team single worker)…\n", wk.Leg)
 		feed := newProgressFeed(string(wk.Leg), status)
 		req.ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
-		shelf := b.stockShelf(req.ws.Dir, task) // M3.9: one worker, the user's own directory
+		shelf := b.stockShelf(req.ws, task)     // M3.9: one worker, the user's own directory
 		defer shelf.Remove()
 		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg), nil, feed.note)
 		feed.close()
@@ -373,7 +374,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 			ws = req.ws.At(wts[i].Dir)
 		}
 		if isolated {
-			if sh := b.stockShelf(ws.Dir, task); sh != nil {
+			if sh := b.stockShelf(ws, task); sh != nil {
 				shelfMu.Lock()
 				shelves = append(shelves, sh)
 				shelfMu.Unlock()
@@ -429,7 +430,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 			}
 		}
 	} else {
-		if sh := b.stockShelf(req.ws.Dir, task); sh != nil {
+		if sh := b.stockShelf(req.ws, task); sh != nil {
 			shelves = append(shelves, sh)
 		}
 		for i, wk := range plan.Workers {
@@ -597,11 +598,11 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// the very turn that motivated it (a frontier turn, 2026-09-22), and a
 	// frontier worker - the one trusted with the largest changes - was the
 	// only one never asked to put security first.
-	prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract()
+	prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract() + clarityContract(req.ws)
 	// M3.9: the shelf a solo worker gets, staged in the user's directory for
 	// the turn. It carries the always-on security-audit skill, which a
 	// frontier worker otherwise never saw.
-	shelf := b.stockShelf(req.ws.Dir, lastUserTurn(prompt))
+	shelf := b.stockShelf(req.ws, lastUserTurn(prompt))
 	defer shelf.Remove()
 	stocked := shelf.Refs()
 	// Frontier thinks for minutes before its first token - the progress feed is

@@ -59,7 +59,7 @@ func TestOpenShellTeamTurnRunsTheDirectorsPlanInSandboxes(t *testing.T) {
 					planned++
 					assert.Equal(t, dir, d)
 					assert.Equal(t, "update a and b", task)
-					assert.Equal(t, "[system]\nkeep public APIs stable\n\n", history)
+					assert.Equal(t, "[system]\nkeep public APIs stable\n\n"+openShellRules(captaincode.Workspace{}), history)
 					stored, err := captaincode.LoadLedger()
 					require.NoError(t, err)
 					require.Len(t, stored.AttemptStates, 1, "the task is saved before the director is asked")
@@ -69,7 +69,7 @@ func TestOpenShellTeamTurnRunsTheDirectorsPlanInSandboxes(t *testing.T) {
 				b.runOpenShellWorkflowFn = func(_ context.Context, ws captaincode.Workspace, wf captaincode.Workflow, history string) (captaincode.Result, error) {
 					assert.Equal(t, dir, ws.Dir)
 					assert.Equal(t, plan.Workflow, wf)
-					assert.Equal(t, "[system]\nkeep public APIs stable\n\n", history)
+					assert.Equal(t, "[system]\nkeep public APIs stable\n\n"+openShellRules(captaincode.Workspace{}), history)
 					stored, err := captaincode.LoadLedger()
 					require.NoError(t, err)
 					require.Len(t, stored.AttemptStates, 1)

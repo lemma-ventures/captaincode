@@ -170,7 +170,7 @@ func messageText(raw json.RawMessage) string {
 // list silently lagged the roster - deepseek/gemini/kimi were missing, so
 // "/gemini do X" reached the worker with its prefix (found 2026-09-09).
 var captainDirective = regexp.MustCompile(`(?i)^\s*/(` +
-	strings.Join(longestFirst(append(append([]string{"quality", "q", "best", "speed", "fast", "save", "cheap", "team", "frontier", "btw", "interrupt"}, captaincode.PoolWords...), legIDs()...)), "|") +
+	strings.Join(longestFirst(append(append([]string{"quality", "q", "best", "speed", "fast", "save", "cheap", "team", "frontier", "btw", "interrupt", "noslop"}, captaincode.PoolWords...), legIDs()...)), "|") +
 	`)\b[\s:]+`)
 
 // longestFirst orders alternation so a hyphenated name (codex-cli) is tried
@@ -412,6 +412,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.ws.Effort = captaincode.DecideEffort(prefer, tr0.Class, captaincode.Leg(req.Model), tr0.Irreversible, 1)
 		// /oss and /deterministic: which legs the turn may run on (pool.go).
 		req.ws.Pool = captaincode.MidPromptPool(lastUserRaw(req.Messages))
+		// /noslop and the other skill words, read as typed for the same reason.
+		req.ws.Asked = captaincode.AskedSkills(lastUserRaw(req.Messages))
 	}
 
 	// A typed workflow OUTRANKS the forced pseudo-model short-circuits: the
@@ -601,7 +603,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		prompt = titlePrompt(lastUserTurn(prompt))
 	} else {
 		prompt = b.fitPrompt(req.ws, leg, prompt, budget)
-		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg) + securityContract()
+		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + clarityContract(req.ws)
 	}
 	// One execution per (leg, task): the fork re-issues a turn's request, and a
 	// retry of an 8-minute run used to start a SECOND 8-minute run while the
@@ -659,7 +661,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// work at all.
 	var shelf *captaincode.Shelf
 	if !titleReq {
-		shelf = b.stockShelf(req.ws.Dir, lastUserTurn(prompt))
+		shelf = b.stockShelf(req.ws, lastUserTurn(prompt))
 		defer shelf.Remove()
 	}
 	stocked := shelf.Refs()
