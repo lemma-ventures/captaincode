@@ -174,16 +174,18 @@ func (b *brain) sampleTriageShadow(task string, tr captaincode.TriageResult) {
 			r.sh.Stamp(captaincode.PointIrreversible, fmt.Sprint(tr.Irreversible), tr.By)
 		}
 		b.mu.Lock()
-		defer b.mu.Unlock()
 		b.ledger.RecordShadow(captaincode.ShadowRecord{
 			Point:  captaincode.PointClass,
 			Points: []string{captaincode.PointClass, captaincode.PointDomain, captaincode.PointIrreversible},
 			TaskID: taskID, Task: head, Shadow: *r.sh,
 		})
+		b.mu.Unlock()
+		// The charge takes b.mu itself, and saves the row with it. Called
+		// with the lock still held it waited on its own goroutine forever,
+		// and every sidebar poll and finishing turn queued behind it: the
+		// 2026-10-03 wedge (18,508 goroutines in Lock, none holding it).
 		if hook := b.chargeOwnTask("jev triage shadow on a confident turn"); hook != nil {
 			hook(captaincode.LegJev, "shadow", r.res, r.err)
-		} else if err := b.ledger.Save(); err != nil {
-			fmt.Printf("captain brain: triage shadow row not saved: %v\n", err)
 		}
 		if r.err != nil {
 			fmt.Printf("captain brain: jev triage shadow: %v\n", r.err)
