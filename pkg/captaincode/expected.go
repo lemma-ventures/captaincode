@@ -152,10 +152,13 @@ func ExpectedRank(in ExpectedInput) []ExpectedRow {
 			row.CostUSD = cost
 			next := NextEffort(e)
 			row.RepairUSD = EstimateCost(l, in.Tokens)*next.CostMultiplier() + row.Pressure*cRef
-			if row.RepairUSD == 0 {
-				// A free leg's redo is not free to the user: their time. Price
-				// it at the reference so P still matters on free legs.
-				row.RepairUSD = cRef * 0.5
+			// A redo is never cheaper than the user's time, on any leg. Priced
+			// at the leg's own tokens, a cheap per-token leg's redo was ~$0.002,
+			// so P barely counted: step won medium code work at p=0.41 over the
+			// value leader, and ran 14 and 17 minutes on a gate fix and its
+			// "continue" (2026-10-03). Free legs were already priced this way.
+			if floor := cRef * 0.5; row.RepairUSD < floor {
+				row.RepairUSD = floor
 			}
 			row.Expected = row.CostUSD + (1-row.P)*row.RepairUSD
 			if tol > 0 && row.LatencyMs > 0 && time.Duration(row.LatencyMs)*time.Millisecond > tol {

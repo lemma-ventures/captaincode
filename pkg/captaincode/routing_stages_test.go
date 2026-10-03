@@ -344,3 +344,16 @@ func TestSoloVerifyHelpers(t *testing.T) {
 	assert.Equal(t, 1, l.SettleOutcomes(time.Now()))
 	assert.Equal(t, DecidedByCommit, l.OutcomeFor("t").DecidedBy)
 }
+
+// A redo costs the user's time on every leg. Priced at a cheap leg's own
+// tokens it was ~$0.002, so a leg that fails one task in three still won on
+// price (step over cursor on a gate fix, 2026-10-03).
+func TestARedoIsPricedAtTheUsersTimeOnACheapLegToo(t *testing.T) {
+	cheap := ExpectedRow{}
+	rows := ExpectedRank(ExpectedInput{Task: "fix the P3 driver API mismatches", Class: ClassMedium, Domain: DomainCode,
+		Legs: []Leg{LegStep}, Tokens: 16_000, Now: time.Now(), BaseEffort: EffortMedium})
+	require.Len(t, rows, 1)
+	cheap = rows[0]
+	assert.Greater(t, cheap.CostUSD, 0.0, "step is paid per token")
+	assert.GreaterOrEqual(t, cheap.RepairUSD, costRef()*0.5, "its redo costs at least the user's time")
+}

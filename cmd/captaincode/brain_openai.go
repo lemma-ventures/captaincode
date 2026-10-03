@@ -127,6 +127,29 @@ func promptPeek(s string) string {
 	return s
 }
 
+// routeTaskFor is what a turn is routed on. A follow-up ("continue where we
+// left off") is routed on the request it continues, the last user turn
+// before it that is not itself a follow-up, so the work's difficulty decides
+// the leg and not four words.
+func routeTaskFor(task string, msgs []oaiMessage) (string, bool) {
+	if !captaincode.IsFollowUp(task) {
+		return task, false
+	}
+	seen := 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != "user" {
+			continue
+		}
+		if seen++; seen == 1 {
+			continue // the follow-up itself
+		}
+		if prev := strings.TrimSpace(stripCaptainDirectives(messageText(msgs[i].Content))); prev != "" && !captaincode.IsFollowUp(prev) {
+			return prev + "\n\n" + task, true
+		}
+	}
+	return task, true
+}
+
 // messageText flattens OpenAI content (string or content-part array) to text.
 // lastUserIndex is the index of the last user message, -1 when none.
 func lastUserIndex(msgs []oaiMessage) int {
@@ -488,8 +511,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// its UI for the whole decision: measured p50 2.9s, p90 25s, max 44s on our
 	// own traffic. This path never does.
 	if req.Model == "auto" && !titleReq {
-		task := lastUserTurn(prompt)
-		if resp, fail := b.decideRoute(routeReq{Task: task, Prefer: captaincode.MidPromptPrefer(lastUserRaw(req.Messages)), ws: req.ws}); fail != nil {
+		task, followUp := routeTaskFor(lastUserTurn(prompt), req.Messages)
+		if resp, fail := b.decideRoute(routeReq{Task: task, followUp: followUp, Prefer: captaincode.MidPromptPrefer(lastUserRaw(req.Messages)), ws: req.ws}); fail != nil {
 			req.Model = string(b.autoFallbackLeg())
 			fmt.Printf("captain brain: auto could not route (%s) → %s\n", fail.msg, req.Model)
 		} else {

@@ -89,14 +89,14 @@ deepseek, free. Frontier legs: claude, codex-cli, grok-max.
 
 Ranked by how much they cost today.
 
-1. **Expected cost favours cheap paid legs, whatever their failure rate.** A
+1. **Fixed 2026-10-03: expected cost favoured cheap paid legs, whatever their failure rate.** A redo is now priced at no less than the user's time (half the reference cost) on every leg. Replayed on the live history, a medium code task that went to step now goes to cursor (P 0.93), then glm and kimi; step ranks fourth. The original finding: A
    redo on a per-token leg is priced at that leg's own tokens: step costs about
    $0.0024 for 16k tokens. A redo on a subscription or $0 leg is priced at
    $0.25. So step's expected cost stays at $0.003 to $0.008 even at
    P(success) = 0.41, and cursor would need P above about 0.98 to win. Live: a
    "commit and push" went to step at P = 0.41 over cursor, the value leader.
    The log often reads "value-ranked gemini > cursor > step" and step runs.
-2. **Short means trivial, whatever the conversation.** "continue where we
+2. **Fixed 2026-10-03: short meant trivial, whatever the conversation.** A follow-up ("continue", "go on", "do it", "yes", up to 8 words) is now routed on the last real request before it, and is never rated below medium, even after a second opinion. The original finding: "continue where we
    stopped" is four words, so trivial at confidence 0.65, above the bar for a
    second opinion from the free leg. jev said medium at 0.57, under its bar,
    so it was dropped. The turn ran on step at low effort with a 48k-character
@@ -119,11 +119,8 @@ Ranked by how much they cost today.
 
 Proposals, not implemented:
 
-- Price a redo by the user's time on every leg, not by the leg's own tokens,
-  so a low P(success) costs the same on step as on cursor.
-- Rate a short follow-up ("continue", "go on", "do it") by the conversation
-  it continues: inherit the previous turn's class instead of calling it
-  trivial.
+- Done: price a redo by the user's time on every leg.
+- Done: route a short follow-up on the request it continues.
 - When jev rates a prompt harder than the heuristic, take the harder class
   even under jev's confidence bar: a wrong escalation costs money, a wrong
   de-escalation costs the turn.

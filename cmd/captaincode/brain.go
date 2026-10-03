@@ -2264,6 +2264,9 @@ type routeReq struct {
 	Prefer string `json:"prefer,omitempty"`
 	Forced string `json:"forced,omitempty"` // force a specific leg (skips the director)
 	ws     captaincode.Workspace
+	// followUp: the turn only continued the conversation's work, and Task
+	// carries the request it continues (routeTaskFor). Never rated trivial.
+	followUp bool
 	// planOnly: the route is asked what it would do, and nothing is sent
 	// (the task API's plan op). A lane does not count it as a turn.
 	planOnly bool
@@ -2465,6 +2468,11 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	if triageEnabled() && req.Forced == "" && req.Prefer == "" &&
 		len(captaincode.NamedAssignees(req.Task)) == 0 && !captaincode.TaskNeedsVision(req.Task) {
 		tr := captaincode.TriageTask(req.Task)
+		if req.followUp && tr.Class == captaincode.ClassTrivial {
+			// Going on with the work is at least medium, whatever the
+			// request it continues read as on its own.
+			tr.Class, tr.Why = captaincode.ClassMedium, tr.Why+" · follow-up: at least medium"
+		}
 		defer func() { *out = tr }()
 		// The heuristic's own confidence, before any tier-1 answer replaces
 		// it: what decides whether this turn was in the band at all, and so
@@ -2493,6 +2501,9 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				} else {
 					fmt.Printf("captain brain: %v - heuristic stands\n", err)
 				}
+			}
+			if req.followUp && tr.Class == captaincode.ClassTrivial {
+				tr.Class = captaincode.ClassMedium // a second opinion does not undo the follow-up floor
 			}
 			if heuristicConf < jevConsultBelow() {
 				// The band, read off the heuristic rather than off whatever

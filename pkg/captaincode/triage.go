@@ -412,3 +412,16 @@ func MidPromptPrefer(task string) string {
 	}
 	return "quality"
 }
+
+// followUpRe matches a turn that only says to go on with the work already in
+// the conversation: "continue where we left off", "go on", "do it", "yes".
+var followUpRe = regexp.MustCompile(`(?i)^\s*(please\s+)?(continue|go\s+on|keep\s+going|carry\s+on|proceed|resume|go\s+ahead|do\s+it|next|yes|yep|ok(ay)?|sounds\s+good|let'?s\s+go|finish\s+it|try\s+again|retry)\b`)
+
+// IsFollowUp reports whether a turn only continues the conversation's work:
+// short, and opening with a go-on word. Such a turn says nothing about the
+// work's difficulty, so it must not be rated on its own four words
+// ("continue where we left off" rated trivial and ran on step at low effort
+// for 17 minutes, 2026-10-03).
+func IsFollowUp(task string) bool {
+	return len(strings.Fields(task)) <= 8 && followUpRe.MatchString(task)
+}
