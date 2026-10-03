@@ -1056,10 +1056,11 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 				Tool  string `json:"tool"`
 				Text  string `json:"text"` // text / reasoning parts carry their content so far
 				State struct {
-					Status string `json:"status"`
-					Title  string `json:"title"`
-					Output string `json:"output"`
-					Error  string `json:"error"`
+					Status string          `json:"status"`
+					Title  string          `json:"title"`
+					Input  json.RawMessage `json:"input"`
+					Output string          `json:"output"`
+					Error  string          `json:"error"`
 				} `json:"state"`
 			}
 			if json.Unmarshal(e.Properties.Part, &p) != nil {
@@ -1111,10 +1112,11 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 			}
 			if p.Type == "tool" && p.State.Status == "running" && !toolSeen[p.ID] {
 				toolSeen[p.ID] = true
+				detail := opencodeToolDetail(p.State.Title, p.State.Input)
 				if d.OnStatus != nil {
-					d.OnStatus(workerStatus(p.Tool, p.State.Title)) // brain progress feed → the TUI
+					d.OnStatus(workerStatus(p.Tool, detail)) // brain progress feed → the TUI
 				} else {
-					fmt.Fprintf(os.Stderr, "\n  ⚙ %s %s\n", p.Tool, p.State.Title)
+					fmt.Fprintf(os.Stderr, "\n  ⚙ %s %s\n", p.Tool, detail)
 				}
 			}
 		case "message.part.delta":

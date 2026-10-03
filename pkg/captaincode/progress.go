@@ -62,6 +62,19 @@ func pickDetail(raw json.RawMessage, keys ...string) string {
 // claudeToolDetail summarizes a claude tool_use input: the path being read,
 // the command being run, the URL being fetched. The command beats its own
 // description - "go test ./..." says more than "run the tests".
+// opencodeToolDetail is what an opencode worker's tool call is doing: its
+// title, or, when the title is still empty (a bash call has none while it
+// starts), the command, file or pattern from its input. Every opencode
+// leg's feed read "⚙ bash" and nothing else, so a 16-minute ds4-flash run
+// looping on test timeouts looked the same as one making progress
+// (2026-10-03).
+func opencodeToolDetail(title string, input json.RawMessage) string {
+	if strings.TrimSpace(title) != "" {
+		return title
+	}
+	return pickDetail(input, "command", "filePath", "file_path", "pattern", "url", "path", "query", "description", "prompt")
+}
+
 func claudeToolDetail(raw json.RawMessage) string {
 	return pickDetail(raw, "file_path", "command", "pattern", "url", "path",
 		"notebook_path", "query", "description", "prompt")
