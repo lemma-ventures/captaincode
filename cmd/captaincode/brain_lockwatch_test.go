@@ -64,3 +64,14 @@ func (s *syncBuffer) String() string {
 	defer s.mu.Unlock()
 	return s.buf.String()
 }
+
+func TestLockWithinGivesUpOnAStuckLock(t *testing.T) {
+	b := &brain{}
+	assert.True(t, b.mu.lockWithin(time.Second), "a free lock is had at once")
+	assert.Zero(t, b.mu.since.Load(), "and released")
+	leakLock(b)
+	start := time.Now()
+	assert.False(t, b.mu.lockWithin(100*time.Millisecond))
+	assert.Less(t, time.Since(start), time.Second)
+	assert.Contains(t, b.mu.holder(), "captaincode.leakLock")
+}

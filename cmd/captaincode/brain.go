@@ -259,8 +259,12 @@ func cmdBrain(args []string) {
 		<-sig
 		stopLife()
 		// Admissions check life under mu: past this point none can start.
-		b.mu.Lock()
-		b.mu.Unlock()
+		// Bounded: a brain whose b.mu is stuck must still end its workers and
+		// exit. Waiting on it forever made SIGTERM a no-op on the wedged brain
+		// of 2026-10-03, and the launcher's restart could not replace it.
+		if !b.mu.lockWithin(shutdownLockWait) {
+			fmt.Printf("captain brain: b.mu still held after %s - stopping without it. Taken at:%s\n", shutdownLockWait, b.mu.holder())
+		}
 		b.steers.mu.Lock()
 		turns := make([]*captaincode.Steer, 0, len(b.steers.live))
 		for s := range b.steers.live {
