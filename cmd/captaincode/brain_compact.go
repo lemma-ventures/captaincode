@@ -147,12 +147,24 @@ func (b *brain) fitPrompt(ws captaincode.Workspace, leg captaincode.Leg, prompt 
 	// Compaction is a provider call the turn pays for, on the whole
 	// conversation - the most expensive overhead call captain makes. Bill it
 	// to the turn it serves rather than letting it run off the books (M1.2).
+	// Compaction runs before the worker starts, so the turn shows nothing
+	// until it ends: a 707k-char conversation took 2.5 minutes of four
+	// summarizer calls with the TUI on a bare spinner (2026-10-03). The
+	// sidebar's activity feed says what is happening.
+	t0 := time.Now()
+	b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(leg), Model: string(leg),
+		Text: fmt.Sprintf("compacting a %dk-char conversation on %s before %s starts", len(prompt)/1000, compactLeg(), leg)})
 	out, err := b.compactPrompt(ws, prompt, budget, b.chargeOverhead(lastUserTurn(prompt)))
 	if err != nil {
 		fmt.Printf("captain brain: compaction failed (%v) - windowing %d → %d chars\n", err, len(prompt), budget)
+		b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(leg), Model: string(leg),
+			Text: "compaction failed - the conversation is cut to fit instead", Ms: time.Since(t0).Milliseconds()})
 		return windowPrompt(prompt, budget)
 	}
 	fmt.Printf("captain brain: %s prompt compacted %d → %d chars (summary + recent turns)\n", leg, len(prompt), len(out))
+	b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(leg), Model: string(leg),
+		Text: fmt.Sprintf("compacted %dk → %dk chars in %s", len(prompt)/1000, len(out)/1000, time.Since(t0).Round(time.Second)),
+		Ms:   time.Since(t0).Milliseconds()})
 	return out
 }
 
