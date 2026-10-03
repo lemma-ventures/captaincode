@@ -239,6 +239,7 @@ func cmdBrain(args []string) {
 	life, stopLife := context.WithCancel(context.Background())
 	defer stopLife()
 	b.life = life
+	go b.watchLock(life.Done(), os.Stdout)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -378,7 +379,7 @@ var httpConns atomic.Int64
 const httpConnWarn = 512
 
 type brain struct {
-	mu      sync.Mutex // serialize ledger reads/writes and director calls
+	mu      watchedMutex // serialize ledger reads/writes and director calls (brain_lockwatch.go)
 	mgr     captaincode.Manager
 	ledger  *captaincode.Ledger
 	last    *lastRoute               // most recent routing decision (for visible confirmation)
