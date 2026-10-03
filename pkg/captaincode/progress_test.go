@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -175,4 +176,19 @@ func TestNarrationAndOutcomeLines(t *testing.T) {
 	assert.Equal(t, "↳ ✗ exit 101: error[E0425]: cannot find value `x`", Outcome("   Compiling arc\nerror[E0425]: cannot find value `x`\nwarning: unused", 101, true))
 	assert.Equal(t, "", Outcome("", 0, false), "silent success stays silent")
 	assert.Equal(t, "↳ ✗ exit 1", Outcome("", 1, true))
+}
+
+// An opencode bash call starts with no title: its command is the detail.
+func TestOpencodeToolDetailFallsBackToTheInput(t *testing.T) {
+	cmd := json.RawMessage(`{"command":"go test ./pkg/captaincode/ -count=1 -timeout 120s","description":"run tests"}`)
+	if got := workerStatus("bash", opencodeToolDetail("", cmd)); got != "⚙ bash go test ./pkg/captaincode/ -count=1 -timeout 120s" {
+		t.Errorf("got %q", got)
+	}
+	file := json.RawMessage(`{"filePath":"/repo/pkg/manager.go"}`)
+	if got := opencodeToolDetail("", file); got != "/repo/pkg/manager.go" {
+		t.Errorf("got %q", got)
+	}
+	if got := opencodeToolDetail("Runs the suite", cmd); got != "Runs the suite" {
+		t.Errorf("a title still wins: %q", got)
+	}
 }
