@@ -40,15 +40,18 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 		assert.NotEqual(t, "frontier", l.Leg, "the pseudo-leg is a mode, not a roster row")
 	}
 	assert.True(t, byLeg["grok-max"].Frontier)
-	// model × route; effort is per request, never in the name (2026-09-13)
+	// Harness × provenance (2026-10-03): a CLI by its name, a model opencode
+	// serves by family-provider. Two legs on one family and provider share it.
 	assert.Equal(t, "codex-cli", byLeg["codex-cli"].Label, "the CLI leg")
-	assert.Equal(t, "codex-openai", byLeg["codex"].Label, "the model pin through opencode's openai provider")
+	assert.Equal(t, "gpt-openai", byLeg["codex"].Label, "an OpenAI model through opencode's openai provider")
 	assert.Equal(t, "claude-cli", byLeg["claude"].Label)
 	assert.Equal(t, "cursor-cli", byLeg["cursor"].Label)
-	assert.Equal(t, "grok-max-xai", byLeg["grok-max"].Label)
+	assert.Equal(t, "grok-xai", byLeg["grok-max"].Label)
+	assert.Equal(t, byLeg["grok"].Label, byLeg["grok-max"].Label, "grok and grok-max are one harness")
 	assert.Equal(t, "glm-nim", byLeg["glm"].Label)
 	assert.Equal(t, "kimi-nim", byLeg["kimi"].Label)
-	assert.Equal(t, "free-zen", byLeg["free"].Label)
+	assert.Equal(t, "nemotron-opencode", byLeg["free"].Label)
+	require.NotEmpty(t, byLeg["codex-cli"].Models, "each row says which model runs at which effort")
 	assert.False(t, byLeg["glm"].Frontier, "glm ranks near grok-max but stays in Models")
 	assert.True(t, byLeg["glm"].OpenWeight)
 	require.NotNil(t, byLeg["gemini"].Upgrade, "gemini-3-7-flash has 3-8-flash above it")

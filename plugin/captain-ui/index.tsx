@@ -84,6 +84,8 @@ type RosterLeg = {
   upgrade?: { slug: string; name: string; perf: number }
   subscription?: boolean
   open_weights?: boolean
+  // What the leg runs at each effort (pkg harness.go EffortModels).
+  models?: { model: string; efforts: string[] }[]
 }
 type CliStatus = { name: string; installed: string; latest?: string; outdated: boolean; legs: string }
 type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[] }
@@ -298,33 +300,90 @@ function View(props: { api: TuiPluginApi }) {
     return "idle"
   }
 
-  // One leg row: status glyph, name, perf index, then live state or scorecard.
-  // A ⇡ after the name means a newer model of the same family outscores the
-  // pinned one (its slug shows in place of the scorecard when the leg is idle).
-  const LegLine = (p: { r: LegRow }) => {
-    const r = p.r
-    const perf = () => (r.ro?.perf ? r.ro.perf.toFixed(0) : "—")
-    const detail = () => {
-      if (r.w?.status === "busy") return `${fmtElapsed(r.w.elapsed_ms ?? 0)}${r.w.task ? " · " + r.w.task.slice(0, 26) : ""}`
-      if (r.w?.status === "cooling") return statusLabel(r.w)
-      const tail = ""
-      if (r.ro?.upgrade) return `⇡ ${r.ro.upgrade.slug} (${r.ro.upgrade.perf.toFixed(0)})${tail}`
-      if ((r.st?.N ?? 0) === 0) return `ready${tail}`
-      return `n=${r.st!.N}${(r.st?.Scored ?? 0) > 0 ? ` q${r.st!.AvgQuality.toFixed(1)}` : ""}${(r.st?.AvgTokens ?? 0) > 0 ? ` ~${Math.round(r.st!.AvgTokens / 1000)}k` : ""}${tail}`
+  // Harness rows (2026-10-03): the panel lists harness × provenance -
+  // claude-cli, codex-cli, grok-xai, kimi-nim - not routing legs. grok and
+  // grok-max are one row (xAI's Grok through opencode), codex and luna one
+  // (OpenAI through opencode). Each row says which model runs at which
+  // effort, so how a harness is configured is visible at a glance.
+  const EFFORTS = ["low", "medium", "high", "xhigh", "max"]
+  const effortSpan = (efforts: string[]) => {
+    const idx = [...new Set(efforts)].map((e) => EFFORTS.indexOf(e)).filter((i) => i >= 0).sort((a, b) => a - b)
+    if (!idx.length) return ""
+    const runs: string[] = []
+    let start = idx[0]
+    for (let k = 1; k <= idx.length; k++) {
+      if (k < idx.length && idx[k] === idx[k - 1] + 1) continue
+      const end = idx[k - 1]
+      runs.push(start === end ? EFFORTS[start] : `${EFFORTS[start]}–${EFFORTS[end]}`)
+      start = idx[k]
     }
-    const upgradable = () => !!r.ro?.upgrade && r.w?.status !== "busy"
-    // The director wears the helm (☸) and the accent colour instead of a
-    // "· director" tag at the end of its row.
-    const isDirector = () => r.leg === stats()?.director
+    return runs.join(",")
+  }
+  // The model a leg runs at an effort, from the roster.
+  const modelAt = (leg: string, effort?: string) => {
+    const ro = roster()?.legs.find((r) => r.leg === leg)
+    if (!ro?.models?.length) return ro?.model
+    return (ro.models.find((m) => effort && m.efforts.includes(effort)) ?? ro.models[Math.min(1, ro.models.length - 1)]).model
+  }
+  // How a run reads: harness:model@effort:x.
+  const runLabel = (leg: string, effort?: string) => {
+    const ro = roster()?.legs.find((r) => r.leg === leg)
+    if (!ro) return effort ? `${leg}@effort:${effort}` : leg
+    return `${ro.label ?? leg}:${modelAt(leg, effort)}@effort:${effort || "default"}`
+  }
+  type HarnessRow = { label: string; legs: LegRow[] }
+  const harnessRows = createMemo<HarnessRow[]>(() => {
+    const groups = new Map<string, LegRow[]>()
+    for (const r of modelRows()) {
+      const label = r.ro?.label ?? r.leg
+      groups.set(label, [...(groups.get(label) ?? []), r])
+    }
+    return [...groups.entries()].map(([label, legs]) => ({ label, legs }))
+  })
+
+  // One harness row: status glyph, harness, best perf, then the running
+  // model@effort, or each model with the efforts that select it.
+  const HarnessLine = (p: { h: HarnessRow }) => {
+    const legs = () => p.h.legs
+    const busy = () => legs().find((r) => r.w?.status === "busy")
+    const cooling = () => legs().find((r) => r.w?.status === "cooling")
+    const shown = () => busy() ?? cooling() ?? legs()[0]
+    const perf = () => {
+      const best = Math.max(...legs().map((r) => r.ro?.perf ?? 0))
+      return best > 0 ? best.toFixed(0) : "—"
+    }
+    const configured = () => {
+      const byModel = new Map<string, string[]>()
+      for (const r of legs()) for (const m of r.ro?.models ?? []) byModel.set(m.model, [...(byModel.get(m.model) ?? []), ...m.efforts])
+      return [...byModel.entries()]
+        .sort((a, b) => EFFORTS.indexOf(b[1].at(-1) ?? "") - EFFORTS.indexOf(a[1].at(-1) ?? ""))
+        .map(([m, e]) => `${m}@${effortSpan(e)}`)
+        .join(" · ")
+    }
+    const n = () => legs().reduce((s, r) => s + (r.st?.N ?? 0), 0)
+    const detail = () => {
+      const b = busy()
+      if (b?.w) return `${fmtElapsed(b.w.elapsed_ms ?? 0)}${b.w.task ? " · " + b.w.task.slice(0, 26) : ""}`
+      const c = cooling()
+      if (c?.w) return statusLabel(c.w)
+      return `${configured()}${n() > 0 ? ` · n=${n()}` : ""}`
+    }
+    const upgrade = () => legs().find((r) => r.ro?.upgrade && r.w?.status !== "busy")
+    const isDirector = () => legs().some((r) => r.leg === stats()?.director)
     return (
-      <box flexDirection="row" gap={1}>
-        <text fg={r.w ? statusColor(r.w.status) : theme().textMuted}>{r.w ? statusGlyph(r.w) : "·"}</text>
-        <text fg={isDirector() ? theme().accent : theme().text}>{(isDirector() ? "☸ " : "") + (r.ro?.label ?? r.leg)}</text>
-        <text fg={r.ro?.open_weights ? theme().success : theme().textMuted}>{perf()}</text>
-        <Show when={upgradable()} fallback={<text fg={theme().textMuted}>{detail()}</text>}>
-          {/* Click = retarget the pin to the newer model (POST /v1/roster/upgrade); never automatic. */}
-          <text fg={theme().warning} attributes={TextAttributes.UNDERLINE} onMouseUp={() => void retarget(r.leg)}>
+      <box>
+        <box flexDirection="row" gap={1}>
+          <text fg={shown().w ? statusColor(shown().w!.status) : theme().textMuted}>{shown().w ? statusGlyph(shown().w!) : "·"}</text>
+          <text fg={isDirector() ? theme().accent : theme().text}>{(isDirector() ? "☸ " : "") + p.h.label}</text>
+          <text fg={legs().some((r) => r.ro?.open_weights) ? theme().success : theme().textMuted}>{perf()}</text>
+          <text fg={theme().textMuted} wrapMode="word">
             {detail()}
+          </text>
+        </box>
+        <Show when={upgrade()}>
+          {/* Click = retarget that leg's pin to the newer model (POST /v1/roster/upgrade); never automatic. */}
+          <text fg={theme().warning} attributes={TextAttributes.UNDERLINE} onMouseUp={() => void retarget(upgrade()!.leg)}>
+            {`  ⇡ ${upgrade()!.ro!.upgrade!.slug} (${upgrade()!.ro!.upgrade!.perf.toFixed(0)})`}
           </text>
         </Show>
       </box>
@@ -366,7 +425,7 @@ function View(props: { api: TuiPluginApi }) {
               <span style={{ fg: theme().warning }}> ⇡{upgrades()} newer</span>
             </Show>
           </text>
-          <For each={modelRows()}>{(r) => <LegLine r={r} />}</For>
+          <For each={harnessRows()}>{(h) => <HarnessLine h={h} />}</For>
           <Show when={upgradeNote()}>
             <text fg={theme().textMuted} wrapMode="word">
               {upgradeNote()}
@@ -471,11 +530,8 @@ function View(props: { api: TuiPluginApi }) {
                         : a.kind === "feed"
                           ? "⇡"
                           : "▶"}{" "}
-                  {a.leg}
+                  {a.kind === "run" || a.kind === "done" ? runLabel(a.leg, a.effort) : a.leg}
                 </text>
-                <Show when={a.effort}>
-                  <text fg={theme().textMuted}>{a.effort}</text>
-                </Show>
                 <Show when={a.ms > 0}>
                   <text fg={theme().textMuted}>{a.ms >= 1000 ? `${(a.ms / 1000).toFixed(1)}s` : `${a.ms}ms`}</text>
                 </Show>

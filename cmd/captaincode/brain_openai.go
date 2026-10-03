@@ -497,7 +497,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			if resp.Effort != "" {
 				req.ws.Effort = captaincode.Effort(resp.Effort)
 			}
-			fmt.Printf("captain brain: auto → %s · %s effort · %s\n", resp.Model, req.ws.Effort, resp.Rationale)
+			fmt.Printf("captain brain: auto → %s (%s) · %s\n", resp.Model, captaincode.RunLabel(captaincode.Leg(resp.Model), req.ws.Effort), resp.Rationale)
 		}
 		switch req.Model {
 		case string(captaincode.LegOpenShell):
@@ -796,7 +796,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Visible progress (tool activity + elapsed-time heartbeat) rides the
 	// reasoning channel, so the TUI shows what the worker is doing without a
 	// single character of it landing in the answer.
-	feed := newProgressFeed(string(leg), func(s string) {
+	// The header names what runs and how hard: claude-cli:opus-5.5@effort:max.
+	feed := newProgressFeed(captaincode.RunLabel(leg, req.ws.Effort), func(s string) {
 		chunk(map[string]any{"reasoning_content": s}, nil)
 	})
 	defer feed.close()

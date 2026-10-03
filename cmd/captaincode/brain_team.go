@@ -285,7 +285,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		wk := plan.Workers[0]
 		fmt.Printf("captain brain: team plan → single worker %s (%s) - %s\n", wk.Leg, captaincode.ModelID(wk.Leg), plan.Rationale)
 		fmt.Printf("captain brain: %s wrapper running (team single worker)…\n", wk.Leg)
-		feed := newProgressFeed(string(wk.Leg), status)
+		feed := newProgressFeed(captaincode.RunLabel(wk.Leg, req.ws.Effort), status)
 		req.ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
 		shelf := b.stockShelf(req.ws, task)     // M3.9: one worker, the user's own directory
 		defer shelf.Remove()
@@ -607,7 +607,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	stocked := shelf.Refs()
 	// Frontier thinks for minutes before its first token - the progress feed is
 	// the only thing standing between the user and an apparently dead turn.
-	feed := newProgressFeed("frontier", status)
+	feed := newProgressFeed("frontier · "+captaincode.RunLabel(pick.Leg, captaincode.EffortMax), status)
 	defer feed.close()
 	feed.narrate(req.ws.Steer, lastUserTurn(prompt), b.narrateSteps)
 	// Through the reroute net like every other leg: a rate-limited claude

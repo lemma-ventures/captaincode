@@ -53,7 +53,7 @@ func perfRefreshInterval() time.Duration {
 
 type rosterLeg struct {
 	Leg        string               `json:"leg"`
-	Label      string               `json:"label"` // what the sidebar prints: the leg with its route visible (codex-cli, codex-openai, glm-nim)
+	Label      string               `json:"label"` // the harness and provenance the sidebar prints: claude-cli, grok-xai, kimi-nim (pkg harness.go)
 	Model      string               `json:"model"`
 	Display    string               `json:"display"`
 	Frontier   bool                 `json:"frontier"`
@@ -65,6 +65,9 @@ type rosterLeg struct {
 	PriceIn    float64              `json:"price_in,omitempty"`
 	PriceOut   float64              `json:"price_out,omitempty"`
 	OpenWeight bool                 `json:"open_weights,omitempty"`
+	// Models: what the leg runs at each effort - the sidebar prints
+	// grok-4.7@high–max, so how a leg is configured is visible.
+	Models []captaincode.EffortModel `json:"models,omitempty"`
 }
 
 type cliStatus struct {
@@ -279,40 +282,6 @@ func unreadyLegs(ready map[captaincode.Leg]captaincode.Readiness) string {
 	return strings.Join(out, ", ")
 }
 
-// rosterLabel names a leg the way the sidebar prints it: model × route.
-// The route is the local agent binary (-cli) or the provider a pin goes
-// through (-xai, -orouter, -nim, -openai, -zen), so codex-cli, codex-openai
-// and a future codex-orouter read as the same model on three roads. Effort
-// is not in the name: it is decided per request (effort.go) and shown on
-// the run. Display only - slash commands and CAPTAIN_LEGS keep the bare
-// leg id (2026-09-13: "codex-cli" next to "codex" read as one thing at
-// two prices).
-func rosterLabel(spec captaincode.LegSpec) string {
-	id := string(spec.ID)
-	switch spec.Transport {
-	case captaincode.TransportOpencode:
-		return id + "-" + routeSuffix(spec.Provider)
-	case captaincode.TransportClaudeCLI, captaincode.TransportCodexCLI, captaincode.TransportCursorCLI:
-		return strings.TrimSuffix(id, "-cli") + "-cli"
-	}
-	return id
-}
-
-// routeSuffix is the short name of an opencode provider in a label.
-func routeSuffix(provider string) string {
-	switch provider {
-	case "openrouter":
-		return "orouter"
-	case "nvidia", "nim":
-		return "nim"
-	case "opencode":
-		return "zen"
-	case "":
-		return "api"
-	}
-	return provider
-}
-
 // openWeightLegs: models whose weights are published - the sidebar marks
 // them so the operator sees which capable models are not tied to a vendor.
 var openWeightProviders = map[string]bool{"openrouter": true, "nim": true, "nvidia": true, "opencode": true, "huggingface": true}
@@ -343,7 +312,7 @@ func (b *brain) rosterHTTP(w http.ResponseWriter, r *http.Request) {
 			continue // the sidebar lists models a turn can go to
 		}
 		spec, _ := captaincode.Spec(l)
-		row := rosterLeg{Leg: string(l), Label: rosterLabel(spec), Model: spec.Model, Display: spec.Display, Frontier: frontier[l],
+		row := rosterLeg{Leg: string(l), Label: captaincode.Harness(l), Models: captaincode.EffortModels(l), Model: spec.Model, Display: spec.Display, Frontier: frontier[l],
 			Sub: spec.Subscription, PriceIn: spec.PriceIn, PriceOut: spec.PriceOut, OpenWeight: isOpenWeights(spec)}
 		if p, ok := captaincode.PerfFor(l); ok {
 			row.Perf, row.Coding, row.Slug = p.Perf, p.Coding, p.Slug
