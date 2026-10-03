@@ -83,6 +83,12 @@ const SkillsAlwaysEnv = "CAPTAIN_SKILLS_ALWAYS"
 // the word, and they are exactly the changes a security reviewer reads.
 const SecuritySkill = "security-audit"
 
+// ClaritySkill is captain's own plain-writing skill: every worker writes what
+// a human reads in short, simplified-English sentences. On every shelf by
+// default, like SecuritySkill; /noslop asks for it when a set
+// CAPTAIN_SKILLS_ALWAYS leaves it out.
+const ClaritySkill = "public-clarity-output"
+
 // SecuritySkillSource is the catalog SecuritySkill is synced from. One name
 // is one skill and the first sync wins, so `captain doctor` names the
 // publisher of whatever holds the name rather than assume it.
@@ -171,6 +177,35 @@ func SkillCap() int {
 	return skillCapDefault
 }
 
+// SkillWords are turn words that stock one skill for that turn, whatever
+// else the task says. /noslop puts the plain-writing rules on every worker
+// of the turn when the always-on list leaves them out.
+var SkillWords = map[string]string{
+	"noslop": ClaritySkill,
+}
+
+var midSkillWord = regexp.MustCompile(`(?i)(?:^|\s)/(noslop)\b`)
+
+// AskedSkill is one skill a turn asked for by its word.
+type AskedSkill struct{ Word, Skill string }
+
+// AskedSkills reads the skill words stated anywhere in the task.
+func AskedSkills(task string) []AskedSkill {
+	var out []AskedSkill
+	seen := map[string]bool{}
+	for _, m := range midSkillWord.FindAllStringSubmatchIndex(task, -1) {
+		if m[3] < len(task) && task[m[3]] == '/' {
+			continue // "/noslop/notes.md" is a path
+		}
+		word := strings.ToLower(task[m[2]:m[3]])
+		if !seen[word] {
+			seen[word] = true
+			out = append(out, AskedSkill{Word: word, Skill: SkillWords[word]})
+		}
+	}
+	return out
+}
+
 // AlwaysSkills is the always-on list, in the order it is stocked. A name
 // the catalog does not hold is simply not stocked: always-on is a place on
 // the shelf, not a fetch.
@@ -178,7 +213,7 @@ func AlwaysSkills() []string {
 	v := strings.TrimSpace(os.Getenv(SkillsAlwaysEnv))
 	switch strings.ToLower(v) {
 	case "":
-		return []string{SecuritySkill}
+		return []string{SecuritySkill, ClaritySkill}
 	case "0", "off", "none", "false":
 		return nil
 	}
@@ -506,7 +541,7 @@ type SkillPick struct {
 //
 // The always-on skills (AlwaysSkills) go on first, whatever the task says,
 // and pay into the same two budgets as every other book.
-func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap int) []SkillPick {
+func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap int, asked ...AskedSkill) []SkillPick {
 	if cap <= 0 || len(catalog) == 0 {
 		return nil
 	}
@@ -527,6 +562,14 @@ func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap 
 			if s.Name == name && !always[name] && fits(s) {
 				always[name] = true
 				out = append(out, SkillPick{Skill: s, Always: true, Why: "always stocked (" + SkillsAlwaysEnv + ")"})
+			}
+		}
+	}
+	for _, name := range append(AskedSkills(task), asked...) {
+		for _, s := range catalog {
+			if s.Name == name.Skill && !always[s.Name] && fits(s) {
+				always[s.Name] = true
+				out = append(out, SkillPick{Skill: s, Always: true, Why: "asked for with /" + name.Word})
 			}
 		}
 	}

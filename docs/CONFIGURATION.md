@@ -348,7 +348,7 @@ captain skills report                             # stocked vs used vs graded
 |---|---|---|
 | `CAPTAIN_SKILLS_DIR` | `~/.captaincode/skills` | The synced catalog and its `skills.lock` |
 | `CAPTAIN_SKILLS_CAP` | `8` | How many skills may be stocked for one task |
-| `CAPTAIN_SKILLS_ALWAYS` | `security-audit` | Skills stocked for every task, first, whatever its words - comma-separated, replacing the default. `0`, `off`, `none` or `false` stocks none. A name the catalog does not hold is not stocked (always-on is a place on the shelf, not a fetch) |
+| `CAPTAIN_SKILLS_ALWAYS` | `security-audit,public-clarity-output` | Skills stocked for every task, first, whatever its words - comma-separated, replacing the default. `0`, `off`, `none` or `false` stocks none. A name the catalog does not hold is not stocked (always-on is a place on the shelf, not a fetch) |
 
 The cap is a context budget, not a preference: every stocked skill costs its
 name and description in every worker's startup listing, and codex truncates
@@ -954,6 +954,7 @@ See the [pilot setup and limits](../examples/openshell-pilot/README.md).
 | `CAPTAIN_WORKER_LOGS` | on (`0` disables) | Write `~/.captaincode/runs/<id>-<leg>.log`. |
 | `CAPTAIN_WORKER_CALLBACK` | on (`0` disables) | The line on every worker prompt that tells a worker to arm `captain send` for work that outlives its turn, instead of promising to report later ([CLI](CLI.md#what-every-worker-prompt-carries)). |
 | `CAPTAIN_WORKER_SECURITY` | on (`0` disables) | The security-first line on every worker prompt: prefer the standard library or an existing dependency, confirm a new package's exact name and publisher on the official registry, pin it, read install scripts, never weaken TLS/auth/sandbox checks, and name every dependency added or changed in the answer. Independent of `CAPTAIN_SKILLS_ALWAYS`, which governs the skill. |
+| `CAPTAIN_WORKER_NOSLOP` | on (`0` disables) | The plain-writing line on every worker prompt, OpenShell sandboxes included: simplified technical English (ASD-STE100 style) for everything a human reads - short sentences, one topic each, active voice, no filler. Host workers are also pointed at the `public-clarity-output` skill when it is stocked. A turn that says `/noslop` - before or after `/team`, `/openshell`, `/repeat` or a leg - gets the line and the skill even when this is `0` or `CAPTAIN_SKILLS_ALWAYS` leaves the skill out. |
 | `CAPTAIN_CWD` | process cwd | The terminal's workspace. The TUI names it on every brain call (`X-Captain-Cwd`). The brain itself only uses it for CLI commands (`captain euclid …`) and as the fallback for a caller that sent none. |
 | `CAPTAIN_WORKSPACE_ROOT` | `~/Gits` | Where linked repositories are looked for. |
 | `CAPTAIN_CLAUDE_PERMISSIONS` | `--dangerously-skip-permissions` | Flags passed to `claude -p`. See [SECURITY](../SECURITY.md) before changing. Workers also get `--add-dir` for the workspace root's siblings and the temp dirs, and `captain init` removes `permissions.blockReadsOutsideWorkingDirectories` from `~/.claude/settings.json` - under it a worker cannot run any shell command with a `$expansion`, redirect or computed path. |

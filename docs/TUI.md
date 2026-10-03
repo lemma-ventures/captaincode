@@ -20,8 +20,9 @@ Everything below narrows or steers that.
 | `/quality` (`/q`, `/best`) · `/speed` (`/fast`) · `/save` (`/cheap`) | A preference for this turn, before or after a leg prefix. `/quality` takes turns across the two best legs by blended quality, at high effort; `/save` across the open-weight legs that clear the quality bar, each on its own model at medium effort rather than its flash sibling (the whole ladder only when no open-weight leg is open); the director picks inside `/speed` |
 | `/oss` (`/open`) | Open-weight models only |
 | `/deterministic` (`/det`, `/adi`) | Only legs green in the Agentic Determinism Index, pinned to the measured serving tuple ([ADI.md](ADI.md)) |
+| `/noslop` | Plain-writing rules for every worker of the turn, OpenShell sandboxes included. On by default; this word brings them back when `CAPTAIN_WORKER_NOSLOP=0` or a set `CAPTAIN_SKILLS_ALWAYS` drops them |
 
-Modifiers compose in any order: `/oss /repeat 5 <task>`, `/team /deterministic <task>`.
+Modifiers compose in any order: `/oss /repeat 5 <task>`, `/team /deterministic <task>`, `/noslop /openshell <task>`.
 
 `/frontier`, `/quality` and `/save` are lanes: each counts where its last 40
 turns went and sends the next to the leg furthest behind an equal share, among

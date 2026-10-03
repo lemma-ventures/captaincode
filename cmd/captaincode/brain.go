@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1766,6 +1767,34 @@ func securityContract() string {
 			" use it in guidance mode for security questions and security-sensitive changes, and run its full audit only when the user asks for one."
 	}
 	return s
+}
+
+// clarityContract makes the plain-writing rules an obligation, the way
+// securityContract makes security one: on for every worker unless
+// CAPTAIN_WORKER_NOSLOP=0, and back on for any turn that says /noslop. The
+// core rules are inline because an OpenShell sandbox cannot read the host's
+// shelf; a host worker is also pointed at the full skill when it is stocked.
+func clarityContract(ws captaincode.Workspace) string {
+	s := clarityRules(ws)
+	if s != "" && (captaincode.AlwaysStocked(captaincode.ClaritySkill) || askedClarity(ws)) {
+		s += " Captain stocks the `" + captaincode.ClaritySkill + "` skill with the full rules and examples (`.agents/skills/" + captaincode.ClaritySkill + "/SKILL.md`)."
+	}
+	return s
+}
+
+// clarityRules is the inline half of clarityContract: all an OpenShell
+// sandbox worker gets, since the host's shelf is not in its sandbox.
+func clarityRules(ws captaincode.Workspace) string {
+	if os.Getenv("CAPTAIN_WORKER_NOSLOP") == "0" && !askedClarity(ws) {
+		return ""
+	}
+	return "\n\n[captain] Plain writing: everything you write for a human - documents, reports, comments, commit messages and your final message -" +
+		" uses simplified technical English (ASD-STE100 style). Short sentences, one topic per sentence, active voice, the same term for the same thing," +
+		" concrete numbers and file names. No filler, no hedging, no marketing words, no restating the question."
+}
+
+func askedClarity(ws captaincode.Workspace) bool {
+	return slices.ContainsFunc(ws.Asked, func(a captaincode.AskedSkill) bool { return a.Skill == captaincode.ClaritySkill })
 }
 
 const deliverableContract = "\n\n[captain] End-of-turn contract: your FINAL message must contain the complete deliverable itself - the answer, plan, code, or verdict in full. Never end your turn describing what you are about to do. Format the deliverable for scanning: markdown with short paragraphs (≤4 lines each), bullet or numbered lists for enumerations, ### section headers when the answer runs long, and fenced code blocks for code/commands - never one large paragraph." +

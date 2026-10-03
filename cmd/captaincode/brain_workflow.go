@@ -338,6 +338,7 @@ func (b *brain) workflowStagePrompt(ws captaincode.Workspace, conversation strin
 	sb.WriteString(deliverableContract)
 	sb.WriteString(callbackContract(ws, leg))
 	sb.WriteString(securityContract())
+	sb.WriteString(clarityContract(ws))
 	return sb.String()
 }
 
@@ -505,7 +506,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			if isolated && li < len(wts) && wts[li] != nil {
 				wtDir = wts[li].Dir
 				ws = req.ws.At(wts[li].Dir)
-				if sh := b.stockShelf(ws.Dir, task); sh != nil {
+				if sh := b.stockShelf(ws, task); sh != nil {
 					shelfMu.Lock()
 					wfShelves = append(wfShelves, sh)
 					shelfMu.Unlock()
@@ -648,7 +649,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			}
 			wg.Wait()
 		} else {
-			if sh := b.stockShelf(req.ws.Dir, task); sh != nil {
+			if sh := b.stockShelf(req.ws, task); sh != nil {
 				wfShelves = append(wfShelves, sh)
 			}
 			for li, wl := range stage.Legs {
