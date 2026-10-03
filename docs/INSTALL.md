@@ -36,8 +36,16 @@ unrouted.
 To update the brain, run `./captaincode.sh -rr` from the checkout. It builds
 the newer of your local `main` and `origin/main` - whatever branch the checkout
 is on, and without touching it - installs the binary, and restarts the brain.
-`CAPTAIN_BUILD_REF=checkout` builds the working tree instead, edits included;
-any other value is a git ref to build.
+
+```sh
+./captaincode.sh -rr                       # the latest main
+./captaincode.sh -rr --branch feat/arxiv   # the latest of that branch (local or origin)
+./captaincode.sh -rr --checkout            # the working tree, uncommitted edits included
+```
+
+`rebuild` takes the same options without the restart. `CAPTAIN_BUILD_REF`
+sets the same choice from the environment (`checkout`, a branch, a tag or a
+commit).
 
 ```sh
 git clone https://github.com/lemma-ventures/captaincode && cd captaincode

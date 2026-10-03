@@ -255,8 +255,10 @@ up() {
 # restart (2026-09-16). It builds main whatever the checkout is on: an -rr
 # from a feature branch rebuilt that branch, and the brain lost a day of
 # fixes on main (2026-10-03). The checkout itself is never touched.
-# CAPTAIN_BUILD_REF=checkout builds the working tree instead, edits included;
-# any other value is a git ref to build. Build into a temp file first so a
+# `-rr --branch feat-x` (or CAPTAIN_BUILD_REF=feat-x) builds that branch
+# instead, the newer of its local and origin copies; `--checkout` (or
+# CAPTAIN_BUILD_REF=checkout) builds the working tree, edits included; any
+# other ref - a tag, a commit - is built as named. Build into a temp file first so a
 # failed build leaves the installed binary untouched; install -m 755 replaces
 # the inode, so a running brain keeps its old one until it is restarted.
 rebuild() {
@@ -275,8 +277,12 @@ rebuild() {
     echo "✓ installed $dest ($rev, checkout)"
     return
   fi
-  [ -n "$ref" ] || ref=$(latest_main)
-  local sha; sha=$(git -C "$SCRIPT_DIR" rev-parse --verify -q "$ref^{commit}") || { echo "✗ no such ref: $ref" >&2; exit 1; }
+  [ -n "$ref" ] || ref=main
+  ref=$(latest_ref "$ref")
+  local sha; sha=$(git -C "$SCRIPT_DIR" rev-parse --verify -q "$ref^{commit}") || {
+    echo "✗ no such branch or ref: $ref. Branches: $(git -C "$SCRIPT_DIR" for-each-ref --sort=-committerdate --count=8 --format='%(refname:short)' refs/heads | tr '\n' ' ')" >&2
+    exit 1
+  }
   echo "→ building captain from ${CAPTAIN_BUILD_REF:-main} at ${sha:0:7} ($(git -C "$SCRIPT_DIR" log -1 --format=%s "$sha" | cut -c1-60))…"
   local src; src=$(mktemp -d "${TMPDIR:-/tmp}/captain.src.XXXXXX")
   rmdir "$src" # git clone wants to create it
@@ -292,19 +298,34 @@ rebuild() {
   echo "✓ installed $dest (${sha:0:7})"
 }
 
-# latest_main is the newer of the local main and origin/main. A local main
-# ahead of origin (unpushed fixes) wins; so does an origin that moved on.
-# When they diverged the local main is built, and the launcher says so.
-latest_main() {
-  git -C "$SCRIPT_DIR" fetch -q origin main 2>/dev/null || true
-  local l o
-  l=$(git -C "$SCRIPT_DIR" rev-parse -q --verify main 2>/dev/null)
-  o=$(git -C "$SCRIPT_DIR" rev-parse -q --verify origin/main 2>/dev/null)
-  if [ -z "$l" ]; then echo "${o:-HEAD}"; return; fi
+# latest_ref resolves a branch to the newer of its local copy and its origin
+# copy: a local branch ahead of origin (unpushed fixes) wins; so does an
+# origin that moved on. When they diverged the local one is built, and the
+# launcher says so. A tag or a commit is returned as named.
+latest_ref() {
+  local name="$1" l o
+  git -C "$SCRIPT_DIR" fetch -q origin "$name" 2>/dev/null || true
+  l=$(git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/heads/$name" 2>/dev/null || true)
+  o=$(git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/remotes/origin/$name" 2>/dev/null || true)
+  if [ -z "$l" ] && [ -z "$o" ]; then echo "$name"; return; fi
+  if [ -z "$l" ]; then echo "$o"; return; fi
   if [ -z "$o" ] || git -C "$SCRIPT_DIR" merge-base --is-ancestor "$o" "$l"; then echo "$l"; return; fi
   if git -C "$SCRIPT_DIR" merge-base --is-ancestor "$l" "$o"; then echo "$o"; return; fi
-  echo "  ! main and origin/main diverged - building the local main" >&2
+  echo "  ! $name and origin/$name diverged - building the local $name" >&2
   echo "$l"
+}
+
+# build_args reads -rr's and rebuild's options into CAPTAIN_BUILD_REF:
+# --branch <name> (-b, --branch=<name>) and --checkout.
+build_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -b|--branch) [ $# -ge 2 ] || { echo "✗ $1 needs a branch name" >&2; exit 1; }; CAPTAIN_BUILD_REF="$2"; shift 2 ;;
+      --branch=*) CAPTAIN_BUILD_REF="${1#--branch=}"; shift ;;
+      --checkout) CAPTAIN_BUILD_REF=checkout; shift ;;
+      *) echo "✗ unknown option $1 (use --branch <name> or --checkout)" >&2; exit 1 ;;
+    esac
+  done
 }
 
 # tuis lists every captain-code TUI on the machine and reaps the ORPHANS: a
@@ -350,8 +371,9 @@ case "${1:-}" in
   restart)
     confirm_stop restart || exit 1
     stop_brain; tuis reap; echo "✓ brain stopped"; up; exit 0 ;;
-  rebuild) rebuild; exit 0 ;;
+  rebuild) shift; build_args "$@"; rebuild; exit 0 ;;
   -rr|rebuild-restart)
+    shift; build_args "$@"
     rebuild
     confirm_stop restart || exit 1
     stop_brain; tuis reap; echo "✓ brain stopped"; up; exit 0 ;;
