@@ -951,3 +951,91 @@ func TestIdleWindowFollowsHowLongTheModelThinks(t *testing.T) {
 	assert.Equal(t, 90*time.Second, idleWindow(30*time.Second), "quick steps: the default")
 	assert.Equal(t, 252*time.Second, idleWindow(168*time.Second), "a model that thought 2m48s gets half again")
 }
+
+// timedEvents streams each event at its offset from the connection, then
+// holds the stream open.
+func timedEvents(session string, events []struct {
+	at   time.Duration
+	part string
+}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fl := w.(http.Flusher)
+		start := time.Now()
+		for _, e := range events {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(time.Until(start.Add(e.at))):
+			}
+			fmt.Fprintf(w, "data: {\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":%q,\"part\":%s}}\n\n", session, e.part)
+			fl.Flush()
+		}
+		<-r.Context().Done()
+	}
+}
+
+// The dispatcher's HTTP client had a 30-minute timeout, and it bounded the run
+// itself: every opencode run died at exactly 30m0s, mid-tool, whatever the
+// progress-aware cap said (three step runs, 2026-10-03). A moving run
+// outlives any client timeout.
+func TestAMovingRunOutlivesTheClientTimeout(t *testing.T) {
+	t.Setenv("CAPTAIN_WORKER_IDLE_TIMEOUT", "")
+	text := `{"id":"p1","type":"text"}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/event", timedEvents("ses_long", []struct {
+		at   time.Duration
+		part string
+	}{{0, text}, {150 * time.Millisecond, text}, {300 * time.Millisecond, text}, {450 * time.Millisecond, text}}))
+	mux.HandleFunc("/session/ses_long/message", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(600 * time.Millisecond)
+		w.Write([]byte(`{"info":{"tokens":{"total":3}},"parts":[{"type":"text","text":"DONE"}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 200 * time.Millisecond // stands in for the old 30 minutes
+
+	d := &OpencodeDispatcher{
+		BaseURL: srv.URL, SessionID: "ses_long", Client: client, Spawn: false,
+		OnDelta: func(string) {}, Timeout: 20 * time.Second, StallTimeout: 10 * time.Second,
+	}
+	res, err := d.Run(LegFree, "task")
+	require.NoError(t, err)
+	assert.Equal(t, "DONE", res.Text)
+}
+
+// Past its base budget a run dies when it goes quiet - but "quiet" is the
+// adaptive window the stall watchdog uses, not a flat 90s. A model that
+// already went 700ms between events is not cut 300ms into its next think
+// (a ledger-app step run died 99s into a think after 3-minute gaps,
+// 2026-10-03).
+func TestPastTheBudgetQuietFollowsHowLongTheModelThinks(t *testing.T) {
+	t.Setenv("CAPTAIN_WORKER_IDLE_TIMEOUT", "300ms")
+	text := `{"id":"p1","type":"text"}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/event", timedEvents("ses_think", []struct {
+		at   time.Duration
+		part string
+	}{
+		{0, text},
+		{50 * time.Millisecond, `{"id":"t1","type":"tool","tool":"bash","state":{"status":"running","title":"go test"}}`},
+		{750 * time.Millisecond, `{"id":"t1","type":"tool","tool":"bash","state":{"status":"completed","title":"go test"}}`},
+		{1350 * time.Millisecond, text}, // 600ms of thinking, past the 400ms budget
+	}))
+	mux.HandleFunc("/session/ses_think/message", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(1500 * time.Millisecond)
+		w.Write([]byte(`{"info":{"tokens":{"total":3}},"parts":[{"type":"text","text":"DONE"}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	d := &OpencodeDispatcher{
+		BaseURL: srv.URL, SessionID: "ses_think", Client: srv.Client(), Spawn: false,
+		OnDelta: func(string) {}, Timeout: 400 * time.Millisecond, StallTimeout: 10 * time.Second,
+	}
+	res, err := d.Run(LegFree, "task")
+	require.NoError(t, err, "a think as long as the model's earlier gaps is not quiet")
+	assert.Equal(t, "DONE", res.Text)
+}

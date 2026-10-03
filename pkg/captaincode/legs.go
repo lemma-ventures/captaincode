@@ -762,7 +762,12 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 					case <-t.C:
 						el := time.Since(start)
 						quiet := time.Since(time.Unix(0, d.lastActivity.Load()))
-						window := idleTimeout()
+						// The same adaptive window the stall watchdog uses: a
+						// model that thinks for minutes between steps is not
+						// quiet after 90s. The fixed window cut a ledger-app
+						// run at 26m30s, 99s into a think, after earlier
+						// three-minute gaps (2026-10-03).
+						window := idleWindow(time.Duration(d.maxGap.Load()))
 						if d.activeTools.Load() > 0 {
 							window = toolRunTimeout()
 						}
@@ -886,7 +891,13 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		return Result{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := d.Client.Do(req)
+	// No client timeout on the run itself: the caps above bound it. The
+	// client's 30-minute timeout killed every opencode run at exactly 30m0s,
+	// mid-tool, whatever the progress-aware cap said (three step runs on
+	// 2026-10-03).
+	run := *d.Client
+	run.Timeout = 0
+	resp, err := run.Do(req)
 	if err != nil {
 		if stopped.Load() {
 			d.abort()
@@ -906,11 +917,14 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 				return Result{}, fmt.Errorf("%s/%s: %w - no telemetry and nothing returned within %s",
 					mm.Provider, mm.Model, ErrWorkerStalled, effTimeout)
 			}
+			// Say what happened: how long it ran, past which budget. "did
+			// not finish within 15m0s" on a 30-minute run read as a lie.
+			why := fmt.Errorf("%s/%s ran %s and went quiet past its %s budget: %w", mm.Provider, mm.Model,
+				time.Since(start).Round(time.Second), d.Timeout, ErrWorkerTimeout)
 			if partial := d.streamed(); partial != "" {
-				return Result{Text: partial, Partial: true},
-					fmt.Errorf("%s/%s did not finish within %s: %w", mm.Provider, mm.Model, d.Timeout, ErrWorkerTimeout)
+				return Result{Text: partial, Partial: true}, why
 			}
-			return Result{}, fmt.Errorf("%s/%s did not finish within %s: %w", mm.Provider, mm.Model, d.Timeout, ErrWorkerTimeout)
+			return Result{}, why
 		}
 		return Result{}, err
 	}
