@@ -45,6 +45,7 @@ func cmdGate(args []string) {
 	hook := fs.Bool("hook", false, "Claude Code PreToolUse hook: hook JSON on stdin, hook JSON on stdout")
 	tool := fs.String("tool", "", "screen this tool's call; its arguments are JSON on stdin")
 	cwd := fs.String("cwd", "", "the worker's working directory (default: this process's)")
+	session := fs.String("session", "", "the opencode session the tool runs in, so the screening can be joined to its task")
 	check := fs.String("check", "", "screen one shell command by hand")
 	status := fs.Bool("status", false, "print the gate's mode and whether a decision leg is configured")
 	report := fs.Bool("report", false, "read the screenings as a calibration")
@@ -67,7 +68,7 @@ func cmdGate(args []string) {
 			os.Exit(3)
 		}
 	case *tool != "":
-		gateTool(*tool, gateCwd(*cwd))
+		gateTool(*tool, gateCwd(*cwd), *session)
 	default:
 		fatal(fmt.Errorf("%s", gateUsage))
 	}
@@ -116,16 +117,17 @@ func screenAndLog(a captaincode.GateAction) captaincode.GateVerdict {
 // gateTool is the opencode plugin's call: the tool's arguments as JSON on
 // stdin, exit 3 and a sentence on stdout to refuse. It mirrors
 // `captain redact --check`, which the plugin already speaks.
-func gateTool(tool, cwd string) {
+func gateTool(tool, cwd, session string) {
 	var raw map[string]any
 	if err := json.NewDecoder(os.Stdin).Decode(&raw); err != nil {
 		return // not our shape: allow silently, the way the redaction hook does
 	}
 	a := gateActionFromEnv(captaincode.GateAction{
-		Tool:    tool,
-		Command: firstString(raw, "command", "cmd", "url", "script"),
-		Path:    firstString(raw, "filePath", "file_path", "path"),
-		Cwd:     cwd,
+		Tool:      tool,
+		Command:   firstString(raw, "command", "cmd", "url", "script"),
+		Path:      firstString(raw, "filePath", "file_path", "path"),
+		Cwd:       cwd,
+		SessionID: session,
 	})
 	v := screenAndLog(a)
 	if v.Allow {
@@ -178,7 +180,7 @@ func firstString(m map[string]any, keys ...string) string {
 func gateStatus() {
 	mode := captaincode.GateModeFromEnv()
 	c := captaincode.SystemOneFromEnv()
-	fmt.Printf("mode: %s (%s=off|shadow|enforce)\n", mode, captaincode.GateModeEnv)
+	fmt.Printf("mode: %s (%s=off|shadow|enforce|enforce:destructive,…)\n", mode, captaincode.GateModeEnv)
 	if c == nil {
 		fmt.Printf("decision leg: none - no %s and no %s, so nothing is screened, no call is made and no tool call waits on one\n",
 			captaincode.SystemOneKeyEnv, captaincode.SystemOneURLEnv)
@@ -196,7 +198,18 @@ func gateStatus() {
 		fmt.Printf("screening and recording to %s; every action is allowed\n", captaincode.GateLogPath())
 		fmt.Println("read the record with `captain gate --report` before enforcing")
 	case captaincode.GateEnforce:
-		fmt.Printf("REFUSING actions whose risk reaches %.2f; a failed or slow call still allows\n", captaincode.GateBar())
+		var on, off []string
+		for _, p := range captaincode.GatePoints {
+			if captaincode.GateEnforced(p) {
+				on = append(on, p)
+			} else {
+				off = append(off, p)
+			}
+		}
+		fmt.Printf("REFUSING actions whose %s risk reaches %.2f; a failed or slow call still allows\n", strings.Join(on, ", "), captaincode.GateBar())
+		if len(off) > 0 {
+			fmt.Printf("in shadow, recorded only: %s\n", strings.Join(off, ", "))
+		}
 		fmt.Println("the bar is only meaningful if `captain gate --report` shows it holds on this backend")
 	}
 }
@@ -229,6 +242,7 @@ func gateReport(target float64, minN int) {
 	fmt.Print(captaincode.FormatGateRisks(rows))
 	fmt.Println()
 
+	resolved := captaincode.ResolveGateTasks(rows)
 	settled, withTask := captaincode.SettleGateRows(rows, outcomes), 0
 	for _, r := range rows {
 		if r.TaskID != "" {
@@ -236,9 +250,12 @@ func gateReport(target float64, minN int) {
 		}
 	}
 	fmt.Printf("settled: %d of %d screening(s) belong to a task the user accepted cleanly\n", settled, len(rows))
+	if resolved > 0 {
+		fmt.Printf("  %d joined to their task through the opencode session they ran in\n", resolved)
+	}
 	if withTask < len(rows) {
-		fmt.Printf("  %d screening(s) carry no task identity and can never be settled: the opencode\n", len(rows)-withTask)
-		fmt.Printf("  workers share one `opencode serve`, so %s is not in their environment\n", captaincode.GateTaskIDEnv)
+		fmt.Printf("  %d screening(s) carry no task identity and can never be settled: screenings\n", len(rows)-withTask)
+		fmt.Println("  from before sessions were recorded, or from a run captain did not start")
 	}
 	if settled == 0 && withTask > 0 {
 		fmt.Println("  the tasks these belong to are still pending or were not cleanly accepted;")

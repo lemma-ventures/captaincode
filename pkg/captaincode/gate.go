@@ -84,15 +84,51 @@ const (
 const gateBarDefault = 0.9
 
 // GateModeFromEnv reads the mode. Anything unrecognised is the default, so a
-// typo cannot silently turn enforcement on.
+// typo cannot silently turn enforcement on. `enforce:destructive` enforces
+// one check and keeps the others in shadow (GateEnforced).
 func GateModeFromEnv() GateMode {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(GateModeEnv))) {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(GateModeEnv)))
+	mode, checks, _ := strings.Cut(v, ":")
+	switch mode {
 	case "off", "0", "no":
 		return GateOff
 	case "enforce", "on", "block":
+		if checks != "" && len(gateEnforcedPoints(checks)) == 0 {
+			return GateShadow // `enforce:typo` names no check: nothing is enforced
+		}
 		return GateEnforce
 	}
 	return GateShadow
+}
+
+// GateEnforced reports whether a check refuses under the current mode. Plain
+// `enforce` enforces all three; `enforce:destructive` or
+// `enforce:destructive,exfiltration` enforces those and leaves the rest in
+// shadow, so each check can be turned on once its own calibration holds.
+func GateEnforced(point string) bool {
+	if GateModeFromEnv() != GateEnforce {
+		return false
+	}
+	_, checks, named := strings.Cut(strings.ToLower(strings.TrimSpace(os.Getenv(GateModeEnv))), ":")
+	if !named || strings.TrimSpace(checks) == "" {
+		return true
+	}
+	return gateEnforcedPoints(checks)[point]
+}
+
+// gateEnforcedPoints reads a comma list of checks, by their short name
+// (destructive, out-of-scope, exfiltration) or their point id.
+func gateEnforcedPoints(list string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.Split(list, ",") {
+		w = strings.TrimPrefix(strings.TrimSpace(w), "gate-")
+		for _, p := range GatePoints {
+			if strings.TrimPrefix(p, "gate-") == w || (w == "exfiltration" && p == PointGateExfil) || (w == "scope" && p == PointGateOutOfScope) {
+				out[p] = true
+			}
+		}
+	}
+	return out
 }
 
 // GateBar is the noul at which enforce refuses.
@@ -145,6 +181,10 @@ type GateAction struct {
 	Leg     Leg    `json:"leg,omitempty"`     // the worker, when the caller knows it
 	Task    string `json:"task,omitempty"`    // the assignment's head, for "outside the work it was given"
 	TaskID  string `json:"task_id,omitempty"` // joins the screening to the task's outcome
+	// SessionID is the opencode session the tool runs in. The opencode
+	// workers share one serve, so no task identity is in their environment;
+	// the session is, and gate-sessions.jsonl says which task it served when.
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // gateStateMax bounds the state: a command line and an assignment's head
@@ -202,6 +242,13 @@ func plainlyReadOnly(cmd string) bool {
 	head := filepath.Base(f[0])
 	if head == "git" {
 		return len(f) > 1 && readOnlyGit[f[1]]
+	}
+	// sed -i and awk -i inplace edit files: not a read.
+	for _, a := range f[1:] {
+		if (head == "sed" && (strings.HasPrefix(a, "-i") || a == "--in-place" || strings.HasPrefix(a, "--in-place="))) ||
+			(head == "awk" && a == "-i") {
+			return false
+		}
 	}
 	return readOnlyHeads[head]
 }
@@ -287,9 +334,13 @@ func ScreenAction(ctx context.Context, c *SystemOneClient, a GateAction) GateVer
 			v.Risk, v.Point = n, p
 		}
 	}
-	if mode == GateEnforce && v.Risk >= GateBar() {
-		v.Allow = false
-		v.Reason = gateReasons[v.Point]
+	// Refuse on the riskiest ENFORCED check: a shadow check's score is
+	// recorded above and never stops the action.
+	for _, p := range GatePoints {
+		if n := resp.Answers[p].Noul; GateEnforced(p) && n >= GateBar() && (v.Allow || n > resp.Answers[v.Point].Noul) {
+			v.Allow = false
+			v.Point, v.Reason = p, gateReasons[p]
+		}
 	}
 	return v
 }
@@ -330,7 +381,7 @@ func GateRecord(a GateAction, v GateVerdict) (ShadowRecord, bool) {
 		head += " " + a.Path
 	}
 	head, _ = Redact(truncateStr(strings.Join(strings.Fields(head), " "), 160))
-	return ShadowRecord{Point: PointGate, Points: GatePoints, TaskID: a.TaskID, Task: head, Shadow: *v.Shadow}, true
+	return ShadowRecord{Point: PointGate, Points: GatePoints, TaskID: a.TaskID, SessionID: a.SessionID, Task: head, Shadow: *v.Shadow}, true
 }
 
 // ---- the log ----------------------------------------------------------------

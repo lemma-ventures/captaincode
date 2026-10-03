@@ -80,9 +80,17 @@ function gateConfigured(): boolean {
   return gateLive
 }
 
-function gateRefusal(tool: string, args: any): string | null {
+// The session's folder and id go with every screening. Without --cwd the gate
+// judged each command against the folder `opencode serve` was started in, so
+// work in any other repository read as out of scope: 97% of the 2,395
+// would-be refusals in 30 days (2026-10-03). The session joins the screening
+// to its task (pkg gate_sessions.go).
+function gateRefusal(tool: string, args: any, cwd: string, session: string): string | null {
+  const flags = ["gate", "--tool", tool]
+  if (cwd) flags.push("--cwd", cwd)
+  if (session) flags.push("--session", session)
   try {
-    const r = spawnSync(CAPTAIN_BIN, ["gate", "--tool", tool], {
+    const r = spawnSync(CAPTAIN_BIN, flags, {
       input: JSON.stringify(args ?? {}),
       encoding: "utf8",
       timeout: 8_000,
@@ -434,13 +442,13 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     }
   },
 
-  "tool.execute.before": async (input: { tool: string }, output: { args: any }) => {
+  "tool.execute.before": async (call: { tool: string; sessionID?: string }, output: { args: any }) => {
     if (REDACT && output?.args) {
       const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
-      if (path && (input.tool === "read" || input.tool === "grep" || input.tool === "glob")) {
+      if (path && (call.tool === "read" || call.tool === "grep" || call.tool === "glob")) {
         const why = secretFileRefusal(path)
         if (why) {
-          log(`refused ${input.tool} ${path}`)
+          log(`refused ${call.tool} ${path}`)
           throw new Error(why)
         }
       }
@@ -448,10 +456,10 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     }
     // The gate runs on the RESTORED arguments: the command that will actually
     // run is the one worth screening, not the masked copy the model wrote.
-    if (GATE !== "off" && GATED_TOOLS.has(input.tool) && gateConfigured()) {
-      const why = gateRefusal(input.tool, output?.args)
+    if (GATE !== "off" && GATED_TOOLS.has(call.tool) && gateConfigured()) {
+      const why = gateRefusal(call.tool, output?.args, input?.directory ?? process.env["CAPTAIN_CWD"] ?? "", String(call.sessionID ?? ""))
       if (why) {
-        log(`gate refused ${input.tool}`)
+        log(`gate refused ${call.tool}`)
         throw new Error(why)
       }
     }

@@ -650,6 +650,11 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		return Result{}, err
 	}
 	start := time.Now()
+	// File which task this session served, so the action gate's screenings
+	// of this run's tools can be joined to its outcome (gate_sessions.go).
+	defer func(session string) {
+		AppendGateSession(GateSession{Session: session, TaskID: d.Steer.Task(), Start: start, End: time.Now()})
+	}(d.SessionID)
 	var streamed bool
 	// The event bus is not just an output channel - it is the ONLY activity
 	// sensor (stall watchdog), the source of tool-activity statuses, and what

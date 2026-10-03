@@ -109,7 +109,11 @@ type ShadowRecord struct {
 	// four). Empty means the row carries Point alone.
 	Points []string `json:"points,omitempty"`
 	TaskID string   `json:"task_id,omitempty"`
-	Task   string   `json:"task,omitempty"` // the note's head
+	// SessionID is the opencode session an action-gate screening ran in, so
+	// a row with no task identity can still be joined to its task
+	// (ResolveGateTasks).
+	SessionID string `json:"session_id,omitempty"`
+	Task      string `json:"task,omitempty"` // the note's head
 	Shadow
 }
 

@@ -91,6 +91,13 @@ func TestGateAllowsWhenTheCallFails(t *testing.T) {
 
 // The cost boundary: a worker runs hundreds of reads per turn and a gate
 // that priced them would be a gate nobody leaves on.
+func TestGateScreensAnInPlaceEdit(t *testing.T) {
+	assert.False(t, plainlyReadOnly("sed -i s/a/b/ notes.md"), "sed -i writes")
+	assert.False(t, plainlyReadOnly("sed --in-place=.bak s/a/b/ notes.md"))
+	assert.False(t, plainlyReadOnly("awk -i inplace {print} notes.md"))
+	assert.True(t, plainlyReadOnly("sed -n 1,20p notes.md"), "sed -n reads")
+}
+
 func TestGateScreensOnlyWhatCanDoDamage(t *testing.T) {
 	for _, tc := range []struct {
 		a    GateAction
@@ -191,4 +198,59 @@ func TestCalibrationDoesNotPrintAnAgreementRateOverNothing(t *testing.T) {
 	out := FormatShadowCalibration(cal, 0.9, 20)
 	assert.NotContains(t, out, "agreement 0.00")
 	assert.Contains(t, out, "no agreement rate")
+}
+
+// Each check is turned on alone, once its own calibration holds: under
+// enforce:destructive an out-of-scope score at the bar is recorded and allowed.
+func TestGateEnforcesOnlyTheChecksNamed(t *testing.T) {
+	t.Setenv(GateModeEnv, "enforce:destructive")
+	assert.True(t, GateEnforced(PointGateDestructive))
+	assert.False(t, GateEnforced(PointGateOutOfScope))
+	assert.False(t, GateEnforced(PointGateExfil))
+
+	c := nulServer(t, map[string]float64{PointGateDestructive: 0.2, PointGateOutOfScope: 0.97, PointGateExfil: 0.05})
+	v := ScreenAction(context.Background(), c, GateAction{Tool: "bash", Command: "sed -i s/a/b/ notes.md", Cwd: "/repo"})
+	assert.True(t, v.Allow, "a shadow check never refuses")
+	assert.Equal(t, PointGateOutOfScope, v.Point, "…but its score is still the recorded risk")
+
+	c = nulServer(t, map[string]float64{PointGateDestructive: 0.95, PointGateOutOfScope: 0.97, PointGateExfil: 0.05})
+	v = ScreenAction(context.Background(), c, GateAction{Tool: "bash", Command: "git push --force origin main", Cwd: "/repo"})
+	assert.False(t, v.Allow)
+	assert.Equal(t, PointGateDestructive, v.Point, "refused by the enforced check, with its reason")
+	assert.Contains(t, v.Reason, "irreversible")
+
+	t.Setenv(GateModeEnv, "enforce:exfiltration,scope")
+	assert.True(t, GateEnforced(PointGateExfil))
+	assert.True(t, GateEnforced(PointGateOutOfScope))
+	assert.False(t, GateEnforced(PointGateDestructive))
+	t.Setenv(GateModeEnv, "enforce")
+	assert.True(t, GateEnforced(PointGateOutOfScope), "plain enforce is all three")
+	t.Setenv(GateModeEnv, "enforce:destrutcive")
+	assert.Equal(t, GateShadow, GateModeFromEnv(), "a list that names no check enforces nothing")
+}
+
+// The opencode workers' screenings carry a session, not a task. The run's
+// own record of which task held the session, and when, joins them.
+func TestGateScreeningsJoinTheirTaskThroughTheSession(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t0 := time.Date(2026, 10, 3, 20, 0, 0, 0, time.UTC)
+	AppendGateSession(GateSession{Session: "ses_a", TaskID: "task-1", Start: t0, End: t0.Add(10 * time.Minute)})
+	AppendGateSession(GateSession{Session: "ses_a", TaskID: "task-2", Start: t0.Add(20 * time.Minute), End: t0.Add(30 * time.Minute)})
+	rows := []ShadowRecord{
+		{SessionID: "ses_a", Shadow: Shadow{At: t0.Add(5 * time.Minute)}},
+		{SessionID: "ses_a", Shadow: Shadow{At: t0.Add(25 * time.Minute)}},
+		{SessionID: "ses_a", Shadow: Shadow{At: t0.Add(15 * time.Minute)}}, // between runs
+		{SessionID: "ses_b", Shadow: Shadow{At: t0.Add(5 * time.Minute)}},
+		{TaskID: "kept", SessionID: "ses_a", Shadow: Shadow{At: t0.Add(5 * time.Minute)}},
+	}
+	assert.Equal(t, 2, ResolveGateTasks(rows))
+	assert.Equal(t, "task-1", rows[0].TaskID)
+	assert.Equal(t, "task-2", rows[1].TaskID, "a reused session belongs to the run that held it then")
+	assert.Empty(t, rows[2].TaskID)
+	assert.Empty(t, rows[3].TaskID)
+	assert.Equal(t, "kept", rows[4].TaskID, "an identity from the environment wins")
+
+	r, ok := GateRecord(GateAction{Tool: "bash", Command: "make", SessionID: "ses_a"}, GateVerdict{Shadow: &Shadow{}})
+	require.True(t, ok)
+	assert.Equal(t, "ses_a", r.SessionID, "the screening files its session")
 }
