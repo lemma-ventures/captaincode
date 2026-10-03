@@ -119,6 +119,41 @@ func blindTimeout() time.Duration {
 // while no tool is running. A model streams or it is dead; the long stall
 // window exists for tool runs (a build, a test suite), not for a dropped
 // stream. Tune with CAPTAIN_WORKER_IDLE_TIMEOUT; default 90s.
+// Which stall window fired. The error text used to be chosen by comparing
+// the window with the full stall timeout, so every shorter window - the idle
+// one included - read "the model never started generating", and that label
+// also switched off the one fresh-session retry a mid-run stall gets. A glm
+// run that had worked for twelve minutes was failed with nothing kept
+// (2026-10-03).
+const (
+	stallKindSilent int32 = iota // no session activity for the full window
+	stallKindFirst               // no output at all yet
+	stallKindIdle                // output seen, no tool running, then quiet
+)
+
+// stallWhat names what a stall of kind looked like, for the error text.
+func stallWhat(kind int32) string {
+	switch kind {
+	case stallKindFirst:
+		return "the model never started generating"
+	case stallKindIdle:
+		return "the model went quiet between steps"
+	}
+	return "no session activity"
+}
+
+// idleWindow is how long a worker that has been producing may stay quiet
+// with no tool running: idleTimeout, or half again the longest silence it
+// has already shown in this run, whichever is longer. glm on NIM thinks for
+// 1.5-3 minutes between steps without a single event; a fixed 90s killed it
+// mid-task (2026-10-03).
+func idleWindow(longestGap time.Duration) time.Duration {
+	if w := longestGap * 3 / 2; w > idleTimeout() {
+		return w
+	}
+	return idleTimeout()
+}
+
 func idleTimeout() time.Duration {
 	if v := os.Getenv("CAPTAIN_WORKER_IDLE_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -500,6 +535,9 @@ type OpencodeDispatcher struct {
 	sawOutput       atomic.Bool  // the model actually started producing (text/reasoning/tool), not just a session bookkeeping event
 	lastFingerprint string       // REST cross-check state (watchdog goroutine only)
 	activeTools     atomic.Int32 // tool parts currently "running": the legitimate reason a worker goes quiet
+	// maxGap is the longest silence between two events once the model had
+	// started producing: how long this model thinks between steps.
+	maxGap atomic.Int64
 }
 
 func NewDispatcher(port int) *OpencodeDispatcher {
@@ -752,6 +790,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 	// Only armed when the event stream connected (it's the activity sensor).
 	var stalled atomic.Bool
 	var stalledWindow atomic.Int64 // the window that actually fired, for the error text
+	var stalledKind atomic.Int32   // which of the windows it was (stallKind*)
 	if d.StallTimeout > 0 && streamed {
 		// A worker that has produced NOTHING is diagnosed faster than one that
 		// went quiet mid-work: waiting the full stall window twice cost 8 minutes
@@ -787,18 +826,18 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 					//     itself bounds a tool at 10m - past that it is wedged.
 					//     (`cargo test --release` used to be aborted at 4m, live
 					//     2026-09-12.)
-					window := d.StallTimeout
+					window, kind := d.StallTimeout, stallKindSilent
 					switch {
 					case !d.sawOutput.Load():
-						window = firstEventTimeout()
+						window, kind = firstEventTimeout(), stallKindFirst
 					case d.activeTools.Load() <= 0:
-						window = idleTimeout()
+						window, kind = idleWindow(time.Duration(d.maxGap.Load())), stallKindIdle
 					}
-					if window > d.StallTimeout {
-						window = d.StallTimeout
+					if window >= d.StallTimeout {
+						window, kind = d.StallTimeout, stallKindSilent // the full window fired, whatever the phase
 					}
 					if d.sawOutput.Load() && d.activeTools.Load() > 0 && toolRunTimeout() > window {
-						window = toolRunTimeout()
+						window, kind = toolRunTimeout(), stallKindSilent
 					}
 					if time.Since(time.Unix(0, d.lastActivity.Load())) <= window {
 						continue
@@ -821,6 +860,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 					}
 					stalled.Store(true)
 					stalledWindow.Store(int64(window))
+					stalledKind.Store(kind)
 					d.abort() // server-side finalize → the pending POST returns
 					grace := d.StallTimeout
 					if grace > 10*time.Second {
@@ -854,10 +894,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		}
 		if stalled.Load() {
 			window := time.Duration(stalledWindow.Load())
-			what := "no session activity"
-			if window != d.StallTimeout {
-				what = "the model never started generating" // first-event window
-			}
+			what := stallWhat(stalledKind.Load())
 			return Result{}, fmt.Errorf("%s/%s: %w - %s for %s", mm.Provider, mm.Model, ErrWorkerStalled, what, window)
 		}
 		if errors.Is(err, context.DeadlineExceeded) || capped.Load() {
@@ -895,10 +932,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			// The watchdog's own abort finalized the turn as an error
 			// status: report the stall, not the abort artifact.
 			window := time.Duration(stalledWindow.Load())
-			what := "no session activity"
-			if window != d.StallTimeout {
-				what = "the model never started generating"
-			}
+			what := stallWhat(stalledKind.Load())
 			return Result{}, fmt.Errorf("%s/%s: %w - %s for %s", mm.Provider, mm.Model, ErrWorkerStalled, what, window)
 		}
 		// A non-200 used to skip the classifier entirely: it matched no
@@ -948,10 +982,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			// The error is the watchdog's own abort finalizing the wedged turn
 			// (MessageAbortedError) - report the stall, not the abort artifact.
 			window := time.Duration(stalledWindow.Load())
-			what := "no session activity"
-			if window != d.StallTimeout {
-				what = "the model never started generating"
-			}
+			what := stallWhat(stalledKind.Load())
 			return Result{Headers: hdrs}, fmt.Errorf("%s/%s: %w - %s for %s", mm.Provider, mm.Model, ErrWorkerStalled, what, window)
 		}
 		return Result{Headers: hdrs}, fmt.Errorf("opencode error: %s", string(msg.Info.Error))
@@ -1047,7 +1078,10 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 			continue
 		}
 		// Any event for this session is proof of life for the stall watchdog.
-		d.lastActivity.Store(time.Now().UnixNano())
+		now := time.Now().UnixNano()
+		if prev := d.lastActivity.Swap(now); prev > 0 && d.sawOutput.Load() && now-prev > d.maxGap.Load() {
+			d.maxGap.Store(now - prev)
+		}
 		switch e.Type {
 		case "message.part.updated":
 			var p struct {

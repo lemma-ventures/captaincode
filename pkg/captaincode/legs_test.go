@@ -934,3 +934,20 @@ func TestFrontierModelIDFollowsThePin(t *testing.T) {
 	args, _ := frontierCmdConfig(EffortMax)
 	assert.Contains(t, strings.Join(args, " "), "--model claude-opus-5-5", "the pin reaches claude -p")
 }
+
+// A glm run that had worked for twelve minutes was failed as "the model
+// never started generating" when it thought past a fixed 90s between steps,
+// and that label also skipped its fresh-session retry (2026-10-03).
+func TestStallWindowsAreNamedForWhatHappened(t *testing.T) {
+	assert.Equal(t, "the model never started generating", stallWhat(stallKindFirst))
+	assert.Equal(t, "the model went quiet between steps", stallWhat(stallKindIdle))
+	assert.Equal(t, "no session activity", stallWhat(stallKindSilent))
+	assert.NotContains(t, stallWhat(stallKindIdle), "never started generating", "a mid-run stall keeps its retry")
+}
+
+func TestIdleWindowFollowsHowLongTheModelThinks(t *testing.T) {
+	t.Setenv("CAPTAIN_WORKER_IDLE_TIMEOUT", "")
+	assert.Equal(t, 90*time.Second, idleWindow(0), "nothing seen yet: the default")
+	assert.Equal(t, 90*time.Second, idleWindow(30*time.Second), "quick steps: the default")
+	assert.Equal(t, 252*time.Second, idleWindow(168*time.Second), "a model that thought 2m48s gets half again")
+}
