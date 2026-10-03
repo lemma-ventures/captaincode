@@ -140,7 +140,9 @@ func main() {
 			cmdGate(args[1:])
 			return
 		case "proxy": // standalone egress proxy (the brain runs one itself)
-			startProxy()
+			if err := startProxy(); err != nil {
+				fatal(err)
+			}
 			select {}
 		case "init":
 			cmdInit(args[1:])

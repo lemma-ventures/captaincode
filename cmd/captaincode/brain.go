@@ -171,7 +171,10 @@ func cmdBrain(args []string) {
 		b.setDirector(b.firstRunnableDirector())
 	}
 	fmt.Printf("captain brain: director candidates - %s\n", directorCandidateSummary(b.dirAvailable))
-	startProxy() // before the worker serve starts: its provider blocks are rewritten here
+	// Before the worker serve starts: its provider blocks are rewritten here.
+	if err := startProxy(); err != nil {
+		fatal(err)
+	}
 	wireProxy()
 
 	mux := http.NewServeMux()
