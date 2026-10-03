@@ -166,3 +166,15 @@ func TestFoldSpanPartialProgressIsReported(t *testing.T) {
 	assert.Less(t, consumed, len(span))
 	assert.Equal(t, 2, strings.Count(sum, "|S"), "the two successful slices are kept")
 }
+
+// Compaction runs before the worker, so the turn showed a bare spinner for
+// minutes; the sidebar's feed now says it is compacting, and when it is done.
+func TestCompactionIsOnTheActivityFeed(t *testing.T) {
+	b, _, _ := compactBrain(t)
+	turns := append(longConvo(30), "fix typo in README")
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, wfReq(false, turns...))
+	require.Equal(t, 200, rec.Code)
+	assert.True(t, feedSays(b, "route", "compacting a"), "the start is on the feed")
+	assert.True(t, feedSays(b, "route", "compacted "), "and the result")
+}
