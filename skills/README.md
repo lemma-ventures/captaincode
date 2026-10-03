@@ -1,6 +1,6 @@
 # Skills
 
-Three Agent Skills distilled from building and running Captain Code. Each is a
+Four Agent Skills distilled from building and running Captain Code. Each is a
 folder with a `SKILL.md`: plain procedures that do not need Captain installed
 and run no scripts.
 
@@ -9,6 +9,7 @@ and run no scripts.
 | [`land-parallel-agent-work`](land-parallel-agent-work/SKILL.md) | several agents edit one repository at once and their changes have to land |
 | [`verify-with-verdicts`](verify-with-verdicts/SKILL.md) | deciding whether a change works: pass, fail or inconclusive |
 | [`audit-public-claims`](audit-public-claims/SKILL.md) | release notes, docs, posts or replies state facts about software |
+| [`public-clarity-output`](public-clarity-output/SKILL.md) | workers, directors and assessors format handoffs, rulings and grading notes for humans |
 
 ## Install
 
