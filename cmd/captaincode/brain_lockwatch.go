@@ -37,6 +37,23 @@ func (m *watchedMutex) TryLock() bool {
 	return true
 }
 
+// lockWithin takes and releases the lock, giving up after d. It reports
+// whether the lock was had.
+func (m *watchedMutex) lockWithin(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for !m.TryLock() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	m.Unlock()
+	return true
+}
+
+// shutdownLockWait bounds how long a stopping brain waits for b.mu.
+var shutdownLockWait = 10 * time.Second
+
 func (m *watchedMutex) Unlock() {
 	m.since.Store(0)
 	m.mu.Unlock()

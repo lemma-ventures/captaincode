@@ -151,6 +151,29 @@ reap_workers() {
   done
 }
 
+# wait_brain_gone waits for the stopped brain to exit and kills it when it
+# will not. A SIGTERM'd brain ends its workers and exits within seconds, or
+# within minutes while it cleans up sandboxes - and then it still answers
+# /v1/stats. A brain that answers nothing is wedged: on 2026-10-03 its lock
+# was stuck, SIGTERM never finished, and the restart could not take the port.
+wait_brain_gone() {
+  local i
+  for i in $(seq 1 40); do
+    pgrep -f "captain brain" >/dev/null 2>&1 || return 0
+    sleep 0.5
+  done
+  if curl -s -m 3 -o /dev/null "$BRAIN_URL/v1/stats" 2>/dev/null; then
+    echo "  brain still stopping (cleaning up) - waiting up to 4 minutes"
+    for i in $(seq 1 480); do
+      pgrep -f "captain brain" >/dev/null 2>&1 || return 0
+      sleep 0.5
+    done
+  fi
+  echo "  brain did not exit - killing it"
+  pkill -9 -f "captain brain" 2>/dev/null || true
+  sleep 0.5
+}
+
 stop_brain() {
   reap_workers
   if [ -f "$SUPERVISOR_PID_FILE" ]; then
@@ -166,6 +189,7 @@ stop_brain() {
   fi
   # NEVER bare 'pkill -f brain' - it matches any process mentioning "brain".
   pkill -f "captain brain" 2>/dev/null || true
+  wait_brain_gone
   # The worker serve the brain spawned (opencode serve on 14096) goes with
   # it: a restart that kept it left the workers on a serve that had loaded
   # the config and the plugin two days earlier - no redaction hooks, no
