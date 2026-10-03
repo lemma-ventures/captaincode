@@ -166,25 +166,35 @@ func (s *proxyStats) snapshot() map[string]any {
 	}
 }
 
-// startProxy listens on the proxy address. Off when CAPTAIN_REDACT=off; a
-// port already taken (a second brain, a stale one) is logged, not fatal -
-// the workers' provider blocks would then fail to connect, which is loud.
-func startProxy() {
+// startProxy listens on the proxy address. Off when CAPTAIN_REDACT=off. A
+// port already taken is retried for proxyListenWait - a second brain started
+// at the same instant exits once it loses the HTTP port and frees it - and is
+// then an error: a brain without its proxy sent every opencode call to a dead
+// port ("Cannot connect to API … 127.0.0.1:14098", 2026-10-03), so the brain
+// exits and the supervisor starts a whole one.
+func startProxy() error {
 	if captaincode.RedactMode() == "off" {
 		fmt.Println("captain proxy: off (CAPTAIN_REDACT=off) - provider calls go direct")
-		return
+		return nil
 	}
 	ln, err := net.Listen("tcp", proxyAddr())
+	for deadline := time.Now().Add(proxyListenWait); err != nil && time.Now().Before(deadline); {
+		time.Sleep(250 * time.Millisecond)
+		ln, err = net.Listen("tcp", proxyAddr())
+	}
 	if err != nil {
-		fmt.Printf("captain proxy: cannot listen on %s: %v\n", proxyAddr(), err)
-		return
+		return fmt.Errorf("captain proxy: cannot listen on %s: %w", proxyAddr(), err)
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(proxyHandler), ReadHeaderTimeout: 30 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	captaincode.SetProxyBase(proxyBase())
 	fmt.Printf("captain proxy: %s (mode %s) - secrets and identity redacted on the wire\n", proxyAddr(), captaincode.RedactMode())
 	fmt.Println("captain proxy: " + egressNote() + " - model traffic only; a worker's own `curl` does not pass through here")
+	return nil
 }
+
+// proxyListenWait is how long a taken proxy port is retried.
+var proxyListenWait = 15 * time.Second
 
 // wireProxy points the transports at the proxy when it listens and back at
 // the providers when it does not (CAPTAIN_REDACT=off, or the port taken), so

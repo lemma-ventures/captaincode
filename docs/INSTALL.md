@@ -33,6 +33,12 @@ Neither is compiled into the binary, so a `go install` machine has nothing for
 `captain init` to register - it will say so rather than come up silently
 unrouted.
 
+To update the brain, run `./captaincode.sh -rr` from the checkout. It builds
+the newer of your local `main` and `origin/main` - whatever branch the checkout
+is on, and without touching it - installs the binary, and restarts the brain.
+`CAPTAIN_BUILD_REF=checkout` builds the working tree instead, edits included;
+any other value is a git ref to build.
+
 ```sh
 git clone https://github.com/lemma-ventures/captaincode && cd captaincode
 go build -o ~/.local/bin/captain ./cmd/captaincode

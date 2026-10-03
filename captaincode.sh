@@ -183,6 +183,18 @@ stop_brain() {
   if [ -n "${SUPERVISOR_PID:-}" ]; then
     kill "$SUPERVISOR_PID" 2>/dev/null || true
   fi
+  # …and every orphaned one. A supervisor is a backgrounded copy of this
+  # script; once its launcher exits it belongs to init. The pid file names
+  # only the newest, so an older one lived on (8 days, 2026-10-03), restarted
+  # the brain beside the launcher's own start, and one brain took the proxy
+  # port while the other took the HTTP port.
+  local sp
+  for sp in $(pgrep -f "captaincode.sh" 2>/dev/null); do
+    [ "$sp" = "$$" ] && continue
+    [ "$(ps -o ppid= -p "$sp" 2>/dev/null | tr -d ' ')" = "1" ] || continue
+    ps -o command= -p "$sp" 2>/dev/null | grep -q "^bash .*captaincode.sh" || continue
+    kill "$sp" 2>/dev/null || true
+  done
   if [ -f "$BRAIN_PID_FILE" ]; then
     kill "$(cat "$BRAIN_PID_FILE")" 2>/dev/null || true
     rm -f "$BRAIN_PID_FILE"
@@ -237,24 +249,62 @@ up() {
   fi
 }
 
-# rebuild: compile the captain binary from this checkout and install it where
-# the launcher finds it. `restart` alone never rebuilds - it restarts whatever
-# is on PATH, which is how a brain ran a day-old binary after a restart
-# (2026-09-16). Build into a temp file first so a failed build leaves the
-# installed binary untouched; install -m 755 replaces the inode, so a running
-# brain keeps its old one until it is restarted.
+# rebuild: compile the captain binary from the latest main and install it
+# where the launcher finds it. `restart` alone never rebuilds - it restarts
+# whatever is on PATH, which is how a brain ran a day-old binary after a
+# restart (2026-09-16). It builds main whatever the checkout is on: an -rr
+# from a feature branch rebuilt that branch, and the brain lost a day of
+# fixes on main (2026-10-03). The checkout itself is never touched.
+# CAPTAIN_BUILD_REF=checkout builds the working tree instead, edits included;
+# any other value is a git ref to build. Build into a temp file first so a
+# failed build leaves the installed binary untouched; install -m 755 replaces
+# the inode, so a running brain keeps its old one until it is restarted.
 rebuild() {
   command -v go >/dev/null || { echo "✗ go is not on PATH - cannot rebuild captain" >&2; exit 1; }
   local dest="${CAPTAIN_BIN_DEST:-$HOME/.local/bin/captain}"
-  local rev; rev=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "?")
-  local dirty; dirty=$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')
-  echo "→ building captain from $SCRIPT_DIR ($rev${dirty:+, $dirty modified file(s)})…"
   local tmp; tmp=$(mktemp "${TMPDIR:-/tmp}/captain.build.XXXXXX")
-  if ! (cd "$SCRIPT_DIR" && go build -o "$tmp" ./cmd/captaincode); then
-    rm -f "$tmp"; echo "✗ build failed - $dest left as it was" >&2; exit 1
+  local ref="${CAPTAIN_BUILD_REF:-}"
+  if [ "$ref" = "checkout" ]; then
+    local rev; rev=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo "?")
+    local dirty; dirty=$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ')
+    echo "→ building captain from the checkout $SCRIPT_DIR ($rev, $dirty modified file(s))…"
+    if ! (cd "$SCRIPT_DIR" && go build -o "$tmp" ./cmd/captaincode); then
+      rm -f "$tmp"; echo "✗ build failed - $dest left as it was" >&2; exit 1
+    fi
+    install -m 755 "$tmp" "$dest" && rm -f "$tmp"
+    echo "✓ installed $dest ($rev, checkout)"
+    return
   fi
+  [ -n "$ref" ] || ref=$(latest_main)
+  local sha; sha=$(git -C "$SCRIPT_DIR" rev-parse --verify -q "$ref^{commit}") || { echo "✗ no such ref: $ref" >&2; exit 1; }
+  echo "→ building captain from ${CAPTAIN_BUILD_REF:-main} at ${sha:0:7} ($(git -C "$SCRIPT_DIR" log -1 --format=%s "$sha" | cut -c1-60))…"
+  local src; src=$(mktemp -d "${TMPDIR:-/tmp}/captain.src.XXXXXX")
+  rmdir "$src" # git clone wants to create it
+  # A throwaway clone sharing the checkout's objects, not an archive: Go
+  # stamps the revision into the binary only inside a git tree, and `captain
+  # doctor` and OpenShell records name it.
+  if ! (git clone -q --shared --no-checkout "$SCRIPT_DIR" "$src" && git -C "$src" checkout -q --detach "$sha" &&
+    cd "$src" && go build -o "$tmp" ./cmd/captaincode); then
+    rm -rf "$tmp" "$src"; echo "✗ build failed - $dest left as it was" >&2; exit 1
+  fi
+  rm -rf "$src"
   install -m 755 "$tmp" "$dest" && rm -f "$tmp"
-  echo "✓ installed $dest ($rev)"
+  echo "✓ installed $dest (${sha:0:7})"
+}
+
+# latest_main is the newer of the local main and origin/main. A local main
+# ahead of origin (unpushed fixes) wins; so does an origin that moved on.
+# When they diverged the local main is built, and the launcher says so.
+latest_main() {
+  git -C "$SCRIPT_DIR" fetch -q origin main 2>/dev/null || true
+  local l o
+  l=$(git -C "$SCRIPT_DIR" rev-parse -q --verify main 2>/dev/null)
+  o=$(git -C "$SCRIPT_DIR" rev-parse -q --verify origin/main 2>/dev/null)
+  if [ -z "$l" ]; then echo "${o:-HEAD}"; return; fi
+  if [ -z "$o" ] || git -C "$SCRIPT_DIR" merge-base --is-ancestor "$o" "$l"; then echo "$l"; return; fi
+  if git -C "$SCRIPT_DIR" merge-base --is-ancestor "$l" "$o"; then echo "$o"; return; fi
+  echo "  ! main and origin/main diverged - building the local main" >&2
+  echo "$l"
 }
 
 # tuis lists every captain-code TUI on the machine and reaps the ORPHANS: a
