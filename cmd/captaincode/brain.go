@@ -1161,72 +1161,58 @@ func (b *brain) openBudget(taskID, label string) *captaincode.Budget {
 // caller must NOT dispatch and must record a stopping reason. A task with no
 // budget (nil ledger, or a budget with MaxAttempts=0) always reserves.
 func (b *brain) reserveAttempt(taskID string) bool {
+	ok := true
+	b.withBudget(taskID, func(budget *captaincode.Budget) { ok = budget.Reserve(1) })
+	return ok
+}
+
+// withBudget runs f on the task's budget under b.mu and bmu, the only way a
+// budget is read or changed: BudgetFor hands out the ledger's own entry, and
+// a lookup or an update outside b.mu raced a concurrent worker's reconcile
+// and the ledger save (found when two folders first ran the same words at
+// once, 2026-10-03). Lock order: mu, then bmu. Callers must not hold b.mu.
+func (b *brain) withBudget(taskID string, f func(*captaincode.Budget)) {
 	if b.ledger == nil || taskID == "" {
-		return true
+		return
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	budget := b.ledger.BudgetFor(taskID)
 	if budget == nil {
-		return true
+		return
 	}
 	b.bmu.Lock()
 	defer b.bmu.Unlock()
-	return budget.Reserve(1)
+	f(budget)
 }
 
 // reconcileAttempt settles one reserved call against actual usage. Called
 // after every provider call completes (success or failure): the reservation
-// moves to settled, and the actual cost is added. Caller does NOT hold b.mu —
-// this method takes the ledger lock to persist.
+// moves to settled, and the actual cost is added, and the ledger is saved.
 func (b *brain) reconcileAttempt(taskID string, actualCostUSD float64) {
-	if b.ledger == nil || taskID == "" {
-		return
-	}
-	budget := b.ledger.BudgetFor(taskID)
-	if budget == nil {
-		return
-	}
-	b.bmu.Lock()
-	budget.Reconcile(1, actualCostUSD)
-	b.bmu.Unlock()
-	b.mu.Lock()
-	b.ledger.RecordBudget(budget)
-	saveErr := b.ledger.Save()
-	b.mu.Unlock()
-	if saveErr != nil {
-		fmt.Fprintf(os.Stderr, "captain brain: save budget: %v\n", saveErr)
-	}
+	b.withBudget(taskID, func(budget *captaincode.Budget) {
+		budget.Reconcile(1, actualCostUSD)
+		b.ledger.RecordBudget(budget)
+		if err := b.ledger.Save(); err != nil {
+			fmt.Fprintf(os.Stderr, "captain brain: save budget: %v\n", err)
+		}
+	})
 }
 
 // stopBudget records why a task stopped dispatching. The first reason wins:
 // the original cause is what the report needs.
 func (b *brain) stopBudget(taskID, reason string) {
-	if b.ledger == nil || taskID == "" {
-		return
-	}
-	budget := b.ledger.BudgetFor(taskID)
-	if budget == nil {
-		return
-	}
-	b.bmu.Lock()
-	budget.Stop(reason)
-	b.bmu.Unlock()
-	b.mu.Lock()
-	b.ledger.RecordBudget(budget)
-	b.mu.Unlock()
+	b.withBudget(taskID, func(budget *captaincode.Budget) {
+		budget.Stop(reason)
+		b.ledger.RecordBudget(budget)
+	})
 }
 
 // budgetExhausted reports whether a task's budget refuses further dispatch.
 func (b *brain) budgetExhausted(taskID string) bool {
-	if b.ledger == nil || taskID == "" {
-		return false
-	}
-	budget := b.ledger.BudgetFor(taskID)
-	if budget == nil {
-		return false
-	}
-	b.bmu.Lock()
-	defer b.bmu.Unlock()
-	return budget.Exhausted()
+	exhausted := false
+	b.withBudget(taskID, func(budget *captaincode.Budget) { exhausted = budget.Exhausted() })
+	return exhausted
 }
 
 // setLastIntegration stores the most recent integration candidate for a task
