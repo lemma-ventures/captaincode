@@ -98,9 +98,10 @@ func TestOpenShellCostBudgetSplitsTheCapAcrossEveryWorker(t *testing.T) {
 	directed := &OpenShellRunner{Director: func(context.Context, string, map[string]Contender) (Ruling, error) {
 		return Ruling{}, nil
 	}}
-	_, err = directed.costBudget(ctx, teams)
-	assert.ErrorIs(t, err, ErrOpenShellCostCap)
-	assert.ErrorContains(t, err, "conflict ruling is an unpriced host call")
+	reserved, err := directed.costBudget(ctx, teams)
+	require.NoError(t, err)
+	assert.Equal(t, &OpenShellCostBudget{LimitUSD: 0.5, WorkerUSD: 0.133333, Workers: 3, DirectorUSD: 0.10}, reserved)
+	assert.LessOrEqual(t, float64(reserved.Workers)*reserved.WorkerUSD+reserved.DirectorUSD, reserved.LimitUSD)
 	_, err = directed.costBudget(ctx, []OpenShellTeam{{Tasks: []OpenShellTask{worker("a", "cerebras", ""), review}}})
 	assert.NoError(t, err, "one edit beside a review can never need a ruling")
 
@@ -165,12 +166,20 @@ func TestOpenShellStrictCapFailsAWorkerWhoseShieldDidNotHoldIt(t *testing.T) {
 func TestOpenShellStrictCapRefusesThePlannerBeforeItIsAsked(t *testing.T) {
 	r := openShellPlanEnv(t)
 	strictOpenShellEnv(t, "0.5")
-	ask, prompts := fakeOpenShellPlanner(`{"workers":[{"brief":"edit a"}]}`)
+	ask, prompts := fakeOpenShellPlanner(openShellPlanReply(t, "one edit", "edit a"))
 	plan, err := planOpenShellTeam(context.Background(), r.Repo, "edit a", "", ask)
+	require.NoError(t, err)
+	assert.Equal(t, 1, plan.DirectorAttempts)
+	assert.InDelta(t, openShellDirectorCallUSD, plan.DirectorReserveUSD, 1e-12)
+	assert.NotEmpty(t, *prompts)
+
+	strictOpenShellEnv(t, "0.05")
+	ask, prompts = fakeOpenShellPlanner(`{"workers":[{"brief":"edit a"}]}`)
+	plan, err = planOpenShellTeam(context.Background(), r.Repo, "edit a", "", ask)
 	require.ErrorIs(t, err, ErrOpenShellCostCap)
-	assert.ErrorContains(t, err, "planner is an unpriced host call")
+	assert.ErrorContains(t, err, "planner reservation")
 	assert.Zero(t, plan.DirectorAttempts)
-	assert.Empty(t, *prompts, "no model call was made")
+	assert.Empty(t, *prompts, "a reservation that does not fit makes no model call")
 }
 
 func TestOpenShellStrictCappedSequenceRecordsItsCapAndIsNotResumed(t *testing.T) {
@@ -188,10 +197,10 @@ func TestOpenShellStrictCappedSequenceRecordsItsCapAndIsNotResumed(t *testing.T)
 	_, err := decodeOpenShellSequence(filepath.Join(r.RunDir, "sequence.json"), &plan)
 	require.NoError(t, err)
 	assert.Equal(t, 0.5, plan.MaxCostUSD, "the cap is part of the checksum-bound plan")
-	for _, strict := range []string{"1", ""} {
-		t.Setenv("CAPTAIN_STRICT", strict)
-		_, err := ResumeOpenShellSequence(context.Background(), r.RunDir, nil)
-		require.ErrorIs(t, err, ErrOpenShellCostCap, "strict=%q", strict)
-		assert.ErrorContains(t, err, "not supported yet")
-	}
+	resumed, err := ResumeOpenShellSequence(context.Background(), r.RunDir, nil)
+	require.NoError(t, err, resumed.Text)
+	require.NotNil(t, resumed.Export)
+	again := savedOpenShellSequence(t, r)
+	require.NotNil(t, again.CostBudget)
+	assert.Equal(t, 0.5, again.CostBudget.LimitUSD, "resume keeps the saved cap")
 }

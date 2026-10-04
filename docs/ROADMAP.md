@@ -1,6 +1,6 @@
 # Captain Code implementation roadmap
 
-Prepared 13 September 2026; status refreshed 3 October 2026.
+Prepared 13 September 2026; status refreshed 4 October 2026.
 
 **M1–M5 control surfaces have largely landed in source** (accounting, eval harness,
 decisions, capabilities, quotas, budgets, escalation, isolation, artifacts,
@@ -15,7 +15,7 @@ guides, not release promises.
 | Item | Why it is still open |
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
-| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture, and strict dollar caps are enforced per request at each worker's Shield (see below). Sandbox model profiles are now generated from the compiled registry, limited to API-key legs on OpenRouter zero-data-retention endpoints (`captain openshell profiles`; 127 generated today), deduplicated against the seven hand-picked lanes (`nim`, `cerebras` and five gpt-oss OpenRouter lanes). Any profile, hand-picked or generated, must pass the 18-check fixture run 3 of 3 in the last 30 days (`captain openshell qualify`, one repair per run, same setting as a real task) before a new task may select it; `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI ZDR) is the default, and the `nim` profile qualifies but is slow (306-351 s worker time, occasional NIM 500/504 that Shield refuses). Open: mixed host/sandbox stages, in-flight attempt reconciliation, recovery of strict-capped runs, priced director calls under a cap, charging the committed amount to the ledger budget, recovery after a controller crash mid-stage, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
+| M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture, and strict dollar caps are enforced per request at each worker's Shield (see below). Sandbox model profiles are now generated from the compiled registry, limited to API-key legs on OpenRouter zero-data-retention endpoints (`captain openshell profiles`; 127 generated today), deduplicated against the seven hand-picked lanes (`nim`, `cerebras` and five gpt-oss OpenRouter lanes). Any profile, hand-picked or generated, must pass the 18-check fixture run 3 of 3 in the last 30 days (`captain openshell qualify`, one repair per run, same setting as a real task) before a new task may select it; `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI ZDR) is the default, and the `nim` profile qualifies but is slow (306-351 s worker time, occasional NIM 500/504 that Shield refuses). Prompt-time confirmation of the file list and test argv, a priced director reservation under a strict cap, Shield's committed spend on the ledger, recovery of a strict-capped sequence when that spend is known, and a rerun after a controller crash mid-stage are in source. Open: mixed host/sandbox stages, and the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
@@ -1527,7 +1527,7 @@ worker, whose `curl` in a bash tool call never passes through the proxy at
 all. A real boundary is a container, a VM, or a machine without the
 credentials - which is what the `ax` leg would buy.
 
-**M3.7 OpenShell update (1 October 2026, unreleased).** The explicit
+**M3.7 OpenShell update (1 October 2026, shipped in v0.3.0).** The explicit
 `openshell` worker entry now requires a verification argv and an edit scope,
 resolves the repository and pins the revision before execution, and rejects
 invalid configuration before launching a sandbox. No implicit `true` check or
@@ -1544,9 +1544,9 @@ Controller-backed regression tests cover configuration, snapshot pinning,
 argument preservation, failed verification, interruption, and host-boundary
 checks. These are not new live MicroVM measurements; the live entry-point
 qualifications follow below. For director-planned sandbox teams, the existing
-`captain openshell --team` command remains the supported path. See [configuration](CONFIGURATION.md#openshell-workers-experimental-unreleased).
+`captain openshell --team` command remains the supported path. See [configuration](CONFIGURATION.md#openshell-workers).
 
-**M3.7 export handoff (2 October 2026, unreleased).** Successful solo brain
+**M3.7 export handoff (2 October 2026, shipped in v0.3.0).** Successful solo brain
 runs now return a structured verified export, bound to the brain's task and
 attempt IDs and retained in the ledger. Artifact and handoff queries survive
 restart and show the snapshot, files, checksum, sandbox verification and run
@@ -1559,7 +1559,7 @@ Ordinary teams/workflows containing OpenShell are rejected before dispatch so
 their host gates cannot run and their output cannot imply patches landed.
 This update adds no new live sandbox or scale measurements.
 
-**M3.7 CLI boundary qualification (2 October 2026, unreleased).**
+**M3.7 CLI boundary qualification (2 October 2026, shipped in v0.3.0).**
 `captain with openshell` now has a dedicated execution path: no host OpenCode
 note/session, ladder preflight, director call or host `--until` check. Its
 task and attempt are persisted before dispatch; completion retains the verified
@@ -1575,7 +1575,7 @@ after the Landlock check stopped its sandbox in 0.422 seconds and retained a
 `cancelled` record without an apply instruction. This is one fixture, not a
 scale or reliability measurement.
 
-**M3.7 HTTP boundary qualification (2 October 2026, unreleased).**
+**M3.7 HTTP boundary qualification (2 October 2026, shipped in v0.3.0).**
 Explicit OpenShell HTTP requests now bypass host memory/skill injection,
 compaction, cached team plans, narration retries and grading. Invalid workspaces,
 oversized conversations, ordinary workflow gates and strict dollar caps are
@@ -1593,7 +1593,7 @@ a second request after Landlock enforcement completed controller cleanup in
 real prepared MicroVM runtime, not the running brain service. Handler regressions
 also cover JSON/SSE responses, persistence failure, cancellation and retry scope.
 
-**M3.7 parallel workflow composition (2 October 2026, unreleased).**
+**M3.7 parallel workflow composition (2 October 2026, shipped in v0.3.0).**
 Explicit `/openshell ... + /openshell ...` expressions now run 2-4 workers
 through the dedicated CLI/HTTP boundary. Workers share one pinned snapshot and
 operator configuration; each receives its own assignment and prior conversation.
@@ -1618,7 +1618,7 @@ Two earlier setup attempts stopped before model execution because the isolated
 test process could not reach Docker; these remain recorded in the report. One
 fixture on one host does not qualify scale or reliability.
 
-**M3.7 sequential verified snapshots (2 October 2026, unreleased).**
+**M3.7 sequential verified snapshots (2 October 2026, shipped in v0.3.0).**
 Explicit OpenShell stages now compose with `>`, including parallel stages followed
 by a single worker. Up to four stages and eight workers share the operator's
 scope, profile and verification argv. Every stage is checked in a fresh sandbox
@@ -1641,7 +1641,7 @@ created a sandbox: the isolated test `HOME` resolved Docker to a missing default
 socket. The tests now resolve it from the account home and the pilot refuses a
 missing socket. No scale result is claimed.
 
-**M3.7 sandbox spend (2 October 2026, unreleased).** Shield now records each
+**M3.7 sandbox spend (2 October 2026, shipped in v0.3.0).** Shield now records each
 response's provider-reported tokens and `usage.cost` (numbers only), and every
 worker's `run.json` report totals them. The run's ledger charge is measured only
 when every request that crossed Shield was priced; otherwise it is unknown, and
@@ -1650,7 +1650,7 @@ sequential run charged a measured $0.0326 for 91,166 tokens across 15 priced
 requests. The ledger still keeps one charge per run rather than one per worker,
 and lanes that return no price (NIM) stay unknown.
 
-**M3.7 no-change reviews (2 October 2026, unreleased).** Explicit
+**M3.7 no-change reviews (2 October 2026, shipped in v0.3.0).** Explicit
 `/openshell --review <assignment>` stages and JSON tasks with `mode: "review"`
 accept only an empty export, a passing baseline and passing verification, with
 no repair attempt or edit scope. Edit tasks still require a patch. Reviews use
@@ -1672,7 +1672,7 @@ stopped on a billing assertion: one of 23 requests had no priced response, so
 the ledger correctly reported unknown cost. The qualification now checks both
 measured and unknown billing. This is one local public fixture, not scale proof.
 
-**M3.7 explicit coordinator recovery (2 October 2026, unreleased).**
+**M3.7 explicit coordinator recovery (2 October 2026, shipped in v0.3.0).**
 `captain openshell --resume <run-directory>` resumes new sequences from complete,
 verified stages. An owner-only plan pins assignments, scope, verification argv,
 provider policies and runtime fingerprints. Recovery rechecks worker and integrated
@@ -1700,7 +1700,7 @@ socket setup issue and a fake-pilot mismatch: worker reports name the starting
 tree, while the integrated report names the verified result. Both are recorded.
 This qualifies one stage-boundary recovery, not in-flight resumption or scale.
 
-**M3.7 task-linked recovery (2 October 2026, unreleased).** Sequential CLI/HTTP
+**M3.7 task-linked recovery (2 October 2026, shipped in v0.3.0).** Sequential CLI/HTTP
 dispatch now persists the run directory and plan checksum on the attempt before
 starting a sandbox. `captain task resume <task-id> <attempt-id>` validates the
 checkpoint under the sequence lock before creating and saving a new linked
@@ -1717,7 +1717,7 @@ exclusive locks, cancellation during admission and execution, client disconnect,
 plan substitution and missing exports. Ordinary team planning remains open;
 opt-in restart dispatch is described below.
 
-**M3.7 task recovery qualification (2 October 2026, unreleased).** The controller
+**M3.7 task recovery qualification (2 October 2026, shipped in v0.3.0).** The controller
 now refreshes the durable attempt checkpoint after every verified stage, including
 during recovery. The stage record is saved first; a ledger-save failure stops the
 next worker and withholds the final export. A regression fails on the previous
@@ -1737,7 +1737,7 @@ another ledger reload. One cumulative charge matched Shield's 11 requests, 64,14
 tokens and $0.0230. This qualifies explicit task recovery at a verified stage
 boundary on one host; it does not qualify automatic dispatch or in-flight recovery.
 
-**M3.7 opt-in startup recovery (2 October 2026, unreleased).**
+**M3.7 opt-in startup recovery (2 October 2026, shipped in v0.3.0).**
 `CAPTAIN_OPENSHELL_AUTO_RESUME=1` enables one startup pass after the HTTP listener
 binds and reconciliation is saved. Previously running sandbox sequences are
 validated and resumed serially through the same path as the explicit task API.
@@ -1765,7 +1765,7 @@ and handoff survived reload. One cumulative charge covered 11 requests, 64,140
 tokens and $0.0230. This qualifies one public fixture on one host, not in-flight
 recovery, scale or a release build.
 
-**M3.7 shared wall-time limits (2 October 2026, unreleased).**
+**M3.7 shared wall-time limits (2 October 2026, shipped in v0.3.0).**
 `CAPTAIN_MAX_WALLTIME` now supplies one root deadline across solo, parallel and
 sequential OpenShell execution, including repair and integration verification.
 The task ledger retains the root start time and cap; the sequence plan binds an
@@ -1782,7 +1782,7 @@ local controller fixtures, not new live-provider or MicroVM qualification. Attem
 cap admission is described below; strict dollar caps and ordinary team planning
 remain open.
 
-**M3.7 conservative attempt admission (2 October 2026, unreleased).**
+**M3.7 conservative attempt admission (2 October 2026, shipped in v0.3.0).**
 `CAPTAIN_MAX_ATTEMPTS` admits a complete explicit sandbox plan only when its
 worst-case worker, repair and director invocations fit. Each edit/review counts
 one; configured repairs count once; every possible conflict group gets a director
@@ -1806,7 +1806,7 @@ records and recovery without replay. No new live-provider or MicroVM benchmark
 is claimed for this change. Ordinary team planning and strict dollar budgets
 remain open.
 
-**M3.7 review before commit (2 October 2026, unreleased).** A review of the
+**M3.7 review before commit (2 October 2026, shipped in v0.3.0).** A review of the
 uncommitted work found and fixed these defects, each with a regression test:
 
 - A director-planned `/team` with one OpenShell worker ran it through the
@@ -1838,7 +1838,7 @@ The ledger evidence anchor described below closes the plan-only checkpoint gap,
 and a streaming retry that attaches to a running HTTP request now receives
 keepalives (see director-planned sandbox teams below).
 
-**M3.7 ledger-bound recovery evidence (2 October 2026, unreleased).**
+**M3.7 ledger-bound recovery evidence (2 October 2026, shipped in v0.3.0).**
 Task checkpoints now bind a verified-stage count and evidence digest as well as
 the plan checksum. The digest covers the original start time, snapshot lineage,
 exact completed stage reports and set-aside usage for those stages. Rewriting
@@ -1859,7 +1859,7 @@ ledger reload, three-stage continuation, stopped-stage reruns, altered evidence
 after admission, checkpoint rollback and failed-save refusal. No new live-provider
 or MicroVM benchmark is claimed for this change.
 
-**M3.7 director-planned sandbox teams (2 October 2026, unreleased).**
+**M3.7 director-planned sandbox teams (2 October 2026, shipped in v0.3.0).**
 `/team /openshell <task>` was refused before planning. It now runs on the sandbox
 entry: the tool-less `claude -p` director that rules on conflicts
 (`CAPTAIN_OPENSHELL_DIRECTOR=claude`) splits the task into 1-4 assignments, and
@@ -1901,7 +1901,7 @@ the verified tree. This qualifies one cleanly separable task on one host, not
 planning quality, conflict-heavy splits or scale. Mixed host/sandbox teams remain
 open. The following extension adds multi-stage planning.
 
-**M3.7 multi-stage director plans (2 October 2026, unreleased).**
+**M3.7 multi-stage director plans (2 October 2026, shipped in v0.3.0).**
 The sandbox planner now returns ordered `edit` or `review` stages: at most four
 stages, four workers per stage and eight workers total. It prefers a single stage
 unless dependencies or a requested review justify more. The former flat `workers`
@@ -1929,7 +1929,7 @@ planning call used the Claude subscription and is not priced in that figure.
 This is one local fixture on the patched driver; repeated planner-aware recovery
 has controller coverage, not a new live restart qualification.
 
-**M3.7 strict dollar caps (2 October 2026, unreleased).**
+**M3.7 strict dollar caps (2 October 2026, shipped in v0.3.0).**
 Strict `CAPTAIN_MAX_COST` no longer refuses sandbox dispatch. Admission splits the
 cap evenly across every worker the plan can start, rounded down to a micro-dollar,
 and each worker's Shield enforces its share per request. Shield reserves a

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +19,9 @@ type OpenShellTeamPlan struct {
 	// DirectorAttempts counts the planner's model calls, a malformed reply's
 	// retry included, whether or not planning succeeded.
 	DirectorAttempts int
+	// DirectorReserveUSD is the strict-cap charge for those calls. It is a
+	// ceiling, not a measured subscription bill.
+	DirectorReserveUSD float64
 }
 
 type OpenShellPlanStage struct {
@@ -117,8 +121,15 @@ func PlanOpenShellTeam(ctx context.Context, dir, task, history string) (OpenShel
 }
 
 func planOpenShellTeam(ctx context.Context, dir, task, history string, ask func(context.Context, string) (string, error)) (OpenShellTeamPlan, error) {
-	if openShellStrictCost(ctx) > 0 {
-		return OpenShellTeamPlan{}, fmt.Errorf("%w: the planner is an unpriced host call; type explicit /openshell stages instead", ErrOpenShellCostCap)
+	if limit := openShellStrictCost(ctx); limit > 0 {
+		call := openShellDirectorUSD()
+		if call < 0 {
+			return OpenShellTeamPlan{}, fmt.Errorf("%w: CAPTAIN_OPENSHELL_DIRECTOR_USD must be a dollar amount below %d", ErrOpenShellCostCap, openShellMaxCostUSD)
+		}
+		reserve := float64(openShellPlanSlots) * call
+		if reserve >= limit {
+			return OpenShellTeamPlan{}, fmt.Errorf("%w: planner reservation $%g does not fit in $%g", ErrOpenShellCostCap, reserve, limit)
+		}
 	}
 	runner, template, err := openShellConfig(ctx, dir, "sandbox team plan")
 	if err != nil {
@@ -146,6 +157,9 @@ func planOpenShellTeam(ctx context.Context, dir, task, history string, ask func(
 	attempts := &openShellDirectorAttempts{}
 	plan, err := askOpenShellPlan(context.WithValue(ctx, openShellDirectorAttemptsKey{}, attempts), template, task, history, limit, ask)
 	plan.DirectorAttempts = attempts.count
+	if openShellStrictCost(ctx) > 0 {
+		plan.DirectorReserveUSD = float64(attempts.count) * openShellDirectorUSD()
+	}
 	return plan, err
 }
 
@@ -302,4 +316,17 @@ func WithOpenShellAttemptsSpent(ctx context.Context, n int) (context.Context, er
 		return ctx, fmt.Errorf("%w: %d attempts already spent; cap is %d", ErrOpenShellAttemptCap, n, cap)
 	}
 	return context.WithValue(ctx, openShellAttemptLimitKey{}, cap-n), nil
+}
+
+// WithOpenShellCostReserved lowers the strict dollar cap by a director
+// reservation the task already spent. The sandbox then admits only the remainder.
+func WithOpenShellCostReserved(ctx context.Context, usd float64) (context.Context, error) {
+	limit := openShellStrictCost(ctx)
+	if limit <= 0 || usd <= 0 {
+		return ctx, nil
+	}
+	if usd >= limit || math.IsNaN(usd) || math.IsInf(usd, 0) {
+		return ctx, fmt.Errorf("%w: $%g already reserved; cap is $%g", ErrOpenShellCostCap, usd, limit)
+	}
+	return context.WithValue(ctx, openShellCostLimitKey{}, limit-usd), nil
 }

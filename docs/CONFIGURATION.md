@@ -562,7 +562,7 @@ typed. `CAPTAIN_QUEUE_ORDER=off` always runs it as typed.
 
 `/rename [title]` sets the session's title - what the TUI shows for this thread - instead of the auto-generated name, which is taken from the first message and can be meaningless when that message is an error. With no argument the name is built from the repository the TUI is open in and the thread's recent prompts: the plugin reads the session's last few user turns, sets `<repo>: <newest request>` immediately, then asks the brain's cheapest leg to fold repo and context into a tidier title and replaces it when that lands. `/rename <title>` sets exactly the title you type. The plugin writes it through opencode's session API and refuses the turn, so nothing is queued; the toast is the receipt. Registered as a captain command, it overrides opencode's built-in `/rename` dialog.
 
-### OpenShell workers (experimental, unreleased)
+### OpenShell workers
 
 Name `openshell` explicitly to run one task through the prepared OpenShell pilot.
 It is excluded from automatic routing and escalation ladders. Both
@@ -576,8 +576,8 @@ task first, bind cancellation to the controller and keep the verified export.
 | Variable | Default | Effect |
 |---|---|---|
 | `CAPTAIN_OPENSHELL_PREPARED` | required | Directory produced by the pilot's `prepare.py`, including binaries, Shield and Python environment |
-| `CAPTAIN_OPENSHELL_ALLOWED` | required | Comma-separated, repository-relative paths of 1-64 existing files the worker may edit |
-| `CAPTAIN_OPENSHELL_VERIFY` | required | JSON argv array, such as `["python3","-m","unittest"]`; 1-32 nonempty arguments, with no implicit shell parsing |
+| `CAPTAIN_OPENSHELL_ALLOWED` | required, or a confirm line | Comma-separated, repository-relative paths of 1-64 existing files the worker may edit |
+| `CAPTAIN_OPENSHELL_VERIFY` | required, or a confirm line | JSON argv array, such as `["python3","-m","unittest"]`; 1-32 nonempty arguments, with no implicit shell parsing |
 | `CAPTAIN_OPENSHELL_PILOT` | required | `examples/openshell-pilot` of a Captain checkout you trust. Its controller runs on the host, so it never defaults to the repository being sandboxed |
 | `CAPTAIN_OPENSHELL_REPO` | current workspace | Repository to snapshot; resolved to its top level |
 | `CAPTAIN_OPENSHELL_REVISION` | `HEAD` | Commit or ref, resolved once to a full commit ID before execution |
@@ -591,6 +591,21 @@ task first, bind cancellation to the controller and keep the verified export.
 There is no default verification command. JSON preserves spaces, commas and
 quoting inside arguments. An operator who explicitly supplies a no-op check
 has not established correctness; choose the repository's real tests.
+
+If `CAPTAIN_OPENSHELL_ALLOWED` or `CAPTAIN_OPENSHELL_VERIFY` is unset, the
+sandbox does not start. Captain proposes paths cited in the task that exist
+in the pinned commit, and a test argv taken from the repo (`go test ./...`,
+`npm test`, `python -m pytest`, `cargo test`, or `make test`) with the shell
+redirection removed. You start the run by sending the same task prefixed with
+`confirm allowed=file.go verify=["go","test","./..."]`. A path you did not
+write is not added. `CAPTAIN_OPENSHELL_PREPARED` and `CAPTAIN_OPENSHELL_PILOT`
+stay machine settings.
+
+Under a strict dollar cap, each tool-less director call reserves
+`CAPTAIN_OPENSHELL_DIRECTOR_USD` (default $0.05) before it runs. That
+reservation is the charge, because the subscription returns no bill. The
+sandbox then admits only the remainder. Shield's committed amount is what the
+ledger records when the provider bill is incomplete.
 The prepared image must contain the test runtime and dependencies.
 
 The direct CLI bypasses the host OpenCode server, routing ladder and director.
@@ -1118,7 +1133,7 @@ settings.
 |---|---|---|
 | `CAPTAIN_MAX_WALLTIME` | unset (`0` = unlimited) | Shared task wall-time limit, such as `10m`. OpenShell persists its absolute deadline across stages and recovery; downtime counts. |
 | `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries. OpenShell admits the complete worst-case plan before dispatch; other paths use the budget controller. |
-| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch, and OpenShell workers are held to it request by request at Shield ([strict dollar caps](#openshell-workers-experimental-unreleased)). |
+| `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch, and OpenShell workers are held to it request by request at Shield ([strict dollar caps](#openshell-workers)). |
 | `CAPTAIN_STRICT` | off | When set with a cost cap, only cost-reporting adapters may run (see `captain budget`). |
 | `CAPTAIN_MAX_REPAIRS` | `1` | Same-leg objective-failure repairs before escalation. `0` = no repairs. |
 | `CAPTAIN_MAX_EFFORT_ESCALATIONS` | `1` | Between the repair and the leg escalation: the same leg one effort rung up (prompt cache and context survive). `0` = skip straight to the leg. |

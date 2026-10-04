@@ -27,14 +27,16 @@ type OpenShellStageRecord struct {
 // verified. Recovery runs the stage again from the same snapshot; the stopped
 // run's directory stays for inspection, and what it used still counts.
 type OpenShellSetAside struct {
-	Stage     int                    `json:"stage"`
-	RunRecord string                 `json:"run_record"`
-	Revision  string                 `json:"revision"`
-	Attempts  *OpenShellAttemptUsage `json:"attempts"` // nil: unknown
-	Requests  int                    `json:"requests"`
-	Tokens    int                    `json:"tokens"`
-	CostUSD   float64                `json:"cost_usd"`
-	Priced    bool                   `json:"priced"` // every request came back with a price
+	Stage          int                    `json:"stage"`
+	RunRecord      string                 `json:"run_record"`
+	Revision       string                 `json:"revision"`
+	Attempts       *OpenShellAttemptUsage `json:"attempts"` // nil: unknown
+	Requests       int                    `json:"requests"`
+	Tokens         int                    `json:"tokens"`
+	CostUSD        float64                `json:"cost_usd"`
+	Priced         bool                   `json:"priced"` // every request came back with a price
+	CommittedUSD   float64                `json:"committed_usd,omitempty"`
+	CommittedKnown bool                   `json:"committed_known,omitempty"`
 }
 
 // openShellStageDir is the directory of stage n's run k (0 is the first run).
@@ -67,6 +69,9 @@ func setAsideOpenShellStage(team OpenShellTeam, record OpenShellStageRecord) *Op
 	}
 	aside.Attempts = stage.measuredAttempts(team.Tasks...)
 	aside.Requests, aside.Tokens, aside.CostUSD, aside.Priced = openShellSpend(stage.Tasks)
+	if usd, ok := openShellStageCommitted(&stage); ok {
+		aside.CommittedUSD, aside.CommittedKnown = usd, true
+	}
 	return aside
 }
 
@@ -207,15 +212,45 @@ func (r *OpenShellRunner) runSequence(ctx context.Context, teams []OpenShellTeam
 	if err != nil {
 		return err
 	}
-	cost, err := r.costBudget(ctx, teams)
-	if err != nil {
-		return err
+	admit := teams
+	if recovered != nil && (openShellStrictCost(ctx) > 0 || r.MaxCostUSD > 0 || run.CostBudget != nil) {
+		limit := r.MaxCostUSD
+		if limit == 0 {
+			limit = openShellStrictCost(ctx)
+		}
+		if run.CostBudget != nil && (limit == 0 || run.CostBudget.LimitUSD < limit) {
+			limit = run.CostBudget.LimitUSD
+		}
+		share := 0.0
+		if run.CostBudget != nil {
+			share = run.CostBudget.WorkerUSD
+		}
+		spent, ok := openShellRecoverySpent(recovered, run.SetAside, share)
+		if !ok {
+			return fmt.Errorf("%w: recovering a strict-capped sequence needs the committed Shield spend", ErrOpenShellCostCap)
+		}
+		if run.CostBudget != nil {
+			spent += run.CostBudget.DirectorUSD
+		}
+		if spent > limit {
+			return fmt.Errorf("%w: $%g already committed of $%g", ErrOpenShellCostCap, spent, limit)
+		}
+		ctx = context.WithValue(ctx, openShellCostLimitKey{}, limit-spent)
+		r.MaxCostUSD = limit - spent
+		r.WorkerCostUSD = 0
+		admit = teams[len(recovered):]
 	}
-	if cost != nil && recovered != nil {
-		return fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
+	var cost *OpenShellCostBudget
+	if len(admit) > 0 {
+		cost, err = r.costBudget(ctx, admit)
+		if err != nil {
+			return err
+		}
 	}
 	if cost != nil {
-		run.CostBudget = cost
+		if recovered == nil {
+			run.CostBudget = cost
+		}
 		r.MaxCostUSD, r.WorkerCostUSD = cost.LimitUSD, cost.WorkerUSD
 	}
 	if recovered == nil {

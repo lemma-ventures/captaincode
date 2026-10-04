@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -55,10 +54,6 @@ func (b *brain) openShellRecoveryBudget(ctx context.Context, taskID string, plan
 		budget = &captaincode.Budget{StartedAt: b.ledger.TaskStateFor(taskID).StartedAt}
 	}
 	ctx, cancel, err := captaincode.OpenShellBudgetContext(ctx, budget)
-	if err == nil && captaincode.OpenShellCostLimit(ctx) > 0 {
-		cancel()
-		return nil, nil, fmt.Errorf("%w: recovering a strict-capped sandbox task is not supported yet", captaincode.ErrOpenShellCostCap)
-	}
 	if err != nil || plan == nil {
 		return ctx, cancel, err
 	}
@@ -235,7 +230,7 @@ func (b *brain) startOpenShellRecovery(ctx, runParent context.Context, taskID, a
 		defer recovery.Close()
 		res, runErr := recovery.Run(runCtx)
 		if next.OpenShellPlan != nil {
-			res = addOpenShellPlanningUsage(res, next.OpenShellPlan.DirectorAttempts)
+			res = addOpenShellPlanningUsage(res, next.OpenShellPlan.DirectorAttempts, 0)
 		}
 		b.mu.Lock()
 		defer b.mu.Unlock()

@@ -7,7 +7,7 @@ The fixture pilot operates on the small `fixture/` repository, not your checkout
 task spec, and `captain openshell` runs a team of such sandboxes and returns one
 verified patch. The experimental, unreleased `openshell` leg also accepts
 explicit solo tasks and sandbox-only workflows; it requires operator
-configuration and stays outside automatic routing. See [configuration](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+configuration and stays outside automatic routing. See [configuration](../../docs/CONFIGURATION.md#openshell-workers).
 
 ## Current result
 
@@ -430,7 +430,7 @@ read-only review stages. It uses the existing verified-snapshot handoff and
 exports one cumulative patch. Plans have at most four stages, four workers per
 stage and eight workers overall. Scope and tests stay operator-configured;
 reviews must leave the tree unchanged. See the
-[configuration contract](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+[configuration contract](../../docs/CONFIGURATION.md#openshell-workers).
 
 The opt-in public numbers fixture asks the tool-less director for two parallel
 refactors followed by a review of the verified result. It checks every worker's
@@ -499,7 +499,7 @@ earlier evidence is retained. Cleanup can extend past the deadline by the existi
 shutdown grace. Controller regressions cover deadline persistence and expiry;
 this change has not yet received a separate live MicroVM qualification.
 
-### Strict dollar caps (experimental, unreleased)
+### Strict dollar caps
 
 With `CAPTAIN_STRICT=1` and `CAPTAIN_MAX_COST`, Captain splits the cap evenly across
 every worker the plan can start and passes each share to that worker's controller
@@ -520,7 +520,7 @@ Shield enforces the same share. Shield holds it request by request:
 Strict caps need an OpenRouter lane. They refuse `/team /openshell` and stages that
 could need an unpriced conflict ruling, give verification sandboxes a zero share,
 and cannot be resumed yet. See the
-[configuration contract](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+[configuration contract](../../docs/CONFIGURATION.md#openshell-workers).
 
 The [2 October qualification](results/2026-10-02-strict-cost-cap.json) ran the
 public Roman numeral worker on Cerebras twice, one VM sandbox each, in 78 seconds:
@@ -571,7 +571,7 @@ cancellation stopped runs again from its snapshot, and the stopped run's attempt
 and spend still count. This is explicit local continuation,
 not automatic brain recovery or resumption of an in-flight worker. It does not
 update the original brain attempt. See
-[configuration](../../docs/CONFIGURATION.md#openshell-workers-experimental-unreleased).
+[configuration](../../docs/CONFIGURATION.md#openshell-workers).
 
 `CAPTAIN_MAX_ATTEMPTS` applies conservative admission before execution: the
 whole plan needs room for every worker, configured repair and two director calls
@@ -584,7 +584,7 @@ unmeasured executions. CLI/HTTP completion settles the measured count once in th
 ledger, including failures and cancellations; missing counts remain unknown.
 Recovery counts completed and resumed stages once. It keeps the original
 checksum-bound cap and checks all stages; it cannot reset the allocation.
-Strict dollar caps are separate (see [strict dollar caps](#strict-dollar-caps-experimental-unreleased)).
+Strict dollar caps are separate (see [strict dollar caps](#strict-dollar-caps)).
 These controls have local regression coverage; the live reports below predate
 attempt-cap admission.
 

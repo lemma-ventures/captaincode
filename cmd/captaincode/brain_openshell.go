@@ -314,12 +314,15 @@ func (b *brain) runPlannedOpenShellTeam(ctx context.Context, ws captaincode.Work
 		ctx, err = captaincode.WithOpenShellAttemptsSpent(ctx, plan.DirectorAttempts)
 	}
 	if err == nil {
+		ctx, err = captaincode.WithOpenShellCostReserved(ctx, plan.DirectorReserveUSD)
+	}
+	if err == nil {
 		if err = keep(plan.Record()); err != nil {
 			err = fmt.Errorf("openshell: save team plan: %w", err)
 		}
 	}
 	if err != nil {
-		return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Directors: plan.DirectorAttempts}}, err
+		return captaincode.Result{OpenShellAttempts: &captaincode.OpenShellAttemptUsage{Directors: plan.DirectorAttempts}, CostCommitted: plan.DirectorReserveUSD}, err
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "the director planned %d sandbox worker(s) in %d call(s)", len(plan.Assignments), plan.DirectorAttempts)
@@ -335,18 +338,25 @@ func (b *brain) runPlannedOpenShellTeam(ctx context.Context, ws captaincode.Work
 	note := sb.String()
 	status("OpenShell: " + note + "\n")
 	res, err := b.runOpenShellWorkflow(ctx, ws, plan.Workflow, history)
-	res = addOpenShellPlanningUsage(res, plan.DirectorAttempts)
+	res = addOpenShellPlanningUsage(res, plan.DirectorAttempts, plan.DirectorReserveUSD)
 	res.Text = "[captain/openshell] " + note + "\n\n" + res.Text
 	return res, err
 }
 
-func addOpenShellPlanningUsage(res captaincode.Result, attempts int) captaincode.Result {
+func addOpenShellPlanningUsage(res captaincode.Result, attempts int, reserve float64) captaincode.Result {
 	usage := captaincode.OpenShellAttemptUsage{Unmeasured: 1}
 	if res.OpenShellAttempts != nil {
 		usage = *res.OpenShellAttempts
 	}
 	usage.Directors += attempts
 	res.OpenShellAttempts = &usage
+	if reserve > 0 {
+		if res.CostUSD > 0 {
+			res.CostUSD += reserve
+		} else {
+			res.CostCommitted += reserve
+		}
+	}
 	return res
 }
 

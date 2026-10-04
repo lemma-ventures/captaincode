@@ -37,7 +37,7 @@ grep '"kind":"decision"' ~/.captaincode/routing.jsonl | grep 'words from the pro
 | `gate.log` | Action-gate screening of a tool call (see [CONFIGURATION.md](CONFIGURATION.md)) | Append-only |
 | `redact.log` | Masking call: how many values were masked, never the values | Append-only |
 
-## OpenShell exports (experimental, unreleased)
+## OpenShell exports
 
 An explicit OpenShell brain run or `captain with openshell` stores a verified
 export on its attempt in `state.json`, separately from files applied to the workspace. The `exports`

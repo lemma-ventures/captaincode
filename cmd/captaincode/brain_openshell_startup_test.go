@@ -73,7 +73,7 @@ func TestOpenShellStartupRecoveryCreatesOneDurableContinuation(t *testing.T) {
 }
 
 func TestOpenShellStartupRecoveryRefusesUnsafeCandidates(t *testing.T) {
-	for _, name := range []string{"stale checkpoint", "missing timestamp", "future checkpoint", "waiting for input", "operator interrupt", "no checkpoint", "host worker", "unsupported budget", "settled usage", "cancelled task", "cancel intent", "changed runtime", "save failure", "shutdown"} {
+	for _, name := range []string{"stale checkpoint", "missing timestamp", "future checkpoint", "waiting for input", "operator interrupt", "no checkpoint", "host worker", "settled usage", "cancelled task", "cancel intent", "changed runtime", "save failure", "shutdown"} {
 		t.Run(name, func(t *testing.T) {
 			b, task, attempt := interruptedOpenShellTask(t)
 			t.Setenv("CAPTAIN_OPENSHELL_AUTO_RESUME", "1")
@@ -96,9 +96,6 @@ func TestOpenShellStartupRecoveryRefusesUnsafeCandidates(t *testing.T) {
 				as.OpenShell = nil
 			case "host worker":
 				as.Leg = captaincode.LegClaude
-			case "unsupported budget":
-				t.Setenv("CAPTAIN_MAX_COST", "1")
-				t.Setenv("CAPTAIN_STRICT", "1")
 			case "settled usage":
 				b.ledger.RecordCharge(captaincode.Charge{TaskID: task, Parent: attempt, Kind: captaincode.KindCall})
 			case "cancelled task":

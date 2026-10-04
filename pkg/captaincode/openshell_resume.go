@@ -172,8 +172,8 @@ func (r *OpenShellRecovery) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	defer stop()
-	if OpenShellCostLimit(ctx) > 0 || r.run.CostBudget != nil {
-		return Result{}, fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
 	}
 	ctx, deadlineCancel := r.runner.deadlineContext(ctx)
 	defer deadlineCancel()
@@ -269,11 +269,6 @@ func prepareOpenShellRecovery(ctx context.Context, dir string, expected *OpenShe
 		return nil, err
 	}
 	defer cancel()
-	// A rerun would need each stopped worker's share less what its Shield
-	// already committed; until that exists, a capped plan is not resumed.
-	if plan.MaxCostUSD > 0 || run.CostBudget != nil || OpenShellCostLimit(ctx) > 0 {
-		return nil, fmt.Errorf("%w: recovering a strict-capped sequence is not supported yet", ErrOpenShellCostCap)
-	}
 	if !plan.DeadlineAt.IsZero() {
 		var stop context.CancelFunc
 		ctx, stop = context.WithDeadline(ctx, plan.DeadlineAt)
@@ -432,7 +427,20 @@ func (r *OpenShellRunner) recoverSequence(ctx context.Context, teams []OpenShell
 			continue
 		}
 		var stage OpenShellRun
-		if _, err := decodeOpenShellSequence(record.RunRecord, &stage); err != nil {
+		decodeErr := error(nil)
+		if _, decodeErr = decodeOpenShellSequence(record.RunRecord, &stage); decodeErr != nil || record.Verdict == "running" {
+			if record.Verdict == "running" && i == len(run.Stages)-1 && (decodeErr != nil || func() error {
+				check := &OpenShellRunner{Repo: snapshot, Revision: current, RunDir: dir}
+				return check.revalidateSequenceStage(ctx, team, &stage, run.Provenance)
+			}() != nil) {
+				// The controller died mid-stage. An unfinished record is not
+				// replayed; the stage runs again and the stopped spend counts.
+				aside = setAsideOpenShellStage(team, record)
+				missing = true
+				continue
+			}
+		}
+		if decodeErr != nil {
 			return fail(errors.New("no completed stage record; in-flight work is not replayed"))
 		}
 		check := &OpenShellRunner{Repo: snapshot, Revision: current, RunDir: dir}

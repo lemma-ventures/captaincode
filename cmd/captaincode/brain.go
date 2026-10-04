@@ -1615,7 +1615,7 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 		b.mu.Unlock()
 	}
 	ranLeg, res, err := runOne(cur, onDelta, onStatus)
-	b.reconcileAttempt(taskID, res.CostUSD)
+	b.reconcileAttempt(taskID, res.BilledUSD())
 	b.recordQuotaFromHeaders(ranLeg, res)
 	// The claude leg at max effort refused by the frontier tier's own limit
 	// (spend cap, "your Fable limit"): that is the tier's to wear, and claude
@@ -1631,7 +1631,7 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 			}
 			ws.Effort = captaincode.EffortHigh
 			ranLeg, res, err = runOne(captaincode.LegClaude, onDelta, onStatus)
-			b.reconcileAttempt(taskID, res.CostUSD)
+			b.reconcileAttempt(taskID, res.BilledUSD())
 			b.recordQuotaFromHeaders(ranLeg, res)
 		}
 	}
@@ -1679,7 +1679,7 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 		cur = fb
 		tried = append(tried, fb)
 		ranLeg, res, err = runOne(cur, od, os_)
-		b.reconcileAttempt(taskID, res.CostUSD)
+		b.reconcileAttempt(taskID, res.BilledUSD())
 		b.recordQuotaFromHeaders(ranLeg, res)
 		if err == nil && res.Text != "" && onDelta == nil {
 			// Buffered mode: nobody streamed the marker - carry it in the text.
@@ -1893,6 +1893,9 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	// WHICH of the two this was, so the M1 report can separate a bill from a
 	// price list (ROADMAP M1.2).
 	usage := captaincode.CallUsage(leg, res.Tokens, res.CostUSD, nil)
+	if leg == captaincode.LegOpenShell {
+		usage = captaincode.OpenShellUsage(res)
+	}
 	ev.CostUSD, ev.CostStatus = usage.CostUSD, usage.CostStatus
 	b.mu.Lock()
 	if b.wasExplored(task) {

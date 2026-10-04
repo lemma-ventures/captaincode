@@ -541,7 +541,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 							"\n\nThe completion gate `" + wl.Gate + "` FAILED with:\n" + gout +
 							"\nFix the underlying problem so the gate passes, then report what you changed."
 						ran2, res2, err2 := b.runWorkflowLeg(ws, wl.Leg, retry, onStatus, taskID)
-						b.reconcileAttempt(taskID, res2.CostUSD)
+						b.reconcileAttempt(taskID, res2.BilledUSD())
 						gateRetried = true
 						if err2 == nil {
 							ran, res = ran2, res2

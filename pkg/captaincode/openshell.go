@@ -1576,12 +1576,14 @@ func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, O
 		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_PILOT to the examples/openshell-pilot directory of a Captain checkout you trust")
 	}
 	var verify []string
-	rawVerify := os.Getenv("CAPTAIN_OPENSHELL_VERIFY")
-	if err := json.Unmarshal([]byte(rawVerify), &verify); err != nil {
-		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_VERIFY to a JSON argv array, such as [\"python3\",\"-m\",\"unittest\"]")
-	}
-	if err := checkOpenShellArgv(verify); err != nil {
-		return nil, team, fmt.Errorf("openshell: verify (CAPTAIN_OPENSHELL_VERIFY): %w", err)
+	rawVerify := strings.TrimSpace(os.Getenv("CAPTAIN_OPENSHELL_VERIFY"))
+	if rawVerify != "" {
+		if err := json.Unmarshal([]byte(rawVerify), &verify); err != nil {
+			return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_VERIFY to a JSON argv array, such as [\"python3\",\"-m\",\"unittest\"]")
+		}
+		if err := checkOpenShellArgv(verify); err != nil {
+			return nil, team, fmt.Errorf("openshell: verify (CAPTAIN_OPENSHELL_VERIFY): %w", err)
+		}
 	}
 	paths := func(key string) []string {
 		var result []string
@@ -1593,8 +1595,12 @@ func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, O
 		return result
 	}
 	allowed := paths("CAPTAIN_OPENSHELL_ALLOWED")
-	if len(allowed) == 0 {
-		return nil, team, fmt.Errorf("openshell: set CAPTAIN_OPENSHELL_ALLOWED to the comma-separated paths the worker may change")
+	if len(allowed) == 0 || len(verify) == 0 {
+		var err error
+		task, allowed, verify, err = confirmOpenShellSetup(ctx, dir, task, allowed, verify)
+		if err != nil {
+			return nil, team, err
+		}
 	}
 	value := func(key, fallback string) string {
 		if v := os.Getenv(key); v != "" {
@@ -1722,6 +1728,15 @@ func finishOpenShellRun(ctx context.Context, runner *OpenShellRunner, run *OpenS
 	}
 	if tokens, cost, complete := run.Spend(); complete {
 		res.Tokens, res.CostUSD = tokens, cost
+	} else if committed, ok := openShellRunCommitted(run); ok && committed > 0 {
+		res.CostCommitted = committed
+	}
+	if run.CostBudget != nil && run.CostBudget.DirectorUSD > 0 {
+		if res.CostUSD > 0 {
+			res.CostUSD += run.CostBudget.DirectorUSD
+		} else {
+			res.CostCommitted += run.CostBudget.DirectorUSD
+		}
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
 		res.Partial = true

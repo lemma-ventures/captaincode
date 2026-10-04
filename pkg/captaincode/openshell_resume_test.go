@@ -106,7 +106,7 @@ func TestOpenShellSequenceResumeContinuesOnce(t *testing.T) {
 
 func TestOpenShellSequenceResumeRejectsAlteredState(t *testing.T) {
 	for _, name := range []string{"plan", "pilot", "policy", "python", "stage patch", "worker patch", "snapshot lineage",
-		"worker gate", "integrated gate", "verify argv", "worker tree", "missing stage", "in-flight stage",
+		"worker gate", "integrated gate", "verify argv", "worker tree", "missing stage",
 		"symlinked stage", "symlinked evidence", "filters"} {
 		t.Run(name, func(t *testing.T) {
 			r := pauseOpenShellSequence(t)
@@ -148,14 +148,6 @@ func TestOpenShellSequenceResumeRejectsAlteredState(t *testing.T) {
 				saveStage = true
 			case "missing stage":
 				require.NoError(t, os.Remove(filepath.Join(stageDir, "run.json")))
-			case "in-flight stage":
-				require.NoError(t, os.Mkdir(filepath.Join(r.RunDir, "stage-2"), 0o700))
-				var run OpenShellRun
-				_, err := decodeOpenShellSequence(filepath.Join(r.RunDir, "run.json"), &run)
-				require.NoError(t, err)
-				run.Stages = append(run.Stages, OpenShellStageRecord{Stage: 2, Revision: run.Stages[0].NextRevision,
-					RunRecord: filepath.Join(r.RunDir, "stage-2", "run.json"), Verdict: "running"})
-				require.NoError(t, saveOpenShellSequence(r.RunDir, &run))
 			case "symlinked stage":
 				target := filepath.Join(t.TempDir(), "stage")
 				require.NoError(t, os.Rename(stageDir, target))
@@ -398,4 +390,19 @@ func TestOpenShellSequenceResumeRejectsAlteredCompletedAggregate(t *testing.T) {
 			assert.Nil(t, result.Export)
 		})
 	}
+}
+
+func TestOpenShellRunningStageIsRerun(t *testing.T) {
+	r := pauseOpenShellSequence(t)
+	require.NoError(t, os.Mkdir(filepath.Join(r.RunDir, "stage-2"), 0o700))
+	var run OpenShellRun
+	_, err := decodeOpenShellSequence(filepath.Join(r.RunDir, "run.json"), &run)
+	require.NoError(t, err)
+	run.Stages = append(run.Stages, OpenShellStageRecord{Stage: 2, Revision: run.Stages[0].NextRevision,
+		RunRecord: filepath.Join(r.RunDir, "stage-2", "run.json"), Verdict: "running"})
+	require.NoError(t, saveOpenShellSequence(r.RunDir, &run))
+	result, err := ResumeOpenShellSequence(context.Background(), r.RunDir, nil)
+	require.NoError(t, err, result.Text)
+	require.NotNil(t, result.Export)
+	assert.NotContains(t, result.Text, "stage-2/run.json")
 }

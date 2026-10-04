@@ -20,6 +20,9 @@ import (
 // brain knows under the extension key the AI SDK forwards as metadata.
 func usageBlock(leg captaincode.Leg, res captaincode.Result) map[string]any {
 	u := captaincode.CallUsage(leg, res.Tokens, res.CostUSD, nil)
+	if leg == captaincode.LegOpenShell {
+		u = captaincode.OpenShellUsage(res)
+	}
 	prompt := res.Tokens * 3 / 4
 	completion := res.Tokens - prompt
 	return map[string]any{

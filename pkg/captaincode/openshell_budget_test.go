@@ -111,6 +111,9 @@ func TestOpenShellSequenceDeadlineSurvivesResume(t *testing.T) {
 }
 
 func TestOpenShellSequenceExpiredBudgetRefusesRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
 	t.Setenv("CAPTAIN_MAX_WALLTIME", "10s")
 	t.Setenv("CAPTAIN_MAX_ATTEMPTS", "")
 	t.Setenv("CAPTAIN_STRICT", "")

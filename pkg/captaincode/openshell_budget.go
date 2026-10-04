@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,15 +27,21 @@ var openShellPricedProfiles = map[string]bool{"cerebras": true, "sambanova": tru
 // openShellMaxCostUSD bounds a strict cap; Shield refuses larger allocations.
 const openShellMaxCostUSD = 1000
 
+// openShellDirectorCallUSD is the most one tool-less director call may
+// reserve under a strict cap. The subscription returns no bill, so the
+// reservation is the charge. CAPTAIN_OPENSHELL_DIRECTOR_USD overrides it.
+const openShellDirectorCallUSD = 0.05
+
 // OpenShellCostBudget is a strict dollar cap's admission: the cap split evenly
 // across every worker the plan can start, rounded down to a micro-dollar, so
 // the allocations never add up to more than the cap. Each worker's Shield
 // forwards a request only if its worst case fits the worker's share. Unused
 // shares are not reassigned.
 type OpenShellCostBudget struct {
-	LimitUSD  float64 `json:"limit_usd"`
-	WorkerUSD float64 `json:"worker_usd"`
-	Workers   int     `json:"workers"`
+	LimitUSD    float64 `json:"limit_usd"`
+	WorkerUSD   float64 `json:"worker_usd"`
+	Workers     int     `json:"workers"`
+	DirectorUSD float64 `json:"director_usd,omitempty"`
 }
 
 type openShellCostLimitKey struct{}
@@ -72,6 +79,7 @@ func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam)
 	if r.WorkerCostUSD > 0 {
 		budget.LimitUSD = r.MaxCostUSD
 	}
+	directorCalls := 0
 	for _, team := range teams {
 		edits := 0
 		for _, task := range team.Tasks {
@@ -82,18 +90,128 @@ func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam)
 				edits++
 			}
 		}
-		if r.Director != nil && edits > 1 {
-			return nil, fmt.Errorf("%w: a conflict ruling is an unpriced host call; run one edit worker per stage or unset CAPTAIN_OPENSHELL_DIRECTOR", ErrOpenShellCostCap)
+		if r.Director != nil && r.WorkerCostUSD == 0 && edits > 1 {
+			directorCalls += 2 * (edits / 2)
 		}
 		budget.Workers += len(team.Tasks)
 	}
-	if budget.WorkerUSD == 0 {
-		budget.WorkerUSD = math.Floor(limit/float64(budget.Workers)*1e6) / 1e6
+	callUSD := openShellDirectorUSD()
+	if directorCalls > 0 && callUSD < 0 {
+		return nil, fmt.Errorf("%w: CAPTAIN_OPENSHELL_DIRECTOR_USD must be a dollar amount below %d", ErrOpenShellCostCap, openShellMaxCostUSD)
 	}
-	if !(budget.WorkerUSD > 0 && budget.WorkerUSD <= budget.LimitUSD) {
-		return nil, fmt.Errorf("%w: $%g cannot be split across %d workers", ErrOpenShellCostCap, budget.LimitUSD, budget.Workers)
+	budget.DirectorUSD = float64(directorCalls) * callUSD
+	split := budget.LimitUSD - budget.DirectorUSD
+	if budget.WorkerUSD == 0 {
+		if !(split > 0) {
+			return nil, fmt.Errorf("%w: director reservation $%g does not fit in $%g", ErrOpenShellCostCap, budget.DirectorUSD, budget.LimitUSD)
+		}
+		budget.WorkerUSD = math.Floor(split/float64(budget.Workers)*1e6) / 1e6
+	}
+	if !(budget.WorkerUSD > 0 && float64(budget.Workers)*budget.WorkerUSD+budget.DirectorUSD <= budget.LimitUSD+1e-9) {
+		return nil, fmt.Errorf("%w: $%g cannot cover %d workers and a $%g director reservation", ErrOpenShellCostCap, budget.LimitUSD, budget.Workers, budget.DirectorUSD)
 	}
 	return budget, nil
+}
+
+func openShellTasksCommitted(tasks []*OpenShellResult) (float64, bool) {
+	var usd float64
+	for _, t := range tasks {
+		if t == nil || t.Report == nil {
+			continue
+		}
+		if t.NotStarted || (t.Report.WorkerAttempts != nil && *t.Report.WorkerAttempts == 0 && t.Report.Shield == nil) {
+			continue
+		}
+		if t.Report.Shield == nil || t.Report.Shield.Budget == nil {
+			return 0, false
+		}
+		c := t.Report.Shield.Budget.CommittedUSD
+		if c < 0 || math.IsNaN(c) || math.IsInf(c, 0) {
+			return 0, false
+		}
+		usd += c
+	}
+	return usd, true
+}
+
+func openShellStageCommitted(run *OpenShellRun) (float64, bool) {
+	if run == nil {
+		return 0, false
+	}
+	return openShellTasksCommitted(run.Tasks)
+}
+
+func openShellRunCommitted(run *OpenShellRun) (float64, bool) {
+	usd, ok := openShellTasksCommitted(run.Tasks)
+	if !ok {
+		return 0, false
+	}
+	for _, s := range run.SetAside {
+		if !s.CommittedKnown {
+			return 0, false
+		}
+		usd += s.CommittedUSD
+	}
+	return usd, true
+}
+
+// openShellRecoverySpent is what a resume must subtract from the cap.
+// A stopped stage with no Shield budget counts as its full worker share,
+// so an unknown bill cannot free that money for a second run.
+func openShellRecoverySpent(recovered []*OpenShellRun, aside []OpenShellSetAside, share float64) (float64, bool) {
+	var sum float64
+	for _, stage := range recovered {
+		usd, ok := openShellStageCommitted(stage)
+		if !ok {
+			return 0, false
+		}
+		sum += usd
+	}
+	for _, s := range aside {
+		if s.CommittedKnown {
+			sum += s.CommittedUSD
+			continue
+		}
+		if !(share > 0) {
+			return 0, false
+		}
+		sum += share
+	}
+	return sum, true
+}
+
+func openShellDirectorUSD() float64 {
+	raw := strings.TrimSpace(os.Getenv("CAPTAIN_OPENSHELL_DIRECTOR_USD"))
+	if raw == "" {
+		return openShellDirectorCallUSD
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || !(v > 0 && v < openShellMaxCostUSD) {
+		return -1
+	}
+	return v
+}
+
+// BilledUSD is the amount the ledger charges: the provider bill, or Shield's
+// committed amount when that bill is incomplete.
+func (r Result) BilledUSD() float64 {
+	if r.CostUSD > 0 {
+		return r.CostUSD
+	}
+	return r.CostCommitted
+}
+
+// OpenShellUsage is the ledger row for one sandbox result. A complete Shield
+// bill is measured. An incomplete bill charges the committed reservation and
+// says so. Neither path prices the sandbox as a free model.
+func OpenShellUsage(res Result) Usage {
+	if res.CostUSD > 0 {
+		return CallUsage(LegOpenShell, res.Tokens, res.CostUSD, nil)
+	}
+	if res.CostCommitted > 0 {
+		return NormalizeUsage(Usage{Total: res.Tokens, CostUSD: res.CostCommitted, CostStatus: UsageEstimated, PriceSource: "shield-committed"})
+	}
+	return CallUsage(LegOpenShell, res.Tokens, 0, nil)
 }
 
 // checkCostReport confirms a worker's Shield enforced its share: a report
@@ -193,6 +311,17 @@ func (run *OpenShellRun) measuredAttempts(tasks ...OpenShellTask) *OpenShellAtte
 }
 
 func (l *Ledger) ReconcileOpenShellAttempts(attemptID string, usage *OpenShellAttemptUsage) error {
+	return l.ReconcileOpenShellSpend(attemptID, usage, 0)
+}
+
+// ReconcileOpenShellSpend settles attempt counts and adds costUSD to the
+// task budget. costUSD is the provider bill, or Shield's committed amount
+// when that bill is incomplete. A second call with the same counts does not
+// add the cost again.
+func (l *Ledger) ReconcileOpenShellSpend(attemptID string, usage *OpenShellAttemptUsage, costUSD float64) error {
+	if costUSD < 0 || math.IsNaN(costUSD) || math.IsInf(costUSD, 0) {
+		return errors.New("openshell: invalid committed spend")
+	}
 	as := l.AttemptStateFor(attemptID)
 	if as == nil || as.Leg != LegOpenShell {
 		return errors.New("openshell: attempt usage requires a sandbox attempt")
@@ -221,7 +350,7 @@ func (l *Ledger) ReconcileOpenShellAttempts(attemptID string, usage *OpenShellAt
 	if budget.ReservedAttempts != 0 {
 		return errors.New("openshell: cannot settle usage against unrelated reservations")
 	}
-	budget.Reconcile(usage.Total(), 0)
+	budget.Reconcile(usage.Total(), costUSD)
 	budget.UnmeasuredExecutions += usage.Unmeasured
 	if usage.Unmeasured > 0 {
 		budget.Stop(StopAttemptUsageUnknown)

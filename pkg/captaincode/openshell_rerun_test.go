@@ -104,21 +104,27 @@ func TestOpenShellSequenceStageRefusedBeforeDispatchIsNotSetAside(t *testing.T) 
 	assert.Equal(t, filepath.Join(r.RunDir, "stage-2", "run.json"), run.Stages[1].RunRecord)
 }
 
-func TestOpenShellSequenceDoesNotRerunAStageAfterACrash(t *testing.T) {
+func TestOpenShellSequenceRerunsAStageAfterACrash(t *testing.T) {
 	t.Setenv("CAPTAIN_MAX_ATTEMPTS", "")
 	t.Setenv("CAPTAIN_MAX_WALLTIME", "")
 	teams := resumeSequenceTeams()
-	teams[1].Tasks[0].Prompt = `{"hang":true}`
+	teams[1].Tasks[0].Prompt = fmt.Sprintf(`{"hang_once":%q,"expect":{"a.txt":"first\n"},"write":{"a.txt":"second\n"}}`,
+		filepath.Join(t.TempDir(), "hung"))
 	r := interruptOpenShellStage2(t, teams, true)
 	run := savedOpenShellSequence(t, r)
 	require.Len(t, run.Stages, 2)
-	// What a controller that died mid-stage leaves: its workers may outlive it.
+	crashed := run.Stages[1].RunRecord
+	// What a controller that died mid-stage leaves: the checkpoint still says
+	// running, and that record is not a verified export.
 	run.Stages[1].Verdict = "running"
 	require.NoError(t, saveOpenShellSequence(r.RunDir, &run))
 	result, err := ResumeOpenShellSequence(context.Background(), r.RunDir, nil)
-	require.ErrorContains(t, err, "in-flight work is not replayed")
-	assert.Nil(t, result.Export)
-	assert.NoDirExists(t, filepath.Join(r.RunDir, "stage-2-rerun-1"))
+	require.NoError(t, err, result.Text)
+	require.NotNil(t, result.Export)
+	again := savedOpenShellSequence(t, r)
+	require.NotEmpty(t, again.SetAside)
+	assert.Equal(t, crashed, again.SetAside[0].RunRecord, "the crashed run is kept and not replayed as the verified stage")
+	assert.NotEqual(t, crashed, again.Stages[len(again.Stages)-1].RunRecord)
 }
 
 func TestOpenShellRerunMustFitTheAttemptCap(t *testing.T) {

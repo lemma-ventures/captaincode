@@ -127,7 +127,7 @@ func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task str
 			budget.Stop(captaincode.StopAttemptsExhausted)
 		}
 	}
-	if err := ledger.ReconcileOpenShellAttempts(attemptID, res.OpenShellAttempts); err != nil {
+	if err := ledger.ReconcileOpenShellSpend(attemptID, res.OpenShellAttempts, res.BilledUSD()); err != nil {
 		return err
 	}
 	state, outcome := captaincode.StateSucceeded, "ok"
@@ -138,7 +138,7 @@ func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task str
 			state, outcome = captaincode.StateCancelled, "cancelled"
 		}
 	}
-	usage := captaincode.CallUsage(captaincode.LegOpenShell, res.Tokens, res.CostUSD, nil)
+	usage := captaincode.OpenShellUsage(res)
 	ledger.RecordCharge(captaincode.Charge{ID: attemptID + ":openshell-call", Parent: attemptID, TaskID: taskID, Kind: captaincode.KindCall,
 		Leg: captaincode.LegOpenShell, Label: "worker", DurationMs: res.DurationMs, Usage: usage})
 	ledger.Record(captaincode.Event{TaskID: taskID, AttemptID: attemptID, Task: truncate(task, 120),

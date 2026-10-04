@@ -62,4 +62,22 @@ func TestOpenShellChargeIsTheShieldBillNeverAFreeLeg(t *testing.T) {
 	require.ErrorIs(t, err, ErrInterrupted)
 	assert.Zero(t, res.Tokens, "an incomplete bill is left unknown, not understated")
 	assert.Zero(t, res.CostUSD)
+	assert.Zero(t, res.CostCommitted, "no Shield budget means the commitment is unknown")
+}
+
+func TestOpenShellIncompleteBillChargesTheCommitment(t *testing.T) {
+	attempts := 1
+	run := &OpenShellRun{Verdict: "fail", Tasks: []*OpenShellResult{{Report: &OpenShellReport{
+		WorkerAttempts: &attempts,
+		Shield: &OpenShellShield{Requests: 2, Responses: 2, PricedResponses: 1, CostUSD: 0.01,
+			Budget: &OpenShellShieldBudget{LimitUSD: 0.25, CommittedUSD: 0.25}},
+	}}}}
+	res, err := finishOpenShellRun(context.Background(), &OpenShellRunner{RunDir: t.TempDir()}, run, errors.New("worker failed"), false)
+	require.Error(t, err)
+	assert.Zero(t, res.CostUSD, "an incomplete provider bill stays off the measured cost")
+	assert.InDelta(t, 0.25, res.CostCommitted, 1e-12)
+	usage := OpenShellUsage(res)
+	assert.Equal(t, UsageEstimated, usage.CostStatus)
+	assert.Equal(t, "shield-committed", usage.PriceSource)
+	assert.InDelta(t, 0.25, usage.CostUSD, 1e-12)
 }

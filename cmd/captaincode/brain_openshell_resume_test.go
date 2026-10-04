@@ -121,7 +121,7 @@ func TestOpenShellTaskResumeCreatesDurableLinkedAttempt(t *testing.T) {
 }
 
 func TestOpenShellTaskResumeRejectsWithoutChangingLifecycle(t *testing.T) {
-	for _, name := range []string{"no checkpoint", "legacy checkpoint", "wrong task", "cancelled", "altered evidence", "request cancelled", "unsupported budget", "settled usage"} {
+	for _, name := range []string{"no checkpoint", "legacy checkpoint", "wrong task", "cancelled", "altered evidence", "request cancelled", "settled usage"} {
 		t.Run(name, func(t *testing.T) {
 			b, task, attempt := interruptedOpenShellTask(t)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -151,9 +151,6 @@ func TestOpenShellTaskResumeRejectsWithoutChangingLifecycle(t *testing.T) {
 			case "cancelled":
 				require.NoError(t, b.ledger.TransitionAttempt(attempt, captaincode.StateCancelled))
 				require.NoError(t, b.ledger.TransitionTask(task, captaincode.StateCancelled))
-			case "unsupported budget":
-				t.Setenv("CAPTAIN_MAX_COST", "1")
-				t.Setenv("CAPTAIN_STRICT", "1")
 			case "settled usage":
 				b.ledger.RecordCharge(captaincode.Charge{TaskID: task, Parent: attempt, Kind: captaincode.KindCall})
 			}
