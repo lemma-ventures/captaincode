@@ -129,3 +129,26 @@ func gitIn(args ...string) string {
 	}
 	return out
 }
+
+// cmdPrivateNames is `captain private-names`: the same verbs as /private in
+// the TUI, plus `suggest [dir]`, which runs the curation pass on a folder now.
+//
+//	captain private-names                   the list, and proposals waiting
+//	captain private-names add|dismiss|remove NAME...
+//	captain private-names suggest [DIR]     look at a folder now (default: here)
+func cmdPrivateNames(args []string) {
+	if len(args) > 0 && args[0] == "suggest" {
+		dir, _ := os.Getwd()
+		if len(args) > 1 {
+			dir = args[1]
+		}
+		if n := (&brain{}).curatePrivateNames(dir); n != "" {
+			fmt.Println(n)
+			return
+		}
+		fmt.Println("private names: nothing new in this folder")
+		return
+	}
+	dir, _ := os.Getwd()
+	fmt.Println(privateNamesAnswer(args, dir))
+}

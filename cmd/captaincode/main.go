@@ -139,6 +139,9 @@ func main() {
 		case "leakcheck": // private names never reach a public repo (leakcheck_cmd.go)
 			cmdLeakcheck(args[1:])
 			return
+		case "private-names": // the list leakcheck reads: review, add, curate (brain_private.go)
+			cmdPrivateNames(args[1:])
+			return
 		case "gate": // the action gate at the tool boundary (gate_cmd.go)
 			cmdGate(args[1:])
 			return

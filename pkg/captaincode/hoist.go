@@ -139,7 +139,7 @@ var slashControlWords = []string{
 	// control words (controlHeadRe and the workflow compiler)
 	"repeat", "parallel", "team", "wf", "workflow", "run", "wfrun", "openshell",
 	// the brain's and the plugin's own commands
-	"btw", "interrupt", "rename", "captain", "help", "init", "euclid", "context",
+	"btw", "interrupt", "rename", "captain", "help", "init", "euclid", "context", "private",
 }
 
 // SlashCommands is every /word a turn may start with: the control words and

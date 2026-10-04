@@ -465,6 +465,18 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// id, or an expression typed straight into the prompt - the fork forwards
 	// the message verbatim, so detection happens here and needs no fork change.
 	// /captain prints the cheat sheet.
+	if !titleReq && b.handlePrivateNames(w, req, lastUserRaw(req.Messages)) {
+		return
+	}
+	if !titleReq {
+		// Every turn in a folder starts its private-name pass (once a day,
+		// in the background); the folder's next turn says what it found.
+		go func(dir string) {
+			if n := b.curatePrivateNames(dir); n != "" {
+				fmt.Printf("captain brain: %s\n", strings.ReplaceAll(n, "\n", " | "))
+			}
+		}(req.ws.Dir)
+	}
 	if !titleReq && b.handleCaptainHelp(w, req, lastUserRaw(req.Messages)) {
 		return
 	}
@@ -832,6 +844,10 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// the notice meant for the user's next turn.
 	if !internal {
 		if n := b.parallelNotice(req.ws.Dir); n != "" {
+			feed.note(n)
+		}
+		// Private names found in this folder by the background pass.
+		if n := b.privateNotice(req.ws.Dir); n != "" {
 			feed.note(n)
 		}
 		if n := b.repeatNotice(req.ws.Dir); n != "" {

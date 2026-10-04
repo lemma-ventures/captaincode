@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A fake ~/Gits: QMX, ash, axiom, captaincode, Compliance/lemma-ventures-website.
+// A fake ~/Gits: QMX, ash, axiom, captaincode, Compliance/axiom-company-website.
 func fakeWorkspaceRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Compliance/lemma-ventures-website", "notes", "Signal", "euclid", "RepoG", "ledger-app"} {
+	for _, r := range []string{"QMX", "ash", "axiom", "captaincode", "Compliance/axiom-company-website", "notes", "Signal", "euclid", "RepoG", "ledger-app"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
 	}
 	require.NoError(t, os.Remove(filepath.Join(root, "notes", ".git"))) // a plain folder, not a repo
@@ -29,7 +29,7 @@ func TestKnownReposScansTwoLevelsOfTheWorkspaceRoot(t *testing.T) {
 	root := fakeWorkspaceRoot(t)
 	repos := KnownRepos()
 	assert.Contains(t, repos, filepath.Join(root, "QMX"))
-	assert.Contains(t, repos, filepath.Join(root, "Compliance", "lemma-ventures-website"), "a repo inside a folder")
+	assert.Contains(t, repos, filepath.Join(root, "Compliance", "axiom-company-website"), "a repo inside a folder")
 	assert.NotContains(t, repos, filepath.Join(root, "notes"), "a folder without .git or .euclid is not a repo")
 }
 
@@ -69,12 +69,12 @@ func TestRepoRefsMatchesKnownNamesAsWholeWords(t *testing.T) {
 func TestRepoRefsAHyphenatedNameByItsParts(t *testing.T) {
 	root := fakeWorkspaceRoot(t)
 	cwd := filepath.Join(root, "QMX")
-	site := filepath.Join(root, "Compliance", "lemma-ventures-website")
+	site := filepath.Join(root, "Compliance", "axiom-company-website")
 	assert.Equal(t, []string{site}, RepoRefs("update the pricing page on the axiom website", cwd), "two of three parts, first included, outranks the bare axiom repo")
-	assert.Equal(t, []string{site}, RepoRefs("deploy lemma-ventures-website", cwd))
+	assert.Equal(t, []string{site}, RepoRefs("deploy axiom-company-website", cwd))
 	assert.Equal(t, []string{filepath.Join(root, "axiom")}, RepoRefs("bump the block reward in the axiom repo", cwd), "axiom is a word: the repo needs a cue")
 	assert.Empty(t, RepoRefs("bump the block reward in axiom", cwd), "…without one it is the chain, not the folder")
-	assert.Empty(t, RepoRefs("the website needs ventures", cwd), "without the first part it is prose")
+	assert.Empty(t, RepoRefs("the website needs company", cwd), "without the first part it is prose")
 	assert.Empty(t, RepoRefs("add the axiom bounty to the website footer", cwd), "the parts far apart are two words, not the name")
 }
 

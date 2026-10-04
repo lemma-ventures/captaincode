@@ -402,6 +402,11 @@ type brain struct {
 	planFn func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error)
 	// assessFn stubs Manager.Assess in tests; nil → real director call.
 	assessFn func(task, output, objective string) (captaincode.Assessment, error)
+	// Private-name curation (brain_private.go): when each folder was last
+	// looked at, and the notice its next turn shows.
+	privMu     sync.Mutex
+	privSeen   map[string]time.Time
+	privNotice map[string]string
 	// orderQueueFn stubs the director's ordering of a queue in tests
 	// (brain_queue.go planQueue).
 	orderQueueFn func(items []captaincode.QueueItem) (captaincode.QueueOrder, error)
