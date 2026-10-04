@@ -486,4 +486,7 @@ for a in "$@"; do
 done
 # ${tui_args[@]+"${tui_args[@]}"}: an EMPTY array is "unbound" to macOS's
 # bash 3.2 under set -u (live 2026-09-13, the first -c launch with no session).
-CAPTAIN_ROUTE_PLUGIN=1 exec opencode "$LAUNCH_DIR" ${tui_args[@]+"${tui_args[@]}"}
+# CAPTAIN_LAUNCHER: the exit screen prints "<launcher> -s <id>", so the
+# session resumes through this script, not bare opencode (plugin/captain-ui/epilogue.ts).
+CAPTAIN_LAUNCHER="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")" \
+  CAPTAIN_ROUTE_PLUGIN=1 exec opencode "$LAUNCH_DIR" ${tui_args[@]+"${tui_args[@]}"}

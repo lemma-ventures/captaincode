@@ -9,6 +9,7 @@ import { createSignal, createMemo, onCleanup, For, Show } from "solid-js"
 import { existsSync } from "node:fs"
 import { homedir, platform } from "node:os"
 import { join } from "node:path"
+import { hookEpilogue, logo, resumeCommand } from "./epilogue"
 
 const id = "captain:sidebar"
 
@@ -885,22 +886,10 @@ function Dashboards(props: { api: TuiPluginApi }) {
 // ── home_logo ────────────────────────────────────────────────────────────────
 // The wordmark, lifted out of the fork. This slot is why Captain Code no longer
 // needs a fork for branding: opencode 1.17.20 renders whatever a plugin puts
-// here instead of its own logo. EDIT IT HERE: the launcher runs stock opencode,
-// so packages/tui/src/logo.ts (the fork) only shows under CAPTAIN_USE_FORK=1
-// (a logo edit there changed nothing on screen, 2026-09-13).
-const logo = {
-  // CAPTAIN (dim) + CODE (bold) - block geometry matching OpenCode's alphabet.
-  // A must use ^^ crossbar; without it the wordmark reads "COPT…" not CAPTAIN.
-  left: [
-    "                                  ",
-    // C     A     P     T     A     I     N
-    // P: crossbar on mid row. I: top bar == bottom bar (█▀▀█ / █▄▄█).
-    "█▀▀▀ █▀▀█ █▀▀█ █▀▀█ █▀▀█  █  █▀▀▄",
-    "█    █▀▀█ █▀▀▀  █   █▀▀█  █  █  █",
-    "▀▀▀▀ ▀  ▀ ▀     ▀   ▀  ▀  ▀  ▀  ▀",
-  ],
-  right: ["            ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
-}
+// here instead of its own logo. EDIT THE GLYPHS in epilogue.ts: the launcher
+// runs stock opencode, so packages/tui/src/logo.ts (the fork) only shows under
+// CAPTAIN_USE_FORK=1 (a logo edit there changed nothing on screen, 2026-09-13).
+// The exit screen draws the same glyphs.
 
 const CAPTAIN_BLUE = RGBA.fromHex("#5c9cf5")
 const CODE_WHITE = RGBA.fromHex("#ffffff")
@@ -1032,6 +1021,10 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({ order: 150, slots })
   registerPromptCommands(api)
   registerChromeCommands(api)
+  // The exit screen: stock opencode prints its own wordmark and
+  // "opencode -s <id>" after the plugins are gone (see epilogue.ts).
+  const proc = (globalThis as any).process
+  if (proc?.stdout) hookEpilogue(proc.stdout, resumeCommand(proc.env ?? {}))
 }
 
 // ── prompt commands ──────────────────────────────────────────────────────────

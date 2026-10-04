@@ -42,9 +42,15 @@ runs unrouted.
 
 ## What no plugin slot reaches
 
-Two fork behaviours have no public slot, and the plugins do not replace them:
-the "Continue captaincode -s …" presentation string, and the team/subagent
-footer labels. Neither affects routing.
+The team/subagent footer labels have no public slot, and the plugins do not
+replace them. They do not affect routing.
+
+The exit screen has no slot either. Stock opencode writes it to stdout after
+the plugins are torn down: its wordmark and "Continue  opencode -s <id>".
+`captain-ui/epilogue.ts` rewrites that one write to the Captain Code wordmark
+and `<launcher> -s <id>`. The launcher exports its own path as
+`CAPTAIN_LAUNCHER`. A bare `opencode` launch keeps `opencode -s <id>`, because
+that is the command that ran. Every other write passes through unchanged.
 
 Director routing for unprefixed prompts is deliberately **not** done here:
 `chat.message` runs before the message renders, so deciding in the plugin froze
