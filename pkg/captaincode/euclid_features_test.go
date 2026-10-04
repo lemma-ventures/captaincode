@@ -76,7 +76,7 @@ func TestMCPArgsForTheCLILegs(t *testing.T) {
 	assert.Contains(t, args[1], `"CAPTAIN_CWD":"`+repo+`"`, "the server is pinned to the workspace")
 	cargs := CodexMCPArgs(repo)
 	assert.Contains(t, strings.Join(cargs, " "), `mcp_servers.euclid.args=["euclid","mcp"]`)
-	assert.Contains(t, strings.Join(cargs, " "), `mcp_servers.euclid.env={CAPTAIN_CWD="`+repo+`"}`)
+	assert.Contains(t, strings.Join(cargs, " "), `mcp_servers.euclid.env={CAPTAIN_CWD="`+repo+`"`)
 	t.Setenv("CAPTAIN_EUCLID", "0")
 	assert.Nil(t, ClaudeMCPArgs(repo), "Euclid off: the CLI runs as before")
 	assert.Nil(t, CodexMCPArgs(repo))

@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -243,26 +244,43 @@ func orientationBudget() int {
 	return 2500
 }
 
-// registerThesis is a register's first prose paragraph after any front
-// matter and heading - the same rule the fork's system-context source uses.
 func registerThesis(text string, limit int) string {
-	body := regexp.MustCompile(`(?s)^---\n.*?\n---\n`).ReplaceAllString(text, "")
+	body := regexp.MustCompile(`(?s)<!--.*?-->`).ReplaceAllString(text, "")
+	body = regexp.MustCompile(`(?s)^\s*---\n.*?\n---\n`).ReplaceAllString(body, "")
+	var blocks []string
+	for _, block := range regexp.MustCompile(`\n\s*\n`).Split(body, -1) {
+		if strings.Contains(block, "snapshot, not a log") || strings.Contains(block, "Merge overlapping") || strings.Contains(block, "Judgment proven") || strings.Contains(block, "Transferable lessons proven") || strings.Contains(block, "Heuristics that earned") {
+			continue
+		}
+		blocks = append(blocks, block)
+	}
+	body = strings.Join(blocks, "\n\n")
+	lines := strings.Split(body, "\n")
+	start := 0
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "## ") {
+			start = i + 1
+			break
+		}
+	}
 	var out []string
-	for _, block := range regexp.MustCompile(`\n\s*\n`).Split(strings.TrimSpace(body), -1) {
-		t := strings.TrimSpace(block)
-		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, ">") {
+	for _, l := range lines[start:] {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, ">") || strings.HasSuffix(t, ":") || strings.HasPrefix(t, "- (") {
+			continue
+		}
+		if strings.Contains(t, "snapshot, not a log") || strings.Contains(t, "Merge overlapping") || strings.HasPrefix(t, "Judgment proven") || strings.HasPrefix(t, "Transferable lessons proven") || strings.HasPrefix(t, "Heuristics that earned") || strings.HasPrefix(t, "lines on every update") || strings.HasPrefix(t, "statements; retire") {
 			continue
 		}
 		out = append(out, t)
-		break
 	}
-	if len(out) == 0 {
-		return ""
-	}
-	return clipText(strings.Join(strings.Fields(out[0]), " "), limit)
+	return clipText(strings.Join(strings.Fields(strings.Join(out, " ")), " "), limit)
 }
 
 func clipText(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	if len(s) <= limit {
 		return s
 	}
@@ -289,6 +307,9 @@ func Orientation(cwd string) string { return OrientationWith(cwd, nil) }
 func OrientationWith(cwd string, also []string) string {
 	if !euclidEnabled() {
 		return ""
+	}
+	if memoryMCPEnabled() {
+		return memoryOrientation(ReadSetWith(cwd, also), orientationBudget())
 	}
 	key := cwd + "\x00" + strings.Join(also, "\x00")
 	orientCache.mu.Lock()
@@ -331,6 +352,43 @@ func renderOrientation(set []EuclidBrain, budget int) string {
 			}
 		}
 	}
+	// 3. WISDOM theses (lessons), shortest first so several fit.
+	for _, b := range set {
+		if t := registerThesis(read(b.Root, "WISDOM.md"), 400); t != "" {
+			if !add(fmt.Sprintf("<wisdom source=%q>%s</wisdom>\n", b.Label, t)) {
+				break
+			}
+		}
+
+	}
+	// 4. Accepted lessons from learning store, if present.
+	for _, b := range set {
+		if raw := read(b.Root, "learning/state.json"); raw != "" {
+			var state struct {
+				Lessons map[string]struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+					Text   string `json:"text"`
+				} `json:"lessons"`
+			}
+			if err := json.Unmarshal([]byte(raw), &state); err == nil && len(state.Lessons) > 0 {
+				var ids []string
+				for id := range state.Lessons {
+					ids = append(ids, id)
+				}
+				sort.Strings(ids)
+				for _, id := range ids {
+					l := state.Lessons[id]
+					if l.Status == "accepted" && strings.TrimSpace(l.Text) != "" {
+						line := fmt.Sprintf("<memory source=%q>%s</memory>\n", html.EscapeString(b.Label+":lesson:"+l.ID), html.EscapeString(l.Text))
+						if !add(line) {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
 	// 2. The repo MAP (shared brain), table rows only, clipped.
 	for _, b := range set {
 		if b.Kind != "repo" {
@@ -352,14 +410,7 @@ func renderOrientation(set []EuclidBrain, budget int) string {
 			}
 		}
 	}
-	// 3. WISDOM theses (lessons), shortest first so several fit.
-	for _, b := range set {
-		if t := registerThesis(read(b.Root, "WISDOM.md"), 400); t != "" {
-			if !add(fmt.Sprintf("<wisdom source=%q>%s</wisdom>\n", b.Label, t)) {
-				break
-			}
-		}
-	}
+
 	sb.WriteString("</euclid>\n")
 	return sb.String()
 }
@@ -412,6 +463,9 @@ func JournalRun(cwd string, e JournalEntry) (string, error) {
 	e.Task = Scrub(clipText(strings.Join(strings.Fields(e.Task), " "), 300))
 	e.Error = Scrub(clipText(e.Error, 200))
 	sort.Strings(e.Files)
+	if memoryMCPEnabled() {
+		return recordMemoryEvent(b, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "journal"))
+	}
 	path := JournalPath(b, e.At)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -533,7 +587,7 @@ func ReadJournal(brain EuclidBrain, since time.Time) ([]JournalEntry, error) {
 	for _, n := range names {
 		data, err := os.ReadFile(n)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.TrimSpace(line) == "" {
@@ -554,16 +608,9 @@ func ReadJournal(brain EuclidBrain, since time.Time) ([]JournalEntry, error) {
 
 // ------------------------------------------------------------------ scaffold
 
-// templateDir is Euclid's own template when present (EUCLID_TEMPLATE_DIR,
-// then ~/src/euclid/template); else the built-in minimal registers.
 func templateDir() string {
 	if v := os.Getenv("EUCLID_TEMPLATE_DIR"); v != "" && isDir(v) {
 		return v
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		if p := filepath.Join(home, "Gits", "euclid", "template"); isDir(p) {
-			return p
-		}
 	}
 	return ""
 }
@@ -573,6 +620,8 @@ var builtinRegisters = map[string]string{
 	"VISION.md":                  "# VISION - where this is going\n\nThe strategy this work serves. Mirror the sources; do not invent.\n",
 	"BRAIN.md":                   "# BRAIN - live world-model\n\nA \"you are here\" snapshot, not a log. Prune stale lines on every update.\n\n## Current state\n\n- Active front:\n- Last landed:\n- Next gate:\n",
 	"WISDOM.md":                  "# WISDOM - lessons that held\n\nHeuristics that earned their place. Merge overlapping ones; drop the ones that stopped being true.\n",
+	"INTUITION.md":               "# INTUITION - hunches not yet proven\n\nOne line each, tagged [open]. A hunch that held moves to WISDOM. A hunch that failed moves to FAILURES.\n",
+	"AFFECT.md":                  "# AFFECT - stance and calibration\n\n## Stance\n\nHow sure to be, and when to stop.\n",
 	"MAP.md":                     "# MAP - navigation surface\n\nWhere things live, for a cold-started agent.\n\n| area | path | what lives there |\n|------|------|------------------|\n",
 	"memory/MEMORIES.md":         "# MEMORIES - append-only\n",
 	"memory/FAILURES.md":         "# FAILURES - episodes folded into guardrails\n",
@@ -602,10 +651,10 @@ func Scaffold(root, kind string) ([]string, error) {
 		created = append(created, p)
 		return nil
 	}
-	names := []string{"SOUL.md", "VISION.md", "BRAIN.md", "WISDOM.md", "MAP.md",
+	names := []string{"SOUL.md", "VISION.md", "BRAIN.md", "WISDOM.md", "INTUITION.md", "AFFECT.md", "MAP.md",
 		"memory/MEMORIES.md", "memory/FAILURES.md", "memory/decisions-ledger.md", "memory/open-questions.md"}
 	if kind == "developer" { // a subtree carries the personal registers only
-		names = []string{"BRAIN.md", "WISDOM.md", "memory/MEMORIES.md", "memory/FAILURES.md"}
+		names = []string{"BRAIN.md", "WISDOM.md", "INTUITION.md", "AFFECT.md", "memory/MEMORIES.md", "memory/FAILURES.md"}
 	} else if kind == "repo" {
 		// The index and the dashboard are DERIVED from the corpus (Euclid
 		// NADR-0017): rebuilt at every launch, never committed - a data.json
@@ -692,7 +741,18 @@ type Distillation struct {
 	Edits   []RegisterEdit `json:"edits"`
 }
 
-var allowedEditFiles = map[string]bool{"BRAIN.md": true, "WISDOM.md": true, "memory/MEMORIES.md": true, "memory/FAILURES.md": true, "memory/decisions-ledger.md": true}
+var allowedEditFiles = map[string]bool{
+	"BRAIN.md": true, "WISDOM.md": true, "INTUITION.md": true, "AFFECT.md": true,
+	"memory/MEMORIES.md": true, "memory/FAILURES.md": true, "memory/decisions-ledger.md": true,
+}
+
+// crystallizeFiles is the main brain's persona, minus MEMORIES. The echo
+// already appended the episode; crystallize turns those episodes into the
+// registers the explorer was leaving blank.
+var crystallizeFiles = map[string]bool{
+	"BRAIN.md": true, "WISDOM.md": true, "INTUITION.md": true, "AFFECT.md": true,
+	"memory/FAILURES.md": true, "memory/open-questions.md": true,
+}
 
 // inheritedRegister returns the main brain's copy of a doctrine register when
 // it has moved past the template, else "".
@@ -721,10 +781,10 @@ const distillMarker = "[euclid distill]"
 func DistillPrompt(brain EuclidBrain, entries []JournalEntry) string {
 	var sb strings.Builder
 	sb.WriteString(distillMarker + " You are Euclid's distiller for the brain at " + brain.Root + " (" + brain.Kind + ").\n")
-	sb.WriteString("Turn the run journal below into durable memory: what is now true (BRAIN, a snapshot - replace stale lines), lessons that held (WISDOM), facts worth recalling later (memory/MEMORIES.md, append-only), incidents folded into guardrails (memory/FAILURES.md), decisions (memory/decisions-ledger.md).\n")
-	sb.WriteString("Rules: only what the journal supports; no speculation; no secrets; prefer few, dense lines; never rewrite SOUL or VISION.\n")
-	sb.WriteString("Respond with JSON only: {\"summary\": \"one paragraph\", \"edits\": [{\"file\": \"BRAIN.md|WISDOM.md|memory/MEMORIES.md|memory/FAILURES.md|memory/decisions-ledger.md\", \"mode\": \"append|replace_section\", \"anchor\": \"## heading (replace_section only)\", \"text\": \"markdown\", \"why\": \"one line\"}]}\n\n")
-	for _, name := range []string{"BRAIN.md", "WISDOM.md"} {
+	sb.WriteString("Turn the run journal below into durable memory: what is now true (BRAIN, a snapshot - replace stale lines), lessons that held (WISDOM), hunches not yet proven (INTUITION, one line tagged [open]), stance and calibration (AFFECT, replace the Stance section), facts worth recalling later (memory/MEMORIES.md, append-only), incidents folded into guardrails (memory/FAILURES.md), decisions (memory/decisions-ledger.md).\n")
+	sb.WriteString("Rules: only what the journal supports; no speculation; no secrets; prefer few, dense lines; never rewrite SOUL or VISION. Do not leave INTUITION or AFFECT untouched when the journal supports a hunch or a change in stance.\n")
+	sb.WriteString("Respond with JSON only: {\"summary\": \"one paragraph\", \"edits\": [{\"file\": \"BRAIN.md|WISDOM.md|INTUITION.md|AFFECT.md|memory/MEMORIES.md|memory/FAILURES.md|memory/decisions-ledger.md\", \"mode\": \"append|replace_section\", \"anchor\": \"## heading (replace_section only)\", \"text\": \"markdown\", \"why\": \"one line\"}]}\n\n")
+	for _, name := range []string{"BRAIN.md", "WISDOM.md", "INTUITION.md", "AFFECT.md"} {
 		if b, err := os.ReadFile(filepath.Join(brain.Root, name)); err == nil {
 			sb.WriteString("=== current " + name + " ===\n" + clipText(string(b), 6000) + "\n\n")
 		}
@@ -792,31 +852,29 @@ func applyEditsTo(brain EuclidBrain, edits []RegisterEdit, allowed map[string]bo
 	if !brain.Writable {
 		return nil, fmt.Errorf("brain %s is read-only for this session", brain.Label)
 	}
+	var names []string
+	for n := range allowed {
+		names = append(names, n)
+	}
+	if err := RecoverBrainEdits(brain); err != nil {
+		return nil, err
+	}
+	base, err := snapshotBrain(brain.Root, names)
+	if err != nil {
+		return nil, err
+	}
+	writes, err := prepareBrainEdits(brain, edits, allowed, base)
+	if err != nil {
+		return nil, err
+	}
+	if err := commitBrainFiles(brain.Root, base, writes); err != nil {
+		return nil, err
+	}
 	var touched []string
 	for _, e := range edits {
-		if !allowed[e.File] {
-			continue
+		if allowed[e.File] {
+			touched = append(touched, filepath.Join(brain.Root, e.File))
 		}
-		p := filepath.Join(brain.Root, e.File)
-		cur, _ := os.ReadFile(p)
-		text := string(cur)
-		switch e.Mode {
-		case "replace_section":
-			text = replaceSection(text, e.Anchor, e.Text)
-		default:
-			text = dropPlaceholders(text)
-			if !strings.HasSuffix(text, "\n") && text != "" {
-				text += "\n"
-			}
-			text += "\n" + strings.TrimSpace(e.Text) + "\n"
-		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return touched, err
-		}
-		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
-			return touched, err
-		}
-		touched = append(touched, p)
 	}
 	return touched, nil
 }
@@ -910,4 +968,146 @@ func MarkDistilled(brain EuclidBrain, at time.Time) error {
 		return err
 	}
 	return os.WriteFile(p, []byte(at.Format(time.RFC3339Nano)+"\n"), 0o644)
+}
+
+// EnsurePersonaFiles creates INTUITION and AFFECT when a brain never had
+// them. Existing files are left as they are.
+func EnsurePersonaFiles(root string) {
+	for _, name := range []string{"INTUITION.md", "AFFECT.md"} {
+		p := filepath.Join(root, name)
+		if _, err := os.Stat(p); err == nil {
+			continue
+		}
+		_ = os.WriteFile(p, []byte(builtinRegisters[name]), 0o644)
+	}
+}
+
+// ParseCrystallize reads a crystallize reply. MEMORIES edits are dropped:
+// the echo already recorded the episode.
+func ParseCrystallize(text string) (Distillation, error) {
+	return parseEdits(text, crystallizeFiles)
+}
+
+// ApplyCrystallize writes a crystallize reply into the main brain.
+func ApplyCrystallize(brain EuclidBrain, edits []RegisterEdit) ([]string, error) {
+	return applyEditsTo(brain, edits, crystallizeFiles)
+}
+
+// MemorySections splits MEMORIES on dated ## headings.
+func MemorySections(text string) []JournalEntry {
+	var out []JournalEntry
+	var cur *JournalEntry
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		cur.Summary = strings.TrimSpace(cur.Summary)
+		if cur.Summary != "" {
+			out = append(out, *cur)
+		}
+		cur = nil
+	}
+	for _, ln := range strings.Split(text, "\n") {
+		if strings.HasPrefix(ln, "## ") {
+			flush()
+			at := time.Time{}
+			rest := strings.TrimSpace(strings.TrimPrefix(ln, "## "))
+			if len(rest) >= 10 {
+				if t, err := time.Parse("2006-01-02", rest[:10]); err == nil {
+					at = t
+				}
+			}
+			cur = &JournalEntry{At: at, Kind: "memory", Task: rest, Summary: ln}
+			continue
+		}
+		if cur != nil {
+			cur.Summary += "\n" + ln
+		}
+	}
+	flush()
+	return out
+}
+
+// DatedSections is MEMORIES headings that start with a day. The echo writes
+// those; an undated heading is a template, not a new run.
+func DatedSections(text string) []JournalEntry {
+	var out []JournalEntry
+	for _, e := range MemorySections(text) {
+		if !e.At.IsZero() {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// SectionsSince counts dated memory sections appended after the last
+// crystallize. already is how many dated sections that pass consumed.
+func SectionsSince(text string, already int) int {
+	n := len(DatedSections(text))
+	if already < 0 || n < already {
+		return n
+	}
+	return n - already
+}
+
+// CrystallizeEntries is the window a crystallize call reads: dated sections
+// after the ones already consumed, capped at limit, oldest first within that cap.
+func CrystallizeEntries(text string, already, limit int) []JournalEntry {
+	if limit <= 0 {
+		limit = 12
+	}
+	all := DatedSections(text)
+	if already < 0 || already > len(all) {
+		already = 0
+	}
+	kept := all[already:]
+	if len(kept) > limit {
+		kept = kept[:limit]
+	}
+	return kept
+}
+
+const crystallizeMarker = "[euclid crystallize]"
+
+// CrystallizePrompt asks the model to fold cross-repo memory lines into the
+// persona registers the per-repo distill does not touch.
+func CrystallizePrompt(brain EuclidBrain, entries []JournalEntry) string {
+	var sb strings.Builder
+	sb.WriteString(distillMarker + " " + crystallizeMarker + " You are Euclid's crystallizer for the main brain at " + brain.Root + ".\n")
+	sb.WriteString("MEMORIES below were appended from other repositories. Fold them into the persona. Replace BRAIN's current state. Merge lessons into WISDOM. Append unproven hunches to INTUITION, one line tagged [open]. Replace AFFECT's Stance section when the runs change how sure to be. Fold incidents into FAILURES. Append open questions. Do not edit MEMORIES, SOUL or VISION.\n")
+	sb.WriteString("Respond with JSON only: {\"summary\": \"one paragraph\", \"edits\": [{\"file\": \"BRAIN.md|WISDOM.md|INTUITION.md|AFFECT.md|memory/FAILURES.md|memory/open-questions.md\", \"mode\": \"append|replace_section\", \"anchor\": \"## heading (replace_section only)\", \"text\": \"markdown\", \"why\": \"one line\"}]}\n\n")
+	for _, name := range []string{"BRAIN.md", "WISDOM.md", "INTUITION.md", "AFFECT.md"} {
+		if b, err := os.ReadFile(filepath.Join(brain.Root, name)); err == nil {
+			sb.WriteString("=== current " + name + " ===\n" + clipText(string(b), 4000) + "\n\n")
+		}
+	}
+	sb.WriteString(fmt.Sprintf("=== new memories (%d) ===\n", len(entries)))
+	for _, e := range entries {
+		sb.WriteString(e.Summary)
+		sb.WriteString("\n\n")
+	}
+	return sb.String()
+}
+
+// LastCrystallizedCount is how many dated MEMORIES sections the last
+// crystallize had already seen. A missing cursor means none.
+func LastCrystallizedCount(brain EuclidBrain) int {
+	b, err := os.ReadFile(filepath.Join(brain.Root, "journal", ".crystallized"))
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// MarkCrystallized records how many dated sections have been folded.
+func MarkCrystallized(brain EuclidBrain, n int) error {
+	p := filepath.Join(brain.Root, "journal", ".crystallized")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, []byte(strconv.Itoa(n)+"\n"), 0o644)
 }

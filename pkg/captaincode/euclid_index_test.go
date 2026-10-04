@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -109,6 +110,100 @@ func TestEnsureBrainsOutsideARepositoryOnlyTouchesTheMainBrain(t *testing.T) {
 	assert.Empty(t, rep.Local)
 	assert.NoDirExists(t, filepath.Join(dir, ".euclid"), "no repo, no repo brain")
 	assert.FileExists(t, filepath.Join(home, ".euclid", "index", "build-catalog.py.ran"))
+}
+
+// The rebuild runs the brain's OWN copy of the build scripts, so the command
+// the dashboard prints for a manual run - `python3 .euclid/bin/build-dashboard.py`
+// - is the command that ran, and a brain still builds its dashboard when the
+// engine checkout is not on the machine.
+func TestReindexVendorsTheScriptsIntoTheBrainsBin(t *testing.T) {
+	engine := fakeEngine(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EUCLID_HOME", filepath.Join(home, ".euclid"))
+	_, err := Scaffold(filepath.Join(home, ".euclid"), "main")
+	require.NoError(t, err)
+	root := filepath.Join(home, ".euclid")
+
+	res := Reindex(root, 0)
+	require.True(t, res.OK, "%+v", res)
+	require.Len(t, res.Steps, 2)
+	assert.FileExists(t, filepath.Join(root, "bin", "build-catalog.py"))
+	assert.FileExists(t, filepath.Join(root, "bin", "build-dashboard.py"))
+	assert.FileExists(t, filepath.Join(root, "bin", "index.html"), "the page is vended beside the scripts")
+	assert.Equal(t, ".euclid/bin/build-catalog.py", res.Steps[0].Script, "the report names the host-relative command")
+	assert.Equal(t, ".euclid/bin/build-dashboard.py", res.Steps[1].Script)
+	assert.FileExists(t, filepath.Join(root, "dashboard", "index.html"), "…and the page still lands beside the data")
+
+	// One the brain kept: the copy is newer than the engine's, so it is not
+	// touched.
+	pin := filepath.Join(root, "bin", "build-dashboard.py")
+	require.NoError(t, os.WriteFile(pin, []byte("# pinned by this brain\n"), 0o644))
+	n, err := vendorScripts(root)
+	require.NoError(t, err)
+	assert.Zero(t, n, "an engine that has not moved past the copy does not overwrite it")
+	b, err := os.ReadFile(pin)
+	require.NoError(t, err)
+	assert.Equal(t, "# pinned by this brain\n", string(b))
+
+	// The engine moving ahead refreshes the copy: the brain runs the build
+	// that produced the page it is about to read.
+	stale := time.Now().Add(-time.Hour)
+	require.NoError(t, os.Chtimes(pin, stale, stale))
+	require.NoError(t, os.Chtimes(filepath.Join(engine, "dashboard", "build-dashboard.py"), time.Now(), time.Now()))
+	n, err = vendorScripts(root)
+	require.NoError(t, err)
+	assert.Greater(t, n, 0, "a build script the engine rewrote is copied forward")
+	b, err = os.ReadFile(pin)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "import os", "the refreshed copy is the engine's script again")
+
+	// A repository brain that commits its registers must not commit the
+	// vendored scripts with them.
+	repo := filepath.Join(home, "src", "widget")
+	require.NoError(t, os.MkdirAll(repo, 0o755))
+	require.NoError(t, exec.Command("git", "-C", repo, "init", "-q").Run())
+	_, err = Scaffold(filepath.Join(repo, ".euclid"), "repo")
+	require.NoError(t, err)
+	n, err = vendorScripts(filepath.Join(repo, ".euclid"))
+	require.NoError(t, err)
+	assert.Greater(t, n, 0)
+	ignore, err := os.ReadFile(filepath.Join(repo, ".euclid", ".gitignore"))
+	require.NoError(t, err)
+	assert.Contains(t, string(ignore), "bin/\n", "vendored scripts are derived, like index/ and dashboard/")
+}
+
+// The Euclid checkout carries its own brain: the dashboard of
+// <euclid>/.euclid is built by the engine in that same checkout. With no
+// CAPTAIN_EUCLID_ENGINE the Regenerate button still ran nothing ("no Euclid
+// engine found", 2026-10-04). The host's own engine is vended into the
+// brain's bin and `python3 .euclid/bin/build-dashboard.py` runs; no other
+// directory is searched.
+func TestReindexUsesTheEngineOfTheBrainsOwnHost(t *testing.T) {
+	host := fakeEngine(t)
+	t.Setenv("CAPTAIN_EUCLID_ENGINE", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EUCLID_HOME", filepath.Join(home, ".euclid"))
+	root := filepath.Join(host, ".euclid")
+	_, err := Scaffold(root, "repo")
+	require.NoError(t, err)
+
+	res := Reindex(root, 0)
+	require.True(t, res.OK, "%+v", res)
+	require.Len(t, res.Steps, 2)
+	assert.Equal(t, ".euclid/bin/build-catalog.py", res.Steps[0].Script)
+	assert.Equal(t, ".euclid/bin/build-dashboard.py", res.Steps[1].Script)
+	assert.FileExists(t, filepath.Join(host, ".euclid", "index", "build-dashboard.py.ran"))
+
+	// A brain whose host is not an engine checkout still needs the
+	// configured engine: nothing beside it is searched.
+	other := filepath.Join(home, "src", "widget", ".euclid")
+	_, err = Scaffold(other, "repo")
+	require.NoError(t, err)
+	res = Reindex(other, 0)
+	assert.False(t, res.OK)
+	assert.Contains(t, res.Error, "no Euclid engine found")
 }
 
 // The template's corpus is the axiom repo's (docs + .euclid, Python): a Rust

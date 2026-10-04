@@ -8,19 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
-)
 
-// The Euclid ENGINE (~/src/euclid/engine, or a brain's vendored bin/) is
-// where retrieval lives: search.py ranks the catalog the launch reindex
-// builds (every governed doc and source file) fused with a ripgrep full-text
-// pass and a relation-graph walk; ask.py adds git provenance; git-recall.py
-// is decision archaeology over the history. Captain's own register BM25
-// (EuclidSearch) stays as the fallback for a machine without the engine -
-// until 2026-09-13 it was the ONLY search a worker had, so the index
-// rebuilt at every launch fed nothing but the dashboard.
+	"github.com/lemma-ventures/captaincode/internal/mcpclient"
+)
 
 // engineScript returns the engine script to run for a brain: the copy
 // vendored in the brain's bin/ when it has one, else the engine checkout's.
@@ -28,7 +22,7 @@ func engineScript(root, name string) string {
 	if p := filepath.Join(root, "bin", name); isFile(p) {
 		return p
 	}
-	if engine := EuclidEngine(); engine != "" {
+	if engine := engineFor(root); engine != "" {
 		if p := filepath.Join(engine, "engine", name); isFile(p) {
 			return p
 		}
@@ -62,10 +56,12 @@ func runEngine(root, script string, args []string, timeout time.Duration) (strin
 	cmd.Dir = host
 	cmd.Env = append(os.Environ(), "EUCLID_ROOT="+host, "EUCLID_NO_AUTOBUILD=1")
 	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.Stdout = &cappedWriter{w: &out, n: 64 << 10}
+	cmd.Stderr = &cappedWriter{w: &errb, n: 4096}
+	cmd.WaitDelay = time.Second
 	err := cmd.Run()
 	text := strings.TrimSpace(out.String())
-	if err != nil && text == "" {
+	if err != nil {
 		return "", fmt.Errorf("%s: %v: %s", filepath.Base(script), err, tailOf(errb.String(), 400))
 	}
 	if len(text) > 12000 {
@@ -74,10 +70,57 @@ func runEngine(root, script string, args []string, timeout time.Duration) (strin
 	return text, nil
 }
 
-// EngineSearch is search.py over the repo brain's catalog and full text.
-// ok=false when no engine or no repo brain is available (caller falls back
-// to the register search).
-func EngineSearch(cwd, query string, limit int) (string, bool) {
+// SearchOptions selects repository sources. Journals require explicit opt-in.
+type SearchOptions struct {
+	Scope           string
+	IncludeJournals bool
+}
+
+func (o SearchOptions) Validate(lane string) error {
+	switch o.Scope {
+	case "", "project", "docs", "config":
+	default:
+		return fmt.Errorf("scope must be project, docs or config")
+	}
+	switch lane {
+	case "", "both", "doc", "code", "docsec", "section":
+	default:
+		return fmt.Errorf("invalid search lane")
+	}
+	if (o.Scope == "docs" || o.Scope == "config") && lane == "code" {
+		return fmt.Errorf("code lane cannot use docs or config scope")
+	}
+	return nil
+}
+
+// EngineSearchLane searches repository sources without journals.
+func EngineSearchLane(cwd, query, lane string, limit int) (string, bool) {
+	return EngineSearchOptions(cwd, query, lane, limit, SearchOptions{})
+}
+
+// EngineSearchOptions applies the same source filters to local and MCP engines.
+func EngineSearchOptions(cwd, query, lane string, limit int, options SearchOptions) (string, bool) {
+	if options.Validate(lane) != nil {
+		return "", false
+	}
+	if options.Scope == "" {
+		options.Scope = "project"
+	}
+	if lane == "" {
+		lane = "both"
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	if limit > 50 {
+		return "", false
+	}
+	if os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG") != "" {
+		out, err := callEuclidMCP(cwd, "euclid_search", map[string]any{
+			"query": query, "limit": limit, "lane": lane,
+			"scope": options.Scope, "include_journals": options.IncludeJournals})
+		return out, err == nil
+	}
 	root := RepoBrainRoot(cwd)
 	if root == "" {
 		return "", false
@@ -86,19 +129,45 @@ func EngineSearch(cwd, query string, limit int) (string, bool) {
 	if script == "" {
 		return "", false
 	}
-	if limit <= 0 {
-		limit = 8
+	args := []string{"--limit", strconv.Itoa(limit), "--lane", lane, "--scope", options.Scope}
+	if options.IncludeJournals {
+		args = append(args, "--include-journals")
 	}
-	out, err := runEngine(root, script, []string{"--limit", strconv.Itoa(limit), query}, 60*time.Second)
-	if err != nil {
-		return "", false
-	}
-	return out, true
+	out, err := runEngine(root, script, append(args, "--", query), 60*time.Second)
+	return out, err == nil
+}
+
+// EngineSearch is search.py over the repo brain's catalog and full text.
+// ok=false when no engine or no repo brain is available (caller falls back
+// to the register search).
+func EngineSearch(cwd, query string, limit int) (string, bool) {
+
+	return EngineSearchLane(cwd, query, "both", limit)
+}
+
+// EngineCodeSearch searches source code declarations, functions, types, and
+// symbols in the repository using Euclid's code lane (fused with CodeIntel AST intelligence).
+func EngineCodeSearch(cwd, query string, limit int) (string, bool) {
+	return EngineSearchLane(cwd, query, "code", limit)
+}
+
+// EngineFileSearch searches files and paths across the repository index.
+func EngineFileSearch(cwd, query string, limit int) (string, bool) {
+	return EngineSearchLane(cwd, query, "both", limit)
 }
 
 // EngineAsk is ask.py: catalog + full text + relation graph + git provenance
 // through one door. lane "" = doc+code, "all" adds the live git lane.
 func EngineAsk(cwd, query, lane string, limit int) (string, error) {
+	if os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG") != "" {
+		if limit <= 0 {
+			limit = 6
+		}
+		if lane == "" {
+			lane = "both"
+		}
+		return callEuclidMCP(cwd, "euclid_ask", map[string]any{"query": query, "lane": lane, "limit": limit})
+	}
 	root := RepoBrainRoot(cwd)
 	if root == "" {
 		return "", fmt.Errorf("no repo brain for %s", cwd)
@@ -120,6 +189,12 @@ func EngineAsk(cwd, query, lane string, limit int) (string, error) {
 // EngineRecall is git-recall.py: ranked who/when/why over the repository's
 // history for a query, optionally narrowed to a path.
 func EngineRecall(cwd, query, path string, limit int) (string, error) {
+	if os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG") != "" {
+		if limit <= 0 {
+			limit = 12
+		}
+		return callEuclidMCP(cwd, "euclid_git_recall", map[string]any{"query": query, "path": path, "limit": limit})
+	}
 	root := RepoBrainRoot(cwd)
 	if root == "" {
 		return "", fmt.Errorf("no repo brain for %s", cwd)
@@ -163,6 +238,10 @@ func AppendNote(cwd, kind, text, by string) (string, error) {
 	wb, ok := WriteBrain(cwd)
 	if !ok {
 		return "", fmt.Errorf("no write brain for %s (run `captain euclid init`)", cwd)
+	}
+	if memoryMCPEnabled() {
+		e := JournalEntry{Kind: kind, Task: Scrub(text), Summary: Scrub(by)}
+		return recordMemoryEvent(wb, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "note"))
 	}
 	p := filepath.Join(wb.Root, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -211,7 +290,15 @@ func euclidMCPServer(dir string) (command string, args []string, env map[string]
 	if real, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = real
 	}
-	return exe, []string{"euclid", "mcp"}, map[string]string{"CAPTAIN_CWD": dir}, true
+	env = map[string]string{"CAPTAIN_CWD": dir}
+	// CLI workers can filter ambient variables. Forward only retrieval settings;
+	// never copy credentials or a fixed root from another workspace.
+	for _, key := range []string{"CAPTAIN_EUCLID_MCP_CONFIG", "CAPTAIN_EUCLID_MEMORY_CONFIG", "CAPTAIN_EUCLID_ENGINE", "EUCLID_PROVIDER_MCP", "CAPTAIN_RETRIEVAL_LOG"} {
+		if value := os.Getenv(key); value != "" {
+			env[key] = value
+		}
+	}
+	return exe, []string{"euclid", "mcp"}, env, true
 }
 
 // ClaudeMCPArgs returns the `--mcp-config` argument for claude -p, a JSON
@@ -244,6 +331,7 @@ func CodexMCPArgs(dir string) []string {
 	for k, v := range env {
 		envParts = append(envParts, k+"="+strconv.Quote(v))
 	}
+	sort.Strings(envParts)
 	return []string{
 		"-c", "mcp_servers.euclid.command=" + strconv.Quote(command),
 		"-c", "mcp_servers.euclid.args=[" + strings.Join(quoted, ",") + "]",
@@ -413,4 +501,16 @@ func ShortErr(err error) string {
 		s = s[:120] + "…"
 	}
 	return s
+}
+
+func callEuclidMCP(cwd, tool string, args any) (string, error) {
+	root := RepoRoot(cwd)
+	if root == "" {
+		return "", fmt.Errorf("no repository root")
+	}
+	result, err := mcpclient.Call(context.Background(), os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG"), tool, args, nil)
+	if err != nil {
+		return "", err
+	}
+	return CutHead(result.Text(), 12000), nil
 }

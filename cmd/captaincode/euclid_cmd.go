@@ -9,11 +9,19 @@ package main
 //	captain euclid distill [--apply]
 //	                               propose register edits from the journal via the running brain;
 //	                               --apply writes them to your write brain (never the shared repo brain)
+//	captain euclid learn [--max N] [--dry-run] [--root <dir>]
+//	                               persona learning loop: fold the new journal and memory into the
+//	                               registers until a pass has nothing left, then rebuild the data
 //	captain euclid link <repo> [--related]
 //	                               declare a link (depends_on by default) from the current repo
 //	captain euclid links [--apply] list resolved links and proposals from manifests + journal
 //	captain euclid share [--apply] make the repo brain shareable (euclid_share_cmd.go)
 //	captain euclid fold [--dry-run] fold promoted notes into the shared brain (the CI step)
+//	captain euclid search [--code|--doc|--all-docs|--config] [--include-journals] <query>
+//	                               search repository docs and code using Euclid + CodeIntel
+//	captain euclid code <query>    search code symbols, functions, and implementations
+//	captain euclid stats [--days N]
+//	                               show retrieval efficiency metrics (performance, security, accuracy, tokens)
 //	captain euclid mcp             stdio MCP server over the brains (registered by init)
 
 import (
@@ -24,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,7 +135,7 @@ func cmdEuclid(args []string) {
 			res := captaincode.Reindex(r, 0)
 			fmt.Printf("%s: ok=%v\n", r, res.OK)
 			for _, st := range res.Steps {
-				fmt.Printf("  %-16s %.1fs exit %d\n", st.Step, st.DurationS, st.ReturnCode)
+				fmt.Printf("  python3 %s  %.1fs exit %d\n", st.Script, st.DurationS, st.ReturnCode)
 				if !st.OK {
 					fmt.Println("  " + strings.ReplaceAll(st.Tail, "\n", "\n  "))
 				}
@@ -135,6 +144,8 @@ func cmdEuclid(args []string) {
 				fmt.Println("  " + res.Error)
 			}
 		}
+	case "learn":
+		cmdEuclidLearn(args[1:])
 	case "status":
 		if st, ok := brainEuclidStatus(); ok {
 			fmt.Print(renderEuclidStatus(st))
@@ -193,11 +204,119 @@ func cmdEuclid(args []string) {
 			}
 		}
 		cmdEuclidLinks(apply)
+	case "search":
+		cmdEuclidSearch(args[1:])
+	case "code":
+		cmdEuclidCode(args[1:])
+	case "stats":
+		cmdEuclidStats(args[1:])
 	case "mcp":
 		cmdEuclidMCP()
 	default:
-		fatal(fmt.Errorf("usage: captain euclid [init [--repo]|ensure|reindex|corpus [--apply]|probes [--force]|status|check|distill [--apply]|bootstrap [--apply]|link <repo>|links [--apply]|mcp]"))
+		fatal(fmt.Errorf("usage: captain euclid [search [--code|--doc|--all-docs|--config] [--include-journals] <query>|code <query>|stats [--days N]|init [--repo]|ensure|reindex|learn [--max N] [--dry-run]|corpus [--apply]|probes [--force]|status|check|distill [--apply]|bootstrap [--apply]|link <repo>|links [--apply]|mcp]"))
 	}
+}
+
+func cmdEuclidSearch(args []string) {
+	cwd := euclidCwd()
+	lane := "both"
+	limit := 8
+	options := captaincode.SearchOptions{}
+	var queryParts []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--include-journals":
+			options.IncludeJournals = true
+		case "--all-docs":
+			options.Scope, options.IncludeJournals, lane = "docs", true, "doc"
+		case "--config":
+			options.Scope, lane = "config", "doc"
+		case "--scope":
+			if i+1 >= len(args) {
+				fatal(fmt.Errorf("--scope needs a value"))
+				return
+			}
+			i++
+			options.Scope = args[i]
+		case "--code":
+			lane = "code"
+		case "--doc", "--docs":
+			lane = "doc"
+		case "--lane":
+			if i+1 < len(args) {
+				i++
+				lane = args[i]
+			}
+		case "--limit", "-n":
+			if i+1 < len(args) {
+				i++
+				if v, err := strconv.Atoi(args[i]); err == nil && v > 0 {
+					limit = v
+				}
+			}
+		default:
+			queryParts = append(queryParts, a)
+		}
+	}
+	q := strings.Join(queryParts, " ")
+	if strings.TrimSpace(q) == "" {
+		fatal(fmt.Errorf("usage: captain euclid search [--code|--doc|--all-docs|--config] [--include-journals] [--limit N] <query>"))
+	}
+	if err := options.Validate(lane); err != nil {
+		fatal(err)
+		return
+	}
+	start := time.Now()
+	out, ok := captaincode.EngineSearchOptions(cwd, q, lane, limit, options)
+	durMS := float64(time.Since(start).Microseconds()) / 1000
+	if !ok {
+		fatal(fmt.Errorf("Euclid retrieval unavailable; check the engine or MCP configuration"))
+		return
+	}
+	if strings.TrimSpace(out) == "" {
+		fmt.Printf("no hits for: %s\n", q)
+		captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+			Tool: "cli_search", Query: q, Lane: lane, Cwd: cwd,
+			DurationMS: durMS, HitsCount: 0, Safe: true,
+		})
+		return
+	}
+	toks := len(out) / 4
+	hitCount := strings.Count(out, "\n   ") + strings.Count(out, "\n  ")
+	if hitCount == 0 {
+		hitCount = 1
+	}
+	avoided := hitCount * 1200
+	captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+		Tool: "cli_search", Query: q, Lane: lane, Cwd: cwd,
+		DurationMS: durMS, HitsCount: hitCount, TokensReturned: toks, TokensAvoided: avoided,
+		Safe: true, CodeIntelUsed: lane == "code" || lane == "both",
+	})
+	fmt.Println(out)
+}
+
+func cmdEuclidCode(args []string) {
+	cmdEuclidSearch(append([]string{"--code"}, args...))
+}
+
+func cmdEuclidStats(args []string) {
+	days := 30
+	for i := 0; i < len(args); i++ {
+		if (args[i] == "--days" || args[i] == "-d") && i+1 < len(args) {
+			i++
+			if v, err := strconv.Atoi(args[i]); err == nil && v > 0 {
+				days = v
+			}
+		}
+	}
+	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	events, err := captaincode.ReadRetrievalEvents(captaincode.RetrievalLogPath(), since)
+	if err != nil {
+		fatal(err)
+	}
+	stats := captaincode.ComputeRetrievalStats(events, days)
+	fmt.Print(captaincode.RenderRetrievalStats(stats))
 }
 
 func isDirPath(p string) bool {

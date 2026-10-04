@@ -83,7 +83,18 @@ applied distillation schedules a rebuild of that brain's index a few seconds
 later (one per burst - a team turn journaling six workers rebuilds once), so a
 dashboard left open shows the turn that just finished after a reload, not the
 state at the last launch. `CAPTAIN_EUCLID_AUTOINDEX=0` turns that off.
-The entire `.euclid/` tree is gitignored (indexes and dashboard included).
+A rebuild runs the brain's own copy of the build scripts, so the command the
+dashboard prints is the one that ran:
+
+```
+python3 .euclid/bin/build-catalog.py && python3 .euclid/bin/build-dashboard.py
+```
+
+The copy is vended from the engine on the first rebuild and refreshed when the
+engine moves ahead; a repository brain that commits its registers ignores
+`bin/` beside `index/` and `dashboard/`, because the scripts are derived too.
+The entire `.euclid/` tree is gitignored in repositories that do not share
+their brain (indexes, dashboard and `bin/` included).
 
 ## How captain uses it
 
@@ -122,10 +133,17 @@ degrades to the previous behaviour.
    MEMORIES, FAILURES and the decisions ledger. It prints a patch; `--apply`
    writes it to your own write-brain. The shared repository brain is written
    by the fold on the default branch only (*Sharing the brain*).
-3. **Promote and fold** (*Sharing the brain*): every note is also a file under
+3. **Learn.** `captain euclid learn` is the persona loop: it reads the journal
+   and memory sections no pass has read yet, folds them into BRAIN, WISDOM,
+   INTUITION, AFFECT, FAILURES and open questions, then reads its own output
+   again. It stops when a pass has no new input and no edits, so a current
+   persona costs one call and a stale one costs a few in a row. `--dry-run`
+   shows the edits without writing and leaves both cursors alone. The command
+   rebuilds the dashboard data at the end.
+4. **Promote and fold** (*Sharing the brain*): every note is also a file under
    `.euclid/notes/`; merged to main, the fold turns them into the shared
    registers and ledgers.
-4. **Link.** `captain euclid links` proposes cross-repository links from actual
+5. **Link.** `captain euclid links` proposes cross-repository links from actual
    evidence - Go module requirements, package.json dependencies, Cargo path
    dependencies, and journal entries touching absolute paths under another
    brain. `--apply` writes them to `euclid.yml`.
@@ -208,3 +226,111 @@ captaincode is needed anywhere else.
 model reachable still moves the notes into the ledgers, so the queue never
 grows.
 
+
+
+## MCP retrieval configuration
+
+Set `CAPTAIN_EUCLID_MCP_CONFIG` to an absolute JSON file with `command`, `args`,
+and optional `env`. The command must be an absolute executable path. Configure
+an independently installed Euclid MCP server. Captain supplies `EUCLID_ROOT`
+from the active repository and calls `euclid_search`, `euclid_ask`, and
+`euclid_git_recall`. It does not fall back to private scripts after an MCP call
+fails. Register search can still provide local fallback results.
+
+The legacy engine requires explicit `CAPTAIN_EUCLID_ENGINE` configuration or a
+vendored install. Sibling checkout discovery is disabled. The register learning
+commands remain local until scoped memory operations move to MCP. Their new
+exact-ID cursor conservatively replays legacy input once. Dry runs create no
+files. Interrupted writes recover on the next applying learn pass; changed
+registers cause a conflict instead of an overwrite.
+
+### Search sources
+
+Repository search excludes journals and persona registers by default. Choose a
+scope with `search` or `file_search` in MCP:
+
+| Scope | Sources |
+| --- | --- |
+| `project` (default) | Repository documents and code, limited by `lane` |
+| `docs` | Project documents only |
+| `config` | Tracked project config paths only, without file contents |
+
+Set `include_journals: true` to include journal entries. This applies to catalog,
+section, full-text and cached results. It does not enable persona registers.
+Use `read_register` or `recent_runs` for that memory. The config scope always
+excludes journals, environment files, credential files and symlinks.
+
+```sh
+captain euclid search --doc "routing"                 # documents without journals
+captain euclid search --all-docs "routing"            # documents with journals
+captain euclid search --config "opencode"             # config paths only
+captain euclid search --include-journals "routing"    # documents and code, with journals
+```
+
+MCP example: `{"query":"routing","scope":"docs","include_journals":false}`.
+The standalone Euclid `euclid_search` and `euclid_query` tools accept the same
+options. In the dashboard, select Project docs or Config files. The Journals
+checkbox is off by default. Config search matches paths, not config values.
+Existing Captain and Euclid MCP processes must reload updated code before these
+options are available. Reindex copies the updated engine scripts into the brain.
+
+## Retrieval loop protection
+
+Nested MCP launches are bounded: one request may start at most four, and a
+fifth is refused before its process starts.
+
+### Restart verification
+
+The public launcher builds committed `main` by default. It does not include
+uncommitted files or the current feature branch. Use
+`captaincode.sh -rr --checkout` to rebuild the reviewed working tree, or commit
+and merge the integration into `main` before a normal `-rr`. When MCP retrieval is configured, the launcher refuses a
+revision without its search API before it installs a binary or stops the brain.
+Restart from an
+outside terminal after active work ends. The private launcher's rebuild uses
+its own checkout; it does not build this public repository.
+
+Configure both MCP hops in user-owned files, using absolute paths:
+
+```json
+{
+  "command": "/absolute/path/to/python3",
+  "args": ["/absolute/path/to/euclid/mcp/euclid_mcp.py"],
+  "env": {
+    "EUCLID_PROVIDER_MCP": "/absolute/path/to/codeintel-provider.json",
+    "EUCLID_NO_AUTOBUILD": "1"
+  }
+}
+```
+
+The provider file names the freshly built CodeIntel executable:
+
+```json
+{
+  "command": "/absolute/path/to/codeintel-euclid",
+  "args": ["--mcp"],
+  "tools": {"search": "search", "chunks": "chunks", "embed": "embed"}
+}
+```
+
+Set `CAPTAIN_EUCLID_MCP_CONFIG` to the first file. Set
+`CAPTAIN_EUCLID_ENGINE` to the Euclid source checkout for catalog and dashboard
+refreshes. Do not pin `EUCLID_ROOT` in either file: Captain supplies the active
+repository. No provider keys or callback socket are needed.
+
+Claude and Codex worker MCP entries explicitly forward retrieval settings.
+Search startup or runtime failure is a tool error, not a successful empty
+search. Run the fresh-process checks
+before restart. They use disposable corpora and do not restart the live brain.
+
+CodeIntel refines a bounded candidate set from Euclid's code ranking, with a
+five-second provider deadline. It does not re-index every source file on every
+query. Local code hits survive provider failure. This limits the provider's
+ability to rescue files outside the candidate set; it is not a whole-repository
+semantic search guarantee. Documents keep their separate ranking.
+
+The restart review on 2026-10-04 used a copy of 415 Captain Go files. Two code
+queries found their expected paths with and without CodeIntel. Provider-enabled
+latency fell from 2.8–3.3 seconds to 0.40–0.47 seconds after candidate bounding;
+local-only queries took 0.29–0.31 seconds. This is a smoke test, not a general
+accuracy benchmark or a measured token-savings claim.

@@ -33,13 +33,15 @@ func TestEuclidMCPServer(t *testing.T) {
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"recent_runs","arguments":{"limit":5}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_register","arguments":{"name":"wisdom"}}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"status","arguments":{}}}`,
-		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"nope","arguments":{}}}`,
-		`{"jsonrpc":"2.0","id":8,"method":"resources/list"}`,
+		`{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"code_search","arguments":{"query":"deploy"}}}`,
+		`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"file_search","arguments":{"query":"value"}}}`,
+		`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"nope","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":10,"method":"resources/list"}`,
 	}
 	var out bytes.Buffer
 	calls := 0
 	serveEuclidMCP(strings.NewReader(strings.Join(reqs, "\n")+"\n"), &out, func() string { calls++; return home })
-	assert.Equal(t, 5, calls, "cwd is resolved per tool call - the server follows project switches")
+	assert.Equal(t, 7, calls, "cwd is resolved per tool call - the server follows project switches")
 
 	var replies []map[string]any
 	sc := bufio.NewScanner(&out)
@@ -48,25 +50,26 @@ func TestEuclidMCPServer(t *testing.T) {
 		require.NoError(t, json.Unmarshal(sc.Bytes(), &m), sc.Text())
 		replies = append(replies, m)
 	}
-	require.Len(t, replies, 8, "one reply per request, none for the notification")
+	require.Len(t, replies, 10, "one reply per request, none for the notification")
 	assert.Equal(t, mcpProtocolVersion, replies[0]["result"].(map[string]any)["protocolVersion"])
 	tools := replies[1]["result"].(map[string]any)["tools"].([]any)
 	names := []string{}
 	for _, tl := range tools {
 		names = append(names, tl.(map[string]any)["name"].(string))
 	}
-	assert.ElementsMatch(t, []string{"search", "ask", "recall", "note", "read_register", "recent_runs", "status"}, names)
+	assert.ElementsMatch(t, []string{"search", "code_search", "file_search", "ask", "recall", "note", "read_register", "recent_runs", "status"}, names)
 	text := func(i int) string {
 		return replies[i]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string)
 	}
-	assert.Contains(t, text(2), "[main] WISDOM.md")
-	assert.Contains(t, text(2), "atomically")
+	assert.Equal(t, true, replies[2]["result"].(map[string]any)["isError"])
 	assert.Contains(t, text(3), "wire value routing")
 	assert.Contains(t, text(3), "pkg/value.go")
 	assert.Contains(t, text(4), "[main] wisdom")
 	assert.Contains(t, text(5), "write")
-	assert.Equal(t, true, replies[6]["result"].(map[string]any)["isError"], "unknown tool → tool error, not a protocol error")
-	assert.NotNil(t, replies[7]["error"], "unknown method → JSON-RPC error")
+	assert.Equal(t, true, replies[6]["result"].(map[string]any)["isError"])
+	assert.Equal(t, true, replies[7]["result"].(map[string]any)["isError"])
+	assert.Equal(t, true, replies[8]["result"].(map[string]any)["isError"], "unknown tool → tool error, not a protocol error")
+	assert.NotNil(t, replies[9]["error"], "unknown method → JSON-RPC error")
 }
 
 func TestEnsureEuclidMCPRegistersOnce(t *testing.T) {
@@ -82,4 +85,26 @@ func TestEnsureEuclidMCPRegistersOnce(t *testing.T) {
 	changed, err = captaincode.EnsureEuclidMCP(cfg, "/elsewhere/captain")
 	require.NoError(t, err)
 	assert.False(t, changed, "an existing entry is never rewritten")
+}
+
+func TestEuclidMCPSearchSourceOptions(t *testing.T) {
+	for _, name := range []string{"search", "file_search"} {
+		for _, args := range []map[string]any{
+			{"query": "q", "include_journals": "false"},
+			{"query": "q", "scope": "unknown"},
+			{"query": "q", "scope": false},
+			{"query": "q", "lane": "invalid"},
+		} {
+			_, err := euclidToolCall(name, args, t.TempDir())
+			require.Error(t, err)
+		}
+		for _, tool := range euclidTools {
+			if tool["name"] != name {
+				continue
+			}
+			props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+			require.Equal(t, false, props["include_journals"].(map[string]any)["default"])
+			require.Contains(t, props, "scope")
+		}
+	}
 }

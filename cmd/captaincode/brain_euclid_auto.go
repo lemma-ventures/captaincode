@@ -60,8 +60,9 @@ func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
 	if !ok {
 		return
 	}
-	entries, err := captaincode.ReadJournal(wb, captaincode.LastDistilledAt(wb))
-	if err != nil || len(entries) < n {
+	in := captaincode.LearnInputsOf(wb)
+	entries, err := in.Journal, in.Err
+	if err != nil || in.PendingJournal < n {
 		return
 	}
 	st := &b.autoDistill
@@ -91,8 +92,74 @@ func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
 			return
 		}
 		fmt.Printf("captain brain: euclid auto-distill: %d entries → %d edit(s) in %s\n", d.Entries, len(d.Edits), wb.Label)
+		if captaincode.MemoryMCPEnabled() {
+			return
+		}
 		echoToMainBrain(cwd, wb, d)
+		if wb.Kind != "main" {
+			b.crystallizeMain(ws)
+		}
 	}()
+}
+
+func crystallizeThreshold() int {
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_CRYSTALLIZE")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// crystallizeMain folds cross-repo MEMORIES lines into the persona registers
+// the echo does not touch. It runs after each repo distill (CAPTAIN_EUCLID_CRYSTALLIZE
+// sets the section count; 0 turns it off) and it is a second model call.
+func (b *brain) crystallizeMain(ws captaincode.Workspace) {
+	n := crystallizeThreshold()
+	if n == 0 || os.Getenv("CAPTAIN_EUCLID") == "0" {
+		return
+	}
+	mainPath := captaincode.MainBrainPath()
+	if _, err := os.Stat(mainPath); err != nil {
+		return
+	}
+	brain := captaincode.EuclidBrain{Root: mainPath, Kind: "main", Writable: true, Label: "main"}
+	in := captaincode.LearnInputsOf(brain)
+	if in.Err != nil || in.PendingMemories < n {
+		return
+	}
+	in.Journal = nil
+	entries := in.Memories
+	if len(entries) == 0 {
+		return
+	}
+	prompt := captaincode.CrystallizePrompt(brain, entries)
+	var res captaincode.Result
+	var err error
+	if b.runWorkerFn != nil {
+		_, res, err = b.runWorkerFn(b.distillLeg(), prompt, nil, nil)
+	} else {
+		res, err = ws.RunWorkerStreamHooks(b.distillLeg(), prompt, opencodePort, nil, nil)
+	}
+	if h := b.chargeOwnTask("memory: crystallize main"); h != nil {
+		h(b.distillLeg(), "distill", res, err)
+	}
+	if err != nil {
+		fmt.Printf("captain brain: euclid crystallize failed: %v\n", err)
+		return
+	}
+	d, err := captaincode.ParseCrystallize(res.Text)
+	if err != nil {
+		fmt.Printf("captain brain: euclid crystallize parse: %v\n", err)
+		return
+	}
+	touched, err := captaincode.ApplyLearnInputs(brain, in, d.Edits)
+	if err != nil {
+		fmt.Printf("captain brain: euclid crystallize apply: %v\n", err)
+		return
+	}
+	captaincode.ScheduleReindex(brain)
+	fmt.Printf("captain brain: euclid crystallize: %d memory sections → %d edit(s)\n", len(entries), len(touched))
 }
 
 // awaitAutoDistill waits for a background distillation to finish (tests).

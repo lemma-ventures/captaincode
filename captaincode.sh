@@ -249,6 +249,18 @@ up() {
   fi
 }
 
+# Do not replace a working brain with a revision that ignores the configured
+# retrieval provider. This check runs before install and before stop_brain.
+check_retrieval_ref() {
+  local ref="$1"
+  [ -n "${CAPTAIN_EUCLID_MCP_CONFIG:-}" ] || return 0
+  if ! git -C "$SCRIPT_DIR" grep -q 'CAPTAIN_EUCLID_MCP_CONFIG' "$ref" -- pkg/captaincode/euclid_engine.go ||
+     ! git -C "$SCRIPT_DIR" grep -q 'func EngineSearchOptions' "$ref" -- pkg/captaincode/euclid_engine.go; then
+    echo "✗ $ref lacks the configured Euclid MCP retrieval support - build the reviewed checkout with --checkout, or merge the integration into main first. The installed brain is unchanged." >&2
+    return 1
+  fi
+}
+
 # rebuild: compile the captain binary from the latest main and install it
 # where the launcher finds it. `restart` alone never rebuilds - it restarts
 # whatever is on PATH, which is how a brain ran a day-old binary after a
@@ -283,6 +295,7 @@ rebuild() {
     echo "✗ no such branch or ref: $ref. Branches: $(git -C "$SCRIPT_DIR" for-each-ref --sort=-committerdate --count=8 --format='%(refname:short)' refs/heads | tr '\n' ' ')" >&2
     exit 1
   }
+  if ! check_retrieval_ref "$sha"; then rm -f "$tmp"; exit 1; fi
   echo "→ building captain from ${CAPTAIN_BUILD_REF:-main} at ${sha:0:7} ($(git -C "$SCRIPT_DIR" log -1 --format=%s "$sha" | cut -c1-60))…"
   local src; src=$(mktemp -d "${TMPDIR:-/tmp}/captain.src.XXXXXX")
   rmdir "$src" # git clone wants to create it

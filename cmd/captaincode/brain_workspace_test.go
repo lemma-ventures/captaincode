@@ -259,7 +259,7 @@ func TestDashboardRegenerateContract(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.True(t, out.OK)
 	require.Len(t, out.Steps, 2)
-	assert.Equal(t, "build-catalog.py", out.Steps[0].Script, "the dashboard renders the step list")
+	assert.Equal(t, ".euclid/bin/build-catalog.py", out.Steps[0].Script, "the panel shows the command a human can run from the host root")
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/regenerate?root="+t.TempDir(), nil)

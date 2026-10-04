@@ -160,6 +160,7 @@ after the task (a session title gets none of them):
 | `captain euclid check` | The launch check: main brain and local brain, filesystem only |
 | `captain euclid ensure` | Launch step: every brain the folder reads exists and is freshly indexed |
 | `captain euclid distill [--apply]` / `bootstrap [--apply]` | Propose register edits from the journal (or bootstrap a new brain from the repo's docs); `--apply` writes your write brain, never the shared one |
+| `captain euclid learn [--max N] [--dry-run] [--root <dir>]` | Persona learning loop: fold the new journal and memory into the registers until a pass has nothing left, then rebuild the dashboard data |
 | `captain euclid link <repo\|path\|url> [--related]` / `links [--apply]` | Declare a cross-repo link; list resolved links and proposals |
 | `captain euclid corpus [--apply]` / `reindex` / `probes [--force]` | Corpus roots in `euclid.yml`; rebuild the index; regenerate the benchmark gold sets |
 | `captain euclid share [--apply]` | Make the repo brain shareable: developer brains local, `notes/`, the fold workflow |
@@ -175,3 +176,15 @@ Euclid is not the default install. Nothing under `.euclid/` is committed with Ca
 - [TASK_API_COMPATIBILITY.md](TASK_API_COMPATIBILITY.md) — HTTP task API
 - [INSTALL.md](INSTALL.md) — toolchain pins and doctor sections
 - [ROADMAP.md](ROADMAP.md) — M1–M5 status
+
+Euclid search source options:
+
+```sh
+captain euclid search --doc "topic"          # project documents, no journals
+captain euclid search --all-docs "topic"     # project documents and journals
+captain euclid search --config "filename"   # tracked config paths, no contents
+```
+
+`--scope project|docs|config` selects the source set. `--include-journals` opts
+into journals for project or document searches. Persona registers remain on
+`read_register` and `recent_runs`; repository search does not append them.

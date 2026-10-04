@@ -631,13 +631,17 @@ type BuildPlan = { host: string; steps: string[][]; env: Record<string, string>;
 type DashLink = { label: string; url: string; build?: BuildPlan }
 
 // euclidEngine locates a Euclid checkout that can build a dashboard for ANY
-// brain: CAPTAIN_EUCLID_ENGINE, else ~/src/euclid, else
-// $CAPTAIN_WORKSPACE_ROOT/euclid. A vendored copy inside a brain's bin/ is
-// preferred when present, because it matches that brain's format.
+// brain when explicitly configured via CAPTAIN_EUCLID_ENGINE. A vendored copy
+// inside a brain's bin/ is preferred when present, because it matches that
+// brain's format.
 function euclidEngine(): string | undefined {
   const env = (globalThis as any).process?.env ?? {}
-  const candidates = [env.CAPTAIN_EUCLID_ENGINE, join(homedir(), "Gits", "euclid"), env.CAPTAIN_WORKSPACE_ROOT && join(env.CAPTAIN_WORKSPACE_ROOT, "euclid")].filter(Boolean) as string[]
-  return candidates.find((c) => existsSync(join(c, "dashboard", "build-dashboard.py")) && existsSync(join(c, "engine", "build-catalog.py")))
+  const candidate = env.CAPTAIN_EUCLID_ENGINE
+  if (!candidate) return undefined
+  if (existsSync(join(candidate, "dashboard", "build-dashboard.py")) && existsSync(join(candidate, "engine", "build-catalog.py"))) {
+    return candidate
+  }
+  return undefined
 }
 
 // buildPlan says how to build the dashboard of a brain rooted at <host>/.euclid.

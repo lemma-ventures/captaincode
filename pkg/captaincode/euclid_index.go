@@ -2,6 +2,7 @@ package captaincode
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -40,26 +41,28 @@ type IndexResult struct {
 	Error      string      `json:"error,omitempty"`
 }
 
-// EuclidEngine locates a Euclid checkout able to build any brain's index and
-// dashboard: CAPTAIN_EUCLID_ENGINE, else ~/src/euclid, else
-// $CAPTAIN_WORKSPACE_ROOT/euclid. "" when none is installed.
+// EuclidEngine is the Euclid checkout named by CAPTAIN_EUCLID_ENGINE, "" when
+// unset or not a checkout. No other directory is searched.
 func EuclidEngine() string {
-	var candidates []string
-	if v := strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_ENGINE")); v != "" {
-		candidates = append(candidates, v)
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		candidates = append(candidates, filepath.Join(home, "Gits", "euclid"))
-	}
-	if v := strings.TrimSpace(os.Getenv("CAPTAIN_WORKSPACE_ROOT")); v != "" {
-		candidates = append(candidates, filepath.Join(v, "euclid"))
-	}
-	for _, c := range candidates {
-		if isFile(filepath.Join(c, "engine", "build-catalog.py")) && isFile(filepath.Join(c, "dashboard", "build-dashboard.py")) {
-			return c
-		}
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_ENGINE")); v != "" && isEngineCheckout(v) {
+		return v
 	}
 	return ""
+}
+
+func isEngineCheckout(dir string) bool {
+	return isFile(filepath.Join(dir, "engine", "build-catalog.py")) && isFile(filepath.Join(dir, "dashboard", "build-dashboard.py"))
+}
+
+// engineFor is the engine that builds root's index: the brain's own host when
+// that host is a Euclid checkout (the Euclid repository's own brain), else
+// the configured engine. Both are named by the request or the operator; no
+// sibling directory is searched.
+func engineFor(root string) string {
+	if host := filepath.Dir(filepath.Clean(root)); filepath.Base(root) == ".euclid" && isEngineCheckout(host) {
+		return host
+	}
+	return EuclidEngine()
 }
 
 func isFile(p string) bool {
@@ -76,11 +79,105 @@ func indexScripts(root string) (catalog, dashboard, staticFrom string) {
 	if isFile(filepath.Join(vendored, "build-catalog.py")) && isFile(filepath.Join(vendored, "build-dashboard.py")) {
 		return filepath.Join(vendored, "build-catalog.py"), filepath.Join(vendored, "build-dashboard.py"), vendored
 	}
-	engine := EuclidEngine()
+	engine := engineFor(root)
 	if engine == "" {
 		return "", "", ""
 	}
 	return filepath.Join(engine, "engine", "build-catalog.py"), filepath.Join(engine, "dashboard", "build-dashboard.py"), filepath.Join(engine, "dashboard")
+}
+
+// vendorScripts keeps the command the dashboard prints - the one a human
+// runs from the host root,
+//
+//	python3 .euclid/bin/build-catalog.py && python3 .euclid/bin/build-dashboard.py
+//
+// true: the first rebuild copies the engine's build scripts, its page and the
+// budget checks into <root>/bin, and every later rebuild refreshes a copy the
+// engine has moved past (engine mtime newer). The copy is what runs then, so
+// a brain keeps building its own dashboard when the engine checkout is not on
+// the machine, and `script_path`-style name lookups (benchmarks, .sh checks)
+// resolve inside the brain instead of across machines.
+func vendorScripts(root string) (copied int, err error) {
+	engine := engineFor(root)
+	if engine == "" || !isDir(root) {
+		return 0, nil
+	}
+	bin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		return 0, err
+	}
+	static := map[string]bool{"index.html": true, "app.js": true, "style.css": true}
+	var trees []string
+	for _, d := range []string{"engine", "dashboard", "benchmarks"} {
+		if p := filepath.Join(engine, d); isDir(p) {
+			trees = append(trees, p)
+		}
+	}
+	for _, dir := range trees {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".py") && !strings.HasSuffix(name, ".sh") && !static[name] {
+				continue
+			}
+			src := filepath.Join(dir, name)
+			dst := filepath.Join(bin, name)
+			si, serr := os.Stat(src)
+			if serr != nil {
+				continue
+			}
+			if di, derr := os.Stat(dst); derr == nil && !si.ModTime().After(di.ModTime()) {
+				continue
+			}
+			b, rerr := os.ReadFile(src)
+			if rerr != nil {
+				continue
+			}
+			if werr := os.WriteFile(dst, b, 0o644); werr != nil {
+				return copied, werr
+			}
+			copied++
+		}
+	}
+	if copied > 0 && filepath.Base(root) == ".euclid" {
+		ignoreVendoredBin(root)
+	}
+	return copied, nil
+}
+
+// ignoreVendoredBin keeps a repository brain that commits its registers from
+// committing the vendored scripts too: they are derived, like index/ and
+// dashboard/ in the brain's own .gitignore.
+func ignoreVendoredBin(root string) {
+	p := filepath.Join(root, ".gitignore")
+	b, err := os.ReadFile(p)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if stringHasLine(string(b), "bin/") {
+		return
+	}
+	out := b
+	if len(out) > 0 && !strings.HasSuffix(string(out), "\n") {
+		out = append(out, '\n')
+	}
+	out = append(out, "bin/\n"...)
+	_ = os.WriteFile(p, out, 0o644)
+}
+
+func stringHasLine(s, line string) bool {
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) == line {
+			return true
+		}
+	}
+	return false
 }
 
 // IsBrainRoot says whether root is a Euclid brain directory this machine may
@@ -108,9 +205,15 @@ func Reindex(root string, timeout time.Duration) IndexResult {
 		res.FinishedAt = time.Now().Format(time.RFC3339)
 		return res
 	}
+	// Vended first: the path the rebuild reports (and the one the dashboard
+	// prints for a manual run) is then the brain's own bin copy, not the
+	// engine checkout the page was built from.
+	// A copy failure is not a rebuild failure: indexScripts falls back to the
+	// engine checkout, and the step report names whichever path really ran.
+	_, _ = vendorScripts(root)
 	catalog, dashboard, staticFrom := indexScripts(root)
 	if catalog == "" {
-		res.Error = "no Euclid engine found (CAPTAIN_EUCLID_ENGINE, ~/src/euclid or $CAPTAIN_WORKSPACE_ROOT/euclid)"
+		res.Error = "no Euclid engine found (CAPTAIN_EUCLID_ENGINE)"
 		res.FinishedAt = time.Now().Format(time.RFC3339)
 		return res
 	}
@@ -151,6 +254,12 @@ func Reindex(root string, timeout time.Duration) IndexResult {
 }
 
 func runIndexScript(script, cwd string, env []string, timeout time.Duration) IndexStep {
+	name := filepath.Base(script)
+	if rel, err := filepath.Rel(cwd, script); err == nil && !strings.HasPrefix(rel, "..") {
+		// The path as the host sees it - `.euclid/bin/build-dashboard.py` - so
+		// the step a report names is the command a human can run.
+		name = rel
+	}
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}
@@ -160,7 +269,7 @@ func runIndexScript(script, cwd string, env []string, timeout time.Duration) Ind
 	cmd.Env = env
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	step := IndexStep{Step: strings.TrimSuffix(filepath.Base(script), ".py"), Script: filepath.Base(script)}
+	step := IndexStep{Step: strings.TrimSuffix(filepath.Base(script), ".py"), Script: name}
 	if err := cmd.Start(); err != nil {
 		step.ReturnCode, step.Tail = -1, err.Error()
 		step.DurationS = time.Since(start).Seconds()

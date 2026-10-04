@@ -29,6 +29,9 @@ func distillingBrain(t *testing.T, summary string) *brain {
 	t.Helper()
 	b := teamBrain()
 	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		if strings.Contains(brief, "[euclid crystallize]") {
+			return leg, captaincode.Result{Text: `{"summary":"","edits":[]}`}, nil
+		}
 		return leg, captaincode.Result{Text: `{"summary":"` + summary + `","edits":[{"file":"BRAIN.md","mode":"replace_section","anchor":"## Current state","text":"- Active front: ` + summary + `","why":"journal"}]}`}, nil
 	}
 	return b
@@ -93,6 +96,7 @@ func TestAutoDistillEchoesTheSummaryIntoTheMainBrain(t *testing.T) {
 	t.Setenv("CAPTAIN_CWD", repo)
 	t.Setenv("EUCLID_HANDLE", "dev")
 	t.Setenv("CAPTAIN_EUCLID_AUTODISTILL", "1")
+	t.Setenv("CAPTAIN_EUCLID_CRYSTALLIZE", "0")
 	b := distillingBrain(t, "widget: storage layer migrated")
 
 	journalN(t, repo, 1)
@@ -104,6 +108,40 @@ func TestAutoDistillEchoesTheSummaryIntoTheMainBrain(t *testing.T) {
 	assert.Contains(t, strings.ToLower(string(mem)), "widget", "…and which repo it was")
 	mainBrain, _ := os.ReadFile(filepath.Join(main, "BRAIN.md"))
 	assert.NotContains(t, string(mainBrain), "storage layer", "the repo's own BRAIN edit stays in the repo's write brain")
+}
+
+func TestCrystallizeFoldsMainPersonaAfterEnoughEchoes(t *testing.T) {
+	home := euclidTestHome(t)
+	main := filepath.Join(home, ".euclid")
+	_, err := captaincode.Scaffold(main, "main")
+	require.NoError(t, err)
+	repo := filepath.Join(home, "Gits", "widget")
+	require.NoError(t, os.MkdirAll(repo, 0o755))
+	require.NoError(t, exec.Command("git", "-C", repo, "init", "-q").Run())
+	_, err = captaincode.Scaffold(filepath.Join(repo, ".euclid"), "repo")
+	require.NoError(t, err)
+	_, err = captaincode.Scaffold(filepath.Join(repo, ".euclid", "developers", "dev"), "developer")
+	require.NoError(t, err)
+	t.Setenv("CAPTAIN_CWD", repo)
+	t.Setenv("EUCLID_HANDLE", "dev")
+	t.Setenv("CAPTAIN_EUCLID_AUTODISTILL", "1")
+	t.Setenv("CAPTAIN_EUCLID_CRYSTALLIZE", "1")
+	b := teamBrain()
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		if strings.Contains(brief, "[euclid crystallize]") {
+			return leg, captaincode.Result{Text: `{"summary":"folded","edits":[{"file":"INTUITION.md","mode":"append","text":"- [open] widget storage is the risky path","why":"hunch"}]}`}, nil
+		}
+		return leg, captaincode.Result{Text: `{"summary":"widget: storage layer migrated","edits":[{"file":"BRAIN.md","mode":"replace_section","anchor":"## Current state","text":"- Active front: widget storage","why":"journal"}]}`}, nil
+	}
+	journalN(t, repo, 1)
+	b.maybeAutoDistill(defaultWorkspace())
+	b.awaitAutoDistill()
+	intu, err := os.ReadFile(filepath.Join(main, "INTUITION.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(intu), "widget storage is the risky path")
+	assert.Equal(t, 1, captaincode.LastCrystallizedCount(captaincode.EuclidBrain{Root: main}))
+	mainBrain, _ := os.ReadFile(filepath.Join(main, "BRAIN.md"))
+	assert.NotContains(t, string(mainBrain), "widget storage", "the repo distill does not write the main BRAIN; crystallize did not either")
 }
 
 func TestNewRepoBrainInheritsMainDoctrine(t *testing.T) {

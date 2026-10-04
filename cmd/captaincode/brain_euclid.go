@@ -12,10 +12,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
@@ -169,8 +169,21 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 	if !ok {
 		return captaincode.Distillation{}, "", fmt.Errorf("no write brain for %s - run `captain euclid init`", cwd)
 	}
+	if captaincode.MemoryMCPEnabled() {
+		passes, err := b.learnBrain(wb, 4, apply, io.Discard)
+		d := captaincode.Distillation{Brain: wb}
+		var summaries []string
+		for _, pass := range passes {
+			d.Entries += pass.Journal
+			summaries = append(summaries, pass.Summary)
+		}
+		d.Summary = strings.Join(summaries, "\n")
+		return d, d.Summary, err
+	}
 	since := captaincode.LastDistilledAt(wb)
-	entries, err := captaincode.ReadJournal(wb, since)
+	in := captaincode.LearnInputsOf(wb)
+	in.Memories = nil
+	entries, err := in.Journal, in.Err
 	if err != nil {
 		return captaincode.Distillation{}, "", err
 	}
@@ -202,11 +215,8 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 	if !apply {
 		return d, report + "\n(dry run - `/euclid distill apply` or `captain euclid distill --apply` writes these to your write brain)\n", nil
 	}
-	touched, err := captaincode.ApplyEdits(wb, d.Edits)
+	touched, err := captaincode.ApplyLearnInputs(wb, in, d.Edits)
 	if err != nil {
-		return d, report, err
-	}
-	if err := captaincode.MarkDistilled(wb, time.Now()); err != nil {
 		return d, report, err
 	}
 	captaincode.ScheduleReindex(wb)

@@ -168,6 +168,9 @@ func main() {
 		case "euclid":
 			cmdEuclid(args[1:])
 			return
+		case "search":
+			cmdEuclidSearch(os.Args[2:])
+			return
 		case "watch":
 			cmdWatch()
 			return

@@ -177,6 +177,7 @@ func TestDistillPromptParseAndApply(t *testing.T) {
 	prompt := DistillPrompt(brain, entries)
 	assert.True(t, IsDistillRequest(prompt))
 	assert.Contains(t, prompt, "=== current BRAIN.md ===")
+	assert.Contains(t, prompt, "INTUITION.md")
 	assert.Contains(t, prompt, "pkg/value.go")
 	assert.Contains(t, prompt, "Respond with JSON only")
 
@@ -204,6 +205,20 @@ func TestDistillPromptParseAndApply(t *testing.T) {
 
 	require.NoError(t, MarkDistilled(brain, time.Now()))
 	assert.False(t, LastDistilledAt(brain).IsZero())
+}
+
+func TestCrystallizeReadsNewMemorySectionsOnly(t *testing.T) {
+	text := "# MEMORIES\n\n## 2026-10-01 - zorvex\n\n- first\n\n## 2026-10-03 - captaincode\n\n- second\n"
+	assert.Equal(t, 2, SectionsSince(text, 0))
+	assert.Equal(t, 1, SectionsSince(text, 1))
+	got := CrystallizeEntries(text, 1, 12)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].Summary, "second")
+	raw := `{"summary":"folded","edits":[{"file":"INTUITION.md","mode":"append","text":"- [open] the tag move sticks in the proxy","why":"hunch"},{"file":"memory/MEMORIES.md","mode":"append","text":"- again","why":"no"}]}`
+	d, err := ParseCrystallize(raw)
+	require.NoError(t, err)
+	require.Len(t, d.Edits, 1, "MEMORIES is not crystallized a second time")
+	assert.Equal(t, "INTUITION.md", d.Edits[0].File)
 }
 
 func TestReplaceSection(t *testing.T) {

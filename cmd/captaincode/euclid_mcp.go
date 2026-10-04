@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
@@ -44,10 +45,25 @@ type rpcResponse struct {
 }
 
 var euclidTools = []map[string]any{
-	{"name": "search", "description": "Search this repository's Euclid index - every governed doc and source file (catalog BM25 + full-text + relation-graph walk) - and the memory registers of the session's brains. Use it before re-deriving where something lives or what was decided. Returns ranked hits with paths.",
+	{"name": "search", "description": "Search this repository's Euclid index - every governed doc and source file (catalog BM25 + full-text + relation-graph walk, fused with CodeIntel AST code intelligence). Journals are excluded by default. Use read_register for persona memory. Use it before re-deriving where something lives or what was decided. Returns ranked hits with paths.",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
-			"query": map[string]any{"type": "string", "description": "search terms"},
-			"limit": map[string]any{"type": "integer", "description": "max hits per section (default 8)"}},
+			"scope":            map[string]any{"type": "string", "enum": []string{"project", "docs", "config"}, "default": "project", "description": "project: docs and code; docs: project documents; config: tracked config paths only, no values"},
+			"include_journals": map[string]any{"type": "boolean", "default": false, "description": "Include journal entries. False excludes journals from every result section."},
+			"query":            map[string]any{"type": "string", "description": "search terms"},
+			"lane":             map[string]any{"type": "string", "description": "code | doc | both (default: both) - 'code' for code symbols, functions, types; 'doc' for architecture/specs; 'both' for unified search"},
+			"limit":            map[string]any{"type": "integer", "description": "max hits per section (default 8)"}},
+			"required": []string{"query"}}},
+	{"name": "code_search", "description": "Search repository source code declarations (functions, structs, types, methods, implementations) using Euclid fused with CodeIntel AST intelligence. Fast and token-efficient: returns exact file paths, line spans, and declarations without reading entire directories.",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"query": map[string]any{"type": "string", "description": "function, type, symbol name, or code pattern to find"},
+			"limit": map[string]any{"type": "integer", "description": "max code results (default 10)"}},
+			"required": []string{"query"}}},
+	{"name": "file_search", "description": "Search project files and paths. Select docs or config with scope. Journals are excluded unless include_journals is true. Config results contain paths only.",
+		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
+			"scope":            map[string]any{"type": "string", "enum": []string{"project", "docs", "config"}, "default": "project", "description": "project: docs and code; docs: project documents; config: tracked config paths only, no values"},
+			"include_journals": map[string]any{"type": "boolean", "default": false, "description": "Include journal entries. False excludes journals from every result section."},
+			"query":            map[string]any{"type": "string", "description": "file name, path fragment, or topic"},
+			"limit":            map[string]any{"type": "integer", "description": "max results (default 10)"}},
 			"required": []string{"query"}}},
 	{"name": "ask", "description": "Answer a question from the repository's memory in one pass: catalog + full text + multi-hop relation graph + git provenance (who/when/why). Slower than search; use for 'why is X like this', 'what depends on Y', 'when was Z decided'.",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{
@@ -106,6 +122,31 @@ func euclidToolCall(name string, args map[string]any, cwd string) (map[string]an
 		v, _ := args[k].(string)
 		return strings.TrimSpace(v)
 	}
+	options := captaincode.SearchOptions{}
+	if name == "search" || name == "file_search" {
+		if v, present := args["scope"]; present {
+			value, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("scope must be a string")
+			}
+			options.Scope = value
+		}
+		if v, present := args["include_journals"]; present {
+			value, ok := v.(bool)
+			if !ok {
+				return nil, fmt.Errorf("include_journals must be boolean")
+			}
+			options.IncludeJournals = value
+		}
+		if v, present := args["lane"]; present {
+			if _, ok := v.(string); !ok {
+				return nil, fmt.Errorf("lane must be a string")
+			}
+		}
+		if err := options.Validate(strArg("lane")); err != nil {
+			return nil, err
+		}
+	}
 	switch name {
 	case "status":
 		set := captaincode.SearchSet(cwd)
@@ -122,39 +163,142 @@ func euclidToolCall(name string, args map[string]any, cwd string) (map[string]an
 			fmt.Fprintf(&sb, "- %s (%s, %s, weight %.1f): %s\n", b.Label, b.Kind, role, b.Weight, b.Root)
 		}
 		return text(sb.String()), nil
+	case "code_search":
+		q := strArg("query")
+		if q == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+		lim := intArg("limit", 10)
+		start := time.Now()
+		out, ok := captaincode.EngineCodeSearch(cwd, q, lim)
+		dur := time.Since(start)
+		durMS := float64(dur.Microseconds()) / 1000
+		if !ok {
+			return nil, fmt.Errorf("Euclid retrieval unavailable; check the engine or MCP configuration")
+		}
+		if strings.TrimSpace(out) == "" {
+			captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+				Tool: "code_search", Query: q, Lane: "code", Cwd: cwd,
+				DurationMS: durMS, HitsCount: 0, TokensReturned: 0, Safe: true, CodeIntelUsed: true,
+			})
+			return text("no code matches found for: " + q), nil
+		}
+		resText := strings.TrimSpace(out)
+		toks := len(resText) / 4
+		hitCount := strings.Count(resText, "\n   ") + strings.Count(resText, "\n  ")
+		if hitCount == 0 && len(resText) > 0 {
+			hitCount = 1
+		}
+		avoided := hitCount * 1500
+		captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+			Tool: "code_search", Query: q, Lane: "code", Cwd: cwd,
+			DurationMS: durMS, HitsCount: hitCount, TokensReturned: toks, TokensAvoided: avoided,
+			Safe: true, CodeIntelUsed: true,
+		})
+		return text(resText), nil
+	case "file_search":
+		q := strArg("query")
+		if q == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+		lim := intArg("limit", 10)
+		start := time.Now()
+		out, ok := captaincode.EngineSearchOptions(cwd, q, "both", lim, options)
+		dur := time.Since(start)
+		durMS := float64(dur.Microseconds()) / 1000
+		if !ok {
+			return nil, fmt.Errorf("Euclid retrieval unavailable; check the engine or MCP configuration")
+		}
+		if strings.TrimSpace(out) == "" {
+			captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+				Tool: "file_search", Query: q, Lane: "both", Cwd: cwd,
+				DurationMS: durMS, HitsCount: 0, TokensReturned: 0, Safe: true,
+			})
+			return text("no files found for: " + q), nil
+		}
+		resText := strings.TrimSpace(out)
+		toks := len(resText) / 4
+		hitCount := strings.Count(resText, "\n   ") + strings.Count(resText, "\n  ")
+		if hitCount == 0 && len(resText) > 0 {
+			hitCount = 1
+		}
+		avoided := hitCount * 1200
+		captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+			Tool: "file_search", Query: q, Lane: "both", Cwd: cwd,
+			DurationMS: durMS, HitsCount: hitCount, TokensReturned: toks, TokensAvoided: avoided,
+			Safe: true,
+		})
+		return text(resText), nil
 	case "search":
 		q := strArg("query")
 		if q == "" {
 			return nil, fmt.Errorf("query is required")
 		}
+		lane := strArg("lane")
+		if lane == "" {
+			lane = "both"
+		}
+		lim := intArg("limit", 8)
+		start := time.Now()
 		var sb strings.Builder
-		// The engine first: the repository's own corpus. The registers of
-		// every readable brain follow, so memory and code answer together.
-		if out, ok := captaincode.EngineSearch(cwd, q, intArg("limit", 8)); ok && out != "" {
-			sb.WriteString(out)
-			sb.WriteString("\n\n")
+		// Search only the selected repository sources. Memory has separate tools.
+		out, ok := captaincode.EngineSearchOptions(cwd, q, lane, lim, options)
+		if !ok {
+			return nil, fmt.Errorf("Euclid retrieval unavailable; check the engine or MCP configuration")
 		}
-		hits := captaincode.EuclidSearch(cwd, q, intArg("limit", 8))
-		if len(hits) > 0 {
-			sb.WriteString("# Memory registers\n")
-			for i, h := range hits {
-				fmt.Fprintf(&sb, "%d. [%s] %s:%d (score %.2f)\n%s\n\n", i+1, h.Source, h.File, h.Line, h.Score, h.Text)
-			}
+		sb.WriteString(out)
+		dur := time.Since(start)
+		durMS := float64(dur.Microseconds()) / 1000
+		resText := strings.TrimSpace(sb.String())
+		if resText == "" {
+			captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+				Tool: "search", Query: q, Lane: lane, Cwd: cwd,
+				DurationMS: durMS, HitsCount: 0, TokensReturned: 0, Safe: true,
+			})
+			return text("no hits in the selected repository sources for: " + q), nil
 		}
-		if strings.TrimSpace(sb.String()) == "" {
-			return text("no hits in Euclid memory or the repository index for: " + q), nil
+		toks := len(resText) / 4
+		hitCount := strings.Count(resText, "\n   ") + strings.Count(resText, "\n  ")
+		if hitCount == 0 && len(resText) > 0 {
+			hitCount = 1
 		}
-		return text(strings.TrimSpace(sb.String())), nil
+		avoided := hitCount * 1200
+		captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+			Tool: "search", Query: q, Lane: lane, Cwd: cwd,
+			DurationMS: durMS, HitsCount: hitCount, TokensReturned: toks, TokensAvoided: avoided,
+			Safe: true, CodeIntelUsed: lane == "code" || lane == "both",
+		})
+		return text(resText), nil
 	case "ask":
 		q := strArg("query")
 		if q == "" {
 			return nil, fmt.Errorf("query is required")
 		}
-		out, err := captaincode.EngineAsk(cwd, q, strArg("lane"), intArg("limit", 6))
+		lane := strArg("lane")
+		start := time.Now()
+		out, err := captaincode.EngineAsk(cwd, q, lane, intArg("limit", 6))
+		dur := time.Since(start)
+		durMS := float64(dur.Microseconds()) / 1000
 		if err != nil {
+			captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+				Tool: "ask", Query: q, Lane: lane, Cwd: cwd,
+				DurationMS: durMS, HitsCount: 0, TokensReturned: 0, Safe: true,
+			})
 			return text("ask unavailable: " + err.Error()), nil
 		}
-		return text(out), nil
+		resText := strings.TrimSpace(out)
+		toks := len(resText) / 4
+		hitCount := strings.Count(resText, "\n   ") + strings.Count(resText, "\n  ")
+		if hitCount == 0 && len(resText) > 0 {
+			hitCount = 1
+		}
+		avoided := hitCount * 1500
+		captaincode.LogRetrievalEvent(captaincode.RetrievalEvent{
+			Tool: "ask", Query: q, Lane: lane, Cwd: cwd,
+			DurationMS: durMS, HitsCount: hitCount, TokensReturned: toks, TokensAvoided: avoided,
+			Safe: true, CodeIntelUsed: true,
+		})
+		return text(resText), nil
 	case "recall":
 		q := strArg("query")
 		if q == "" {
