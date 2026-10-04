@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Writing: Style 1"
+  short_description: "Explain research through goals, assumptions and evidence, readable on first pass"
+  default_prompt: "Use $research-writing-style-1 to make this research paper's argument clear on first read without strengthening unsupported claims."

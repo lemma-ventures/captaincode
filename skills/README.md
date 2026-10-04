@@ -1,8 +1,8 @@
 # Skills
 
-Four Agent Skills distilled from building and running Captain Code. Each is a
-folder with a `SKILL.md`: plain procedures that do not need Captain installed
-and run no scripts.
+Five Agent Skills published with Captain Code. Each is a
+folder with a `SKILL.md`, and some carry reference examples: plain procedures
+that do not need Captain installed and run no scripts.
 
 | Skill | Load it when |
 |---|---|
@@ -10,6 +10,7 @@ and run no scripts.
 | [`verify-with-verdicts`](verify-with-verdicts/SKILL.md) | deciding whether a change works: pass, fail or inconclusive |
 | [`audit-public-claims`](audit-public-claims/SKILL.md) | release notes, docs, posts or replies state facts about software |
 | [`public-clarity-output`](public-clarity-output/SKILL.md) | workers, directors and assessors format handoffs, rulings and grading notes for humans |
+| [`research-writing-style-1`](research-writing-style-1/SKILL.md) | drafting, restructuring or reviewing a security or cryptography paper so a mixed audience understands it on first read |
 
 ## Install
 
