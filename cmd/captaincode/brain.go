@@ -402,6 +402,9 @@ type brain struct {
 	planFn func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error)
 	// assessFn stubs Manager.Assess in tests; nil → real director call.
 	assessFn func(task, output, objective string) (captaincode.Assessment, error)
+	// orderQueueFn stubs the director's ordering of a queue in tests
+	// (brain_queue.go planQueue).
+	orderQueueFn func(items []captaincode.QueueItem) (captaincode.QueueOrder, error)
 	// routeNoteFn stubs the director's routing of a /btw in tests (brain_btw.go).
 	routeNoteFn func(note string, briefs map[captaincode.Leg]string) ([]captaincode.Leg, string, error)
 	// runWorkerFn stubs worker execution in tests; nil → the real runner.

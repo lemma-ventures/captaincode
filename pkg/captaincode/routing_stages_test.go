@@ -357,3 +357,23 @@ func TestARedoIsPricedAtTheUsersTimeOnACheapLegToo(t *testing.T) {
 	assert.Greater(t, cheap.CostUSD, 0.0, "step is paid per token")
 	assert.GreaterOrEqual(t, cheap.RepairUSD, costRef()*0.5, "its redo costs at least the user's time")
 }
+
+// A director reply that drops or repeats a prompt, or sends a note nowhere,
+// falls back on the typed order for that part.
+func TestABadQueueOrderFallsBackOnTheTypedOrder(t *testing.T) {
+	items := []QueueItem{{Text: "review the paper"}, {Text: "/btw a gap", Note: true}, {Text: "change the paper"}}
+	typed := TypedQueueOrder(items)
+	assert.Equal(t, []int{0, 2}, typed.Order)
+	assert.Equal(t, 2, typed.Notes[1], "a note joins the next prompt")
+
+	good := CheckQueueOrder(QueueOrder{Order: []int{2, 0}, Notes: map[int]int{1: 0}, Why: "w"}, items)
+	assert.Equal(t, []int{2, 0}, good.Order)
+	assert.Equal(t, 0, good.Notes[1])
+
+	for _, bad := range [][]int{{2}, {2, 2}, {2, 1}, {0, 2, 0}, {5, 0}} {
+		assert.Equal(t, typed.Order, CheckQueueOrder(QueueOrder{Order: bad}, items).Order, "order %v", bad)
+	}
+	assert.Equal(t, 2, CheckQueueOrder(QueueOrder{Order: []int{2, 0}, Notes: map[int]int{1: 1}}, items).Notes[1], "a note joined to a note falls back")
+	assert.True(t, IsQueueNote("/btw x"))
+	assert.False(t, IsQueueNote("/btwx"))
+}

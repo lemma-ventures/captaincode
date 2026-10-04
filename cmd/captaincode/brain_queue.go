@@ -183,20 +183,27 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 		}
 	}()
 	status(fmt.Sprintf("%d queued prompts - one after the other", n))
+	steps, plan := b.planQueue(req, pending)
+	if plan != "" {
+		status(plan + "\n")
+		say(fmt.Sprintf("**[captain] %s**\n\n", plan))
+	}
+	n = len(steps)
 
 	// The history each turn sees: the transcript up to its prompt, with the
 	// earlier queued prompts each followed by the answer it got.
 	history := append([]oaiMessage(nil), req.Messages[:pending[0]]...)
-	for k, idx := range pending {
+	for k, step := range steps {
 		if r.Context().Err() != nil {
 			fmt.Printf("captain brain: queue stopped after %d/%d - the turn went away\n", k, n)
 			break
 		}
-		text := strings.TrimSpace(messageText(req.Messages[idx].Content))
+		text := step.text
+		prompt := oaiMessage{Role: "user", Content: jsonString(text)}
 		sub := req
 		sub.Model = queueModel(text)
 		sub.Stream = true
-		sub.Messages = append(append([]oaiMessage(nil), history...), req.Messages[idx])
+		sub.Messages = append(append([]oaiMessage(nil), history...), prompt)
 		label := fmt.Sprintf("%d/%d", k+1, n)
 		fmt.Printf("captain brain: queue %s → %s: %s\n", label, sub.Model, promptPeek(text))
 		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: sub.Model, Model: sub.Model, Text: fmt.Sprintf("queued %s: %s", label, promptPeek(text))})
@@ -230,7 +237,7 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 			say(fmt.Sprintf("[captain: queued %s failed - %s]", label, promptPeek(errText)))
 			answer = "[captain] failed: " + errText
 		}
-		history = append(history, req.Messages[idx], oaiMessage{Role: "assistant", Content: jsonString(answer)})
+		history = append(history, prompt, oaiMessage{Role: "assistant", Content: jsonString(answer)})
 	}
 	if !req.Stream {
 		writeJSON(w, 200, map[string]any{
@@ -247,6 +254,92 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 		flush.Flush()
 	}
 	smu.Unlock()
+}
+
+// queueStep is one turn of a queue: the prompt's text, with any note (a
+// queued /btw) the director attached to it.
+type queueStep struct{ text string }
+
+// planQueue decides the order a queue runs in (pkg queue_order.go): with two
+// or more prompts the director orders them and attaches each /btw to the
+// prompt it concerns; with one prompt the notes simply join it. It returns
+// the steps and one line saying what changed, empty when nothing did.
+// CAPTAIN_QUEUE_ORDER=off runs the queue as typed.
+func (b *brain) planQueue(req oaiChatReq, pending []int) ([]queueStep, string) {
+	items := make([]captaincode.QueueItem, len(pending))
+	prompts := 0
+	for i, idx := range pending {
+		t := strings.TrimSpace(messageText(req.Messages[idx].Content))
+		items[i] = captaincode.QueueItem{Text: t, Note: captaincode.IsQueueNote(t)}
+		if !items[i].Note {
+			prompts++
+		}
+	}
+	if prompts == 0 || os.Getenv("CAPTAIN_QUEUE_ORDER") == "off" {
+		steps := make([]queueStep, len(items))
+		for i, it := range items {
+			steps[i] = queueStep{text: it.Text}
+		}
+		return steps, ""
+	}
+	plan := captaincode.TypedQueueOrder(items)
+	if prompts >= 2 {
+		var err error
+		if b.orderQueueFn != nil {
+			plan, err = b.orderQueueFn(items)
+		} else {
+			b.mu.Lock()
+			mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
+			b.mu.Unlock()
+			mgr.CallLabel, mgr.OnCall = "review", b.chargeOwnTask("queue: order the queued prompts")
+			plan, err = mgr.OrderQueue(items)
+		}
+		if err != nil {
+			fmt.Printf("captain brain: queue order: %v - running as typed\n", err)
+		}
+		plan = captaincode.CheckQueueOrder(plan, items)
+	}
+	notes := map[int][]string{}
+	for ni := range items {
+		if target, ok := plan.Notes[ni]; ok {
+			note := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(items[ni].Text), "/btw"))
+			notes[target] = append(notes[target], note)
+		}
+	}
+	steps := make([]queueStep, 0, len(plan.Order))
+	var order []string
+	reordered := false
+	for k, i := range plan.Order {
+		text := items[i].Text
+		for _, note := range notes[i] {
+			// Plain text, not a "[…]" block: lastUserTurn ends a turn at the
+			// first "\n\n[", and the note is part of this turn.
+			text += "\n\nA note I added while this was queued: " + note
+		}
+		steps = append(steps, queueStep{text: text})
+		order = append(order, fmt.Sprint(i+1))
+		if k > 0 && i < plan.Order[k-1] {
+			reordered = true
+		}
+	}
+	var parts []string
+	if reordered {
+		parts = append(parts, "order: "+strings.Join(order, " → "))
+	}
+	for ni := range items {
+		if target, ok := plan.Notes[ni]; ok && target >= 0 {
+			parts = append(parts, fmt.Sprintf("note %d joins %d", ni+1, target+1))
+		}
+	}
+	if len(parts) == 0 {
+		return steps, ""
+	}
+	line := "queue: " + strings.Join(parts, " · ")
+	if plan.Why != "" && reordered {
+		line += " - " + plan.Why
+	}
+	fmt.Printf("captain brain: %s\n", line)
+	return steps, line
 }
 
 // queuedKey marks a request the queue runner issued: it never splits again.

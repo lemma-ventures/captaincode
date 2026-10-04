@@ -8,8 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func userMsg(s string) oaiMessage { b, _ := json.Marshal(s); return oaiMessage{Role: "user", Content: b} }
-func asstMsg(s string) oaiMessage { b, _ := json.Marshal(s); return oaiMessage{Role: "assistant", Content: b} }
+func userMsg(s string) oaiMessage {
+	b, _ := json.Marshal(s)
+	return oaiMessage{Role: "user", Content: b}
+}
+func asstMsg(s string) oaiMessage {
+	b, _ := json.Marshal(s)
+	return oaiMessage{Role: "assistant", Content: b}
+}
 
 // "continue where we left off" is routed on the work it continues, and is
 // never rated trivial (it ran on step at low effort for 17 minutes,

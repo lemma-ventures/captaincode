@@ -157,3 +157,45 @@ func TestDeletedQueuedPromptsNeverRun(t *testing.T) {
 		map[string]string{"role": "user", "content": deletedPrompt}))
 	assert.Equal(t, []string{"keep this one"}, runs, "the deleted one is dropped, the other runs")
 }
+
+// The director orders a queue before it runs: the work that changes the
+// paper runs before the blind review of it, and the /btw joins the prompt it
+// concerns instead of running alone (2026-10-04).
+func TestTheDirectorOrdersAQueueAndAttachesItsNotes(t *testing.T) {
+	b := teamBrain()
+	var asked []captaincode.QueueItem
+	b.orderQueueFn = func(items []captaincode.QueueItem) (captaincode.QueueOrder, error) {
+		asked = items
+		return captaincode.QueueOrder{Order: []int{2, 0}, Notes: map[int]int{1: 0}, Why: "the review reads the paper after the security change"}, nil
+	}
+	var mu sync.Mutex
+	var runs []string
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		mu.Lock()
+		runs = append(runs, lastUserTurn(prompt))
+		mu.Unlock()
+		return leg, captaincode.Result{Text: "done", DurationMs: 5}, nil
+	}
+	msgs := []map[string]string{
+		{"role": "user", "content": "/cursor write the paper"},
+		{"role": "assistant", "content": "written"},
+		{"role": "user", "content": "/cursor do a blind review of the paper"},
+		{"role": "user", "content": "/btw the abstract's five pain points are never revisited"},
+		{"role": "user", "content": "/cursor reach 128-bit security and update the roadmap"},
+	}
+	body, _ := json.Marshal(map[string]any{"model": "cursor", "stream": true, "messages": msgs})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	text, _ := sseAnswer(rec.Body.String(), rec.Code)
+
+	require.Len(t, asked, 3)
+	assert.True(t, asked[1].Note, "a /btw is a note, not work")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, runs, 2, "the note does not run on its own")
+	assert.Contains(t, runs[0], "128-bit security", "the change runs first")
+	assert.Contains(t, runs[1], "blind review")
+	assert.Contains(t, runs[1], "five pain points are never revisited", "the note joins the review")
+	assert.Contains(t, text, "queue: order: 3 → 1 · note 2 joins 1 - the review reads the paper after the security change")
+}

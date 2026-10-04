@@ -35,6 +35,10 @@ func teamBrain() *brain {
 		allowed:       map[captaincode.Leg]bool{},
 		exploreFn:     func(captaincode.Class) bool { return false },
 		captureTestFn: func(context.Context, string) (*captaincode.CheckEvidence, error) { return nil, nil },
+		// A queue keeps its typed order unless a test plays the director.
+		orderQueueFn: func(items []captaincode.QueueItem) (captaincode.QueueOrder, error) {
+			return captaincode.TypedQueueOrder(items), nil
+		},
 	}
 }
 

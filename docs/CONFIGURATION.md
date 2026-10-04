@@ -536,12 +536,23 @@ A prompt that is **queued** (typed while a turn runs, shown with a `QUEUED` badg
 A prompt typed while a worker is busy waits (opencode shows it `QUEUED`).
 opencode starts one next turn for everything that waited, so several
 queued prompts reach captain together; captain runs them **one after the
-other**, in the order typed, each as its own turn - its own head
+other**, each as its own turn - its own head
 (`/codex-cli …`, `/cursor …`, a bare prompt routed as usual), its own
 worker - and each seeing the answers before it. The answers stream into the
 one assistant message, each under a `[captain] queued k/n` line naming the
 prompt it answers. To reorder or drop what is waiting, use the prompts
 dialog (`ctrl+x p`) before the running turn ends.
+
+With two or more prompts waiting, the director reads the queue once, in one
+short judge call, and decides the order: work that changes an artifact (a
+paper, code, a roadmap) runs before work that reviews, grades or tests it,
+a prompt runs after the one whose result it needs, and independent prompts
+keep the order typed. A queued `/btw` is a note, not work: it joins the
+prompt it concerns, as "A note I added while this was queued: …", and does
+not run on its own. The answer opens with what changed, for example
+`[captain] queue: order: 3 → 1 · note 2 joins 1 - the review reads the paper
+after the security change`. A failed or malformed reply runs the queue as
+typed. `CAPTAIN_QUEUE_ORDER=off` always runs it as typed.
 
 ### Steering a running worker: `/btw`
 
