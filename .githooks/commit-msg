@@ -30,7 +30,10 @@ else
 	rm -f "$tmp" # grep found nothing to keep, or failed: leave the message alone
 fi
 # Refuse a message that names a private project, paper, person or tool.
-if command -v captain >/dev/null 2>&1; then
+# Only a captain that knows leakcheck is called: an older one runs an unknown
+# word as a task on a model.
+c=$(command -v captain 2>/dev/null)
+if [ -n "$c" ] && LC_ALL=C grep -a -q 'captain leakcheck:' "$c" 2>/dev/null; then
 	captain leakcheck --message-file "$1" || exit 1
 fi
 exit 0

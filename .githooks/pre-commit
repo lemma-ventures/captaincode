@@ -5,5 +5,9 @@
 # remove names agents had written into comments and test fixtures.
 #
 # Install once per clone: git config core.hooksPath .githooks
-command -v captain >/dev/null 2>&1 || { echo "captain: not on PATH - private-name check skipped" >&2; exit 0; }
+# An older captain has no leakcheck, and treats an unknown word as a task to
+# run on a model: "captain leakcheck" would start a worker. Only a binary that
+# knows the command is called.
+c=$(command -v captain) || { echo "captain: not on PATH - private-name check skipped" >&2; exit 0; }
+LC_ALL=C grep -a -q 'captain leakcheck:' "$c" 2>/dev/null || { echo "captain: $c predates leakcheck - private-name check skipped; run ./captaincode.sh -rr" >&2; exit 0; }
 exec captain leakcheck --staged
