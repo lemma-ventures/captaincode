@@ -72,6 +72,11 @@ type LegSpec struct {
 	// bands (tiers.go); quality is Model. A band left out runs Model at that
 	// band's effort.
 	Tiers map[Tier]string `json:"tiers,omitempty"`
+	// Hosts is the OpenRouter `provider` routing block sent with each band's
+	// model (openrouter_hosts.go): which hosts may serve it and at what
+	// quantization. A band left out uses quality's; no entry leaves
+	// OpenRouter's default, price-weighted across every host, 4-bit included.
+	Hosts map[Tier]map[string]any `json:"hosts,omitempty"`
 }
 
 // EnvPrefix returns the env prefix for this leg's provider/model overrides.
@@ -372,6 +377,9 @@ func mergeSpec(base, o LegSpec) LegSpec {
 	}
 	if o.Disabled {
 		out.Disabled = true
+	}
+	if len(o.Hosts) > 0 {
+		out.Hosts = o.Hosts
 	}
 	if len(o.Tiers) > 0 {
 		merged := map[Tier]string{}

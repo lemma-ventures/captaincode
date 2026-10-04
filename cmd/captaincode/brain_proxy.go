@@ -278,6 +278,8 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	if seg[0] == "openrouter" && len(body) > 0 {
 		if pinned, ok := proxyPins.apply(body); ok {
 			body = pinned
+		} else if routed, ok := routeOpenRouterHosts(body); ok {
+			body = routed
 		}
 	}
 	proxyTotals.add(rep)
@@ -554,6 +556,32 @@ func (t *pinTable) hold(model string, prefs map[string]any) func() {
 			}
 		}
 	}
+}
+
+// routeOpenRouterHosts adds the leg's host routing (openrouter_hosts.go) to
+// an OpenRouter request that does not already carry a provider block.
+func routeOpenRouterHosts(body []byte) ([]byte, bool) {
+	if !captaincode.AnyOpenRouterHosts() {
+		return body, false
+	}
+	var obj map[string]any
+	if json.Unmarshal(body, &obj) != nil {
+		return body, false
+	}
+	if _, has := obj["provider"]; has {
+		return body, false
+	}
+	model, _ := obj["model"].(string)
+	hosts := captaincode.OpenRouterHosts(model)
+	if hosts == nil {
+		return body, false
+	}
+	obj["provider"] = hosts
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return body, false
+	}
+	return out, true
 }
 
 // apply rewrites a chat-completions body for a pinned model: OpenRouter's

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -87,4 +89,31 @@ func TestProxyRestoresAnUntypedStreamTheClientAskedFor(t *testing.T) {
 	proxyHandler(rec, req)
 	require.Equal(t, 200, rec.Code)
 	assert.Contains(t, rec.Body.String(), "/home/jdoe/x.go", "restored although the upstream named no content type: %s", rec.Body.String())
+}
+
+func TestProxyAddsTheLegsOpenRouterHosts(t *testing.T) {
+	t.Setenv("CAPTAIN_GLM_MODEL", "")
+	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
+	t.Setenv("CAPTAIN_CHEAP_TIER", "")
+	path := filepath.Join(t.TempDir(), "legs.json")
+	data, err := json.Marshal(map[string]any{"legs": []map[string]any{{
+		"id": "glm", "provider": "openrouter", "model": "z-ai/glm-5.3",
+		"hosts": map[string]any{"quality": map[string]any{"order": []string{"z-ai"}}},
+	}}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+	_, err = captaincode.LoadRegistry(path)
+	t.Cleanup(func() { captaincode.LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
+	require.NoError(t, err)
+
+	out, ok := routeOpenRouterHosts([]byte(`{"model":"z-ai/glm-5.3","messages":[]}`))
+	require.True(t, ok)
+	var obj map[string]any
+	require.NoError(t, json.Unmarshal(out, &obj))
+	assert.Equal(t, map[string]any{"order": []any{"z-ai"}}, obj["provider"])
+
+	_, ok = routeOpenRouterHosts([]byte(`{"model":"z-ai/glm-5.3","provider":{"order":["cerebras"]}}`))
+	assert.False(t, ok, "a request that already names its hosts (a /deterministic pin) is left alone")
+	_, ok = routeOpenRouterHosts([]byte(`{"model":"minimax/minimax-m3"}`))
+	assert.False(t, ok)
 }

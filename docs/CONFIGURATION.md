@@ -1038,6 +1038,24 @@ and on claude it now pins `claude -p --model` too. A registry overlay entry
 sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
 `glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0, as `kimi` does. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
 
+OpenRouter serves an open-weight model from many hosts at different
+quantizations and, by default, favours the cheapest. A registry overlay entry
+picks hosts per band with `"hosts"`, OpenRouter's `provider` routing block,
+which the brain's proxy adds to each request for that band's model. A band
+left out uses `quality`'s, and a request that already names its hosts (a
+`/deterministic` pin) is left alone:
+
+```json
+{"id": "glm", "hosts": {
+  "quality": {"order": ["z-ai"], "quantizations": ["fp8", "bf16", "fp16"], "require_parameters": true},
+  "cheap":   {"sort": "price", "require_parameters": true}}}
+```
+
+Here quality work goes to Z.AI first, then to any 8-bit or better host.
+Cheap work goes to the cheapest host, 4-bit included. `require_parameters`
+keeps out hosts that do not support tool calls. A leg that runs one model in
+every band (`kimi`) is routed by its quality hosts.
+
 `CAPTAIN_CHEAP_TIER=0` keeps every leg on its own model at low effort.
 `captain upgrade --check` prints the resolved table.
 
