@@ -30,7 +30,7 @@ func TestCmdEuclidSearchAndStats(t *testing.T) {
 		TokensReturned: 80,
 		TokensAvoided:  2400,
 		Safe:           true,
-		CodeIntelUsed:     true,
+		CodeIntelUsed:  true,
 	})
 
 	// Test stats output

@@ -26,7 +26,7 @@ type RetrievalEvent struct {
 	TokensReturned int       `json:"tokens_returned"`
 	TokensAvoided  int       `json:"tokens_avoided"` // estimated tokens saved vs reading full files
 	Safe           bool      `json:"safe"`           // paths contained, bounded payload
-	CodeIntelUsed     bool      `json:"codeintel_used"`    // CodeIntel AST search utilized
+	CodeIntelUsed  bool      `json:"codeintel_used"` // CodeIntel AST search utilized
 }
 
 // RetrievalStats aggregates efficiency metrics over a time window.
@@ -42,7 +42,7 @@ type RetrievalStats struct {
 	TokenSavingsPercent float64 `json:"token_savings_percent"`
 	SafetyRate          float64 `json:"safety_rate"`
 	HitRate             float64 `json:"hit_rate"`
-	CodeIntelShare         float64 `json:"codeintel_share"`
+	CodeIntelShare      float64 `json:"codeintel_share"`
 }
 
 var retrievalLogMu sync.Mutex

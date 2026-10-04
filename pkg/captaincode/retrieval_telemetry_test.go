@@ -26,7 +26,7 @@ func TestRetrievalTelemetryLoggingAndStats(t *testing.T) {
 			TokensReturned: 120,
 			TokensAvoided:  4500,
 			Safe:           true,
-			CodeIntelUsed:     true,
+			CodeIntelUsed:  true,
 		},
 		{
 			At:             now.Add(-1 * time.Hour),
@@ -38,7 +38,7 @@ func TestRetrievalTelemetryLoggingAndStats(t *testing.T) {
 			TokensReturned: 200,
 			TokensAvoided:  3000,
 			Safe:           true,
-			CodeIntelUsed:     false,
+			CodeIntelUsed:  false,
 		},
 		{
 			At:             now,
@@ -50,7 +50,7 @@ func TestRetrievalTelemetryLoggingAndStats(t *testing.T) {
 			TokensReturned: 90,
 			TokensAvoided:  2500,
 			Safe:           true,
-			CodeIntelUsed:     true,
+			CodeIntelUsed:  true,
 		},
 	}
 
