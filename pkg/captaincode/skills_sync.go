@@ -85,7 +85,7 @@ func SkillSources() []SkillSource {
 		{
 			Repo:    "lemma-ventures/captaincode",
 			URL:     "https://github.com/lemma-ventures/captaincode.git",
-			Commit:  "08a89ebf0dacea5fe2ace446480232f5f14af7de", // skills/ with all six skills, after the history rewrite of 2026-10-04
+			Commit:  "962cad906e42b1315ef04733732caf616befa8b5", // skills/ with all six skills, after the history rewrites of 2026-10-04
 			Roots:   []string{"skills"},
 			License: "MIT",
 		},

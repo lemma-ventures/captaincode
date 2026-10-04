@@ -21,6 +21,13 @@ func TestFindLeaksMatchesWholeNamesInAnyCase(t *testing.T) {
 	cased := FindLeaks("port it to the Beacon project\nbeacon the message", []string{"Beacon"})
 	require.Len(t, cased, 1, "an entry with capitals matches only that spelling")
 	assert.Equal(t, 1, cased[0].Line)
+
+	names = []string{"quill", "!quill-works", "!Quill Works", "!quill.works", "jo@quill.works"}
+	leaks = FindLeaks("import \"github.com/quill-works/app\"\nCopyright Quill Works AG\nthe quill chain\nmail jo@quill.works", names)
+	require.Len(t, leaks, 2, "an allowed phrase hides only the names it contains")
+	assert.Equal(t, "quill", leaks[0].Name)
+	assert.Equal(t, 3, leaks[0].Line)
+	assert.Equal(t, "jo@quill.works", leaks[1].Name, "a name longer than the allowed phrase is still caught")
 }
 
 func TestPrivateNamesReadsTheListOutsideTheRepository(t *testing.T) {

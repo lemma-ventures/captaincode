@@ -37,9 +37,10 @@ Keep the property a fixture tests: if a test needs a short lowercase word, use a
 
 1. **Write neutral from the start.** Comments, test names and fixtures, commit messages, docs and release notes.
 2. **Check before you commit.** Where `captain` is installed, the owner keeps a private list outside every repository (`~/.config/captain/private-names`). Run `captain leakcheck --staged` before committing, `captain leakcheck <file>` on release notes and drafted issues, and `captain leakcheck --range origin/main..HEAD` before pushing. A repository's git hooks (`git config core.hooksPath .githooks`) run the same checks on every commit, commit message and push.
-3. **Never add the list, or any name on it, to a repository.** A committed deny-list is itself the leak.
-4. **If a check fires, rename - do not suppress.** Do not bypass a hook (`--no-verify`) to push a private name.
-5. **If a name was already pushed, stop and tell the owner.** Removing it means rewriting the history of a public repository, which only the owner can decide.
+3. **Allowed phrases.** A public company or org name can contain a private project's name. The list marks it with `!` (for example `!acme-labs` beside a private `acme`), so the public name passes and the project name alone is still refused.
+4. **Never add the list, or any name on it, to a repository.** A committed deny-list is itself the leak.
+5. **If a check fires, rename - do not suppress.** Do not bypass a hook (`--no-verify`) to push a private name.
+6. **If a name was already pushed, stop and tell the owner.** Removing it means rewriting the history of a public repository, which only the owner can decide.
 
 ## Final check
 

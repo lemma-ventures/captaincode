@@ -53,6 +53,12 @@ type Leak struct {
 	Text string // the line, trimmed
 }
 
+// An entry that starts with "!" is an allowed phrase, not a name: it is
+// masked before the names it contains are looked for. "quill" can name a
+// private project while "!quill-works" keeps the company's public org name
+// from tripping it. An allowed phrase protects only the names it contains,
+// so "!quill-works" does not hide "jo@quill.works".
+//
 // FindLeaks reports every line of text that names a private name, as a whole
 // word ("zeta" in "zetabytes" is not a match; in "~/src/zeta" it is). An
 // all-lowercase entry matches any case; an entry with capitals matches only
@@ -62,23 +68,52 @@ func FindLeaks(text string, names []string) []Leak {
 	type rx struct {
 		name string
 		re   *regexp.Regexp
+		mask *regexp.Regexp // the allowed phrases that contain this name; nil when none
 	}
 	var res []rx
+	var allowed []string
 	for _, n := range names {
+		if a, ok := strings.CutPrefix(n, "!"); ok && a != "" {
+			allowed = append(allowed, a)
+		}
+	}
+	for _, n := range names {
+		if strings.HasPrefix(n, "!") {
+			continue
+		}
 		flags := ""
 		if n == strings.ToLower(n) {
 			flags = "(?i)"
 		}
-		res = append(res, rx{n, regexp.MustCompile(flags + `(^|[^A-Za-z0-9])` + regexp.QuoteMeta(n) + `($|[^A-Za-z0-9])`)})
+		res = append(res, rx{n, regexp.MustCompile(flags + `(^|[^A-Za-z0-9])` + regexp.QuoteMeta(n) + `($|[^A-Za-z0-9])`), maskFor(n, allowed)})
 	}
 	var out []Leak
 	for i, line := range strings.Split(text, "\n") {
 		for _, r := range res {
-			if r.re.MatchString(line) {
+			l := line
+			if r.mask != nil {
+				l = r.mask.ReplaceAllString(l, " ")
+			}
+			if r.re.MatchString(l) {
 				out = append(out, Leak{Name: r.name, Line: i + 1, Text: strings.TrimSpace(line)})
 				break
 			}
 		}
 	}
 	return out
+}
+
+// maskFor matches the allowed phrases that contain name, case-insensitively;
+// nil when none does.
+func maskFor(name string, allowed []string) *regexp.Regexp {
+	var alts []string
+	for _, a := range allowed {
+		if strings.Contains(strings.ToLower(a), strings.ToLower(name)) {
+			alts = append(alts, regexp.QuoteMeta(a))
+		}
+	}
+	if len(alts) == 0 {
+		return nil
+	}
+	return regexp.MustCompile(`(?i)` + strings.Join(alts, "|"))
 }
