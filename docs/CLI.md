@@ -46,6 +46,7 @@ The TUI is the everyday surface; its `/…` words are in [TUI.md](TUI.md).
 | `captain jev` / `jev classify <task>` / `jev ask --state … --questions …` | The jev decision leg (TypeSafe System One): probe, the triage questions with their probabilities, any typed question. `--open` asks the open backend instead |
 | `captain jev shadow [--point p] [--backend name] [--target 0.9] [--min 20]` | The shadow record as a calibration: how often jev agreed with captain per decision point, by confidence, labelled with the tasks' outcomes, and the bar each point could be gated at |
 | `captain jev conform [--open] [--json] [--for caps]` | Does this backend answer captain's questions? A fixed suite whose answers are not in doubt, reported per capability (triage, route, keep, gate, supervise). Exits 1 on any unusable capability |
+| `captain leakcheck --staged` / `--message-file F` / `--range A..B` / `--pre-push` / `FILE...` | Refuse text that names a private project, paper, person or tool listed in `~/.config/captain/private-names` (one name per line, kept outside every repository; `CAPTAIN_PRIVATE_NAMES` moves it). Exit 3 lists each hit. The captaincode repository's git hooks run it on every commit, commit message and push; the launcher turns them on (`core.hooksPath .githooks`) |
 | `captain gate --status` / `--check "<cmd>"` / `--report [--target 0.9] [--min 20]` | The action gate at the tool boundary: what it would do right now, one command screened by hand, and the screenings read as a calibration |
 | `captain gate --hook` / `--tool <name> [--cwd dir]` | The hook bodies: Claude Code `PreToolUse` (hook JSON in, hook JSON out) and the opencode plugin's call (tool arguments as JSON on stdin; exit 3 refuses) |
 
@@ -103,6 +104,13 @@ after the task (a session title gets none of them):
   names every dependency it added or changed in its final message. With the
   `security-audit` skill synced, the line also points at it - guidance mode;
   a full audit only when you ask. `CAPTAIN_WORKER_SECURITY=0` drops the line.
+- **Private names stay private.** In a public repository the worker never
+  writes the names of the owner's private projects, repositories, unpublished
+  papers, people or internal tools, nor local paths that reveal them; it
+  records incidents and examples with neutral names, and runs
+  `captain leakcheck --staged` before committing. OpenShell sandboxes get the
+  same line. With the `keep-private-names-private` skill synced, the line also
+  points at it. `CAPTAIN_WORKER_PRIVATE_NAMES=0` drops the line.
 
 ## Evaluation & release (M1)
 

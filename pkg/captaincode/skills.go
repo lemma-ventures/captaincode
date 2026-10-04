@@ -89,6 +89,11 @@ const SecuritySkill = "security-audit"
 // CAPTAIN_SKILLS_ALWAYS leaves it out.
 const ClaritySkill = "public-clarity-output"
 
+// PrivacySkill keeps private project, paper, person and tool names out of
+// public repositories (skills/keep-private-names-private). On every shelf by
+// default: a name a worker writes into a public commit cannot be taken back.
+const PrivacySkill = "keep-private-names-private"
+
 // SecuritySkillSource is the catalog SecuritySkill is synced from. One name
 // is one skill and the first sync wins, so `captain doctor` names the
 // publisher of whatever holds the name rather than assume it.
@@ -213,7 +218,7 @@ func AlwaysSkills() []string {
 	v := strings.TrimSpace(os.Getenv(SkillsAlwaysEnv))
 	switch strings.ToLower(v) {
 	case "":
-		return []string{SecuritySkill, ClaritySkill}
+		return []string{SecuritySkill, ClaritySkill, PrivacySkill}
 	case "0", "off", "none", "false":
 		return nil
 	}

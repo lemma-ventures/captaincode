@@ -21,6 +21,10 @@ for envf in "$HOME/.config/captain/env" "$HOME/.config/opencode/env" "$LAUNCH_DI
   fi
 done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# This checkout is the public repository: its hooks refuse a commit or a push
+# that names a private project (captain leakcheck). Turned on at every launch,
+# so no clone the launcher uses can run without them.
+git -C "$SCRIPT_DIR" config core.hooksPath .githooks 2>/dev/null || true
 BRAIN_URL="http://127.0.0.1:14097"
 BRAIN_PID_FILE="/tmp/captain-brain.pid"
 BRAIN_LOG="/tmp/captain-brain.log"

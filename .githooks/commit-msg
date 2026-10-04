@@ -29,4 +29,8 @@ if grep -viE "$agent" "$1" > "$tmp"; then
 else
 	rm -f "$tmp" # grep found nothing to keep, or failed: leave the message alone
 fi
+# Refuse a message that names a private project, paper, person or tool.
+if command -v captain >/dev/null 2>&1; then
+	captain leakcheck --message-file "$1" || exit 1
+fi
 exit 0

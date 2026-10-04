@@ -262,7 +262,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 // openShellRules is clarityRules as a block of a sandbox prompt, which is
 // laid out in "[role]\ntext\n\n" blocks.
 func openShellRules(ws captaincode.Workspace) string {
-	r := strings.TrimSpace(clarityRules(ws))
+	r := strings.TrimSpace(strings.TrimSpace(clarityRules(ws)) + "\n\n" + strings.TrimSpace(privacyRules()))
 	if r == "" {
 		return ""
 	}

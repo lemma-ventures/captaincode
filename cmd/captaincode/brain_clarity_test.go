@@ -50,6 +50,7 @@ func TestEveryWorkerGetsThePlainWritingContract(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			assert.Equal(t, tc.want, bytes.Contains([]byte(seen), []byte("[captain] Plain writing:")), seen)
+			assert.Contains(t, seen, "[captain] Private names:", "every worker keeps private names out of public repositories")
 		})
 	}
 }

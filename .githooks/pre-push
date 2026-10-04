@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuse a push whose commits - messages, added lines or paths - name a
+# private project, paper, person or tool (captain leakcheck). The last gate
+# before the public repository: it also catches commits made without the
+# pre-commit hook, or brought in from another clone.
+#
+# Install once per clone: git config core.hooksPath .githooks
+command -v captain >/dev/null 2>&1 || { echo "captain: not on PATH - private-name check skipped" >&2; exit 0; }
+exec captain leakcheck --pre-push

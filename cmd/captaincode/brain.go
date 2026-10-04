@@ -1765,6 +1765,30 @@ func securityContract() string {
 	return s
 }
 
+// privacyContract keeps private names out of public repositories, on every
+// worker like the security and clarity lines (CAPTAIN_WORKER_PRIVATE_NAMES=0
+// drops it). Workers recording real incidents wrote internal project, paper
+// and tool names into the public repository's comments, fixtures, commit
+// messages and release notes, and its history had to be rewritten
+// (2026-10-04). The rule is inline so an OpenShell sandbox gets it too; a
+// host worker is also pointed at the skill and at `captain leakcheck`.
+func privacyContract(ws captaincode.Workspace) string {
+	s := privacyRules()
+	if s != "" && ws.Dir != "" && captaincode.AlwaysStocked(captaincode.PrivacySkill) {
+		s += " The `" + captaincode.PrivacySkill + "` skill has the full rules (`.agents/skills/" + captaincode.PrivacySkill + "/SKILL.md`)."
+	}
+	return s
+}
+
+// privacyRules is the inline half of privacyContract.
+func privacyRules() string {
+	if os.Getenv("CAPTAIN_WORKER_PRIVATE_NAMES") == "0" {
+		return ""
+	}
+	return "\n\n[captain] Private names: in a public repository - code, comments, test fixtures, commit messages, docs, release notes, issues - never write the names of the user's private projects, repositories, unpublished papers, people or internal tools, nor local paths that reveal them. Record incidents and examples with neutral names (a sibling repository, project A, a paper review)." +
+		" Before committing to a public repository run `captain leakcheck --staged` where captain is installed; never bypass a hook that refuses a name."
+}
+
 // clarityContract makes the plain-writing rules an obligation, the way
 // securityContract makes security one: on for every worker unless
 // CAPTAIN_WORKER_NOSLOP=0, and back on for any turn that says /noslop. The
