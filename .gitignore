@@ -19,3 +19,6 @@ gitignore/
 
 # The sidecar is Python; running it in the checkout leaves bytecode behind.
 __pycache__/
+
+# Lean build output for the formal model (formal/README.md).
+formal/.lake/

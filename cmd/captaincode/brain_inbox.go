@@ -10,15 +10,26 @@ package main
 // as if the user had typed it: it shows as a user turn, the forced leg is
 // honoured, the answer streams. A folder with no TUI open keeps the prompt
 // until one opens; a prompt older than a day is dropped.
+//
+// Workers can run `captain send` too, and the TUI submits what they send as
+// if the user had typed it. Two limits keep that from running without the
+// user (formal/CommandSafety/Inbox.lean): a sent prompt may not start a loop
+// (a /repeat or a chain), and at most CAPTAIN_INBOX_QUOTA prompts (default 5)
+// are accepted between two turns the user types. Before them, a worker could
+// send a prompt telling the next worker to send again, without end.
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 type inboxItem struct {
@@ -33,6 +44,49 @@ type inbox struct {
 	mu    sync.Mutex
 	items map[string][]inboxItem // by folder
 	seq   int
+	// sent counts the prompts accepted per folder since the user last typed;
+	// handed holds the texts given to the TUI and not yet seen as a turn, so
+	// a submitted prompt is not taken for the user typing.
+	sent   map[string]int
+	handed map[string][]string
+}
+
+// inboxQuota is CAPTAIN_INBOX_QUOTA, default 5.
+func inboxQuota() int {
+	if n, err := strconv.Atoi(os.Getenv("CAPTAIN_INBOX_QUOTA")); err == nil && n > 0 {
+		return n
+	}
+	return 5
+}
+
+// admit spends one unit of dir's quota; false when it is spent.
+func (ib *inbox) admit(dir string) bool {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	if ib.sent == nil {
+		ib.sent = map[string]int{}
+	}
+	if ib.sent[dir] >= inboxQuota() {
+		return false
+	}
+	ib.sent[dir]++
+	return true
+}
+
+// noteTurn sees a turn arrive in dir. A prompt the inbox handed over is
+// crossed off; anything else was typed by the user, which refills the quota.
+func (ib *inbox) noteTurn(dir, text string) {
+	dir = filepath.Clean(dir)
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	text = strings.TrimSpace(text)
+	for i, h := range ib.handed[dir] {
+		if h == text {
+			ib.handed[dir] = append(ib.handed[dir][:i:i], ib.handed[dir][i+1:]...)
+			return
+		}
+	}
+	delete(ib.sent, dir)
 }
 
 const inboxTTL = 24 * time.Hour
@@ -59,6 +113,10 @@ func (ib *inbox) take(dir string) []inboxItem {
 	for _, it := range items {
 		if time.Since(it.At) < inboxTTL {
 			fresh = append(fresh, it)
+			if ib.handed == nil {
+				ib.handed = map[string][]string{}
+			}
+			ib.handed[dir] = append(ib.handed[dir], strings.TrimSpace(it.Text))
 		}
 	}
 	return fresh
@@ -92,6 +150,14 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		leg := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(req.Leg, "/")))
+		if captaincode.StartsLoop(req.Text) || leg == "repeat" {
+			writeErr(w, 403, "a sent prompt may not start a /repeat or a chain - only a person types a loop; send the task itself")
+			return
+		}
+		if !b.inbox.admit(dir) {
+			writeErr(w, 429, fmt.Sprintf("%d prompts were sent to %s since the user last typed (CAPTAIN_INBOX_QUOTA); more are accepted once they type", inboxQuota(), filepath.Base(dir)))
+			return
+		}
 		it := b.inbox.push(dir, req.Text, leg, strings.TrimSpace(req.From))
 		fmt.Printf("captain brain: inbox - prompt queued for %s (%s): %s\n", filepath.Base(dir), orDash(leg), promptPeek(req.Text))
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: orDash(leg), Text: "queued for the TUI: " + promptPeek(req.Text)})

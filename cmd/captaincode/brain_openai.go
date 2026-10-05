@@ -361,6 +361,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// replays it as unanswered does not run it again (brain_queue.go). A
 	// /repeat round is the brain's own request, not a prompt; a queued one is.
 	round := r.Context().Value(noDedupeKey{}) != nil && r.Context().Value(queuedKey{}) == nil
+	if !round && !isTitleTurn(req.Messages) {
+		// A turn the user typed refills the folder's inbox quota; one the
+		// inbox handed to the TUI does not (brain_inbox.go).
+		b.inbox.noteTurn(req.ws.Dir, lastUserRaw(req.Messages))
+	}
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
 		b.markHandled(promptKey(req.ws.Dir, req.Messages, i))
 	}

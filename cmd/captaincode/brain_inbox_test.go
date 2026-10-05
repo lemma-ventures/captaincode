@@ -44,3 +44,47 @@ func TestInboxQueuesPerFolderUntilTheSidebarTakesIt(t *testing.T) {
 	b.inboxHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/inbox?cwd="+url.QueryEscape(dir), bytes.NewReader([]byte(`{"text":"  "}`))))
 	assert.Equal(t, 400, rec.Code, "an empty prompt is refused")
 }
+
+func sendTo(b *brain, dir, text string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]string{"text": text, "from": "worker"})
+	rec := httptest.NewRecorder()
+	b.inboxHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/inbox?cwd="+url.QueryEscape(dir), bytes.NewReader(body)))
+	return rec
+}
+
+// formal/CommandSafety/Inbox.lean, fixed_no_loops: a sent prompt never
+// starts a loop the user did not type.
+func TestInboxRefusesPromptsThatStartALoop(t *testing.T) {
+	b := teamBrain()
+	dir := t.TempDir()
+	for _, text := range []string{
+		"/repeat 100 send yourself this prompt again",
+		"/oss /repeat 5 keep polling",
+		"/team audit it > /repeat 3 /quality fix it",
+	} {
+		assert.Equal(t, 403, sendTo(b, dir, text).Code, text)
+	}
+	assert.Equal(t, 200, sendTo(b, dir, "/grok fixed the /repeat watch bug; tests pass").Code,
+		"a report that mentions /repeat is not a loop")
+}
+
+// formal/CommandSafety/Inbox.lean, fixed_accepted_le: at most the quota of
+// prompts between two turns the user types; a handed prompt arriving as a
+// turn does not refill it, a typed one does.
+func TestInboxQuotaRefillsOnlyWhenTheUserTypes(t *testing.T) {
+	t.Setenv("CAPTAIN_INBOX_QUOTA", "2")
+	b := teamBrain()
+	dir := t.TempDir()
+	require.Equal(t, 200, sendTo(b, dir, "/grok step one").Code)
+	require.Equal(t, 200, sendTo(b, dir, "/grok step two").Code)
+	assert.Equal(t, 429, sendTo(b, dir, "/grok step three").Code, "quota spent with no user turn")
+
+	// The sidebar takes them and submits them: those turns are not the user.
+	b.inbox.take(dir)
+	b.inbox.noteTurn(dir, "/grok step one")
+	b.inbox.noteTurn(dir, "/grok step two")
+	assert.Equal(t, 429, sendTo(b, dir, "/grok step three").Code, "submitted prompts do not refill the quota")
+
+	b.inbox.noteTurn(dir, "carry on with the migration") // typed
+	assert.Equal(t, 200, sendTo(b, dir, "/grok step three").Code)
+}

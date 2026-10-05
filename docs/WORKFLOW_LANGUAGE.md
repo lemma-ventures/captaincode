@@ -241,7 +241,9 @@ chain in parentheses.
 - **Controls.** A chain is a detached thread like `/repeat`'s, with the id `ch_…`: `/repeat
   watch`, `/repeat show`, `/repeat finish` (no new step starts) and `captain stop` all apply.
 - **Limits.** At most 8 steps and 3 levels of nesting; past them the text is not read as a
-  chain.
+  chain. A prompt and every loop or chain it starts share one run budget
+  (`CAPTAIN_RUN_BUDGET`, 200 turns), and a prompt sent with `captain send` may not start a
+  loop or a chain. [The formal model](../formal/README.md) proves both bounds.
 
 ## 4. The skill: plain English → CWL
 

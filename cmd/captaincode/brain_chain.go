@@ -34,7 +34,7 @@ func (b *brain) handleChain(ctx context.Context, w http.ResponseWriter, req oaiC
 	th := b.runningRepeat(req.ws.Dir, raw, len(steps))
 	joined := th != nil
 	if !joined {
-		th = b.startChain(req, raw, steps)
+		th = b.startChain(req, raw, steps, budgetFor(ctx))
 	}
 	var plan strings.Builder
 	for i, st := range steps {
@@ -59,9 +59,10 @@ func (b *brain) handleChain(ctx context.Context, w http.ResponseWriter, req oaiC
 }
 
 // startChain registers and launches a detached chain thread.
-func (b *brain) startChain(req oaiChatReq, raw string, steps []string) *repeatThread {
-	ctx, cancel := context.WithCancel(context.Background())
+func (b *brain) startChain(req oaiChatReq, raw string, steps []string, budget *runBudget) *repeatThread {
+	ctx, cancel := context.WithCancel(withBudget(context.Background(), budget))
 	th := &repeatThread{
+		budget:  budget,
 		id:      "ch_" + fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff),
 		dir:     req.ws.Dir,
 		task:    raw,
@@ -93,6 +94,12 @@ func (b *brain) runChain(ctx context.Context, th *repeatThread, req oaiChatReq) 
 		halted := th.stopped
 		b.rmu.Unlock()
 		if halted || ctx.Err() != nil {
+			return
+		}
+		if !th.budget.take() {
+			b.rmu.Lock()
+			th.stopReason = fmt.Sprintf("run budget spent before step %d: this prompt and the loops it started ran %d turns (CAPTAIN_RUN_BUDGET)", i+1, th.budget.size())
+			b.rmu.Unlock()
 			return
 		}
 		start := time.Now()

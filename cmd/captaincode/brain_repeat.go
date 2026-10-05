@@ -88,10 +88,11 @@ const roundContract = "\n\n[captain] This is one round of a repeating task. A ro
 
 type repeatThread struct {
 	id         string
-	dir        string   // the workspace the thread runs in - its rounds and its listing belong to that TUI
-	task       string   // the prompt as typed, minus the /repeat directive
-	steps      []string // a chain's steps (brain_chain.go); nil for a repeat
-	target     int      // 0 = until stopped (bounded by repeatHardCap)
+	dir        string     // the workspace the thread runs in - its rounds and its listing belong to that TUI
+	task       string     // the prompt as typed, minus the /repeat directive
+	steps      []string   // a chain's steps (brain_chain.go); nil for a repeat
+	budget     *runBudget // shared with the threads its rounds start (brain_budget.go)
+	target     int        // 0 = until stopped (bounded by repeatHardCap)
 	done       int
 	failed     int
 	started    time.Time
@@ -328,7 +329,7 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 	th := b.runningRepeat(req.ws.Dir, rest, count)
 	joined := th != nil
 	if !joined {
-		th = b.startRepeat(req, rest, count)
+		th = b.startRepeat(req, rest, count, budgetFor(ctx))
 	}
 	horizon := fmt.Sprintf("%d rounds", th.target)
 	if th.target == 0 {
@@ -767,9 +768,10 @@ func (b *brain) repeatAbort(dir, id string) string {
 }
 
 // startRepeat registers and launches a detached thread.
-func (b *brain) startRepeat(req oaiChatReq, task string, count int) *repeatThread {
-	ctx, cancel := context.WithCancel(context.Background())
+func (b *brain) startRepeat(req oaiChatReq, task string, count int, budget *runBudget) *repeatThread {
+	ctx, cancel := context.WithCancel(withBudget(context.Background(), budget))
 	th := &repeatThread{
+		budget:  budget,
 		id:      "rp_" + fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff),
 		dir:     req.ws.Dir,
 		task:    task,
@@ -808,6 +810,13 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		halted := th.stopped
 		b.rmu.Unlock()
 		if halted || ctx.Err() != nil {
+			break
+		}
+		if !th.budget.take() {
+			b.rmu.Lock()
+			th.stopReason = fmt.Sprintf("run budget spent: this prompt and the loops it started ran %d turns (CAPTAIN_RUN_BUDGET)", th.budget.size())
+			b.rmu.Unlock()
+			fmt.Printf("captain brain: repeat %s stopped - %s\n", th.id, th.stopReason)
 			break
 		}
 		start := time.Now()

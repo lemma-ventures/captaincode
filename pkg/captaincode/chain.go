@@ -190,3 +190,24 @@ func allLegStages(steps []string) bool {
 	}
 	return true
 }
+
+// StartsLoop reports whether a turn would start work that repeats or
+// sequences turns: a /repeat among its leading commands ("/oss /repeat 5 …"),
+// or a chain. The inbox refuses these - only a person types a loop
+// (formal/CommandSafety/Inbox.lean). A prompt that merely mentions /repeat in
+// its prose does not start one.
+func StartsLoop(text string) bool {
+	t := UnwrapGroup(strings.TrimSpace(text))
+	if _, ok := SplitChain(t); ok {
+		return true
+	}
+	for _, f := range strings.Fields(t) {
+		if !strings.HasPrefix(f, "/") {
+			return false
+		}
+		if strings.EqualFold(strings.TrimRight(f, ":"), "/repeat") {
+			return true
+		}
+	}
+	return false
+}

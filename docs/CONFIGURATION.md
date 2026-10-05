@@ -1169,6 +1169,13 @@ settings.
 checkout for `captain upgrade`), `CAPTAIN_REPEAT_MAX` (default `100`),
 `CAPTAIN_AA_API_KEY` (the perf ranking's feed and `captain priors sync`).
 
+`CAPTAIN_RUN_BUDGET` (default `200`) is how many turns one typed prompt may
+start, shared by every `/repeat` round and chain step under it however they
+nest. `CAPTAIN_INBOX_QUOTA` (default `5`) is how many `captain send` prompts
+a folder accepts between two turns the user types; a sent prompt may not
+start a `/repeat` or a chain. Both are proved to bound the work in
+[the formal model](../formal/README.md).
+
 ### TUI chrome
 
 The Models / shield / Last Runs sidebar keeps the same live brain data under

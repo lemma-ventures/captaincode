@@ -63,7 +63,7 @@ func TestChainRunsEachStepAfterThePreviousAndHandsItsAnswerOn(t *testing.T) {
 		{Role: "user", Content: jsonString(raw)},
 	}, ws: captaincode.Workspace{Dir: t.TempDir()}}
 
-	th := b.startChain(req, raw, steps)
+	th := b.startChain(req, raw, steps, nil)
 	waitChain(t, b, th)
 
 	got := seen()
@@ -93,7 +93,7 @@ func TestChainStopsAtAFailedStep(t *testing.T) {
 	raw := "/team audit it > /claude fix it > /repeat 2 /quality polish it"
 	steps, ok := captaincode.SplitChain(raw)
 	require.True(t, ok)
-	th := b.startChain(oaiChatReq{Messages: []oaiMessage{{Role: "user", Content: jsonString(raw)}}, ws: captaincode.Workspace{Dir: t.TempDir()}}, raw, steps)
+	th := b.startChain(oaiChatReq{Messages: []oaiMessage{{Role: "user", Content: jsonString(raw)}}, ws: captaincode.Workspace{Dir: t.TempDir()}}, raw, steps, nil)
 	waitChain(t, b, th)
 	assert.Len(t, seen(), 1, "the steps after a failure build on it, so they do not run")
 	assert.Contains(t, th.stopReason, "step 1 failed")
@@ -129,4 +129,45 @@ func TestChainIsCaughtWhenTyped(t *testing.T) {
 	require.NotNil(t, th)
 	waitChain(t, b, th)
 	assert.Equal(t, 2, th.done)
+}
+
+// formal/CommandSafety/Execution.lean, run_turns_le: a chain and the loops
+// its steps start share one budget.
+func TestChainAndNestedLoopsShareOneRunBudget(t *testing.T) {
+	b, seen := chainBrain(t, func(string) (string, int) { return "ok", 200 })
+	raw := "/team a > /claude b > /claude c > /claude d"
+	steps, ok := captaincode.SplitChain(raw)
+	require.True(t, ok)
+	budget := &runBudget{left: 2, total: 2}
+	th := b.startChain(oaiChatReq{Messages: []oaiMessage{{Role: "user", Content: jsonString(raw)}}, ws: captaincode.Workspace{Dir: t.TempDir()}}, raw, steps, budget)
+	waitChain(t, b, th)
+	assert.Len(t, seen(), 2, "two turns of budget, two steps")
+	assert.Contains(t, th.stopReason, "run budget spent before step 3")
+
+	// A loop started inside the chain draws on the same budget.
+	ctx := withBudget(context.Background(), budget)
+	assert.Same(t, budget, budgetFor(ctx))
+	assert.False(t, budgetFor(ctx).take(), "already spent")
+	fresh := budgetFor(context.Background())
+	assert.Equal(t, runBudgetSize(), fresh.size(), "a typed prompt starts with a full budget")
+}
+
+func TestRepeatStopsWhenTheRunBudgetIsSpent(t *testing.T) {
+	b := teamBrain()
+	b.roundSummaryFn = func(string) string { return "did it" }
+	work := []string{
+		"Fixed the failing auth test: the token clock was compared before refresh, so it expired mid-request.",
+		"Migrated the storage callers to the new interface and deleted the compatibility shim.",
+		"Found the flaky watcher: fsevents coalesces two writes, and the test asserted on the first.",
+		"Backfilled the missing migration for the priors table and re-ran the importer end to end.",
+	}
+	rounds := 0
+	b.chatFn = func(w *captureWriter) {
+		fmt.Fprint(w, work[rounds%len(work)])
+		rounds++
+	}
+	th := &repeatThread{id: "rp_budget", task: "work the backlog", target: 10, budget: &runBudget{left: 3, total: 3}}
+	b.runRepeat(context.Background(), th, oaiChatReq{Model: "free"})
+	assert.Equal(t, 3, rounds)
+	assert.Contains(t, th.stopReason, "run budget spent")
 }

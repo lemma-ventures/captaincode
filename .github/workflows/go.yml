@@ -30,6 +30,17 @@ jobs:
       - run: go test ./...
       - run: go build ./...
 
+  formal:
+    # The command-safety proofs (formal/README.md): a failing proof fails CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: formal
+          test: false
+          lint: false
+
   openshell-pilot:
     runs-on: ${{ matrix.os }}
     strategy:

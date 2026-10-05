@@ -97,3 +97,23 @@ func TestChainLimits(t *testing.T) {
 	_, ok = SplitChain("/team a > (/team b > /claude c")
 	assert.False(t, ok, "an unclosed group")
 }
+
+func TestStartsLoop(t *testing.T) {
+	chainRegistry(t)
+	for _, in := range []string{
+		"/repeat 5 /quality implement it",
+		"/oss /repeat 3 check the feed",
+		"/team audit it > /claude fix it",
+		"(/repeat 2 /grok poll it)",
+	} {
+		assert.True(t, StartsLoop(in), in)
+	}
+	for _, in := range []string{
+		"/grok the build is green again",
+		"fixed the /repeat watch bug; tests pass",
+		"/claude review the /repeat change",
+		"/grok draft > /claude review",
+	} {
+		assert.False(t, StartsLoop(in), in)
+	}
+}
