@@ -242,6 +242,11 @@ func learnMemoryMCP(brain EuclidBrain, max int, apply bool, run func(string) (st
 }
 
 func memoryOrientation(set []EuclidBrain, budget int) string {
+	// Same contract as the file path: no brain means no block. An empty
+	// <euclid> pair still changes every worker prompt.
+	if len(set) == 0 {
+		return ""
+	}
 	var out strings.Builder
 	out.WriteString("\n<euclid>\n")
 	for _, brain := range set {

@@ -12,5 +12,12 @@ import (
 func TestMain(m *testing.M) {
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
 	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
+	// A captain session sets these. That connection is bound to the live
+	// brain. A temp brain is a different root, so journal, learn and
+	// orientation fail closed ("bound to a different brain") instead of
+	// using the files the test built. A test that wants MCP sets the path
+	// itself.
+	os.Unsetenv("CAPTAIN_EUCLID_MCP_CONFIG")
+	os.Unsetenv("CAPTAIN_EUCLID_MEMORY_CONFIG")
 	os.Exit(m.Run())
 }

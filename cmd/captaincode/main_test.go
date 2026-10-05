@@ -38,6 +38,10 @@ func TestMain(m *testing.M) {
 	// broke every opencode leg (2026-09-18).
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
 	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
+	// Same isolation as pkg/captaincode: the session's MCP config is bound
+	// to the live brain, not to a temp brain these tests build.
+	os.Unsetenv("CAPTAIN_EUCLID_MCP_CONFIG")
+	os.Unsetenv("CAPTAIN_EUCLID_MEMORY_CONFIG")
 	// The director-path tests stub the PLAN call; the typed pick (the
 	// default since 2026-09-22) has its own tests, which opt in. Solo
 	// verification runs real test commands in real repositories; off here.
