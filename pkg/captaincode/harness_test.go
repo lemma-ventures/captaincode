@@ -6,16 +6,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// The user reads harness and provenance, not routing legs: two legs on one
-// model family behind one provider are one name (2026-10-03).
+// The user reads harness-provider, not routing legs. Two legs on one family
+// and provider share a name. Luna shares codex-cli: it is a version of that
+// harness, not a row of its own (2026-10-04).
 func TestHarnessNamesTheHarnessAndTheProvenance(t *testing.T) {
 	for leg, want := range map[Leg]string{
 		LegClaude: "claude-cli", LegCodexCLI: "codex-cli", LegCursor: "cursor-cli",
 		"grok": "grok-xai", "grok-max": "grok-xai",
-		"codex": "gpt-openai", "luna": "gpt-openai",
+		"codex": "gpt-openai", "luna": "codex-cli",
 		"kimi": "kimi-nim", "glm": "glm-nim", "ds-flash": "deepseek-nim",
 		"ds4-flash": "deepseek-hf", "step": "step-hf",
 		"gemini": "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter", "qwen": "qwen-openrouter",
+		"openshell": "openshell-nvidia",
 	} {
 		assert.Equal(t, want, Harness(leg), "leg %s", leg)
 	}
@@ -32,6 +34,7 @@ func TestModelShortReadsLikeAVersion(t *testing.T) {
 func TestRunLabelSaysWhatRanAndHowHard(t *testing.T) {
 	assert.Equal(t, "kimi-nim:kimi-k3@effort:high", RunLabel("kimi", EffortHigh))
 	assert.Equal(t, "codex-cli:"+ModelAt(LegCodexCLI, EffortMax)+"@effort:max", RunLabel(LegCodexCLI, EffortMax))
+	assert.Equal(t, "codex-cli:gpt-6-luna@effort:low", RunLabel(LegLuna, EffortLow), "luna is a version of codex-cli, not its own harness")
 	assert.Contains(t, RunLabel("kimi", ""), "@effort:default")
 }
 

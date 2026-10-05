@@ -26,8 +26,9 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	b.rosterHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/roster", nil))
 	require.Equal(t, 200, rec.Code)
 	var out struct {
-		PerfSource string `json:"perf_source"`
-		Legs       []rosterLeg
+		PerfSource string            `json:"perf_source"`
+		Legs       []rosterLeg       `json:"legs"`
+		Harness    map[string]string `json:"harness"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.Equal(t, "snapshot", out.PerfSource, "no key in tests: the compiled snapshot")
@@ -44,6 +45,10 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	// serves by family-provider. Two legs on one family and provider share it.
 	assert.Equal(t, "codex-cli", byLeg["codex-cli"].Label, "the CLI leg")
 	assert.Equal(t, "gpt-openai", byLeg["codex"].Label, "an OpenAI model through opencode's openai provider")
+	assert.Equal(t, "codex-cli", byLeg["luna"].Label, "luna is a version of codex-cli, not its own harness")
+	assert.Equal(t, "openshell-nvidia", out.Harness["openshell"])
+	assert.Equal(t, "gpt-oss-openrouter", out.Harness["gpt-oss"])
+	assert.Equal(t, "codex-cli", out.Harness["luna"])
 	assert.Equal(t, "claude-cli", byLeg["claude"].Label)
 	assert.Equal(t, "cursor-cli", byLeg["cursor"].Label)
 	assert.Equal(t, "grok-xai", byLeg["grok-max"].Label)

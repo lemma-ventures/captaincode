@@ -69,7 +69,7 @@ type Stats = {
   last: LastRoute | null
   workers?: WorkerInfo[]
 }
-type Activity = { at: string; kind: "route" | "run" | "done" | "feed"; leg: string; model: string; text: string; ms: number; effort?: string }
+type Activity = { at: string; kind: "route" | "run" | "done" | "feed"; leg: string; model: string; text: string; ms: number; effort?: string; label?: string }
 // The roster (GET /v1/roster): each leg ranked by its perf index, its section
 // (Frontier / Models), and a newer family member when one outscores it - plus
 // the local agent CLIs with installed vs latest versions.
@@ -88,7 +88,7 @@ type RosterLeg = {
   models?: { model: string; efforts: string[] }[]
 }
 type CliStatus = { name: string; installed: string; latest?: string; outdated: boolean; legs: string }
-type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[] }
+type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[]; harness?: Record<string, string> }
 // The shield (GET /v1/proxy/stats): what never left the machine - secrets
 // masked on the wire by the egress proxy and at the tool boundary.
 type Shield = { mode: string; requests: number; secrets: number; identity: number; boundary?: { secrets: number; today: number } }
@@ -222,12 +222,55 @@ function View(props: { api: TuiPluginApi }) {
     clearInterval(spin)
   })
 
+  // harness-provider for the list. Version and effort stay off this panel.
+  // The map matches pkg/captaincode/harness.go and is used only when the
+  // roster has not named the leg yet (a past run, or a brain from before
+  // the harness field). Luna is always codex-cli: gpt-6-luna is a version
+  // of that harness, not a row.
+  const HARNESS_FALLBACK: Record<string, string> = {
+    claude: "claude-cli", "codex-cli": "codex-cli", cursor: "cursor-cli", luna: "codex-cli",
+    codex: "gpt-openai", grok: "grok-xai", "grok-max": "grok-xai",
+    kimi: "kimi-nim", glm: "glm-nim", "ds-flash": "deepseek-nim", "ds4-flash": "deepseek-hf",
+    step: "step-hf", gemini: "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter",
+    qwen: "qwen-openrouter", minimax: "minimax-openrouter", deepseek: "deepseek-openrouter",
+    free: "nemotron-opencode", openshell: "openshell-nvidia",
+  }
+  const harnessOf = (leg: string) => {
+    if (leg === "luna") return "codex-cli"
+    const named = roster()?.harness?.[leg]
+    if (named && named.includes("-")) return named
+    const label = roster()?.legs.find((r) => r.leg === leg)?.label
+    if (label && label.includes("-")) return label
+    return HARNESS_FALLBACK[leg] ?? leg
+  }
+  const modelAt = (leg: string, effort?: string) => {
+    if (leg === "luna") return "gpt-6-luna"
+    const ro = roster()?.legs.find((r) => r.leg === leg)
+    if (!ro?.models?.length) return ro?.model
+    return (ro.models.find((m) => effort && m.efforts.includes(effort)) ?? ro.models[Math.min(1, ro.models.length - 1)]).model
+  }
+  // How a run reads on Last Runs and in the session: harness:model@effort:x.
+  const runLabel = (leg: string, effort?: string, model?: string) => {
+    const harness = harnessOf(leg)
+    const version = model && model !== leg && !/^(frontier|team|pool|director|context|workflow|auto|openshell)$/.test(model)
+      ? model.split("/").pop()!.toLowerCase()
+      : modelAt(leg, effort)
+    const eff = effort || "default"
+    return version ? `${harness}:${version}@effort:${eff}` : `${harness}@effort:${eff}`
+  }
+  const runLine = (a: Activity) => {
+    if (a.kind === "feed") return a.leg
+    if (a.label) return a.label
+    if (a.kind === "route" || a.kind === "run" || a.kind === "done") return runLabel(a.leg, a.effort, a.model)
+    return harnessOf(a.leg)
+  }
+
   const feed = createMemo(() => acts().slice(0, 7))
   const running = createMemo(() => {
     const busy = workers().find((w) => w.status === "busy")
-    if (busy) return busy.leg
+    if (busy) return harnessOf(busy.leg)
     const a = acts()[0]
-    return a && a.kind === "run" ? a.leg : null
+    return a && a.kind === "run" ? harnessOf(a.leg) : null
   })
 
   // One row per leg: the roster's ranking (perf index, highest first) merged
@@ -249,11 +292,9 @@ function View(props: { api: TuiPluginApi }) {
       .map((leg) => ({ leg, w: live.get(leg), st: st[leg], ro: ro.get(leg) }))
       .sort((a, b) => (pos.get(a.leg) ?? 999) - (pos.get(b.leg) ?? 999) || (b.st?.N ?? 0) - (a.st?.N ?? 0) || a.leg.localeCompare(b.leg))
   })
-  // One list, ranked by perf, each row a model × route (codex-cli,
-  // codex-openai, glm-orouter): the frontier-class legs are rows like the
-  // others, not a section of their own (2026-09-13: two sections read as
-  // two different things; they are one ladder). Effort is per run, on the
-  // Last Runs line.
+  // One list, ranked by perf. Each row is a harness-provider (codex-cli,
+  // grok-xai, kimi-nim). Version and effort are on Last Runs and on the
+  // session header of the turn, not on this list.
   const modelRows = allRows
   // Local agent CLIs with an update available; hidden when all are current.
   const staleCLIs = createMemo(() => (roster()?.cli ?? []).filter((c) => c.outdated))
@@ -300,49 +341,21 @@ function View(props: { api: TuiPluginApi }) {
     return "idle"
   }
 
-  // Harness rows (2026-10-03): the panel lists harness × provenance -
-  // claude-cli, codex-cli, grok-xai, kimi-nim - not routing legs. grok and
-  // grok-max are one row (xAI's Grok through opencode), codex and luna one
-  // (OpenAI through opencode). Each row says which model runs at which
-  // effort, so how a harness is configured is visible at a glance.
-  const EFFORTS = ["low", "medium", "high", "xhigh", "max"]
-  const effortSpan = (efforts: string[]) => {
-    const idx = [...new Set(efforts)].map((e) => EFFORTS.indexOf(e)).filter((i) => i >= 0).sort((a, b) => a - b)
-    if (!idx.length) return ""
-    const runs: string[] = []
-    let start = idx[0]
-    for (let k = 1; k <= idx.length; k++) {
-      if (k < idx.length && idx[k] === idx[k - 1] + 1) continue
-      const end = idx[k - 1]
-      runs.push(start === end ? EFFORTS[start] : `${EFFORTS[start]}–${EFFORTS[end]}`)
-      start = idx[k]
-    }
-    return runs.join(",")
-  }
-  // The model a leg runs at an effort, from the roster.
-  const modelAt = (leg: string, effort?: string) => {
-    const ro = roster()?.legs.find((r) => r.leg === leg)
-    if (!ro?.models?.length) return ro?.model
-    return (ro.models.find((m) => effort && m.efforts.includes(effort)) ?? ro.models[Math.min(1, ro.models.length - 1)]).model
-  }
-  // How a run reads: harness:model@effort:x.
-  const runLabel = (leg: string, effort?: string) => {
-    const ro = roster()?.legs.find((r) => r.leg === leg)
-    if (!ro) return effort ? `${leg}@effort:${effort}` : leg
-    return `${ro.label ?? leg}:${modelAt(leg, effort)}@effort:${effort || "default"}`
-  }
+  // One row per harness-provider. Version and effort are not on this list.
+  // They are on Last Runs and on the session header of the turn.
   type HarnessRow = { label: string; legs: LegRow[] }
   const harnessRows = createMemo<HarnessRow[]>(() => {
     const groups = new Map<string, LegRow[]>()
     for (const r of modelRows()) {
-      const label = r.ro?.label ?? r.leg
+      const label = harnessOf(r.leg)
+      if (!label.includes("-")) continue
       groups.set(label, [...(groups.get(label) ?? []), r])
     }
     return [...groups.entries()].map(([label, legs]) => ({ label, legs }))
   })
 
-  // One harness row: status glyph, harness, best perf, then the running
-  // model@effort, or each model with the efforts that select it.
+  // One harness row: status glyph, harness-provider, perf, run count.
+  // No model version and no effort. Those belong on the run line.
   const HarnessLine = (p: { h: HarnessRow }) => {
     const legs = () => p.h.legs
     const busy = () => legs().find((r) => r.w?.status === "busy")
@@ -350,15 +363,7 @@ function View(props: { api: TuiPluginApi }) {
     const shown = () => busy() ?? cooling() ?? legs()[0]
     const perf = () => {
       const best = Math.max(...legs().map((r) => r.ro?.perf ?? 0))
-      return best > 0 ? best.toFixed(0) : "—"
-    }
-    const configured = () => {
-      const byModel = new Map<string, string[]>()
-      for (const r of legs()) for (const m of r.ro?.models ?? []) byModel.set(m.model, [...(byModel.get(m.model) ?? []), ...m.efforts])
-      return [...byModel.entries()]
-        .sort((a, b) => EFFORTS.indexOf(b[1].at(-1) ?? "") - EFFORTS.indexOf(a[1].at(-1) ?? ""))
-        .map(([m, e]) => `${m}@${effortSpan(e)}`)
-        .join(" · ")
+      return best > 0 ? best.toFixed(0) : ""
     }
     const n = () => legs().reduce((s, r) => s + (r.st?.N ?? 0), 0)
     const detail = () => {
@@ -366,7 +371,7 @@ function View(props: { api: TuiPluginApi }) {
       if (b?.w) return `${fmtElapsed(b.w.elapsed_ms ?? 0)}${b.w.task ? " · " + b.w.task.slice(0, 26) : ""}`
       const c = cooling()
       if (c?.w) return statusLabel(c.w)
-      return `${configured()}${n() > 0 ? ` · n=${n()}` : ""}`
+      return n() > 0 ? `n=${n()}` : ""
     }
     const upgrade = () => legs().find((r) => r.ro?.upgrade && r.w?.status !== "busy")
     const isDirector = () => legs().some((r) => r.leg === stats()?.director)
@@ -494,6 +499,7 @@ function View(props: { api: TuiPluginApi }) {
                 text={theme().text}
                 muted={theme().textMuted}
                 accent={theme().accent}
+                name={harnessOf}
               />
             )}
           </For>
@@ -530,7 +536,7 @@ function View(props: { api: TuiPluginApi }) {
                         : a.kind === "feed"
                           ? "⇡"
                           : "▶"}{" "}
-                  {a.kind === "run" || a.kind === "done" ? runLabel(a.leg, a.effort) : a.leg}
+                  {runLine(a)}
                 </text>
                 <Show when={a.ms > 0}>
                   <text fg={theme().textMuted}>{a.ms >= 1000 ? `${(a.ms / 1000).toFixed(1)}s` : `${a.ms}ms`}</text>
@@ -564,7 +570,7 @@ function View(props: { api: TuiPluginApi }) {
   )
 }
 
-function TeamNode(props: { node: Assignment; depth: number; text: RGBA; muted: RGBA; accent: RGBA }) {
+function TeamNode(props: { node: Assignment; depth: number; text: RGBA; muted: RGBA; accent: RGBA; name: (leg: string) => string }) {
   const pad = "  ".repeat(props.depth)
   return (
     <box>
@@ -572,7 +578,7 @@ function TeamNode(props: { node: Assignment; depth: number; text: RGBA; muted: R
         <text fg={props.text}>
           {pad}
           {props.depth > 0 ? "↳ " : "• "}
-          {props.node.leg}
+          {props.name(props.node.leg)}
         </text>
         <Show when={props.node.team?.length}>
           <text fg={props.accent}>team/{props.node.team!.length}</text>
@@ -592,6 +598,7 @@ function TeamNode(props: { node: Assignment; depth: number; text: RGBA; muted: R
               text={props.text}
               muted={props.muted}
               accent={props.accent}
+              name={props.name}
             />
           )}
         </For>

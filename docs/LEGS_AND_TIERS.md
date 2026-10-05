@@ -118,17 +118,19 @@ its everyday model because grok-4.7 lived on `grok-max`.
 
 ## Where names and tiers are shown
 
-- **The sidebar lists harness × provenance, not legs** (2026-10-03). A local
-  agent CLI by its name (`claude-cli`, `codex-cli`, `cursor-cli`); a model
-  opencode serves by family and provider (`grok-xai`, `kimi-nim`, `step-hf`,
-  `gemini-openrouter`). Legs on one family and provider share a row: `grok`
-  and `grok-max` are `grok-xai`, `codex` and `luna` are `gpt-openai`. Each
-  row lists the models it runs and the efforts that select them:
-  `codex-cli  gpt-6-astra@medium–max · gpt-6-sol@low`.
+- **The sidebar lists harness-provider, not version or effort** (2026-10-04).
+  A local agent CLI by its name (`claude-cli`, `codex-cli`, `cursor-cli`). A
+  model opencode serves by family and provider (`grok-xai`, `kimi-nim`,
+  `step-hf`, `gemini-openrouter`, `gpt-oss-openrouter`). The sandbox is
+  `openshell-nvidia`. Legs on one family and provider share a row: `grok`
+  and `grok-max` are `grok-xai`. `luna` is not a row. It is the version
+  `gpt-6-luna` of `codex-cli`. A row is the harness name, its perf, and how
+  many runs it has.
 - **A run reads `harness:model@effort:x`**: `claude-cli:opus-5.5@effort:max`,
-  `kimi-nim:kimi-k3@effort:high`. This covers the progress header of a turn,
-  Last Runs and the brain log's route line. An alias that names no version
-  (claude's `opus`) is shown as the newest release the perf feed lists.
+  `codex-cli:gpt-6-luna@effort:low`, `kimi-nim:kimi-k3@effort:high`. This is
+  the progress header of a turn and Last Runs. It is not the harness list.
+  An alias that names no version (claude's `opus`) is shown as the newest
+  release the perf feed lists.
 - Slash commands, `CAPTAIN_LEGS`, scores and the journal keep the leg id
   (`/grok-max`, `/luna`). The naming lives in `pkg/captaincode/harness.go`.
 - The sidebar's Frontier section is currently built from legs flagged

@@ -582,7 +582,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		b.recordDecision(task, frontierDecision(task, pick))
 		taskID = b.openTask(task)
 	}
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(pick.Leg), Model: "frontier", Text: pick.Reason})
+	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: pick.Reason})
 	status(pick.Reason + "\n")
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
 	t0 := time.Now()

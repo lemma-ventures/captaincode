@@ -334,9 +334,15 @@ func (b *brain) rosterHTTP(w http.ResponseWriter, r *http.Request) {
 	b.roster.mu.RLock()
 	cli := append([]cliStatus{}, b.roster.cli...)
 	b.roster.mu.RUnlock()
+	// Every leg, including ones the allowlist keeps off the list. A past run
+	// still needs a harness-provider name (luna is codex-cli, not "luna").
+	harness := map[string]string{}
+	for _, l := range captaincode.AllLegs {
+		harness[string(l)] = captaincode.Harness(l)
+	}
 	writeJSON(w, 200, map[string]any{
 		"perf_source": src, "perf_as_of": asOf, "perf_models": len(models),
 		"perf_key": b.roster.aaKey() != "", // false: the ranking cannot get fresher than its cache
-		"legs":     legs, "cli": cli,
+		"legs":     legs, "cli": cli, "harness": harness,
 	})
 }

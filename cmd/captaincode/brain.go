@@ -1665,7 +1665,7 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 			return ranLeg, res, err
 		}
 		fmt.Printf("captain brain: %s provider failed (%v) → rerouting task to %s\n", ranLeg, err, fb)
-		b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(fb), Model: string(fb),
+		b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(fb), Model: string(fb), Effort: string(ws.Effort),
 			Text: fmt.Sprintf("%s unavailable → rerouted to %s", ranLeg, fb)})
 		// The reroute marker is emitted LAZILY, with the new leg's first
 		// output: announcing eagerly writes the SSE header, and if every hop
@@ -2238,6 +2238,7 @@ type activity struct {
 	Text   string `json:"text"` // rationale (route) or output preview (done)
 	Ms     int64  `json:"ms"`
 	Effort string `json:"effort,omitempty"` // how hard the worker thinks on this run (a run's routing decision, effort.go)
+	Label  string `json:"label,omitempty"`  // harness:model@effort for Last Runs and the session header
 	Dir    string `json:"-"`                // the workspace it happened in ("" = machine-wide, shown to every TUI)
 }
 
@@ -2245,6 +2246,13 @@ type activity struct {
 // record while a route still holds the main mu.
 func (b *brain) pushActivity(a activity) {
 	a.At = time.Now().Format("15:04:05")
+	// Version and effort belong on the run line, not on the harness list.
+	// A feed item (a ranking note) is not a run.
+	if a.Kind != "feed" && a.Label == "" {
+		if leg := captaincode.Leg(a.Leg); captaincode.KnownLeg(leg) && captaincode.ServesTasks(leg) {
+			a.Label = captaincode.RunLabel(leg, captaincode.Effort(a.Effort))
+		}
+	}
 	b.amu.Lock()
 	b.acts = append(b.acts, a)
 	if len(b.acts) > 60 {
@@ -2626,7 +2634,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				b.recordDecision(req.Task, dec)
 				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Rationale: rationale, At: time.Now().Format("15:04:05")}
 				fmt.Printf("captain brain: routed %q → class=%s leg=%s in %dms [triage %s]\n", b.last.Task, tr.Class, leg, totalMs, tr.Why)
-				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Text: rationale, Ms: totalMs})
+				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Effort: string(effort), Text: rationale, Ms: totalMs})
 				return routeResp{Class: string(tr.Class), Leg: string(leg), Provider: "captain",
 					Model: string(leg), Brief: req.Task, Rationale: rationale, Effort: string(effort)}, nil
 			}
@@ -2950,7 +2958,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	b.recordDecision(req.Task, dec)
 	fmt.Printf("captain brain: routed %q → class=%s leg=%s (%s) in %dms [director %dms] - %s\n",
 		b.last.Task, class, leg, model, totalMs, directorMs, rationale)
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: model, Text: rationale, Ms: totalMs})
+	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: model, Effort: string(req.ws.Effort), Text: rationale, Ms: totalMs})
 	return routeResp{
 		Class: string(class), Leg: string(leg), Provider: provider, Model: model,
 		ViaClaude: !ok, Brief: brief, Rationale: rationale,

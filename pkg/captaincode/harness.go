@@ -2,14 +2,13 @@ package captaincode
 
 // How a leg is NAMED to the user (2026-10-03). A leg is a routing unit, and
 // several legs can be one model family behind one provider: grok and
-// grok-max are both xAI's Grok through opencode, codex and luna both OpenAI
-// models through opencode. Printed by leg id, the sidebar read as twenty
-// different things and hid what actually ran. The user sees:
+// grok-max are both xAI's Grok through opencode. Printed by leg id, the
+// sidebar read as twenty different things and hid what actually ran.
 //
-//   - the harness and provenance: claude-cli, codex-cli, cursor-cli for the
-//     local agent CLIs; family-provider for a model opencode serves
-//     (grok-xai, kimi-nim, step-hf);
-//   - and on a run, what ran and how hard: claude-cli:opus-5.5@effort:max.
+// The sidebar lists harness-provider only (claude-cli, codex-cli, grok-xai,
+// kimi-nim). Version and effort are not on that list. They appear on a run:
+// codex-cli:gpt-6-luna@effort:low. Luna is not its own row. It is gpt-6-luna,
+// a version of the codex-cli harness.
 //
 // Display only: slash commands, CAPTAIN_LEGS, scores and the journal keep the
 // leg id.
@@ -20,7 +19,13 @@ import (
 )
 
 // Harness names the harness and provenance a leg runs through.
+// The shape is harness-provider: claude-cli, codex-cli, grok-xai, kimi-nim.
 func Harness(l Leg) string {
+	// Luna is gpt-6-luna on the ChatGPT subscription, the same harness as
+	// codex exec. It is a version of that row, not a second leg on the list.
+	if l == LegLuna {
+		return "codex-cli"
+	}
 	spec, ok := Spec(l)
 	if !ok {
 		return string(l)
@@ -34,6 +39,8 @@ func Harness(l Leg) string {
 		return "cursor-cli"
 	case TransportOpencode:
 		return modelFamily(spec.Model) + "-" + providerShort(spec.Provider)
+	case TransportOpencodeShell:
+		return "openshell-nvidia"
 	}
 	return string(l)
 }
