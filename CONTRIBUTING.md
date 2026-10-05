@@ -34,6 +34,17 @@ requires Captain Code to hold credentials of its own.
 6. Explain *why* in the commit message. The history here is the design record;
    a message that only restates the diff is a missed opportunity.
 
+## Changing the command language
+
+What a user types into a session is a language with a spec,
+[docs/LANGUAGE.md](docs/LANGUAGE.md). A change to it - a new word, connector,
+form, limit or order of reading - follows its section 10: the spec, the parser,
+conformance cases in `pkg/captaincode/testdata/language/conformance.txt`, the
+formal model when the change can start turns, the cheat sheets, and the version
+bump, all in the same pull request. `go test ./pkg/captaincode -run Language`
+must pass, and no existing conformance case may change its tree unless the spec
+says why.
+
 ## Style
 
 Comments explain the reason, not the mechanism - preferably the incident that

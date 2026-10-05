@@ -412,6 +412,14 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.Model = string(leg)
 	}
 
+	// A chain of whole commands ("/frontier … > /repeat 5 /quality …", a
+	// group in parentheses behind ">") runs step by step (brain_chain.go),
+	// each step a full turn back through this dispatch. It is read first: an
+	// OpenShell head or CWL would otherwise take the whole line, and CWL
+	// would cut a group's inner ">" as its own (docs/LANGUAGE.md §5).
+	if !titleReq && b.handleChain(r.Context(), w, req, lastUserRaw(req.Messages)) {
+		return
+	}
 	if !titleReq && (req.Model == string(captaincode.LegOpenShell) || captaincode.LeadingForced(lastUserRaw(req.Messages)) == string(captaincode.LegOpenShell) ||
 		openShellTeamTurn(req.Model, lastUserRaw(req.Messages))) {
 		b.openShellChat(w, r, req, prompt)
@@ -450,12 +458,6 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// swallow it. Only a CLEANLY PARSING multi-stage expression takes this
 	// early exit; anything else falls through to the original dispatch (and
 	// parse errors are reported by the LooksLikeWorkflow branch below).
-	// A chain of whole commands ("/frontier … > /repeat 5 /quality …", a
-	// group in parentheses behind ">") runs step by step (brain_chain.go). It
-	// is read before CWL: CWL would cut a group's inner ">" as its own.
-	if !titleReq && b.handleChain(r.Context(), w, req, raw) {
-		return
-	}
 	if workflowEnabled() && !titleReq && strings.HasPrefix(strings.TrimSpace(raw), "/") {
 		if wf, err := captaincode.ParseWorkflow(raw); err == nil && (wf.MultiStage() || wf.HasGate()) {
 			b.runWorkflow(w, req, prompt, wf, "")

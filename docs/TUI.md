@@ -1,7 +1,9 @@
 # TUI cheat sheet
 
 The words you type in a Captain session. The brain parses them before routing
-without a model call. Tasks, workflow compilation and memory distillation still
+without a model call. The grammar, the order in which readings are tried and the
+rules for changing the language are in [LANGUAGE.md](LANGUAGE.md); `captain parse
+"<line>"` prints how a line is read without sending it. Tasks, workflow compilation and memory distillation still
 use models. `/captain` prints the short version in the TUI
 (`cmd/captaincode/brain_help.go`); the shell commands are in [CLI.md](CLI.md).
 

@@ -1,0 +1,195 @@
+# Conformance suite for the Captain command language (docs/LANGUAGE.md).
+#
+# Each case is a line as typed, then "= " and its canonical parse tree
+# (captaincode.Turn.String; `captain parse "<line>"` prints the same).
+# A case whose tree starts with "(error" matches on the message's opening.
+#
+# Every change to how a line is read adds or edits a case here, in the same
+# commit as the parser and the spec (docs/LANGUAGE.md, "Changing the
+# language"). Never edit an expected tree to make a failing test pass
+# without a spec change that says why the reading changed.
+
+# Routing: a bare task, a forced leg, lanes, pools and skills
+
+fix the login bug
+= (auto "fix the login bug")
+
+/grok fix the login bug
+= (leg grok "fix the login bug")
+
+/grok: fix the login bug
+= (leg grok "fix the login bug")
+
+/quality fix the login bug
+= (auto [quality] "fix the login bug")
+
+/q fix the login bug
+= (auto [quality] "fix the login bug")
+
+/save summarise the log
+= (auto [save] "summarise the log")
+
+fix the login bug /speed
+= (auto [speed] "fix the login bug /speed")
+
+/oss /deterministic fix it
+= (auto [oss deterministic] "fix it")
+
+/noslop write the release notes
+= (auto [noslop] "write the release notes")
+
+# /frontier: a head alone, a modifier before a leg or anywhere else
+
+/frontier prove the bound
+= (frontier "prove the bound")
+
+/frontier /codex prove the bound
+= (leg codex [frontier] "prove the bound")
+
+/claude prove it /frontier
+= (leg claude [frontier] "prove it /frontier")
+
+# /team
+
+/team audit the deck
+= (team "audit the deck")
+
+/team /quality audit the deck
+= (team [quality] "audit the deck")
+
+/oss /team audit the deck
+= (team [oss] "audit the deck")
+
+# OpenShell: a turn it leads runs whole in the sandbox, unless it is a chain
+
+/openshell audit the bank export
+= (openshell "audit the bank export")
+
+/openshell scan > /claude fix it
+= (openshell "scan > /claude fix it")
+
+/team /openshell audit the ledger
+= (openshell team "audit the ledger")
+
+/openshell scan > /repeat 2 /quality fix it
+= (chain (openshell "scan") (repeat 2 (auto [quality] "fix it")))
+
+# Workflows (CWL): legs in sequence and in parallel
+
+/grok analyse X > /codex review it
+= (workflow (stage (leg grok "analyse X")) (stage (leg codex "review it")))
+
+/grok analyse X then /codex review it
+= (workflow (stage (leg grok "analyse X")) (stage (leg codex "review it")))
+
+/grok analyse X -> /codex review it
+= (workflow (stage (leg grok "analyse X")) (stage (leg codex "review it")))
+
+/grok fix A + /cursor fix B
+= (workflow (stage (leg grok "fix A") (leg cursor "fix B")))
+
+/grok fix A and /cursor fix B
+= (workflow (stage (leg grok "fix A") (leg cursor "fix B")))
+
+/grok review X > /codex
+= (workflow (stage (leg grok "review X")) (stage (leg codex "review X")))
+
+/codex + /cursor + /grok what do you think
+= (workflow (stage (leg codex "what do you think") (leg cursor "what do you think") (leg grok "what do you think")))
+
+/codex implement it gate: go test ./...
+= (workflow (stage (leg codex "implement it" (gate "go test ./..."))))
+
+/frontier draft > /codex review
+= (workflow [frontier] (stage (leg frontier "draft")) (stage (leg codex "review")))
+
+# Chains: whole commands in sequence, groups nested behind >
+
+/frontier write specs > /repeat 5 /quality implement them
+= (chain (frontier "write specs") (repeat 5 (auto [quality] "implement them")))
+
+/team audit it > /claude fix what it found
+= (chain (team "audit it") (leg claude "fix what it found"))
+
+/grok a + /codex b > /repeat 2 /quality merge
+= (chain (workflow (stage (leg grok "a") (leg codex "b"))) (repeat 2 (auto [quality] "merge")))
+
+/team plan > (/grok build > /repeat 3 /quality polish)
+= (chain (team "plan") (chain (leg grok "build") (repeat 3 (auto [quality] "polish"))))
+
+/team scope > (/grok draft + /codex draft > /claude merge)
+= (chain (team "scope") (workflow (stage (leg grok "draft") (leg codex "draft")) (stage (leg claude "merge"))))
+
+/repeat 3 (/frontier plan > /team build)
+= (repeat 3 (chain (frontier "plan") (team "build")))
+
+# /repeat: loops and their control words
+
+/repeat 5 /quality implement the next item
+= (repeat 5 (auto [quality] "implement the next item"))
+
+/repeat check the feed
+= (repeat until-stopped (auto "check the feed"))
+
+/oss /repeat 3 check the feed
+= (repeat 3 (auto [oss] "check the feed"))
+
+/repeat
+= (repeat-control status)
+
+/repeat watch the queue
+= (repeat until-stopped (auto "watch the queue"))
+
+/repeat show
+= (repeat-control show)
+
+/repeat stop all
+= (repeat-control stop "all")
+
+/repeat show ch_1a2b3c
+= (repeat-control show "ch_1a2b3c")
+
+# /parallel and the control words that own their line
+
+/parallel /grok scan the logs
+= (parallel (leg grok "scan the logs"))
+
+/parallel status
+= (control parallel "status")
+
+/btw also check the cache > /repeat 2 x
+= (control btw "also check the cache > /repeat 2 x")
+
+/wf save review /grok analyse > /claude audit
+= (control wf "save review /grok analyse > /claude audit")
+
+/wf compare three designs and pick one
+= (control wf "compare three designs and pick one")
+
+/run wf_abc123
+= (control run "wf_abc123")
+
+/captain more oss 20%
+= (control captain "more oss 20%")
+
+/private add acme
+= (control private "add acme")
+
+# Prose stays prose
+
+check that x > y holds for all n
+= (auto "check that x > y holds for all n")
+
+compare /usr/bin/claude and /opt/homebrew/bin/claude
+= (auto "compare /usr/bin/claude and /opt/homebrew/bin/claude")
+
+/grok see /quality/report.md
+= (leg grok "see /quality/report.md")
+
+/frontier show (a) > (b) in the table
+= (frontier "show (a) > (b) in the table")
+
+# Errors
+
+/gpt5 do it > /claude review
+= (error "unknown leg /gpt5")

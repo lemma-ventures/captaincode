@@ -238,6 +238,7 @@ captain jev classify "fix the typo in README"   # see how it would triage a task
 | 🧾 [Run records](docs/RUN_RECORDS.md) | What each run leaves in `~/.captaincode/`: which agent, what it ran, files changed, errors, handoffs |
 | [OpenShell pilot](examples/openshell-pilot/README.md) | Experimental NIM worker isolation, denial checks and recoverable diff landing |
 | ➕ [Adding a leg](docs/ADDING_A_LEG.md) | Connect a new model |
+| 📐 [Command language](docs/LANGUAGE.md) | The grammar of everything you type: heads, modifiers, workflows, chains, loops |
 | 🔀 [Workflow language](docs/WORKFLOW_LANGUAGE.md) | Script multi-step work |
 | 🧠 [Euclid](docs/EUCLID.md) | Per-repository project memory |
 | 🗺️ [Roadmap](docs/ROADMAP.md) | Milestones and what "done" means for each |

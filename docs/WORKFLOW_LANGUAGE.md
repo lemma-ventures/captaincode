@@ -6,6 +6,9 @@ marked **[shipped]** below.
 Owner: Multi-model
 Related: [`ARCHITECTURE.md`](./ARCHITECTURE.md) · [`CONFIGURATION.md`](./CONFIGURATION.md)
 
+This is the design record for workflows. The normative grammar of the whole command line,
+workflows included, is [`LANGUAGE.md`](./LANGUAGE.md); where the two differ, `LANGUAGE.md` holds.
+
 ---
 
 ## 1. Decision

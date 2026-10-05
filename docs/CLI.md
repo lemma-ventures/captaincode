@@ -63,6 +63,7 @@ Run controls reach the brain over HTTP and work while a TUI turn streams.
 | `captain show [<id>\|last]` | One run with its full output |
 | `captain kill [--loops]` | Stop the worker run in flight; `--loops` also ends `/repeat` threads |
 | `captain stop [--finish\|--abort] [--all]` | End this folder's `/repeat` loops after the current round (`--abort` drops the round, `--all` every folder) |
+| `captain parse "<line>"` | Print how captain reads a line - its parse tree in the [command language](LANGUAGE.md) - without sending it |
 | `captain send [--cwd <dir>] [--leg <leg>] [--from <who>] "<prompt>"` | Hand a prompt to the TUI open in a folder: its sidebar submits it into the session as if typed (a watcher, a cron, a script can drive a TUI) |
 | `captain ui` | Open opencode's own TUI on the worker sessions (`opencode attach`) |
 

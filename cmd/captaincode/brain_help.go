@@ -51,7 +51,7 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/captain claude`" + ` (any judge leg) · ` + "`/captain frontier`" + ` best-ranked · ` + "`/captain quality`" + ` best of tier 2 · ` + "`/captain auto`" + ` least-used capable · ` + "`/captain reset`" + `
 - ` + "`/captain more oss`" + ` (also cheap, quality, fast, frontier, deterministic) · ` + "`/captain less oss`" + ` · ` + "`/captain more oss 20%`" + ` · ` + "`/captain oss=20% frontier=30% …`" + ` - the routing mix; prints the targets. Unset, frontier=quality=cheap=fast=oss=20% and deterministic=0, and that default does not steer
 - ` + "`/captain targets`" + ` - print the mix · ` + "`/captain mix reset`" + ` - back to the default
-- ` + "`/captain`" + ` - this list · the full reference is docs/TUI.md
+- ` + "`/captain`" + ` - this list · the full reference is docs/TUI.md · the grammar is docs/LANGUAGE.md, and ` + "`! captain parse \"<line>\"`" + ` shows how a line is read
 
 **When a turn is streaming, the TUI QUEUES what you type** - no slash command can
 reach the brain until it ends. Press **Esc** to free the input, or use the shell:

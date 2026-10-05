@@ -242,43 +242,17 @@ func (b *brain) runningRepeat(dir, task string, count int) *repeatThread {
 }
 
 // repeatControl recognizes "<word>", "<word> <thread-id|last|all>" and nothing
-// else. Anything wordier is a task, not a command.
+// else (captaincode.RepeatControl, docs/LANGUAGE.md). Anything wordier is a
+// task, not a command.
 func repeatControl(rest string) (word, arg string, ok bool) {
-	f := strings.Fields(rest)
-	if len(f) == 0 {
-		return "", "", false
-	}
-	switch f[0] {
-	case "status", "stop", "finish", "wrapup", "abort", "show", "watch":
-	default:
-		return "", "", false
-	}
-	if len(f) == 1 {
-		return f[0], "", true
-	}
-	if len(f) == 2 && (f[1] == "last" || f[1] == "all" || strings.HasPrefix(f[1], "rp_")) {
-		return f[0], f[1], true
-	}
-	return "", "", false // "watch the queue" is a task
+	return captaincode.RepeatControl(rest)
 }
 
-// parseRepeat splits "/repeat [N] <rest>" into count and the inner prompt.
-// count 0 means unbounded. ok=false when the text is not a /repeat directive.
+// parseRepeat splits "/repeat [N] <rest>" into count and the inner prompt
+// (captaincode.SplitRepeat). count 0 means unbounded. ok=false when the text
+// is not a /repeat directive.
 func parseRepeat(raw string) (count int, rest string, ok bool) {
-	t := strings.TrimSpace(raw)
-	low := strings.ToLower(t)
-	if !strings.HasPrefix(low, "/repeat") {
-		return 0, "", false
-	}
-	t = strings.TrimSpace(t[len("/repeat"):])
-	if t == "" {
-		return 0, "", true // bare "/repeat" → status is more useful than a loop
-	}
-	fields := strings.Fields(t)
-	if n, err := strconv.Atoi(fields[0]); err == nil && n > 0 {
-		return n, strings.TrimSpace(strings.TrimPrefix(t, fields[0])), true
-	}
-	return 0, t, true
+	return captaincode.SplitRepeat(raw)
 }
 
 // handleRepeat intercepts the /repeat control words. Returns true when it

@@ -291,14 +291,34 @@ func LoadRegistry(path string) (int, error) {
 	return n, loadErr
 }
 
+// reservedLegName: a new leg may not take a word the command language
+// reserves. A compiled leg that shares one (openshell) may still be
+// re-pointed by an overlay.
+func reservedLegName(id string) bool {
+	for _, d := range defaultLegSpecs {
+		if string(d.ID) == id {
+			return false
+		}
+	}
+	if id == "auto" || IsFrontier(Leg(id)) {
+		return true
+	}
+	for _, w := range slashControlWords {
+		if w == id {
+			return true
+		}
+	}
+	return false
+}
+
 // validateSpec rejects entries that cannot run.
 func validateSpec(s LegSpec) error {
 	id := string(s.ID)
 	if id == "" || strings.ContainsAny(id, " /\\\t\n") || strings.ToLower(id) != id {
 		return errors.New("id must be a lowercase word (letters, digits, '-')")
 	}
-	if id == "team" || id == "frontier" || id == "workflow" {
-		return errors.New("reserved name")
+	if reservedLegName(id) {
+		return fmt.Errorf("/%s is a reserved word of the command language (docs/LANGUAGE.md §9)", id)
 	}
 	switch s.Transport {
 	case "", TransportOpencode:

@@ -136,6 +136,9 @@ func main() {
 		case "redact":
 			cmdRedact(args[1:])
 			return
+		case "parse": // how captain reads a line, before it is sent (docs/LANGUAGE.md)
+			cmdParse(args[1:])
+			return
 		case "leakcheck": // private names never reach a public repo (leakcheck_cmd.go)
 			cmdLeakcheck(args[1:])
 			return
