@@ -88,9 +88,10 @@ const roundContract = "\n\n[captain] This is one round of a repeating task. A ro
 
 type repeatThread struct {
 	id         string
-	dir        string // the workspace the thread runs in - its rounds and its listing belong to that TUI
-	task       string // the prompt as typed, minus the /repeat directive
-	target     int    // 0 = until stopped (bounded by repeatHardCap)
+	dir        string   // the workspace the thread runs in - its rounds and its listing belong to that TUI
+	task       string   // the prompt as typed, minus the /repeat directive
+	steps      []string // a chain's steps (brain_chain.go); nil for a repeat
+	target     int      // 0 = until stopped (bounded by repeatHardCap)
 	done       int
 	failed     int
 	started    time.Time
@@ -516,6 +517,10 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 		emit("no repeat thread to watch (`/repeat status`).")
 		return
 	}
+	unit := "round"
+	if th.steps != nil {
+		unit = "step"
+	}
 	emit(fmt.Sprintf("**watching %s** - the running round's activity shows above, rounds appear here as they finish. Esc to stop watching; the loop keeps running (typed input is queued until then; `! captain stop` works at any time).\n\nTask: %s\n",
 		th.id, promptPeek(th.task)))
 
@@ -551,7 +556,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			if s == "" || strings.HasPrefix(s, "**captain") || strings.HasPrefix(s, "captain ·") {
 				continue
 			}
-			status(fmt.Sprintf("round %d · %s\n", done+1, s)) // one line each: the TUI concatenates deltas
+			status(fmt.Sprintf("%s %d · %s\n", unit, done+1, s)) // one line each: the TUI concatenates deltas
 		}
 
 		// rounds is a sliding window; index by round number, not position.
@@ -561,8 +566,8 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			}
 			sent = r.n
 			if r.err != "" {
-				emit(fmt.Sprintf("\n---\n\n**round %d** ✗ failed after %s\n\n%s\n",
-					r.n, r.dur.Round(time.Second), promptPeek(r.err)))
+				emit(fmt.Sprintf("\n---\n\n**%s %d** ✗ failed after %s\n\n%s\n",
+					unit, r.n, r.dur.Round(time.Second), promptPeek(r.err)))
 				continue
 			}
 			if r.noop {
@@ -570,8 +575,8 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 					r.n, r.dur.Round(time.Second), r.summary))
 				continue
 			}
-			emit(fmt.Sprintf("\n---\n\n**round %d** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
-				r.n, r.at.Format("15:04:05"), r.dur.Round(time.Second), r.summary))
+			emit(fmt.Sprintf("\n---\n\n**%s %d** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
+				unit, r.n, r.at.Format("15:04:05"), r.dur.Round(time.Second), r.summary))
 		}
 		if finished {
 			why := ""
@@ -580,7 +585,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 				why = " - " + th.stopReason
 			}
 			b.rmu.Unlock()
-			emit(fmt.Sprintf("\n---\n\n**%s finished** - %d round(s) total%s.\n", th.id, done, why))
+			emit(fmt.Sprintf("\n---\n\n**%s finished** - %d %s(s) total%s.\n", th.id, done, unit, why))
 			return
 		}
 		select {

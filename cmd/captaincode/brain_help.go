@@ -33,6 +33,7 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/grok fix A + /cursor fix B`" + ` - ` + "`+`" + ` runs legs in parallel (max 4 per stage)
 - one task per line also fans out in parallel
 - a bare leg repeats the previous assignment: ` + "`/grok review X > /codex`" + `
+- any commands chain with ` + "`>`" + `, each after the previous one finishes: ` + "`/frontier write specs > /repeat 5 /quality implement them`" + `; a workflow in parentheses nests: ` + "`/team plan > (/grok build > /repeat 3 /quality polish)`" + `
 - ` + "`gate: <cmd>`" + ` on a stage must exit 0 · ` + "`/wf <english>`" + ` compiles a plan · ` + "`/run wf_x`" + ` executes it
 
 **Run things in the background**

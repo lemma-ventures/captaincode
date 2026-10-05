@@ -438,6 +438,8 @@ type brain struct {
 
 	// chatFn stubs one repeat round in tests; nil → a real chatCompletions call.
 	chatFn func(w *captureWriter)
+	// chainStepFn stubs one chain step in tests (brain_chain.go).
+	chainStepFn func(req oaiChatReq, w *captureWriter)
 
 	// roundSummaryFn stubs the per-round digest in tests; nil → compaction leg.
 	roundSummaryFn func(text string) string

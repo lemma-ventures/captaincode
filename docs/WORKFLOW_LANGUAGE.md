@@ -76,9 +76,10 @@ SEQ         = ">" | "then" | "->" ;          (* sequential: join and advance *)
 PAR         = "+" | "and" | "&" ;            (* parallel: same stage          *)
 ```
 
-`PAR` binds tighter than `SEQ`: `a + b > c` is `(a ∥ b) → c`. Both are left-associative. There is
-no grouping syntax - parentheses are **not** supported, because stage-level parallelism plus
-sequencing already expresses every topology CWL admits (§9).
+`PAR` binds tighter than `SEQ`: `a + b > c` is `(a ∥ b) → c`. Both are left-associative. Within
+CWL there is no grouping syntax, because stage-level parallelism plus sequencing already
+expresses every topology CWL admits. Parentheses belong to chains (§3.7), which sequence whole
+commands.
 
 ### 3.2 The connector rule (the only thing that keeps this safe)
 
@@ -210,6 +211,37 @@ your workflow" when we did not).
 - If the review itself fails, §3.5's degraded mode applies.
 
 ---
+
+### 3.7 Chains: whole commands in sequence (2026-10-05)
+
+CWL stages are legs. A **chain** sequences anything a turn can start with: a solo leg,
+`/frontier`, `/team`, `/repeat N …`, a lane such as `/quality`, a CWL workflow, or another
+chain in parentheses.
+
+```
+/frontier write the specs > /repeat 5 /quality implement the next item
+/team audit the deck > /claude fix what it found
+/grok draft + /codex draft > /repeat 2 /quality merge the drafts
+/frontier plan it > (/team build it > /repeat 3 /quality polish it)
+/repeat 3 (/frontier plan the next item > /team build it)
+```
+
+- **Connector rule.** `>` or `->` splits a chain only when the next token is a slash command or
+  a `(` opening one, so `x > y` in prose stays prose. A group is atomic: a `>` inside
+  parentheses belongs to the group.
+- **CWL first.** A chain whose steps are all plain leg stages (`/grok … > /claude …`) is a CWL
+  workflow and keeps CWL's parallel stages and director review. Any other command in a step
+  makes it a chain.
+- **Execution.** Each step runs as a full turn on the ordinary dispatch path, after the previous
+  step finishes. It sees the conversation before the chain, the chain as typed, and the end of
+  the previous step's answer. A step that is a `/repeat` or a group runs to its end before the
+  next step starts. A failed step ends the chain, since later steps build on it.
+- **Groups.** A group holding a chain runs as a nested chain. A group holding one command or a
+  CWL workflow runs as that command. `/repeat N (…)` repeats the whole group.
+- **Controls.** A chain is a detached thread like `/repeat`'s, with the id `ch_…`: `/repeat
+  watch`, `/repeat show`, `/repeat finish` (no new step starts) and `captain stop` all apply.
+- **Limits.** At most 8 steps and 3 levels of nesting; past them the text is not read as a
+  chain.
 
 ## 4. The skill: plain English → CWL
 
@@ -443,7 +475,7 @@ free 2s → grok 28s → claude 1m2s → review → one aggregate. Tests: `workf
 
 ## 9. Non-goals
 
-No parentheses. No loops. No conditionals. No variables or named intermediate results. No saved
+No parentheses inside CWL (chains have them, §3.7). No loops beyond `/repeat`. No conditionals. No variables or named intermediate results. No saved
 or shareable workflows. No nesting (`/team` inside a stage). No per-stage model parameters
 (temperature, thinking budget) beyond what `/frontier` already means as a leg.
 
