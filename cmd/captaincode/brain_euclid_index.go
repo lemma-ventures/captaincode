@@ -197,8 +197,9 @@ func (b *brain) euclidFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "path": rel, "content": string(content)})
 }
 
-// euclidSearchHTTP: GET /api/search|/api/ask?q=&lane=&limit= (ask.py) and
-// /api/git?q= (git-recall.py), in dashboard-serve.py's shape.
+// euclidSearchHTTP serves the dashboard search bar.
+// GET /api/search runs search.py. include_journals=false drops journal files.
+// GET /api/ask runs ask.py. GET /api/git runs git-recall.py.
 func (b *brain) euclidSearchHTTP(w http.ResponseWriter, r *http.Request) {
 	if !corsForDashboard(w, r) {
 		return
@@ -217,11 +218,45 @@ func (b *brain) euclidSearchHTTP(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	var text, tool, lane string
 	var err error
-	if strings.HasSuffix(r.URL.Path, "/git") {
+	lane = strings.TrimSpace(r.URL.Query().Get("lane"))
+	if strings.HasSuffix(r.URL.Path, "/git") || lane == "git" {
 		tool, lane = "git-recall.py", "git"
 		text, err = captaincode.EngineRecall(host, q, "", limit)
+	} else if strings.HasSuffix(r.URL.Path, "/search") {
+		scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+		if scope == "" {
+			scope = "project"
+		}
+		var include bool
+		switch strings.TrimSpace(r.URL.Query().Get("include_journals")) {
+		case "", "false":
+		case "true":
+			include = true
+		default:
+			writeJSON(w, 400, map[string]any{"ok": false, "error": "invalid search options"})
+			return
+		}
+		switch lane {
+		case "doc", "code", "section", "docsec", "both":
+		case "all":
+			lane = "both"
+		default:
+			lane = "both"
+		}
+		options := captaincode.SearchOptions{Scope: scope, IncludeJournals: include}
+		if options.Validate(lane) != nil {
+			writeJSON(w, 400, map[string]any{"ok": false, "error": "invalid search options"})
+			return
+		}
+		var ok bool
+		text, ok = captaincode.EngineSearchOptions(host, q, lane, limit, options)
+		tool = "search.py"
+		if !ok {
+			writeJSON(w, 500, map[string]any{"ok": false, "error": "search failed"})
+			return
+		}
 	} else {
-		tool, lane = "ask.py", strings.TrimSpace(r.URL.Query().Get("lane"))
+		tool = "ask.py"
 		switch lane {
 		case "doc", "code", "git", "both", "all":
 		default:
