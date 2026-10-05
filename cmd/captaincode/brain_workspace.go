@@ -35,7 +35,7 @@ func workspaceOf(r *http.Request) captaincode.Workspace {
 	}
 	if dir != "" && filepath.IsAbs(dir) {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return captaincode.Workspace{Dir: filepath.Clean(dir)}
+			return captaincode.Workspace{Dir: filepath.Clean(dir), Origin: filepath.Clean(dir)}
 		}
 	}
 	return defaultWorkspace()
@@ -62,6 +62,7 @@ func defaultWorkspace() captaincode.Workspace {
 	if ws.Dir == "" {
 		ws.Dir, _ = os.Getwd()
 	}
+	ws.Origin = ws.Dir
 	return ws
 }
 

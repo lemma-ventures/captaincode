@@ -38,7 +38,15 @@ type inboxItem struct {
 	Leg  string    `json:"leg,omitempty"` // forced leg / pseudo-model, "" = the TUI's own model
 	From string    `json:"from,omitempty"`
 	At   time.Time `json:"at"`
+	// Session is the TUI session a reply is for (brain_reply.go); "" = any
+	// session open in the folder. Origin says who sent it, from where.
+	Session string `json:"session,omitempty"`
+	Origin  string `json:"origin,omitempty"`
 }
+
+// inboxSessionWait is how long a reply waits for its own session before any
+// session open in the folder may take it: a closed session must not strand it.
+const inboxSessionWait = 10 * time.Minute
 
 type inbox struct {
 	mu    sync.Mutex
@@ -91,26 +99,33 @@ func (ib *inbox) noteTurn(dir, text string) {
 
 const inboxTTL = 24 * time.Hour
 
-func (ib *inbox) push(dir, text, leg, from string) inboxItem {
+func (ib *inbox) push(dir, text, leg, from, session, origin string) inboxItem {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
 	if ib.items == nil {
 		ib.items = map[string][]inboxItem{}
 	}
 	ib.seq++
-	it := inboxItem{ID: fmt.Sprintf("in_%d_%d", time.Now().Unix(), ib.seq), Text: text, Leg: leg, From: from, At: time.Now()}
+	it := inboxItem{ID: fmt.Sprintf("in_%d_%d", time.Now().Unix(), ib.seq), Text: text, Leg: leg, From: from, At: time.Now(),
+		Session: session, Origin: origin}
 	ib.items[dir] = append(ib.items[dir], it)
 	return it
 }
 
-// take hands over everything queued for dir (the poller submits them in order).
-func (ib *inbox) take(dir string) []inboxItem {
+// take hands over what is queued for dir and this session (the poller
+// submits them in order). A reply for another session stays, until it has
+// waited inboxSessionWait; session "" (an older sidebar) takes everything.
+func (ib *inbox) take(dir, session string) []inboxItem {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
 	items := ib.items[dir]
 	delete(ib.items, dir)
 	var fresh []inboxItem
 	for _, it := range items {
+		if it.Session != "" && session != "" && it.Session != session && time.Since(it.At) < inboxSessionWait {
+			ib.items[dir] = append(ib.items[dir], it)
+			continue
+		}
 		if time.Since(it.At) < inboxTTL {
 			fresh = append(fresh, it)
 			if ib.handed == nil {
@@ -139,9 +154,11 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var req struct {
-			Text string `json:"text"`
-			Leg  string `json:"leg"`
-			From string `json:"from"`
+			Text      string `json:"text"`
+			Leg       string `json:"leg"`
+			From      string `json:"from"`
+			Reply     string `json:"reply"`      // a worker's reply token (brain_reply.go)
+			SenderDir string `json:"sender_dir"` // the folder `captain send` ran in
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		req.Text = strings.TrimSpace(req.Text)
@@ -154,16 +171,32 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 403, "a sent prompt may not start a /repeat or a chain - only a person types a loop; send the task itself")
 			return
 		}
+		// A reply goes to the folder and session its token names; a send
+		// to a folder says where it came from when that is another folder.
+		session, origin := "", strings.TrimSpace(req.From)
+		if req.Reply != "" {
+			t, ok := replies.resolve(req.Reply)
+			if !ok {
+				writeErr(w, 404, "unknown or expired reply token "+req.Reply+" - send with --cwd <folder> instead")
+				return
+			}
+			dir, session, origin = filepath.Clean(t.Dir), t.Session, t.label(req.From)
+		} else if s := strings.TrimSpace(req.SenderDir); s != "" && filepath.Clean(s) != dir {
+			origin = strings.TrimSpace(orDash(req.From) + " in " + filepath.Base(s) + " (another folder)")
+		}
+		if origin != "" {
+			req.Text += "\n\n- sent by " + origin
+		}
 		if !b.inbox.admit(dir) {
 			writeErr(w, 429, fmt.Sprintf("%d prompts were sent to %s since the user last typed (CAPTAIN_INBOX_QUOTA); more are accepted once they type", inboxQuota(), filepath.Base(dir)))
 			return
 		}
-		it := b.inbox.push(dir, req.Text, leg, strings.TrimSpace(req.From))
+		it := b.inbox.push(dir, req.Text, leg, strings.TrimSpace(req.From), session, origin)
 		fmt.Printf("captain brain: inbox - prompt queued for %s (%s): %s\n", filepath.Base(dir), orDash(leg), promptPeek(req.Text))
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: orDash(leg), Text: "queued for the TUI: " + promptPeek(req.Text)})
 		writeJSON(w, 200, map[string]any{"ok": true, "id": it.ID, "pending": b.inbox.pending(dir)})
 	case http.MethodGet:
-		items := b.inbox.take(dir)
+		items := b.inbox.take(dir, strings.TrimSpace(r.URL.Query().Get("session")))
 		if len(items) > 0 {
 			fmt.Printf("captain brain: inbox - %d prompt(s) handed to the TUI in %s\n", len(items), filepath.Base(dir))
 		}

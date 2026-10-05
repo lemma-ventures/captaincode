@@ -35,12 +35,18 @@ var ErrRateLimited = errors.New("rate limited")
 // environment - a brain pinned to one folder made every other TUI's workers
 // explore the wrong repo (live 2026-07-19 and again 2026-09-12).
 type Workspace struct {
-	Dir    string
-	Effort Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
-	Brains []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
-	Steer  *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
-	Pool   Pool         // the turn's /oss and /deterministic constraints (pool.go)
-	Asked  []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
+	Dir string
+	// Origin is the folder of the TUI the request came from, where replies
+	// go; Dir moves when the task names another repository, Origin does not.
+	Origin string
+	// Session is the TUI session that sent the request, when its sidebar
+	// said so ("" = unknown): a reply goes to that session first.
+	Session string
+	Effort  Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
+	Brains  []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
+	Steer   *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
+	Pool    Pool         // the turn's /oss and /deterministic constraints (pool.go)
+	Asked   []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
 }
 
 // WithEffort is this workspace with the request's effort set.

@@ -171,9 +171,11 @@ function View(props: { api: TuiPluginApi }) {
     try {
       const cur = props.api.route.current as { name: string; params?: { sessionID?: string } }
       if (cur?.name !== "session" || !cur.params?.sessionID) return
-      const r = await fetch(brainURL("/v1/inbox"), { signal: AbortSignal.timeout(3000) })
+      // The session id lets a worker's reply reach the session its turn came
+      // from rather than whichever TUI is open in the folder (brain_reply.go).
+      const r = await fetch(brainURL(`/v1/inbox?session=${encodeURIComponent(cur.params.sessionID)}`), { signal: AbortSignal.timeout(3000) })
       if (!r.ok) return
-      const j = (await r.json()) as { items?: { id: string; text: string; leg?: string; from?: string }[] }
+      const j = (await r.json()) as { items?: { id: string; text: string; leg?: string; from?: string; origin?: string }[] }
       for (const it of j.items ?? []) {
         if (!it?.text || inboxTaken.has(it.id)) continue
         inboxTaken.add(it.id)
@@ -184,7 +186,8 @@ function View(props: { api: TuiPluginApi }) {
         if (it.leg) body.model = { providerID: "captain", modelID: it.leg }
         const r = await (props.api.client as any).session.promptAsync(body)
         if (r?.error || (r?.response && !r.response.ok)) throw new Error(`inbox: ${r?.response?.status ?? ""}`)
-        props.api.ui.toast({ title: "captain inbox", message: `${it.from ? it.from + ": " : ""}${it.text.slice(0, 120)}`, variant: "info", duration: 8000 } as any)
+        const who = it.origin || it.from
+        props.api.ui.toast({ title: "captain inbox", message: `${who ? "from " + who + ": " : ""}${it.text.slice(0, 120)}`, variant: "info", duration: 8000 } as any)
       }
     } catch (e) {
       // A brain that is down is silence; a prompt that failed to land is not.

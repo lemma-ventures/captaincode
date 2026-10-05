@@ -193,6 +193,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/btw", b.btwHTTP)
 	mux.HandleFunc("/v1/interrupt", b.interruptHTTP)
 	mux.HandleFunc("/v1/inbox", b.inboxHTTP)
+	mux.HandleFunc("/v1/session/seen", b.sessionSeenHTTP)
 	mux.HandleFunc("/v1/euclid/status", b.euclidStatusHTTP)
 	mux.HandleFunc("/v1/euclid/distill", b.euclidDistillHTTP)
 	mux.HandleFunc("/v1/euclid/fold", b.euclidFoldHTTP)
@@ -1731,14 +1732,11 @@ func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
 	if os.Getenv("CAPTAIN_WORKER_CALLBACK") == "0" {
 		return ""
 	}
-	dir := ws.Dir
-	if dir == "" {
-		dir = "."
-	}
 	return fmt.Sprintf("\n\n[captain] Work that outlives this turn: you are one turn, so nothing you leave running can report to the user by itself."+
 		" If you background anything (a watcher, a test gate, a long benchmark), make its LAST step deliver the result:"+
-		" `captain send --cwd %s --from %s \"<what landed, and what it means>\"` - that queues it into the user's session as if they had typed it."+
-		" Never end a turn promising to report later; either finish the work inside this turn or arm that callback and say you armed it.", dir, leg)
+		" `captain send --reply %s --from %s \"<what landed, and what it means>\"` - that queues it into the session this turn came from, as if the user had typed it, labelled with where it came from."+
+		" Use that exact command; do not replace --reply with a folder. To reach a captain in another folder on purpose, `captain send --cwd <folder>` does that."+
+		" Never end a turn promising to report later; either finish the work inside this turn or arm that callback and say you armed it.", replyTo(ws, leg), leg)
 }
 
 // securityContract makes security the worker's starting posture rather than a

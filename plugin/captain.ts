@@ -316,6 +316,17 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     // word the brain could not act on (nothing running, brain down) goes
     // through as an ordinary turn, so nothing is ever lost.
     const cwd = process.env["CAPTAIN_CWD"] ?? input?.directory ?? ""
+    // Say which session this message is typed in: the provider call that
+    // follows carries only the folder, and a worker's later reply should
+    // come back to this session (brain_reply.go). Best effort, never awaited.
+    const typedIn = String(_input?.sessionID ?? "")
+    if (typedIn) {
+      void fetch(`${BRAIN}/v1/session/seen?cwd=${encodeURIComponent(cwd)}`, {
+        method: "POST",
+        body: JSON.stringify({ session: typedIn }),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {})
+    }
     const outOfBand = async (title: string, path: string, body: unknown, acted: (j: any) => boolean): Promise<string | null> => {
       try {
         const r = await fetch(`${BRAIN}${path}?cwd=${encodeURIComponent(cwd)}`, {

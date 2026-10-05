@@ -337,6 +337,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ws = workspaceOf(r)
+	req.ws.Session = sessions.of(req.ws.Dir)
 	req.internal = r.Context().Value(noDedupeKey{}) != nil
 	// A prompt the user deleted while it was queued never runs: when it is
 	// all that waits, the turn says so and ends; otherwise it is dropped

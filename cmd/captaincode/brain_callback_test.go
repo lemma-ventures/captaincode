@@ -22,7 +22,7 @@ func TestWorkerPromptArmsTheCallbackInsteadOfPromisingToReport(t *testing.T) {
 	dir := t.TempDir()
 	ws := captaincode.Workspace{Dir: dir}
 	c := callbackContract(ws, captaincode.LegClaude)
-	assert.Contains(t, c, "captain send --cwd "+dir+" --from claude")
+	assert.Contains(t, c, "captain send --reply rt_")
 	assert.Contains(t, c, "Never end a turn promising to report later")
 
 	t.Setenv("CAPTAIN_WORKER_CALLBACK", "0")
@@ -39,9 +39,9 @@ func TestEveryWorkerPathCarriesTheCallback(t *testing.T) {
 	ws := captaincode.Workspace{Dir: dir}
 	b := teamBrain()
 	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nship it", "review the patch", captaincode.LegGrok),
-		"captain send --cwd "+dir+" --from grok")
+		"captain send --reply rt_")
 	assert.Contains(t, b.workflowStagePrompt(ws, "[user]\nship it", 1, 2, nil, "review the patch", captaincode.LegCodexCLI),
-		"captain send --cwd "+dir+" --from codex-cli")
+		"captain send --reply rt_")
 
 	var mu sync.Mutex
 	var seen string
@@ -60,7 +60,7 @@ func TestEveryWorkerPathCarriesTheCallback(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Contains(t, seen, "captain send --cwd "+dir+" --from grok")
+	assert.Contains(t, seen, "captain send --reply rt_")
 	assert.True(t, strings.Index(seen, "[captain] Work that outlives this turn") > strings.Index(seen, "run the long benchmark"),
 		"the contract trails the task")
 }

@@ -79,10 +79,11 @@ func TestInboxQuotaRefillsOnlyWhenTheUserTypes(t *testing.T) {
 	require.Equal(t, 200, sendTo(b, dir, "/grok step two").Code)
 	assert.Equal(t, 429, sendTo(b, dir, "/grok step three").Code, "quota spent with no user turn")
 
-	// The sidebar takes them and submits them: those turns are not the user.
-	b.inbox.take(dir)
-	b.inbox.noteTurn(dir, "/grok step one")
-	b.inbox.noteTurn(dir, "/grok step two")
+	// The sidebar takes them and submits them as delivered: those turns are
+	// not the user.
+	for _, it := range b.inbox.take(dir, "") {
+		b.inbox.noteTurn(dir, it.Text)
+	}
 	assert.Equal(t, 429, sendTo(b, dir, "/grok step three").Code, "submitted prompts do not refill the quota")
 
 	b.inbox.noteTurn(dir, "carry on with the migration") // typed
