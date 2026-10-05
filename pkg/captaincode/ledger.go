@@ -85,22 +85,26 @@ func (l *Ledger) NextWorkerSeq() int {
 }
 
 type Event struct {
-	At       time.Time `json:"at"`
-	Task     string    `json:"task"`
-	Class    Class     `json:"class"`
-	Leg      Leg       `json:"leg"`
-	Reason   string    `json:"reason"`
-	Outcome  string    `json:"outcome"` // ok | fail | rate_limited
-	Tokens   int       `json:"tokens"`
-	CostUSD  float64   `json:"cost_usd,omitempty"`
-	Duration int64     `json:"duration_ms"`
-	Iter     int       `json:"iter,omitempty"`
-	Quality  float64   `json:"quality,omitempty"` // manager assessment 0-10; 0 = unscored
-	Verdict  string    `json:"verdict,omitempty"`
-	Team     string    `json:"team,omitempty"` // canonical ensemble key (TeamKey) on fan-out runs; an event with Team set and NO Leg is the ensemble-level aggregate
-	Workflow string    `json:"workflow,omitempty"`
-	Domain   string    `json:"domain,omitempty"` // triaged work domain (code|editorial|research|general), for per-domain priors // canonical CWL key (Workflow.Key) on user-designed workflow runs; an event with Workflow set and NO Leg is the workflow-level aggregate
-	Error    string    `json:"error,omitempty"`  // captured on fail/rate_limited, for `captain why` diagnosis
+	TokenUsage    *TokenUsage      `json:"token_usage,omitempty"`
+	TTFTMs        *int64           `json:"ttft_ms,omitempty"`
+	FirstOutputMs *int64           `json:"first_output_ms,omitempty"`
+	ToolSchema    *ToolSchemaUsage `json:"tool_schema,omitempty"`
+	At            time.Time        `json:"at"`
+	Task          string           `json:"task"`
+	Class         Class            `json:"class"`
+	Leg           Leg              `json:"leg"`
+	Reason        string           `json:"reason"`
+	Outcome       string           `json:"outcome"` // ok | fail | rate_limited
+	Tokens        int              `json:"tokens"`
+	CostUSD       float64          `json:"cost_usd,omitempty"`
+	Duration      int64            `json:"duration_ms"`
+	Iter          int              `json:"iter,omitempty"`
+	Quality       float64          `json:"quality,omitempty"` // manager assessment 0-10; 0 = unscored
+	Verdict       string           `json:"verdict,omitempty"`
+	Team          string           `json:"team,omitempty"` // canonical ensemble key (TeamKey) on fan-out runs; an event with Team set and NO Leg is the ensemble-level aggregate
+	Workflow      string           `json:"workflow,omitempty"`
+	Domain        string           `json:"domain,omitempty"` // triaged work domain (code|editorial|research|general), for per-domain priors // canonical CWL key (Workflow.Key) on user-designed workflow runs; an event with Workflow set and NO Leg is the workflow-level aggregate
+	Error         string           `json:"error,omitempty"`  // captured on fail/rate_limited, for `captain why` diagnosis
 	// Accounting identity (M1.2): which task this run belongs to and which
 	// attempt of it this was, so a decision row can be joined to the charges
 	// it caused. CostStatus says whether CostUSD was billed, priced by us, or

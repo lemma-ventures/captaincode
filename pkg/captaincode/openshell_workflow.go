@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -93,6 +94,28 @@ func openShellWorkflowTeam(template OpenShellTeam, wf Workflow, history string) 
 	return team, team.Validate()
 }
 
+func advisoryHostReviewDisabled() bool { return os.Getenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW") == "0" }
+
+func advisoryHostReview(ctx context.Context, task string, diff []byte) (string, error) {
+	if advisoryHostReviewDisabled() || len(diff) == 0 {
+		return "", nil
+	}
+	reviewCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), directorTimeout)
+	defer cancel()
+	prompt := "You are reviewing a sandbox agent's work. The agent cannot access the internet, your machine or your tools. Its output is a patch the sandbox controller verified.\n\n"
+	prompt += "Task: " + task + "\n\nPatch:\n" + string(diff) + "\n\n"
+	prompt += "Check the patch for correctness, completeness and safety. Report what you find. Do NOT apply or sign anything. This review is advisory only."
+	text, err := toolLessClaude(reviewCtx, prompt)
+	if err != nil {
+		return "", err
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", nil
+	}
+	return "\n[advisory host review]\n" + text, nil
+}
+
 func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, history string) (Result, error) {
 	if err := validateOpenShellWorkflow(wf); err != nil {
 		return openShellRefused(err)
@@ -126,11 +149,30 @@ func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, histo
 		teams = append(teams, team)
 	}
 	runner.RequireAll = true
+	var res Result
+	var runErr error
 	if len(teams) == 1 {
-		return runConfiguredOpenShell(ctx, runner, teams[0], ws.Steer)
+		res, runErr = runConfiguredOpenShell(ctx, runner, teams[0], ws.Steer)
+	} else {
+		if err := configureOpenShellRunDir(runner, "workflow"); err != nil {
+			return openShellRefused(err)
+		}
+		res, runErr = runOpenShellSequence(ctx, runner, teams, ws.Steer)
 	}
-	if err := configureOpenShellRunDir(runner, "workflow"); err != nil {
-		return openShellRefused(err)
+	if runErr != nil {
+		return res, runErr
 	}
-	return runOpenShellSequence(ctx, runner, teams, ws.Steer)
+	task := wf.PlainRequest()
+	if task == "" {
+		task = history
+	}
+	if res.Export != nil {
+		diff, err := os.ReadFile(res.Export.Manifest.DiffPath)
+		if err == nil {
+			if review, revErr := advisoryHostReview(ctx, task, diff); revErr == nil && review != "" {
+				res.Text += review
+			}
+		}
+	}
+	return res, nil
 }

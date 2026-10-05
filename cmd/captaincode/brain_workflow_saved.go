@@ -91,6 +91,16 @@ func (b *brain) handleSavedWorkflow(w http.ResponseWriter, req oaiChatReq, promp
 		emit(text)
 	}
 	switch sub {
+	case "parse":
+		// "/wf parse <expression>" shows how captain reads a program and
+		// runs nothing; "/wf parse the logs, then…" is English intent.
+		rest := strings.TrimSpace(strings.TrimSpace(raw)[len(fields[0]):])
+		rest = strings.TrimSpace(rest[len(fields[1]):])
+		if !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "(") {
+			return false
+		}
+		reply(parsePreview(rest))
+		return true
 	case "list":
 		if len(fields) != 2 {
 			return false // "/wf list the findings…" is English intent for the compiler
@@ -150,4 +160,37 @@ func (b *brain) handleSavedWorkflow(w http.ResponseWriter, req oaiChatReq, promp
 		return true
 	}
 	return false
+}
+
+// parsePreview says how captain reads an expression - a program's plan and
+// turn bound, a workflow, a plain loop or one turn - without running it.
+func parsePreview(expr string) string {
+	expr = captaincode.HoistLeading(strings.TrimSpace(expr))
+	p, ok, err := captaincode.ParseProgram(expr)
+	switch {
+	case err != nil:
+		return "does not parse - nothing would run:\n\n" + err.Error()
+	case ok:
+		budget := repeatHardCap()
+		n := p.MaxTurns(budget)
+		bound := fmt.Sprintf("up to %d turns", n)
+		if n >= budget {
+			bound = fmt.Sprintf("until done, at most %d turns (the turn budget)", budget)
+		}
+		return fmt.Sprintf("program · %s\n\n```text\n%s\n```\n\ncanonical form: `%s`\n\nNothing ran. Send the expression without `/wf parse` to run it.",
+			bound, p.Outline(), p.String())
+	}
+	if count, rest, isLoop := parseRepeat(expr); isLoop && strings.TrimSpace(rest) != "" {
+		rounds := "until stopped"
+		if count > 0 {
+			rounds = fmt.Sprintf("%d rounds", count)
+		}
+		return fmt.Sprintf("a /repeat loop · %s of one turn:\n\n    %s\n\nNothing ran.", rounds, rest)
+	}
+	if wf, err := captaincode.ParseWorkflow(expr); err == nil && (wf.MultiStage() || wf.HasGate()) {
+		return fmt.Sprintf("a workflow · %d stage(s) · %d worker run(s) + one director review:\n\n    %s\n\nNothing ran.", len(wf.Stages), wf.Runs(), wf.String())
+	} else if err != nil && captaincode.LooksLikeWorkflow(expr) {
+		return "does not parse - nothing would run:\n\n" + err.Error()
+	}
+	return "one turn, routed as typed (no program syntax). Nothing ran."
 }

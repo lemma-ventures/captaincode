@@ -16,6 +16,7 @@ package main
 //	python3 .euclid/bin/build-catalog.py && python3 .euclid/bin/build-dashboard.py
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -192,7 +193,9 @@ func (b *brain) learnBrain(eu captaincode.EuclidBrain, max int, apply bool, w io
 		fmt.Fprintf(w, "learn: %s · pass %d: asking %s…\n", eu.Label, pass, leg)
 		var res captaincode.Result
 		var err error
-		if b.runWorkerFn != nil {
+		if captaincode.LocalSelected("learn") {
+			res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
+		} else if b.runWorkerFn != nil {
 			_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
 		} else {
 			say := func(st string) { fmt.Fprintf(w, "  %s\n", st) }

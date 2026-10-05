@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,4 +234,99 @@ func TestScaffoldDetectsTheRepositoryCorpus(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(repo, ".euclid", "euclid.yml"))
 	assert.Contains(t, string(b), "  - ash\n")
 	assert.Contains(t, string(b), "code_exts: [.rs, .py]")
+}
+
+func TestBrainNeedsReindexDetectsNewJournalOrRegister(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".euclid")
+	_, err := Scaffold(root, "main")
+	require.NoError(t, err)
+
+	// Missing dashboard index.html -> needs reindex
+	assert.True(t, BrainNeedsReindex(root))
+
+	// Write index.html and catalog
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "dashboard"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "index"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "index", "catalog.jsonl"), []byte("{}\n"), 0o644))
+	idxPath := filepath.Join(root, "dashboard", "index.html")
+	require.NoError(t, os.WriteFile(idxPath, []byte("<html></html>"), 0o644))
+
+	// Set index.html mtime to 1 hour in future -> nothing is newer
+	future := time.Now().Add(1 * time.Hour)
+	require.NoError(t, os.Chtimes(idxPath, future, future))
+	assert.False(t, BrainNeedsReindex(root), "dashboard is fresh compared to registers")
+
+	// Touch a register file to be newer than index.html
+	wayFuture := time.Now().Add(2 * time.Hour)
+	regPath := filepath.Join(root, "BRAIN.md")
+	require.NoError(t, os.Chtimes(regPath, wayFuture, wayFuture))
+	assert.True(t, BrainNeedsReindex(root), "modified register makes brain need reindex")
+
+	// Reset register and touch journal file
+	past := time.Now().Add(-1 * time.Hour)
+	require.NoError(t, os.Chtimes(regPath, past, past))
+	require.NoError(t, os.Chtimes(idxPath, time.Now(), time.Now()))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "journal"), 0o755))
+	jPath := filepath.Join(root, "journal", "activity-2026-10-01.jsonl")
+	require.NoError(t, os.WriteFile(jPath, []byte("{}\n"), 0o644))
+	require.NoError(t, os.Chtimes(jPath, wayFuture, wayFuture))
+	assert.True(t, BrainNeedsReindex(root), "newer journal makes brain need reindex")
+}
+
+func TestReindexFastSetsSkipBenchmarksEnv(t *testing.T) {
+	engine := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(engine, "engine"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(engine, "dashboard"), 0o755))
+	// build-dashboard.py checks EUCLID_SKIP_BENCHMARKS
+	script := `import os, sys
+root = os.environ['EUCLID_ROOT']
+os.makedirs(os.path.join(root, '.euclid', 'index'), exist_ok=True)
+if os.environ.get('EUCLID_SKIP_BENCHMARKS') == '1':
+    open(os.path.join(root, '.euclid', 'index', 'skipped_benchmarks.ran'), 'w').write('fast')
+else:
+    open(os.path.join(root, '.euclid', 'index', 'full_benchmarks.ran'), 'w').write('full')
+`
+	require.NoError(t, os.WriteFile(filepath.Join(engine, "engine", "build-catalog.py"), []byte("print('catalog')\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(engine, "dashboard", "build-dashboard.py"), []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(engine, "dashboard", "index.html"), []byte("<html></html>"), 0o644))
+
+	t.Setenv("CAPTAIN_EUCLID_ENGINE", engine)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EUCLID_HOME", filepath.Join(home, ".euclid"))
+	root := filepath.Join(home, ".euclid")
+	_, err := Scaffold(root, "main")
+	require.NoError(t, err)
+
+	// ReindexFast skips benchmarks
+	resFast := ReindexFast(root, 0)
+	require.True(t, resFast.OK)
+	assert.FileExists(t, filepath.Join(root, "index", "skipped_benchmarks.ran"))
+	assert.NoFileExists(t, filepath.Join(root, "index", "full_benchmarks.ran"))
+
+	// Reindex does full benchmarks
+	os.Remove(filepath.Join(root, "index", "skipped_benchmarks.ran"))
+	resFull := Reindex(root, 0)
+	require.True(t, resFull.OK)
+	assert.FileExists(t, filepath.Join(root, "index", "full_benchmarks.ran"))
+}
+
+func TestEnsureBrainsCoalescesSecondLaunch(t *testing.T) {
+	fakeEngine(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EUCLID_HOME", filepath.Join(home, ".euclid"))
+	t.Setenv("EUCLID_TEMPLATE_DIR", filepath.Join(home, "none"))
+	repo := filepath.Join(home, "ash")
+	require.NoError(t, os.MkdirAll(repo, 0o755))
+	require.NoError(t, exec.Command("git", "-C", repo, "init", "-q").Run())
+
+	rep1 := EnsureBrains(repo, nil)
+	require.NotEmpty(t, rep1.Lines)
+
+	// Second launch immediately after: indexes are fresh, says fresh
+	rep2 := EnsureBrains(repo, nil)
+	joined := strings.Join(rep2.Lines, "\n")
+	assert.Contains(t, joined, "fresh (no changes)")
 }

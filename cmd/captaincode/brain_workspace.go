@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
@@ -24,6 +26,53 @@ import (
 // CAPTAIN_CWD); the sidebar plugin passes the same folder as ?cwd=.
 const workspaceHeader = "X-Captain-Cwd"
 
+var (
+	tuiActivityMu       sync.Mutex
+	tuiActivityLastSeen time.Time
+	tuiWorkspaces       = map[string]time.Time{}
+)
+
+func noteTUIActivity(dir string) {
+	tuiActivityMu.Lock()
+	defer tuiActivityMu.Unlock()
+	tuiActivityLastSeen = time.Now()
+	if dir != "" {
+		tuiWorkspaces[dir] = time.Now()
+	}
+}
+
+func anyTUIConnected() bool {
+	if httpConns.Load() > 0 {
+		return true
+	}
+	tuiActivityMu.Lock()
+	defer tuiActivityMu.Unlock()
+	return time.Since(tuiActivityLastSeen) < 30*time.Minute
+}
+
+func activeBrainRoots() []string {
+	tuiActivityMu.Lock()
+	defer tuiActivityMu.Unlock()
+	seen := map[string]bool{}
+	var roots []string
+	if mb := captaincode.MainBrainPath(); mb != "" && captaincode.IsBrainRoot(mb) {
+		roots = append(roots, mb)
+		seen[mb] = true
+	}
+	for dir, at := range tuiWorkspaces {
+		if time.Since(at) < 2*time.Hour {
+			if repo := captaincode.RepoRoot(dir); repo != "" {
+				shared := filepath.Join(repo, ".euclid")
+				if captaincode.IsBrainRoot(shared) && !seen[shared] {
+					roots = append(roots, shared)
+					seen[shared] = true
+				}
+			}
+		}
+	}
+	return roots
+}
+
 // workspaceOf resolves the workspace a request is for: the header, else the
 // query, else the brain's own default. Only an existing absolute directory
 // is accepted - the brain listens on localhost, but a bad path must not make
@@ -35,10 +84,14 @@ func workspaceOf(r *http.Request) captaincode.Workspace {
 	}
 	if dir != "" && filepath.IsAbs(dir) {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return captaincode.Workspace{Dir: filepath.Clean(dir), Origin: filepath.Clean(dir)}
+clean := filepath.Clean(dir)
+			noteTUIActivity(clean)
+			return captaincode.Workspace{Dir: clean, Origin: clean}
 		}
 	}
-	return defaultWorkspace()
+	ws := defaultWorkspace()
+	noteTUIActivity(ws.Dir)
+	return ws
 }
 
 // workspaceFilter is the read side: a sidebar asking for ITS project's

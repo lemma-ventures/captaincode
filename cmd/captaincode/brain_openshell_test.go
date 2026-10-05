@@ -167,14 +167,16 @@ func TestOpenShellRejectsUnsupportedCompositionBeforeDispatch(t *testing.T) {
 			if mode == "team" {
 				b.storeTeamPlan("fix it", captaincode.Plan{Workers: []captaincode.Worker{{Leg: captaincode.LegGLM}, {Leg: captaincode.LegOpenShell}}})
 				b.teamChat(rec, req, "fix it")
+				assert.Contains(t, rec.Body.String(), "captain openshell --team")
 			} else {
 				wf := captaincode.Workflow{Stages: []captaincode.WorkflowStage{
 					{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegGLM}}},
 					{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegOpenShell, Gate: "host-command"}}},
 				}}
 				b.runWorkflow(rec, req, "fix it", wf, "")
+				assert.Equal(t, 400, rec.Code, rec.Body.String())
+				assert.Contains(t, rec.Body.String(), "cannot share a workflow")
 			}
-			assert.Contains(t, rec.Body.String(), "captain openshell --team")
 			assert.Empty(t, b.ledger.Events)
 		})
 	}

@@ -10,6 +10,7 @@ package main
 // brain exists (see pkg/captaincode/euclid.go - opt-in by construction).
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -148,6 +149,9 @@ func renderEuclidStatus(st euclidStatus) string {
 // distillLeg is the leg that summarizes journals: cheap and fast.
 // CAPTAIN_EUCLID_DISTILL_LEG overrides; default gemini when allowed, else free.
 func (b *brain) distillLeg() captaincode.Leg {
+	if captaincode.LocalSelected("learn") {
+		return captaincode.LegLocal
+	}
 	if v := captaincode.Leg(strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_DISTILL_LEG"))); v != "" && captaincode.KnownLeg(v) {
 		return v
 	}
@@ -193,7 +197,9 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 	prompt := captaincode.DistillPrompt(wb, entries)
 	leg := b.distillLeg()
 	var res captaincode.Result
-	if b.runWorkerFn != nil {
+	if captaincode.LocalSelected("learn") {
+		res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
+	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
 	} else {
 		res, err = ws.RunWorkerStreamHooks(leg, prompt, opencodePort, nil, nil)
@@ -282,7 +288,9 @@ func (b *brain) euclidFoldHTTP(w http.ResponseWriter, r *http.Request) {
 	ws := workspaceOf(r)
 	var res captaincode.Result
 	var err error
-	if b.runWorkerFn != nil {
+	if captaincode.LocalSelected("learn") {
+		res, err = captaincode.RunLocalSmall(r.Context(), "learn", req.Prompt)
+	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(leg, req.Prompt, nil, nil)
 	} else {
 		res, err = ws.RunWorkerStreamHooks(leg, req.Prompt, opencodePort, nil, nil)

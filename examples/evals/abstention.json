@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "probes": [
+    {
+      "id": "routing_missing_context",
+      "purpose": "classify",
+      "input": "Do the thing we discussed in the missing attachment.",
+      "expected": {
+        "abstain": true
+      }
+    },
+    {
+      "id": "retrieval_missing_fact",
+      "purpose": "digest",
+      "input": "Sources: The service listens on loopback. Question: What was its exact revenue last Tuesday?",
+      "expected": {
+        "abstain": true,
+        "answer": ""
+      }
+    }
+  ]
+}

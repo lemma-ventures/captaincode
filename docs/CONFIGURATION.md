@@ -1138,6 +1138,19 @@ settings.
 | `CAPTAIN_CODEX_CLI_EFFORT` | unset | Pin codex exec's effort whatever the request |
 | `CAPTAIN_EFFORT_VARIANTS` | `1` | `0` sends opencode workers no variant (the model's default reasoning) |
 
+### Local helpers and efficiency
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CAPTAIN_LOCAL_URL` | `http://127.0.0.1:11434` | Trusted local Ollama origin; literal loopback only. |
+| `CAPTAIN_LOCAL_MODEL` | unset | Exact installed model name; qualification required. |
+| `CAPTAIN_LOCAL_TASKS` | unset | Opt-in automatic uses: `classify,title,learn`. |
+| `CAPTAIN_EUCLID_TOOL_PROFILE` | `full` | `lean` exposes only `search` and `code_search`. |
+| `CAPTAIN_EFFICIENCY_LOG` | on | `0` disables local helper and prompt-prefix telemetry. |
+
+See [Small calls and efficiency evidence](SMALL_CALLS.md) for qualification,
+privacy limits, token semantics, and routing comparisons.
+
 ### Memory (Euclid)
 
 | Variable | Default | Effect |

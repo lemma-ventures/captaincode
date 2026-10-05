@@ -183,6 +183,29 @@ func boundariesOf(s string) []boundary {
 // blankLineRe: a paragraph break - two newlines with nothing but blanks between.
 var blankLineRe = regexp.MustCompile(`\n[ \t]*\n`)
 
+// SplitGate takes a trailing "gate: <command>" off a stage's text. The last
+// marker wins, so prose may mention the word, and the command ends at the
+// first blank line: CWL is a one-line language. Text in later paragraphs
+// stays in the prompt. A /repeat round appends its contract after a blank
+// line, and the gate used to swallow it: `gate: go test ./...` ran as that
+// command plus the whole contract, failed in every round, and bought a
+// repair each time (2026-10-05).
+func SplitGate(text string) (prompt, gate string) {
+	head, tail := text, ""
+	if loc := blankLineRe.FindStringIndex(text); loc != nil {
+		head, tail = text[:loc[0]], text[loc[0]:]
+	}
+	i := strings.LastIndex(head, "gate:")
+	if i < 0 {
+		return text, ""
+	}
+	cmd := strings.TrimSpace(head[i+len("gate:"):])
+	if cmd == "" {
+		return text, ""
+	}
+	return strings.TrimSpace(strings.TrimSpace(head[:i]) + tail), cmd
+}
+
 // ParseWorkflow parses a CWL expression. A single-leg expression is a valid
 // one-stage workflow (useful for validation); use IsWorkflowExpr to decide
 // whether to route something through the workflow executor at all.
@@ -238,12 +261,8 @@ func ParseWorkflow(s string) (Workflow, error) {
 		}
 		// Trailing "gate: <command>" - the LAST marker wins so prose may
 		// mention the word; everything after it is the command.
-		if i := strings.LastIndex(wl.Prompt, "gate:"); i >= 0 {
-			cmd := strings.TrimSpace(wl.Prompt[i+len("gate:"):])
-			if cmd != "" {
-				wl.Gate = cmd
-				wl.Prompt = strings.TrimSpace(wl.Prompt[:i])
-			}
+		if prompt, gate := SplitGate(wl.Prompt); gate != "" {
+			wl.Gate, wl.Prompt = gate, prompt
 		}
 		// Bare leg inherits the assignment (2026-08-24): "/grok review X >
 		// /codex" runs codex with the SAME prompt - plus, as for any later
@@ -331,6 +350,43 @@ func legNames() string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// WorkflowMode classifies the workflow as host-only, openshell-only, or mixed.
+// A mixed workflow (host and sandbox workers in the same expression) is refused
+// because a sandbox stage's output cannot safely feed a host agent: the
+// sandboxed model's code and text would reach a privileged worker with access to
+// your machine. The user can run host stages first, review the result, then
+// start sandbox stages as a separate turn.
+type WorkflowMode string
+
+const (
+	WorkflowModeHost      WorkflowMode = "host"
+	WorkflowModeOpenShell WorkflowMode = "openshell"
+	WorkflowModeMixed     WorkflowMode = "mixed"
+)
+
+// ClassifyWorkflowMode returns the workflow's mode.
+func ClassifyWorkflowMode(wf Workflow) WorkflowMode {
+	hasHost, hasSandbox := false, false
+	for _, st := range wf.Stages {
+		for _, l := range st.Legs {
+			if l.Leg == LegOpenShell {
+				hasSandbox = true
+			} else if IsFrontier(l.Leg) || (KnownLeg(l.Leg) && ServesTasks(l.Leg)) {
+				hasHost = true
+			}
+		}
+	}
+	if hasHost && hasSandbox {
+		return WorkflowModeMixed
+	}
+	if hasSandbox {
+		return WorkflowModeOpenShell
+	}
+	return WorkflowModeHost
+}
+
+const MixedWorkflowRefusal = "host and sandbox stages cannot share a workflow; run the host stages first, review the result, then start the sandbox stages as a separate turn"
 
 // Runs is the number of worker runs the workflow will perform (the director
 // review is counted separately - it is not a worker).

@@ -22,8 +22,21 @@ export const logo = {
 const reset = "\x1b[0m"
 const bold = "\x1b[1m"
 const dim = "\x1b[90m"
-const captain = { fg: "\x1b[38;2;92;156;245m", shadow: "\x1b[38;2;40;80;140m", bg: "\x1b[48;2;40;80;140m" }
-const code = { fg: "\x1b[38;2;255;255;255m\x1b[1m", shadow: "\x1b[38;2;58;58;58m", bg: "\x1b[48;2;58;58;58m" }
+
+// Same blue as the welcome wordmark and the site: #5c9cf5 = rgb(92, 156, 245).
+// Do not emit ESC[38;2;92;156;245m. A terminal that splits that sequence on
+// semicolons applies SGR 92, which is bright green, and CAPTAIN comes out green.
+// The 256-color index is the blue those terminals keep. The colon form is the
+// exact colour, and a terminal that ignores it does not see a bare 92.
+function paint(channel: 38 | 48, index: number, r: number, g: number, b: number) {
+  return `\x1b[${channel};5;${index}m\x1b[${channel}:2::${r}:${g}:${b}m`
+}
+const captain = { fg: paint(38, 75, 92, 156, 245), shadow: paint(38, 24, 40, 80, 140), bg: paint(48, 24, 40, 80, 140) }
+const code = {
+  fg: paint(38, 15, 255, 255, 255) + bold,
+  shadow: paint(38, 237, 58, 58, 58),
+  bg: paint(48, 237, 58, 58, 58),
+}
 
 // The same four marks as the home_logo slot: `_` a shadowed blank, `^` a lit
 // half block, `~` a shadowed half block, `,` a shadowed lower half block.

@@ -173,3 +173,46 @@ func TestMemoryMCPBrainAliasAndScopeMapping(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, config, conn)
 }
+
+func TestJournalRunWithMemoryMCPRecordsEventAndAppendsJournalPage(t *testing.T) {
+	root, brain := learnFixture(t)
+	t.Setenv("EUCLID_HOME", root)
+	_, state := memoryFixture(t, brain)
+
+	entry := JournalEntry{
+		Kind:    "worker",
+		Task:    "implement bounded indexing",
+		Leg:     "claude",
+		Outcome: "ok",
+		Tokens:  1234,
+	}
+	path, err := JournalRun(root, entry)
+	require.NoError(t, err)
+	require.True(t, strings.HasSuffix(path, ".jsonl"), "returns ledger line path")
+
+	// 1. Verify MCP recorded the event
+	stateBytes, err := os.ReadFile(state)
+	require.NoError(t, err)
+	var db struct {
+		Events []struct {
+			ID   string `json:"id"`
+			Text string `json:"text"`
+		} `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(stateBytes, &db))
+	require.NotEmpty(t, db.Events, "event must be recorded in MCP store")
+	require.Contains(t, db.Events[0].Text, "implement bounded indexing")
+
+	// 2. Verify local jsonl ledger was written
+	jsonlBytes, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(jsonlBytes), "implement bounded indexing")
+
+	// 3. Verify local markdown journal page was written
+	pages, err := filepath.Glob(filepath.Join(brain.Root, "journal", "*_claude-*.md"))
+	require.NoError(t, err)
+	require.Len(t, pages, 1, "markdown journal page written as dashboard clock")
+	mdBytes, err := os.ReadFile(pages[0])
+	require.NoError(t, err)
+	require.Contains(t, string(mdBytes), "**Tokens-Spent**: 1234")
+}

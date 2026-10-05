@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -74,16 +75,18 @@ func cmdSend(args []string) {
 		fatal(fmt.Errorf("the brain is not running (%v)", err))
 	}
 	defer resp.Body.Close()
-	var out struct {
-		OK      bool                     `json:"ok"`
-		Pending int                      `json:"pending"`
-		Error   struct{ Message string } `json:"error"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != 200 {
-		fmt.Fprintf(os.Stderr, "captain send: HTTP %d %s\n", resp.StatusCode, out.Error.Message)
+		// brainErrorText reads both error shapes: the inbox answers with
+		// writeErr's flat one, which left this line without its reason.
+		fmt.Fprintf(os.Stderr, "captain send: HTTP %d %s\n", resp.StatusCode, brainErrorText(resp.StatusCode, raw))
 		os.Exit(1)
 	}
+var out struct {
+		OK      bool `json:"ok"`
+		Pending int  `json:"pending"`
+	}
+	_ = json.Unmarshal(raw, &out)
 	if reply != "" {
 		fmt.Printf("queued as a reply (%s, %d pending) - it is submitted into the session that turn came from\n", reply, out.Pending)
 		return

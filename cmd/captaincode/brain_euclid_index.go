@@ -46,12 +46,35 @@ func corsForDashboard(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// brainBuiltAt returns the RFC3339 timestamp of the newest dashboard artifact in root.
+func brainBuiltAt(root string) string {
+	for _, name := range []string{"data.json", "data.js", "index.html"} {
+		p := filepath.Join(root, "dashboard", name)
+		if st, err := os.Stat(p); err == nil {
+			return st.ModTime().UTC().Format(time.RFC3339)
+		}
+	}
+	return ""
+}
+
 // euclidPing: the dashboard's liveness probe.
 func (b *brain) euclidPing(w http.ResponseWriter, r *http.Request) {
 	if !corsForDashboard(w, r) {
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "engine": "captain", "brains": b.reindexTargets(r)})
+	targets := b.reindexTargets(r)
+	res := map[string]any{"ok": true, "engine": "captain", "brains": targets}
+	root := b.apiRoot(r)
+	if root != "" {
+		if builtAt := brainBuiltAt(root); builtAt != "" {
+			res["built_at"] = builtAt
+		}
+	} else if len(targets) > 0 {
+		if builtAt := brainBuiltAt(targets[0]); builtAt != "" {
+			res["built_at"] = builtAt
+		}
+	}
+	writeJSON(w, 200, res)
 }
 
 // reindexTargets resolves which brains a request means: ?root= (the
@@ -289,4 +312,34 @@ func pathsIn(text string) []string {
 		out = []string{}
 	}
 	return out
+}
+
+// startEuclidReconciler runs one slow check in the brain: every 15 minutes,
+// while any TUI is connected, it rebuilds a brain only if a journal or register
+// file is newer than dashboard/index.html. Coalesced via ScheduleReindex.
+func (b *brain) startEuclidReconciler(stop <-chan struct{}) {
+	if os.Getenv("CAPTAIN_EUCLID") == "0" || os.Getenv("CAPTAIN_EUCLID_AUTOINDEX") == "0" {
+		return
+	}
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if !anyTUIConnected() {
+				continue
+			}
+			for _, root := range activeBrainRoots() {
+				if captaincode.BrainNeedsReindex(root) {
+					kind := "repo"
+					if root == captaincode.MainBrainPath() {
+						kind = "main"
+					}
+					captaincode.ScheduleReindex(captaincode.EuclidBrain{Root: root, Kind: kind})
+				}
+			}
+		}
+	}
 }

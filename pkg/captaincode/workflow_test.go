@@ -292,3 +292,30 @@ func TestConnectorsAfterAParagraphBreakArePastedContent(t *testing.T) {
 	require.Len(t, wf.Stages, 1)
 	assert.Len(t, wf.Stages[0].Legs, 2, "the newline connector survives its own blank line")
 }
+
+func TestClassifyWorkflowMode(t *testing.T) {
+	cases := []struct {
+		name string
+		expr string
+		mode WorkflowMode
+	}{
+		{"host only", "/claude draft > /codex review", WorkflowModeHost},
+		{"host with frontier", "/frontier draft > /claude review", WorkflowModeHost},
+		{"host parallel", "/claude check A + /codex check B", WorkflowModeHost},
+		{"sandbox only, single", "/openshell fix the parser", WorkflowModeOpenShell},
+		{"sandbox only, sequential", "/openshell draft > /openshell review", WorkflowModeOpenShell},
+		{"sandbox only, parallel", "/openshell fix A + /openshell fix B", WorkflowModeOpenShell},
+		{"sandbox only, with review", "/openshell --review check it", WorkflowModeOpenShell},
+		{"host first, sandbox second", "/claude draft > /openshell implement", WorkflowModeMixed},
+		{"frontier first, sandbox second", "/frontier draft > /openshell test it", WorkflowModeMixed},
+		{"sandbox first, host second", "/openshell fix parser > /claude review", WorkflowModeMixed},
+		{"host and sandbox in same stage", "/claude plan + /openshell implement", WorkflowModeMixed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			wf, err := ParseWorkflow(c.expr)
+			require.NoError(t, err)
+			assert.Equal(t, c.mode, ClassifyWorkflowMode(wf))
+		})
+	}
+}

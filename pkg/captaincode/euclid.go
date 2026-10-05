@@ -464,7 +464,9 @@ func JournalRun(cwd string, e JournalEntry) (string, error) {
 	e.Error = Scrub(clipText(e.Error, 200))
 	sort.Strings(e.Files)
 	if memoryMCPEnabled() {
-		return recordMemoryEvent(b, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "journal"))
+		if _, err := recordMemoryEvent(b, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "journal")); err != nil {
+			return "", err
+		}
 	}
 	path := JournalPath(b, e.At)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

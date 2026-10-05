@@ -17,6 +17,7 @@ package main
 // projects that ~/.euclid is for.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,6 +93,7 @@ func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
 			return
 		}
 		fmt.Printf("captain brain: euclid auto-distill: %d entries → %d edit(s) in %s\n", d.Entries, len(d.Edits), wb.Label)
+		captaincode.ScheduleReindex(wb)
 		if captaincode.MemoryMCPEnabled() {
 			return
 		}
@@ -136,7 +138,9 @@ func (b *brain) crystallizeMain(ws captaincode.Workspace) {
 	prompt := captaincode.CrystallizePrompt(brain, entries)
 	var res captaincode.Result
 	var err error
-	if b.runWorkerFn != nil {
+	if captaincode.LocalSelected("learn") {
+		res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
+	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(b.distillLeg(), prompt, nil, nil)
 	} else {
 		res, err = ws.RunWorkerStreamHooks(b.distillLeg(), prompt, opencodePort, nil, nil)
@@ -213,7 +217,9 @@ func (b *brain) bootstrap(ws captaincode.Workspace, apply bool) (captaincode.Dis
 	leg := b.distillLeg()
 	var res captaincode.Result
 	var err error
-	if b.runWorkerFn != nil {
+	if captaincode.LocalSelected("learn") {
+		res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
+	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
 	} else {
 		res, err = ws.RunWorkerStreamHooks(leg, prompt, opencodePort, nil, nil)
@@ -269,7 +275,9 @@ func (b *brain) authorProbes(ws captaincode.Workspace, brain captaincode.EuclidB
 	leg := b.distillLeg()
 	var res captaincode.Result
 	var err error
-	if b.runWorkerFn != nil {
+	if captaincode.LocalSelected("learn") {
+		res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
+	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
 	} else {
 		res, err = ws.RunWorkerStreamHooks(leg, prompt, opencodePort, nil, nil)

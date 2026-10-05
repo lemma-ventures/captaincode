@@ -46,6 +46,9 @@ type oaiChatReq struct {
 	// internal marks a request the brain issued itself (a /repeat round, a
 	// queued prompt): it opens no task identity of its own.
 	internal bool
+	// outcome, set on a program's turn, collects failures the HTTP status
+	// does not carry (brain_program.go). Nil-safe.
+	outcome *turnOutcome
 }
 
 // lastUserRaw returns the last user turn exactly as typed - before directive
@@ -58,6 +61,8 @@ func lastUserRaw(msgs []oaiMessage) string {
 	}
 	return ""
 }
+
+var promptReuse captaincode.PromptReuseTracker
 
 const titleMarker = captaincode.TitleMarker
 
@@ -216,6 +221,19 @@ func legIDs() []string { return captaincode.LegIDs() }
 // about a slash command instead of doing the work, and the topology is the
 // executor's business, not the worker's.
 func stripCaptainDirectives(text string) string {
+	// A program is rendered as its turns' plain instructions, for the same
+	// reason. A turn is never a program, so this recurses once.
+	if p, ok, err := captaincode.ParseProgram(text); ok && err == nil {
+		var lines []string
+		for _, t := range p.Turns() {
+			if s := strings.TrimSpace(stripCaptainDirectives(t.Text)); s != "" {
+				lines = append(lines, s)
+			}
+		}
+		if len(lines) > 0 {
+			return strings.Join(lines, "\n")
+		}
+	}
 	if captaincode.IsWorkflowExpr(text) {
 		if wf, err := captaincode.ParseWorkflow(strings.TrimSpace(text)); err == nil {
 			if plain := wf.PlainRequest(); plain != "" {
@@ -316,8 +334,15 @@ func windowPrompt(prompt string, budget int) string {
 		return prompt
 	}
 	head := budget / 5
-	marker := fmt.Sprintf("\n\n[captain: conversation truncated - %d chars elided to fit the model's context]\n\n", len(prompt)-budget)
-	tail := budget - head
+	marker := "\n\n[captain: conversation truncated to fit the model context]\n\n"
+	if budget <= len(marker) {
+		return captaincode.CutTail(prompt, budget)
+	}
+	tail := budget - head - len(marker)
+	if tail < 0 {
+		head = 0
+		tail = budget - len(marker)
+	}
 	// Rune-safe cuts: a byte cut inside "→" reached codex exec as invalid
 	// UTF-8 and its CLI refused the whole run (2026-09-15).
 	return captaincode.CutHead(prompt, head) + marker + captaincode.CutTail(prompt, tail)
@@ -339,6 +364,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	req.ws = workspaceOf(r)
 	req.ws.Session = sessions.of(req.ws.Dir)
 	req.internal = r.Context().Value(noDedupeKey{}) != nil
+	req.outcome, _ = r.Context().Value(turnOutcomeKey{}).(*turnOutcome)
 	// A prompt the user deleted while it was queued never runs: when it is
 	// all that waits, the turn says so and ends; otherwise it is dropped
 	// from the transcript the turn replays.
@@ -405,6 +431,17 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// the same workflow). Naming a session is a one-line job: cheapest leg, never
 	// a team, a workflow or a frontier call.
 	titleReq := isTitleTurn(req.Messages)
+	if titleReq && captaincode.LocalSelected("title") {
+		res, err := captaincode.RunLocalSmall(r.Context(), "title", lastUserTurn(prompt))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		emit, _, finish := newCompletionWriter(w, req, "local")
+		emit(res.Text)
+		finish()
+		return
+	}
 	if titleReq {
 		leg := b.titleLeg()
 		if req.Model != string(leg) {
@@ -413,12 +450,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.Model = string(leg)
 	}
 
-	// A chain of whole commands ("/frontier … > /repeat 5 /quality …", a
-	// group in parentheses behind ">") runs step by step (brain_chain.go),
-	// each step a full turn back through this dispatch. It is read first: an
-	// OpenShell head or CWL would otherwise take the whole line, and CWL
-	// would cut a group's inner ">" as its own (docs/LANGUAGE.md §5).
-	if !titleReq && b.handleChain(r.Context(), w, req, lastUserRaw(req.Messages)) {
+// A typed program (CWL level 2: groups, chains of whole turns, loops with
+	// until:, fallbacks) runs as a detached thread on the /repeat machinery,
+	// before any head below reads the turn: "/team research > /codex
+	// implement" is two steps, not a team task that mentions /codex.
+	if !titleReq && b.handleProgram(r.Context(), w, req, lastUserRaw(req.Messages)) {
 		return
 	}
 	if !titleReq && (req.Model == string(captaincode.LegOpenShell) || captaincode.LeadingForced(lastUserRaw(req.Messages)) == string(captaincode.LegOpenShell) ||
@@ -661,6 +697,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// The folder is part of the identity: "continue where we stopped" typed
 	// in strategy attached to the codex-cli run of the same words in zorvex and
 	// showed its answer (2026-10-03). A retry comes from the same folder.
+
 	dedupeKey := req.ws.Dir + "\x00" + string(leg) + "\x00" + lastUserTurn(prompt)
 	// A /repeat iteration is real work: attaching it to the previous
 	// iteration's cached answer would make the whole thread a no-op.
@@ -702,6 +739,18 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !titleReq {
+		opening := ""
+		for _, m := range req.Messages {
+			if m.Role == "user" {
+				opening = messageText(m.Content)
+				break
+			}
+		}
+		sample := promptReuse.Observe(req.ws.Dir+"\x00"+string(leg)+"\x00"+opening, prompt)
+		sample.Leg = leg
+		captaincode.LogEfficiency(sample)
+	}
 	fmt.Printf("captain brain: %s wrapper running (%d msgs)…\n", leg, len(req.Messages))
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(leg), Model: string(leg), Effort: string(req.ws.Effort), Text: promptPeek(lastUserTurn(prompt))})
 	t0 := time.Now()
@@ -751,7 +800,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		leg = ranLeg
 		elapsed := time.Since(t0)
 		if err != nil {
-			b.onWorkerError(leg, err)
+			b.onWorkerError(leg, err, res)
 			b.recordSolo(dedupeKey, captaincode.Result{}, err)
 			if !titleReq { // a session title is housekeeping, not work
 				recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
@@ -905,7 +954,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	feed.close()
 	elapsed := time.Since(t0)
 	if err != nil {
-		b.onWorkerError(leg, err)
+		b.onWorkerError(leg, err, res)
 		b.recordSolo(dedupeKey, captaincode.Result{}, err)
 		if !titleReq { // a session title is housekeeping, not work
 			recordRunHistory(runRecord{Kind: "solo", Model: model, Legs: []string{string(leg)},
@@ -1112,13 +1161,19 @@ func benchPolicy(leg captaincode.Leg, err error) (time.Duration, string) {
 // /v1/route calls skip it: 30m for a rate limit (subscription window), a
 // short window for a provider outage (transient - live 2026-07-19: xAI 503
 // bursts; 30m would bench a healthy leg long after recovery).
-func (b *brain) onWorkerError(leg captaincode.Leg, err error) {
+func (b *brain) onWorkerError(leg captaincode.Leg, err error, result ...captaincode.Result) {
 	d, why := benchPolicy(leg, err)
 	b.mu.Lock()
 	// Reliability is a routing signal: every handled failure lands on the
 	// ledger (glm stalled all morning with a spotless q9.0 - the director
 	// could not see it, 2026-07-25). Generic errors record but don't bench.
-	b.ledger.Record(captaincode.Event{Leg: leg, Reason: "wrapper", Outcome: "fail", Error: truncate(err.Error(), 160)})
+	ev := captaincode.Event{Leg: leg, Reason: "wrapper", Outcome: "fail", Error: truncate(err.Error(), 160)}
+	if len(result) > 0 {
+		res := result[0]
+		ev.TokenUsage, ev.TTFTMs, ev.FirstOutputMs, ev.ToolSchema = res.TokenUsage, res.TTFTMs, res.FirstOutputMs, res.ToolSchema
+		ev.Tokens, ev.CostUSD, ev.Duration = res.Tokens, res.CostUSD, res.DurationMs
+	}
+	b.ledger.Record(ev)
 	// Quota telemetry (M2.3): a rate-limit message carries real quota state.
 	// Record it so `captain quota` can show "exhausted, resets 02:50
 	// (rate-limit)" rather than only "cooling down".

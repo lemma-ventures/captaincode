@@ -16,7 +16,8 @@ test("the stock exit chunk becomes Captain Code's", () => {
   expect(out).not.toContain("opencode -s")
   expect(out).toContain("Fix the exit screen")
   expect(out).toContain("~/Gits/captaincode/captaincode.sh -s ses_2a7f0c1dffeAbC9")
-  expect(out).toContain("\x1b[38;2;92;156;245m█") // CAPTAIN blue
+  expect(out).toContain("\x1b[38;5;75m\x1b[38:2::92:156:245m█") // CAPTAIN blue, #5c9cf5
+  expect(out).not.toContain("\x1b[38;2;92;156;245m") // that form paints bright green (SGR 92)
   expect(out.endsWith("\n")).toBe(true)
 })
 

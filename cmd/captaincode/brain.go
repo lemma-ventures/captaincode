@@ -249,6 +249,7 @@ func cmdBrain(args []string) {
 	defer stopLife()
 	b.life = life
 	go b.watchLock(life.Done(), os.Stdout)
+	go b.startEuclidReconciler(life.Done())
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -1867,6 +1868,9 @@ func (b *brain) nudgeNarration(ws captaincode.Workspace, leg captaincode.Leg, pr
 	// the exact undercount M1.2 exists to close. Carry both, and let
 	// recordRun split them back into two attempts.
 	res2.Text = res.Text + "\n\n" + res2.Text
+	res2.TokenUsage = captaincode.MergeTokenUsage(res.TokenUsage, res2.TokenUsage)
+	res2.TTFTMs = res.TTFTMs
+	res2.FirstOutputMs = res.FirstOutputMs
 	res2.Tokens += res.Tokens
 	res2.CostUSD += res.CostUSD
 	res2.DurationMs += res.DurationMs
@@ -1910,7 +1914,7 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	ev := captaincode.Event{
 		Task: truncate(task, 120), Class: captaincode.Classify(task),
 		Leg: leg, Reason: "wrapper", Outcome: "ok",
-		Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs,
+		Tokens: res.Tokens, TokenUsage: res.TokenUsage, TTFTMs: res.TTFTMs, FirstOutputMs: res.FirstOutputMs, ToolSchema: res.ToolSchema, CostUSD: res.CostUSD, Duration: res.DurationMs,
 		Effort: ws.Effort, Model: captaincode.ModelIDAt(leg, ws.Effort),
 		Attempt: attempt, EscalatedFrom: escalatedFrom,
 	}
@@ -2402,6 +2406,22 @@ func (b *brain) decideLegTriage(req routeReq) (routeResp, captaincode.TriageResu
 func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (routeResp, *routeFail) {
 	// Registered first, so it runs last - after the mu defer below has let go.
 	defer b.rememberLast(req.ws.Dir, b.lastRoute())
+	// Workflow control words ("/wf <english>", "/wf parse …", "/run wf_x")
+	// are handled by the wrapper, not by routing: short-circuit so they never
+	// pay for a director plan call (17-27s with claude directing) just to be
+	// intercepted later. First, before the named-sequence check: "/wf grok
+	// analyses X, then cursor reviews it" names legs in order, and that check
+	// ran it as a workflow instead of compiling a preview (2026-10-05).
+	if workflowEnabled() {
+		if _, ok := workflowIntent(req.Task); ok {
+			return routeResp{Class: string(captaincode.ClassTrivial), Leg: "claude", Provider: "captain",
+				Model: "claude", Brief: req.Task, Rationale: "workflow compile (skill)"}, nil
+		}
+		if id, ok := workflowRunID(req.Task); ok {
+			return routeResp{Class: string(captaincode.ClassTrivial), Leg: "claude", Provider: "captain",
+				Model: "claude", Brief: req.Task, Rationale: "workflow run " + id}, nil
+		}
+	}
 	// The user named the workers AND an order ("grok, codex and THEN claude"):
 	// that is a pipeline, and /team cannot express one - it runs a single
 	// parallel stage, which is why three "sequenced cheap→deep" reviewers all
@@ -2426,20 +2446,6 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				return routeResp{Class: string(captaincode.Classify(req.Task)), Leg: "team", Provider: "captain",
 					Model: "team", Brief: req.Task, Rationale: rationale}, nil
 			}
-		}
-	}
-
-	// Workflow control words ("/wf <english>", "/run wf_x") are handled by the
-	// wrapper, not by routing: short-circuit so they never pay for a director
-	// plan call (17-27s with claude directing) just to be intercepted later.
-	if workflowEnabled() {
-		if _, ok := workflowIntent(req.Task); ok {
-			return routeResp{Class: string(captaincode.ClassTrivial), Leg: "claude", Provider: "captain",
-				Model: "claude", Brief: req.Task, Rationale: "workflow compile (skill)"}, nil
-		}
-		if id, ok := workflowRunID(req.Task); ok {
-			return routeResp{Class: string(captaincode.ClassTrivial), Leg: "claude", Provider: "captain",
-				Model: "claude", Brief: req.Task, Rationale: "workflow run " + id}, nil
 		}
 	}
 
@@ -2491,6 +2497,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	// that does not distinguish them cannot say whether the policy was
 	// exercised at all (ROADMAP M2.1).
 	decPath, decMenu := captaincode.PathForced, []captaincode.Leg(nil)
+	var tiePolicy string
 	// What the decision leg answered at the same points, when it was asked,
 	// and who actually settled the class (brain_shadow.go).
 	var shadow *captaincode.Shadow
@@ -2533,7 +2540,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				if err == nil {
 					tr, classBy = refineTriage(tr, r), by
 				}
-			case b.jevDecidesTriage(req.Task) && tr.Confidence < jevConsultBelow():
+			case !captaincode.LocalSelected("classify") && b.jevDecidesTriage(req.Task) && tr.Confidence < jevConsultBelow():
 				// The band: sure enough to keep the ~5s free-leg classify out,
 				// not so sure a ~300ms calibrated answer is not worth asking
 				// for. A miss keeps the heuristic; nothing else is called.
@@ -2548,12 +2555,12 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 			if req.followUp && tr.Class == captaincode.ClassTrivial {
 				tr.Class = captaincode.ClassMedium // a second opinion does not undo the follow-up floor
 			}
-			if heuristicConf < jevConsultBelow() {
+			if !captaincode.LocalSelected("classify") && heuristicConf < jevConsultBelow() {
 				// The band, read off the heuristic rather than off whatever
 				// replaced it: a turn captain was going to think about anyway
 				// is a turn worth asking a shadow backend about.
 				openCh = b.openBeside(req.Task, tr.Domain, nil)
-			} else if shadow == nil {
+			} else if !captaincode.LocalSelected("classify") && shadow == nil {
 				// Above the band jev was never asked, so its triage answer
 				// was never measured where the heuristic is surest - the
 				// turns the calibration most needs (stage 1). A sample of
@@ -2801,6 +2808,9 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 			}
 			if err == nil {
 				leg = pick.Leg
+				if req.Prefer == "" {
+					tiePolicy = "cheap-capable-v1"
+				}
 				if pick.Class != "" {
 					class, classBy = pick.Class, captaincode.PathDirector
 					out.Class, out.By = pick.Class, captaincode.TriageByDirector
@@ -2855,6 +2865,9 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 			rr := captaincode.ResolveRoute(req.Task, classHint, order, p, err)
 			class = rr.Class
 			if rr.Managed {
+				if req.Prefer == "" {
+					tiePolicy = "cheap-capable-v1"
+				}
 				classBy = captaincode.PathDirector
 			}
 			if rr.Managed && rr.FanOut && len(rr.Plan.Workers) > 1 && teamEnabled() {
@@ -2864,6 +2877,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				// A team is a decision too: its shape and its legs go on the
 				// record, so `captain why` and the shadow can read them.
 				dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, "", managerOrder, totalMs, rationale)
+				dec.TiePolicy, dec.Preference = tiePolicy, req.Prefer
 				dec.Shape, dec.Workers = captaincode.ShapeTeam, planLegs(rr.Plan)
 				out.Class, out.By = class, captaincode.TriageByDirector
 				stampTriage(&dec, *out)
@@ -2945,6 +2959,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	// can show what the director chose AGAINST, plus the legs that never
 	// reached the menu and why.
 	dec := b.menuDecision(class, captaincode.TriageTask(req.Task).Domain, decPath, leg, decMenu, totalMs, rationale)
+	dec.TiePolicy, dec.Preference = tiePolicy, req.Prefer
 	if out.Class == "" {
 		out.Class, out.Domain, out.By = class, captaincode.TriageTask(req.Task).Domain, captaincode.TriageByHeuristic
 		out.Irreversible = captaincode.IrreversibleTask(req.Task)
@@ -3250,6 +3265,15 @@ func refineTriage(tr, r captaincode.TriageResult) captaincode.TriageResult {
 // It also says who answered (jev, or the free-leg classify) and returns
 // jev's shadow when it was asked, whichever answer was taken.
 func (b *brain) classifyTier1(task string, d captaincode.Domain, onCall captaincode.CallHook) (captaincode.TriageResult, string, *captaincode.Shadow, error) {
+	if captaincode.LocalSelected("classify") {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		c, dom, res, err := captaincode.LocalClassify(ctx, task)
+		if onCall != nil {
+			onCall(captaincode.LegLocal, "classify", res, err)
+		}
+		return captaincode.TriageResult{Class: c, Domain: dom, By: "local", Why: "qualified local classifier"}, "local", nil, err
+	}
 	var sh *captaincode.Shadow
 	if b.jev != nil {
 		tr, jsh, err := b.classifyJev(task, d, onCall)

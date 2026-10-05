@@ -1,4 +1,5 @@
 /captain
+/captaincode
 /cmd/captaincode/captaincode
 *.env
 .env.*

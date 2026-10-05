@@ -123,6 +123,10 @@ type APIContract struct {
 // APIContracts are the transports covered by contract rather than by pin.
 func APIContracts() []APIContract {
 	return []APIContract{{
+		Transport: TransportLocal,
+		Endpoint:  "loopback HTTP: /api/tags, /api/show, /v1/chat/completions (CAPTAIN_LOCAL_URL)",
+		Versioned: "CAPTAIN_LOCAL_MODEL selects an installed model; /api/tags supplies its digest and /api/show rejects remote-backed models; qualification records the endpoint, model, digest, and small-calls suite version",
+	}, {
 		Transport: TransportSystemOne,
 		Endpoint:  "https://api.typesafe.ai/v1/systemone",
 		Versioned: "every response names the release that served it (model: jev-1.13.0 behind the jev-latest alias); CAPTAIN_JEV_MODEL pins one",

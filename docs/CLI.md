@@ -34,6 +34,13 @@ The TUI is the everyday surface; its `/…` words are in [TUI.md](TUI.md).
 | `captain adi` / `adi refresh` | ADI standing per leg (green, red, not measured) and green tuples no leg serves; `refresh` fetches the feed now |
 | `captain state [--last] [<folder>]` | The per-folder TUI state directory (history, model, preferences); `--last` prints the newest session id |
 
+## Local small calls
+
+`captain local qualify` runs the three-round qualification suite.
+`captain local status` shows its saved result. `captain local title|commit|digest`
+reads text from stdin. These helpers have no coding tools. See
+[Small calls and efficiency evidence](SMALL_CALLS.md) for setup and limits.
+
 ## Routing & decisions
 
 | Command | What it does |
@@ -63,8 +70,8 @@ Run controls reach the brain over HTTP and work while a TUI turn streams.
 | `captain show [<id>\|last]` | One run with its full output |
 | `captain kill [--loops]` | Stop the worker run in flight; `--loops` also ends `/repeat` threads |
 | `captain stop [--finish\|--abort] [--all]` | End this folder's `/repeat` loops after the current round (`--abort` drops the round, `--all` every folder) |
-| `captain parse "<line>"` | Print how captain reads a line - its parse tree in the [command language](LANGUAGE.md) - without sending it |
-| `captain send [--reply <token> \| --cwd <dir>] [--leg <leg>] [--from <who>] "<prompt>"` | Hand a prompt to a TUI: its sidebar submits it into the session as if typed (a watcher, a cron, a script can drive a TUI). `--reply` (or `CAPTAIN_REPLY`) takes the token a worker's prompt gives it, and delivers to the session that worker's turn came from, even after a brain restart. `--cwd` sends to the TUI open in a folder, including another project's (captain to captain). Every sent prompt ends with a line saying who sent it and from where. A sent prompt may not start a `/repeat` or a chain, and a folder accepts at most `CAPTAIN_INBOX_QUOTA` (5) of them between two turns the user types |
+| `captain parse "<line>"` | Print how captain reads a line — its parse tree — without sending it |
+| `captain send [--reply <token> \| --cwd <dir>] [--leg <leg>] [--from <who>] "<prompt>"` | Hand a prompt to a TUI: its sidebar submits it into the session as if typed (a watcher, a cron, a script can drive a TUI). `--reply` (or `CAPTAIN_REPLY`) takes the token a worker's prompt gives it, and delivers to the session that worker's turn came from, even after a brain restart. `--cwd` sends to the TUI open in a folder, including another project's. It refuses a prompt that starts a loop or a program (`/repeat`, `( … )`, `\|\|`, `until:`): only a typed prompt starts one. A folder accepts at most `CAPTAIN_INBOX_QUOTA` (5) of them between two turns the user types |
 | `captain ui` | Open opencode's own TUI on the worker sessions (`opencode attach`) |
 
 ## Skills

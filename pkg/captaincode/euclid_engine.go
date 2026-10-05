@@ -293,7 +293,7 @@ func euclidMCPServer(dir string) (command string, args []string, env map[string]
 	env = map[string]string{"CAPTAIN_CWD": dir}
 	// CLI workers can filter ambient variables. Forward only retrieval settings;
 	// never copy credentials or a fixed root from another workspace.
-	for _, key := range []string{"CAPTAIN_EUCLID_MCP_CONFIG", "CAPTAIN_EUCLID_MEMORY_CONFIG", "CAPTAIN_EUCLID_ENGINE", "EUCLID_PROVIDER_MCP", "CAPTAIN_RETRIEVAL_LOG"} {
+	for _, key := range []string{"CAPTAIN_EUCLID_MCP_CONFIG", "CAPTAIN_EUCLID_MEMORY_CONFIG", "CAPTAIN_EUCLID_ENGINE", "EUCLID_PROVIDER_MCP", "CAPTAIN_RETRIEVAL_LOG", "CAPTAIN_EUCLID_TOOL_PROFILE"} {
 		if value := os.Getenv(key); value != "" {
 			env[key] = value
 		}

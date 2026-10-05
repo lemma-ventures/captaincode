@@ -59,6 +59,18 @@ type roundRecord struct {
 	err     string
 	shown   bool
 	noop    bool // the round deferred instead of working (see roundDeferred)
+	// label is where a program turn sits ("step 2/3 › round 1"); empty for
+	// a /repeat round.
+	label string
+}
+
+// title names a record as the UI prints it: "round 3" for a /repeat round,
+// "turn 4 · step 2/3 › round 1" for a program turn.
+func (r roundRecord) title() string {
+	if r.label == "" {
+		return fmt.Sprintf("round %d", r.n)
+	}
+	return fmt.Sprintf("turn %d · %s", r.n, r.label)
 }
 
 // roundDeferred spots a round that did nothing: a short answer that talks
@@ -112,6 +124,18 @@ type repeatThread struct {
 	// typed copy sits queued behind it until the watch ends.
 	notes   []string
 	noteSeq int
+	// program is set when the thread runs a program (brain_program.go); final
+	// is the answer of its last turn, printed when the program ends.
+	program *captaincode.Program
+	final   string
+}
+
+// unit is what one record of the thread is called.
+func (th *repeatThread) unit() string {
+	if th.program != nil {
+		return "turn"
+	}
+	return "round"
 }
 
 const repeatLiveKeep = 40
@@ -221,6 +245,10 @@ func stripLeadingDirectives(task string) string {
 // recent rounds, not a full second transcript in memory.
 const repeatRoundKeep = 8
 const repeatRoundChars = 1_200
+
+// programFinalChars bounds the last answer a finished program prints: it is
+// the deliverable, so it gets far more room than a round's gist.
+const programFinalChars = 12_000
 
 func (b *brain) repeatState() map[string]*repeatThread {
 	if b.repeats == nil {
@@ -444,14 +472,14 @@ func (b *brain) repeatNotice(dir string) string {
 			r.shown = true
 			switch {
 			case r.err != "":
-				lines = append(lines, fmt.Sprintf("✗ %s round %d failed after %s - %s",
-					id, r.n, r.dur.Round(time.Second), promptPeek(r.err)))
+				lines = append(lines, fmt.Sprintf("✗ %s %s failed after %s - %s",
+					id, r.title(), r.dur.Round(time.Second), promptPeek(r.err)))
 			case r.noop:
-				lines = append(lines, fmt.Sprintf("○ %s round %d deferred after %s (no work done) - the next round is told to do it: %s",
-					id, r.n, r.dur.Round(time.Second), promptPeek(r.summary)))
+				lines = append(lines, fmt.Sprintf("○ %s %s deferred after %s (no work done) - the next round is told to do it: %s",
+					id, r.title(), r.dur.Round(time.Second), promptPeek(r.summary)))
 			default:
-				lines = append(lines, fmt.Sprintf("✓ %s round %d in %s: %s",
-					id, r.n, r.dur.Round(time.Second), promptPeek(r.summary)))
+				lines = append(lines, fmt.Sprintf("✓ %s %s in %s: %s",
+					id, r.title(), r.dur.Round(time.Second), promptPeek(r.summary)))
 			}
 		}
 	}
@@ -531,7 +559,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			if s == "" || strings.HasPrefix(s, "**captain") || strings.HasPrefix(s, "captain ·") {
 				continue
 			}
-			status(fmt.Sprintf("%s %d · %s\n", unit, done+1, s)) // one line each: the TUI concatenates deltas
+status(fmt.Sprintf("%s %d · %s\n", th.unit(), done+1, s)) // one line each: the TUI concatenates deltas
 		}
 
 		// rounds is a sliding window; index by round number, not position.
@@ -541,26 +569,35 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			}
 			sent = r.n
 			if r.err != "" {
-				emit(fmt.Sprintf("\n---\n\n**%s %d** ✗ failed after %s\n\n%s\n",
-					unit, r.n, r.dur.Round(time.Second), promptPeek(r.err)))
+emit(fmt.Sprintf("\n---\n\n**%s** ✗ failed after %s\n\n%s\n",
+					r.title(), r.dur.Round(time.Second), promptPeek(r.err)))
 				continue
 			}
 			if r.noop {
-				emit(fmt.Sprintf("\n---\n\n**round %d** ○ deferred after %s - no work done; the next round is told to do it\n\n%s\n",
-					r.n, r.dur.Round(time.Second), r.summary))
+				emit(fmt.Sprintf("\n---\n\n**%s** ○ deferred after %s - no work done; the next round is told to do it\n\n%s\n",
+					r.title(), r.dur.Round(time.Second), r.summary))
 				continue
 			}
-			emit(fmt.Sprintf("\n---\n\n**%s %d** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
-				unit, r.n, r.at.Format("15:04:05"), r.dur.Round(time.Second), r.summary))
+emit(fmt.Sprintf("\n---\n\n**%s** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
+				r.title(), r.at.Format("15:04:05"), r.dur.Round(time.Second), r.summary))
 		}
 		if finished {
-			why := ""
+			why, final := "", ""
 			b.rmu.Lock()
 			if th.stopReason != "" {
 				why = " - " + th.stopReason
 			}
+			if th.program != nil {
+				final = th.final
+			}
 			b.rmu.Unlock()
-			emit(fmt.Sprintf("\n---\n\n**%s finished** - %d %s(s) total%s.\n", th.id, done, unit, why))
+emit(fmt.Sprintf("\n---\n\n**%s finished** - %d %s(s) total%s.\n", th.id, done, th.unit(), why))
+			if strings.TrimSpace(final) != "" {
+				if len(final) > programFinalChars {
+					final = captaincode.CutHead(final, programFinalChars) + "\n…[truncated - full text in `captain show`]"
+				}
+				emit("\n**Last turn's answer:**\n\n" + final + "\n")
+			}
 			return
 		}
 		select {
@@ -588,9 +625,9 @@ func (b *brain) repeatShow(dir, id string) string {
 		return "no completed rounds yet (`/repeat status` for thread state)."
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "### %s - last %d round(s)\n\nTask: %s\n", pick.id, len(pick.rounds), promptPeek(pick.task))
+	fmt.Fprintf(&sb, "### %s - last %d %s(s)\n\nTask: %s\n", pick.id, len(pick.rounds), pick.unit(), promptPeek(pick.task))
 	for _, r := range pick.rounds {
-		fmt.Fprintf(&sb, "\n---\n\n**round %d** · %s · %s\n\n", r.n, r.at.Format("15:04:05"), r.dur.Round(time.Second))
+		fmt.Fprintf(&sb, "\n---\n\n**%s** · %s · %s\n\n", r.title(), r.at.Format("15:04:05"), r.dur.Round(time.Second))
 		if r.err != "" {
 			fmt.Fprintf(&sb, "✗ %s\n", r.err)
 			continue
@@ -656,7 +693,7 @@ func (b *brain) repeatStatus(dir string) string {
 			if r.err != "" {
 				gist = r.err
 			}
-			fmt.Fprintf(&sb, "    %s round %d · %s · %s\n", mark, r.n,
+			fmt.Fprintf(&sb, "    %s %s · %s · %s\n", mark, r.title(),
 				r.dur.Round(time.Second), promptPeek(gist))
 		}
 	}

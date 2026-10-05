@@ -226,7 +226,7 @@ func TestLiveWorkflowStatusIsPerWorkspace(t *testing.T) {
 // file:// or localhost.
 func TestDashboardRegenerateContract(t *testing.T) {
 	engine := t.TempDir()
-	for _, p := range []string{"engine/build-catalog.py", "dashboard/build-dashboard.py"} {
+	for _, p := range []string{"engine/build-catalog.py", "dashboard/build-dashboard.py", "dashboard/index.html"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(engine, filepath.Dir(p)), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(engine, p), []byte("print('ok')\n"), 0o755))
 	}
@@ -261,6 +261,14 @@ func TestDashboardRegenerateContract(t *testing.T) {
 	require.Len(t, out.Steps, 2)
 	assert.Equal(t, ".euclid/bin/build-catalog.py", out.Steps[0].Script, "the panel shows the command a human can run from the host root")
 
+	// Pinging after reindex returns built_at
+	rec = httptest.NewRecorder()
+	ping = httptest.NewRequest(http.MethodGet, "/api/ping?root="+filepath.Join(home, ".euclid"), nil)
+	ping.Header.Set("Origin", "null")
+	b.euclidPing(rec, ping)
+	assert.Equal(t, 200, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"built_at":`)
+
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/regenerate?root="+t.TempDir(), nil)
 	b.euclidReindex(rec, req)
@@ -271,6 +279,21 @@ func TestDashboardRegenerateContract(t *testing.T) {
 	req.Header.Set("Origin", "https://evil.example")
 	b.euclidReindex(rec, req)
 	assert.Equal(t, 403, rec.Code, "a web page elsewhere cannot drive the engine")
+}
+
+func TestTUIConnectionTrackingAndBrainReconciler(t *testing.T) {
+	home := euclidTestHome(t)
+	repo := filepath.Join(home, "ash")
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".git"), 0o755))
+	shared := filepath.Join(repo, ".euclid")
+	_, err := captaincode.Scaffold(shared, "repo")
+	require.NoError(t, err)
+
+	// Note activity for this repo
+	noteTUIActivity(repo)
+	assert.True(t, anyTUIConnected())
+	roots := activeBrainRoots()
+	assert.Contains(t, roots, shared)
 }
 
 // Once /api/ping answers, the dashboard reads documents through /api/file:

@@ -166,6 +166,13 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "empty prompt")
 			return
 		}
+		// A loop or a program must be typed (WORKFLOW_LANGUAGE §11): a
+		// watcher, a cron or a worker that queued one would start a run of
+		// up to CAPTAIN_REPEAT_MAX turns that nobody saw start.
+		if startsLoop(req.Text) {
+			writeErr(w, 400, "captain send cannot start a loop or a program (/repeat, ( … ), ||, until:) - type it in the TUI, or send the task without them")
+			return
+		}
 		leg := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(req.Leg, "/")))
 		if captaincode.StartsLoop(req.Text) || leg == "repeat" {
 			writeErr(w, 403, "a sent prompt may not start a /repeat or a chain - only a person types a loop; send the task itself")
@@ -204,4 +211,16 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, 405, "GET or POST")
 	}
+}
+
+// startsLoop reports a prompt that would start a /repeat loop or a program.
+// /repeat's control words (status, show, finish …) start nothing.
+func startsLoop(text string) bool {
+	h := captaincode.HoistLeading(strings.TrimSpace(text))
+	if _, rest, ok := parseRepeat(h); ok {
+		_, _, ctl := repeatControl(strings.ToLower(strings.TrimSpace(rest)))
+		return strings.TrimSpace(rest) != "" && !ctl
+	}
+	_, ok, _ := captaincode.ParseProgram(h)
+	return ok
 }

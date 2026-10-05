@@ -462,7 +462,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	events := map[string]*captaincode.Event{}
 	for _, o := range results {
 		ev := captaincode.Event{Task: truncate(task, 120), Class: plan.Class, Leg: o.leg, Team: teamKey,
-			Reason: "team: " + plan.Rationale, Tokens: o.res.Tokens, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs,
+			Reason: "team: " + plan.Rationale, Tokens: o.res.Tokens, TokenUsage: o.res.TokenUsage, TTFTMs: o.res.TTFTMs, FirstOutputMs: o.res.FirstOutputMs, ToolSchema: o.res.ToolSchema, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs,
 			Effort: req.ws.Effort, Model: captaincode.ModelIDAt(o.leg, req.ws.Effort), Path: captaincode.PathDirector, ClassBy: captaincode.TriageByDirector, Attempt: 1}
 		usage := captaincode.CallUsage(o.leg, o.res.Tokens, o.res.CostUSD, nil)
 		ev.CostUSD, ev.CostStatus = usage.CostUSD, usage.CostStatus

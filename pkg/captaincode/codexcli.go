@@ -99,8 +99,9 @@ type codexEvent struct {
 	Message string          `json:"message"`
 	Item    json.RawMessage `json:"item"`
 	Usage   struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens       *int `json:"input_tokens"`
+		CachedInputTokens *int `json:"cached_input_tokens"`
+		OutputTokens      *int `json:"output_tokens"`
 	} `json:"usage"`
 	Error struct {
 		Message string `json:"message"`
@@ -224,7 +225,7 @@ func classifyCodexCLIFailure(msg string) error {
 // legs' progress contract (progressCtx) and the cap stays authoritative -
 // the pipe is closed on ctx.Done() and the wait is bounded (a grandchild
 // holding stdout/stderr would otherwise block past the deadline).
-func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), effort Effort, steer *Steer) (Result, error) {
+func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), effort Effort, steer *Steer) (result Result, runErr error) {
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}
@@ -269,6 +270,12 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	var acc strings.Builder
 	tokens := 0
+	var detail *TokenUsage
+	var firstOutput *int64
+	defer func() {
+		result.TokenUsage, result.FirstOutputMs = detail, firstOutput
+		result.Tokens = tokens
+	}()
 	failed := ""
 	haveFailed := false
 	for sc.Scan() {
@@ -295,6 +302,10 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 			if it.Type == "agent_message" {
 				if ev.Type != "item.completed" || it.Text == "" {
 					continue
+				}
+				if firstOutput == nil {
+					ms := time.Since(start).Milliseconds()
+					firstOutput = &ms
 				}
 				chunk := it.Text
 				if acc.Len() > 0 {
@@ -344,7 +355,13 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 				}
 			}
 		case "turn.completed":
-			tokens = ev.Usage.InputTokens + ev.Usage.OutputTokens
+			tokens = 0
+			for _, n := range []*int{ev.Usage.InputTokens, ev.Usage.OutputTokens} {
+				if n != nil && *n >= 0 {
+					tokens += *n
+				}
+			}
+			detail = OptionalInclusiveTokenUsage(ev.Usage.InputTokens, ev.Usage.OutputTokens, ev.Usage.CachedInputTokens, "codex")
 		case "turn.failed":
 			failed, haveFailed = ev.Error.Message, true
 		}
@@ -379,5 +396,5 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		}
 		return Result{}, fmt.Errorf("codex exec: %w", waitErr)
 	}
-	return Result{Text: acc.String(), Tokens: tokens, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil}, nil
+	return Result{Text: acc.String(), Tokens: tokens, TokenUsage: detail, FirstOutputMs: firstOutput, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil}, nil
 }

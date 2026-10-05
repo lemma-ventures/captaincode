@@ -272,6 +272,10 @@ func providerAuthError(msg string) bool {
 var ErrSessionNotFound = errors.New("opencode session not found")
 
 type Result struct {
+	TokenUsage        *TokenUsage
+	TTFTMs            *int64 // first streamed text since dispatch; nil if not observed
+	FirstOutputMs     *int64 // completed-message timing, not TTFT
+	ToolSchema        *ToolSchemaUsage
 	OpenShellAttempts *OpenShellAttemptUsage
 	Export            *VerifiedExport
 	Text              string
@@ -516,21 +520,22 @@ func cursorModel(effort Effort) string {
 // `opencode attach` (w-<model>-<#>); Claude-leg output is mirrored into a
 // titled session via noReply posts so it gets a tab too.
 type OpencodeDispatcher struct {
-	BaseURL    string
-	Dir        string // the workspace the worker session is pinned to ("" = DefaultWorkspace)
-	Effort     Effort // the request's effort, sent as the message's variant when the model offers one
-	Steer      *Steer // the turn's /btw handle: a note sent mid-run is POSTed to the busy session, which merges it into the running turn (steer.go)
-	SessionID  string
-	Title      string
-	Client     *http.Client
-	Spawn      bool          // spawn opencode serve if the port is closed
-	Live       bool          // stream worker output to the terminal via the SSE event bus
-	OnDelta    func(string)  // if set, text deltas go here (brain SSE) instead of stdout - live token streaming for the opencode legs
-	OnStatus   func(string)  // if set, tool activity goes here (brain progress feed) instead of stderr
-	NoTools    bool          // disable all tools: plain chat completion (director calls)
-	AsDirector bool          // use directorModels instead of legModels for this leg, if an override exists
-	Timeout    time.Duration // per-message deadline; on expiry the session is aborted server-side
-	Ceiling    time.Duration // when > Timeout: a PROGRESSING run extends past Timeout, dying only here (progress-aware cap)
+	firstTextAt atomic.Int64
+	BaseURL     string
+	Dir         string // the workspace the worker session is pinned to ("" = DefaultWorkspace)
+	Effort      Effort // the request's effort, sent as the message's variant when the model offers one
+	Steer       *Steer // the turn's /btw handle: a note sent mid-run is POSTed to the busy session, which merges it into the running turn (steer.go)
+	SessionID   string
+	Title       string
+	Client      *http.Client
+	Spawn       bool          // spawn opencode serve if the port is closed
+	Live        bool          // stream worker output to the terminal via the SSE event bus
+	OnDelta     func(string)  // if set, text deltas go here (brain SSE) instead of stdout - live token streaming for the opencode legs
+	OnStatus    func(string)  // if set, tool activity goes here (brain progress feed) instead of stderr
+	NoTools     bool          // disable all tools: plain chat completion (director calls)
+	AsDirector  bool          // use directorModels instead of legModels for this leg, if an override exists
+	Timeout     time.Duration // per-message deadline; on expiry the session is aborted server-side
+	Ceiling     time.Duration // when > Timeout: a PROGRESSING run extends past Timeout, dying only here (progress-aware cap)
 
 	// StallTimeout aborts a turn whose session shows no event-bus activity for
 	// this long (0 = disabled). Needs the event stream (Live/OnDelta), which is
@@ -597,6 +602,9 @@ func ModelIDAt(l Leg, effort Effort) string {
 }
 
 func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
+	if leg == LegLocal || specs[leg].Transport == TransportLocal {
+		return Result{}, fmt.Errorf("local helper cannot run coding tasks")
+	}
 	if d.Dir == "" {
 		d.Dir = DefaultWorkspace().Dir
 	}
@@ -659,6 +667,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		return Result{}, err
 	}
 	start := time.Now()
+	d.firstTextAt.Store(0)
 	// File which task this session served, so the action gate's screenings
 	// of this run's tools can be joined to its outcome (gate_sessions.go).
 	defer func(session string) {
@@ -991,7 +1000,13 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			ModelID    string          `json:"modelID"`
 			ProviderID string          `json:"providerID"`
 			Tokens     struct {
-				Total int `json:"total"`
+				Total  int  `json:"total"`
+				Input  *int `json:"input"`
+				Output *int `json:"output"`
+				Cache  struct {
+					Read  *int `json:"read"`
+					Write *int `json:"write"`
+				} `json:"cache"`
 			} `json:"tokens"`
 		} `json:"info"`
 		Parts []struct {
@@ -1022,8 +1037,14 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 			out.WriteString(p.Text)
 		}
 	}
-	return Result{Text: out.String(), Tokens: msg.Info.Tokens.Total, DurationMs: time.Since(start).Milliseconds(), Streamed: streamed,
-		Model: observedOpencodeModel(msg.Info.ProviderID, msg.Info.ModelID)}, nil
+	var ttft *int64
+	if at := d.firstTextAt.Load(); at > 0 {
+		ms := time.Unix(0, at).Sub(start).Milliseconds()
+		ttft = &ms
+	}
+	return Result{TTFTMs: ttft, Text: out.String(), Tokens: msg.Info.Tokens.Total, DurationMs: time.Since(start).Milliseconds(), Streamed: streamed,
+		TokenUsage: &TokenUsage{Input: msg.Info.Tokens.Input, Output: msg.Info.Tokens.Output, CacheRead: msg.Info.Tokens.Cache.Read, CacheWrite: msg.Info.Tokens.Cache.Write, Source: "opencode", Scope: "final_message"},
+		Model:      observedOpencodeModel(msg.Info.ProviderID, msg.Info.ModelID)}, nil
 }
 
 // busEvent is one line of the opencode event bus: flat on /event, wrapped in
@@ -1194,6 +1215,9 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 			}
 			if t, known := partTypes[e.Properties.PartID]; known && t != "text" {
 				continue // reasoning/tool deltas stay off the answer stream
+			}
+			if e.Properties.Delta != "" {
+				d.firstTextAt.CompareAndSwap(0, time.Now().UnixNano())
 			}
 			d.amu.Lock()
 			d.acc.WriteString(e.Properties.Delta)
@@ -1921,7 +1945,15 @@ func RunWorkerStreamHooks(leg Leg, task string, port int, onDelta, onStatus func
 
 // RunWorkerStreamHooks is RunWorkerStreamHooks with the worker running in
 // this workspace - the entry every brain request goes through.
-func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta, onStatus func(string)) (Result, error) {
+func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta, onStatus func(string)) (result Result, runErr error) {
+	if leg == LegLocal || specs[leg].Transport == TransportLocal {
+		return Result{}, fmt.Errorf("local helper cannot run coding tasks")
+	}
+	defer func() {
+		if (specs[leg].Transport == TransportClaudeCLI || specs[leg].Transport == TransportCodexCLI) && len(ClaudeMCPArgs(ws.Dir)) > 0 {
+			result.ToolSchema = EuclidToolSchemaUsage()
+		}
+	}()
 	// --notimeout in the current turn ×10s the bounds; stripped so the worker
 	// never sees it (parsed here - the one choke point every path crosses).
 	// Frontier-class legs (codex-cli) carry 2× on top - deep reasoning is slow by
@@ -2164,16 +2196,11 @@ type claudeStreamLine struct {
 		} `json:"content"`
 	} `json:"message"`
 	// terminal "result" event fields
-	IsError        bool    `json:"is_error"`
-	APIErrorStatus int     `json:"api_error_status"`
-	Result         string  `json:"result"`
-	TotalCostUSD   float64 `json:"total_cost_usd"`
-	Usage          struct {
-		InputTokens              int `json:"input_tokens"`
-		OutputTokens             int `json:"output_tokens"`
-		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-	} `json:"usage"`
+	IsError        bool               `json:"is_error"`
+	APIErrorStatus int                `json:"api_error_status"`
+	Result         string             `json:"result"`
+	TotalCostUSD   float64            `json:"total_cost_usd"`
+	Usage          *ClaudeUsageReport `json:"usage"`
 }
 
 // reportLeftovers names the processes a finished CLI worker left running
@@ -2253,7 +2280,7 @@ func runClaudeStreamPA(dir, task string, base, ceil time.Duration, onDelta, onSt
 }
 
 // dir is the workspace every runner below executes in ("" = the brain's cwd).
-func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta, onStatus func(string), frontier bool, effort Effort, steer *Steer) (Result, error) {
+func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta, onStatus func(string), frontier bool, effort Effort, steer *Steer) (result Result, runErr error) {
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}
@@ -2365,7 +2392,16 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	observed := ""                  // the model claude reported running
 	blockOpen := false              // a text block is mid-stream: deltas continue the same paragraph
 	shellCalls := map[string]bool{} // tool_use ids of Bash calls: their results are worth a peek
-	calls := map[string]Step{}      // tool_use id → what it ran, recorded as a step on its result
+	var firstText *int64
+	defer func() {
+		result.TTFTMs = firstText
+		if haveFinal {
+			result.Tokens = final.Usage.Total()
+			result.TokenUsage = final.Usage.Detail()
+			result.CostUSD = final.TotalCostUSD
+		}
+	}()
+	calls := map[string]Step{} // tool_use id → what it ran, recorded as a step on its result
 	for sc.Scan() {
 		prog.touch() // progress stamp: any output line counts as activity
 		var ev claudeStreamLine
@@ -2402,6 +2438,10 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 				blockOpen = false
 			case "content_block_delta":
 				if ev.Event.Delta.Type == "text_delta" && ev.Event.Delta.Text != "" {
+					if firstText == nil {
+						ms := time.Since(start).Milliseconds()
+						firstText = &ms
+					}
 					if !blockOpen && acc.Len() > 0 && !strings.HasSuffix(acc.String(), "\n") {
 						acc.WriteString("\n\n")
 						if onDelta != nil {
@@ -2505,9 +2545,8 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 			text = acc.String()
 		}
 		text = preferSubstantiveReport(text, longest)
-		tokens := final.Usage.InputTokens + final.Usage.OutputTokens +
-			final.Usage.CacheCreationInputTokens + final.Usage.CacheReadInputTokens
-		return Result{Text: text, Tokens: tokens, CostUSD: final.TotalCostUSD,
+		tokens := final.Usage.Total()
+		return Result{Text: text, Tokens: tokens, TokenUsage: final.Usage.Detail(), TTFTMs: firstText, CostUSD: final.TotalCostUSD,
 			DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil, Model: observed}, nil
 	}
 	if waitErr != nil {
@@ -2820,16 +2859,11 @@ func runClaudeTimeout(dir, task string, timeout time.Duration) (Result, error) {
 		return Result{}, fmt.Errorf("claude -p: %w", err)
 	}
 	var r struct {
-		IsError        bool    `json:"is_error"`
-		APIErrorStatus int     `json:"api_error_status"`
-		Result         string  `json:"result"`
-		TotalCostUSD   float64 `json:"total_cost_usd"`
-		Usage          struct {
-			InputTokens              int `json:"input_tokens"`
-			OutputTokens             int `json:"output_tokens"`
-			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
-			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-		} `json:"usage"`
+		IsError        bool               `json:"is_error"`
+		APIErrorStatus int                `json:"api_error_status"`
+		Result         string             `json:"result"`
+		TotalCostUSD   float64            `json:"total_cost_usd"`
+		Usage          *ClaudeUsageReport `json:"usage"`
 	}
 	if jerr := json.Unmarshal(out, &r); jerr != nil {
 		return Result{}, fmt.Errorf("parse claude output: %w", jerr)
@@ -2841,8 +2875,8 @@ func runClaudeTimeout(dir, task string, timeout time.Duration) (Result, error) {
 	if r.IsError {
 		return Result{}, classifyClaudeFailure(r.Result)
 	}
-	tokens := r.Usage.InputTokens + r.Usage.OutputTokens + r.Usage.CacheCreationInputTokens + r.Usage.CacheReadInputTokens
-	return Result{Text: r.Result, Tokens: tokens, CostUSD: r.TotalCostUSD, DurationMs: time.Since(start).Milliseconds()}, nil
+	tokens := r.Usage.Total()
+	return Result{Text: r.Result, Tokens: tokens, TokenUsage: r.Usage.Detail(), CostUSD: r.TotalCostUSD, DurationMs: time.Since(start).Milliseconds()}, nil
 }
 
 // partialResult packages the text a run produced before its provider cut it

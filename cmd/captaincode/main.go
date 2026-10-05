@@ -156,6 +156,9 @@ func main() {
 		case "init":
 			cmdInit(args[1:])
 			return
+		case "local":
+			cmdLocal(args[1:])
+			return
 		case "doctor":
 			cmdDoctor(args[1:])
 			return
@@ -445,7 +448,7 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 			}
 			persistThread(ledger, disp, leg, cwd)
 			ev = captaincode.Event{Task: truncate(task, 120), Class: class, Leg: leg, Reason: reason, Iter: iter,
-				Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs}
+				Tokens: res.Tokens, TokenUsage: res.TokenUsage, TTFTMs: res.TTFTMs, FirstOutputMs: res.FirstOutputMs, ToolSchema: res.ToolSchema, CostUSD: res.CostUSD, Duration: res.DurationMs}
 			switch {
 			case errors.Is(runErr, captaincode.ErrRateLimited):
 				ev.Outcome = "rate_limited"
@@ -597,7 +600,7 @@ func runFanOut(ledger *captaincode.Ledger, mgr captaincode.Manager, task string,
 	events := map[string]*captaincode.Event{}
 	for _, o := range results {
 		ev := captaincode.Event{Task: truncate(task, 120), Class: class, Leg: o.w.Leg, Team: teamKey,
-			Reason: "fan-out: " + p.Rationale, Tokens: o.res.Tokens, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs}
+			Reason: "fan-out: " + p.Rationale, Tokens: o.res.Tokens, TokenUsage: o.res.TokenUsage, TTFTMs: o.res.TTFTMs, FirstOutputMs: o.res.FirstOutputMs, ToolSchema: o.res.ToolSchema, CostUSD: o.res.CostUSD, Duration: o.res.DurationMs}
 		if o.err != nil {
 			ev.Outcome = "fail"
 			ev.Error = o.err.Error()

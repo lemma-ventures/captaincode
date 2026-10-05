@@ -744,3 +744,78 @@ func TestClaudeAtMaxEffortFallsToStandardWhenTheTierIsClosed(t *testing.T) {
 	assert.True(t, frontierBenched, "the tier wears its own limit")
 	assert.False(t, claudeBenched, "claude at standard settings stays open")
 }
+
+func TestMixedWorkflowRefusedAtEveryEntryPoint(t *testing.T) {
+	cases := []struct {
+		name  string
+		model string // the model the TUI sends (fork's forced-pseudomodel or auto)
+		text  string
+	}{
+		// Early dispatch (line 448-452): ParseWorkflow succeeds, multi-stage.
+		{"host-first, typed as claude", "claude", "/claude draft > /openshell implement it"},
+		// Late dispatch (line 567-570): single leg with gate also takes this path.
+		// But single /openshell with a gate jumps to openShellChat first (line 410),
+		// so this case only reaches the late dispatch when the user types a host
+		// worker first and the fork sends model=claude (not openshell).
+		{"host-first with frontier", "claude", "/frontier investigate > /openshell fix the bug"},
+		// The fork sends model=frontier for /frontier turns. The early dispatch
+		// (line 448) runs FIRST and catches the multi-stage expression before the
+		// frontierChat short-circuit at line 455.
+		{"frontier-first, fork sends model=frontier", "frontier", "/frontier draft > /openshell implement"},
+		// Parallel mixed in one stage.
+		{"mixed in one stage, fork sends model=claude", "claude", "/claude plan + /openshell implement"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			b := teamBrain()
+			b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+				return leg, captaincode.Result{Text: "output", DurationMs: 10}, nil
+			}
+			body, _ := json.Marshal(map[string]any{"model": c.model, "stream": false,
+				"messages": []map[string]string{{"role": "user", "content": c.text}}})
+			rec := httptest.NewRecorder()
+			b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+			assert.Equal(t, 400, rec.Code, "expected 400 for mixed workflow: %s", rec.Body.String())
+			assert.Contains(t, rec.Body.String(), "cannot share a workflow", rec.Body.String())
+		})
+	}
+}
+
+func TestPureOpenShellWorkflowGoesToOpenShellChat_NotRefused(t *testing.T) {
+	// This test verifies that a pure openshell workflow (all workers are
+	// /openshell) goes through to openShellChat and is NOT caught by the
+	// mixed-workflow refusal in runWorkflow.
+	t.Setenv("CAPTAIN_OPENSHELL_ALLOWED", "true")
+	t.Setenv("CAPTAIN_OPENSHELL_VERIFY", "go test ./...")
+	t.Setenv("CAPTAIN_OPENSHELL_PILOT", string(captaincode.LegGLM))
+	t.Setenv("CAPTAIN_OPENSHELL_PREPARED", "true")
+
+	body, _ := json.Marshal(map[string]any{
+		"model": "openshell", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "/openshell fix parser > /openshell review changes"}},
+	})
+	rec := httptest.NewRecorder()
+	b := teamBrain()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	assert.NotEqual(t, 400, rec.Code, "pure openshell workflows go to openShellChat, not the mixed refusal: %s", rec.Body.String())
+}
+
+func TestMixedWorkflowRefused_FromSavedWorkflow(t *testing.T) {
+	// A saved workflow that mixes host and sandbox stages is refused by the
+	// classifier check at the top of runWorkflow, not by the dispatch point.
+	b := teamBrain()
+	wf := captaincode.Workflow{Stages: []captaincode.WorkflowStage{
+		{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegClaude, Prompt: "draft"}}},
+		{Legs: []captaincode.WorkflowLeg{{Leg: captaincode.LegOpenShell, Prompt: "implement"}}},
+	}}
+	id := b.storeWorkflow(wf, "draft then implement in sandbox")
+	require.NotEmpty(t, id)
+	body, _ := json.Marshal(map[string]any{
+		"model": "workflow", "workflow_id": id, "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "please implement"}},
+	})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	assert.Equal(t, 400, rec.Code, "saved mixed workflow must be refused: %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "cannot share a workflow", rec.Body.String())
+}

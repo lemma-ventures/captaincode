@@ -66,15 +66,33 @@ mix command prints the targets.
 | `/wf <english>` (`/workflow`) | Compile plain English into a workflow and preview it |
 | `/run wf_x` (`/wfrun`) | Run a compiled workflow |
 | `/wf save <name> <expression>` · `/wf run <name>` · `/wf list` | Named workflows |
+| `/team research X > /codex implement it` | A **program**: `>` before `/team`, `/repeat`, a lane word or `(` chains whole turns. Each step reads the end of the step before |
+| `( … )` | Groups steps: `(/repeat 4 …) > /claude review`. `(/codex draft) > /claude review` is two turns, each with its own answer |
+| `/repeat N <steps> until: <cmd>` | Loops until the command exits 0 (checked before each round); a loop that ends with the check failing has failed |
+| `A \|\| B` | Runs B only when A failed: an error, a gate still failing after its repair, a loop whose `until:` never passed |
+| `/wf parse <program>` | Shows how captain reads a program and how many turns it can run. Runs nothing |
 
-A connector counts only when a leg prefix follows it, so prose is never
-misread. Grammar and limits: [WORKFLOW_LANGUAGE.md](WORKFLOW_LANGUAGE.md).
+A connector counts only when a command follows it, so prose is never
+misread: `then` and `and` join legs only, never whole turns. A program runs
+on the `/repeat` machinery (`/repeat watch`, `finish`, `abort`, `captain stop`),
+with one budget of 100 turns (`CAPTAIN_REPEAT_MAX`) for all its loops and
+steps. Only a typed prompt starts one: `captain send` refuses loops and
+programs. Grammar, limits and failure rules:
+[WORKFLOW_LANGUAGE.md §11](WORKFLOW_LANGUAGE.md#11-programs-groups-chains-loops-and-fallbacks-level-2).
+How LangGraph, CrewAI, AutoGen and others map onto programs:
+[ORCHESTRATION_MAPPING.md](ORCHESTRATION_MAPPING.md).
+
+```captain
+/team research the API > /codex implement it > /claude review the diff
+/repeat 10 /codex fix the failing tests until: go test ./... || /claude explain why the tests still fail
+/frontier write the spec > (/repeat 4 /codex implement the next item gate: go test ./...) > /claude review the diff
+```
 
 ## Run things in the background
 
 | Word | What it does |
 |---|---|
-| `/repeat N <task>` | Repeat until N rounds (no N = until stopped); rounds stream in that turn |
+| `/repeat N <task>` | Repeat until N rounds (no N = until stopped); rounds stream in that turn. `… until: <cmd>` also ends the loop when the command exits 0 |
 | `/repeat status` · `show` · `watch` | Loops in this folder · what recent rounds did · follow a loop live |
 | `/repeat stop` (`finish`, `wrapup`) · `/repeat abort` | End after the current round · kill it now |
 | `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop` |

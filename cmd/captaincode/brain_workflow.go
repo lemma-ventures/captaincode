@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -128,6 +129,21 @@ func runGate(ws captaincode.Workspace, command string) (bool, string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Dir = ws.Dir
+	// The deadline kills the whole process group, not the shell alone: the
+	// test binaries `sh -c "go test ./..."` starts keep the output pipe open
+	// after the shell dies (the CaptureTestEvidence fix, artifact.go). A
+	// program's until: check runs here too, once per round.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+			return cmd.Process.Kill()
+		}
+		return nil
+	}
+	cmd.WaitDelay = 10 * time.Second
 	out, err := cmd.CombinedOutput()
 	tail := string(out)
 	if len(tail) > 2000 {
@@ -362,13 +378,9 @@ func (b *brain) runWorkflowLeg(ws captaincode.Workspace, leg captaincode.Leg, pr
 
 // workflowChat executes a workflow and returns its single reviewed output.
 func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string, wf captaincode.Workflow, id string) {
-	for _, stage := range wf.Stages {
-		for _, worker := range stage.Legs {
-			if worker.Leg == captaincode.LegOpenShell {
-				writeWorkerError(w, "workflow", fmt.Errorf("openshell workers cannot share a workflow with host workers; make every stage /openshell or use captain openshell --team"))
-				return
-			}
-		}
+	if captaincode.ClassifyWorkflowMode(wf) == captaincode.WorkflowModeMixed {
+		writeErr(w, 400, captaincode.MixedWorkflowRefusal)
+		return
 	}
 	t0 := time.Now()
 	task := lastUserTurn(prompt)
@@ -383,6 +395,13 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	// One execution per (workflow, task): a retried request attaches to the run
 	// already in progress instead of starting a second one.
 	dedupeKey := key + "\x00" + task
+	// The brain's own requests never attach: every /repeat round and every
+	// program turn is new work. Round 2 of `/repeat 2 /grok a > /claude b`
+	// was served round 1's stored answer, so two rounds ran two workers, not
+	// four, and the loop then stopped on "no progress" (2026-10-05).
+	if req.internal {
+		dedupeKey += "\x00" + id
+	}
 	b.wmu.Lock()
 	if b.inflight == nil {
 		b.inflight = map[string]*wfInflight{}
@@ -607,7 +626,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			tr.finishWorker(si, li, ran, res, dur, err)
 			ev := captaincode.Event{Task: truncate(task, 120), Leg: ran, Workflow: key,
 				Reason: fmt.Sprintf("workflow stage %d/%d", si+1, len(wf.Stages)),
-				Tokens: res.Tokens, CostUSD: res.CostUSD, Duration: res.DurationMs,
+				Tokens: res.Tokens, TokenUsage: res.TokenUsage, TTFTMs: res.TTFTMs, FirstOutputMs: res.FirstOutputMs, ToolSchema: res.ToolSchema, CostUSD: res.CostUSD, Duration: res.DurationMs,
 				Effort: ws.Effort, Model: captaincode.ModelIDAt(ran, ws.Effort), Path: captaincode.PathWorkflow, Attempt: 1}
 			if gateEscalated {
 				ev.Attempt, ev.EscalatedFrom = 3, wl.Leg
@@ -631,6 +650,9 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			if wl.Gate != "" {
 				if ok, gout := runGate(ws, wl.Gate); !ok {
 					gateOk, gateOut = false, gout
+					// A program counts this turn as failed: the review below
+					// still answers 200 (brain_program.go).
+					req.outcome.fail(fmt.Sprintf("gate `%s` on %s still fails after its repair", wl.Gate, ran))
 				}
 			}
 			slots[li] = slot{out: captaincode.WorkerOutput{Leg: ran, Text: res.Text}, ev: ev, ok: true,
@@ -758,6 +780,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			// Nothing survived this stage: stop, but review what did run -
 			// partial work is reviewed, never discarded.
 			aborted = fmt.Sprintf("stage %d/%d produced no output", si+1, len(wf.Stages))
+			req.outcome.fail("the workflow was cut short: " + aborted)
 			fmt.Printf("captain brain: workflow %s aborted - %s\n", key, aborted)
 			feed.note(fmt.Sprintf("\n[captain] %s - reviewing the completed stages\n", aborted))
 			break

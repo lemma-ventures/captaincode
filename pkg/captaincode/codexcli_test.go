@@ -61,9 +61,7 @@ func TestCodexCLICmdConfigOverrides(t *testing.T) {
 // Event shapes captured live from `codex exec --json` (codex-cli 0.153.4,
 // 2026-09-09): agent_message items carry the answer, command_execution items
 // are the visible activity, turn.completed carries usage.
-const codexCLIProbeEvents = `#!/bin/sh
-cat <<'EOF'
-{"type":"thread.started","thread_id":"01a087d8-4625-7ed3-9a0d-4aca2e5d76f5"}
+const codexCLIProbeEvents = `{"type":"thread.started","thread_id":"01a087d8-4625-7ed3-9a0d-4aca2e5d76f5"}
 {"type":"turn.started"}
 {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll read note.txt.\n"}}
 {"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'cat note.txt'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
@@ -71,11 +69,10 @@ cat <<'EOF'
 {"type":"item.started","item":{"id":"item_2","type":"file_change","changes":[{"path":"pkg/x.go","kind":"update"}],"status":"in_progress"}}
 {"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"hello"}}
 {"type":"turn.completed","usage":{"input_tokens":33968,"cached_input_tokens":28288,"cache_write_input_tokens":0,"output_tokens":54,"reasoning_output_tokens":0}}
-EOF
 `
 
 func TestCodexCLIStreamParsesCodexEvents(t *testing.T) {
-	fakeBin(t, "codex", codexCLIProbeEvents)
+	fakeBin(t, "codex", "#!/bin/sh\nprintf '%s' '"+strings.ReplaceAll(codexCLIProbeEvents, "'", "'\"'\"'")+"'\n")
 	var deltas []string
 	var statuses []string
 	res, err := runCodexCLIStream("", "task", 30*time.Second, 0,
@@ -87,12 +84,17 @@ func TestCodexCLIStreamParsesCodexEvents(t *testing.T) {
 	assert.Equal(t, []string{"⚙ shell cat note.txt", "⚙ edit pkg/x.go"}, statuses,
 		"only the started edge, with the zsh -lc wrapper stripped; completions would double every line")
 	assert.Equal(t, 33968+54, res.Tokens, "input + output (cached is a subset of input)")
+	require.NotNil(t, res.TokenUsage)
+	assert.Equal(t, 33968-28288, *res.TokenUsage.Input)
+	assert.Equal(t, 28288, *res.TokenUsage.CacheRead)
+	assert.Nil(t, res.TTFTMs, "completed message is not first token")
+	assert.NotNil(t, res.FirstOutputMs)
 	assert.Greater(t, res.DurationMs, int64(0), "a zero duration exempts the leg from grading (cursor 2026-07-25)")
 	assert.True(t, res.Streamed)
 }
 
 func TestCodexCLIStreamBufferedModeStillReturnsText(t *testing.T) {
-	fakeBin(t, "codex", codexCLIProbeEvents)
+	fakeBin(t, "codex", "#!/bin/sh\nprintf '%s' '"+strings.ReplaceAll(codexCLIProbeEvents, "'", "'\"'\"'")+"'\n")
 	res, err := runCodexCLIStream("", "task", 30*time.Second, 0, nil, nil, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "I’ll read note.txt.\n\nhello", res.Text)

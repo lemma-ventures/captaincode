@@ -2,7 +2,8 @@
 
 Status: **IMPLEMENTED** (2026-07-30) - parser, executor, mandatory review, step tracker, skill,
 compile/confirm handshake all shipped and verified live. Deviations from the original design are
-marked **[shipped]** below.
+marked **[shipped]** below. Level 2 - programs: groups, chains of whole turns, loops with
+`until:`, and `||` fallbacks - is in source since 2026-10-05 and not in a release yet (§11).
 Owner: Multi-model
 Related: [`ARCHITECTURE.md`](./ARCHITECTURE.md) · [`CONFIGURATION.md`](./CONFIGURATION.md)
 
@@ -79,10 +80,10 @@ SEQ         = ">" | "then" | "->" ;          (* sequential: join and advance *)
 PAR         = "+" | "and" | "&" ;            (* parallel: same stage          *)
 ```
 
-`PAR` binds tighter than `SEQ`: `a + b > c` is `(a ∥ b) → c`. Both are left-associative. Within
-CWL there is no grouping syntax, because stage-level parallelism plus sequencing already
-expresses every topology CWL admits. Parentheses belong to chains (§3.7), which sequence whole
-commands.
+`PAR` binds tighter than `SEQ`: `a + b > c` is `(a ∥ b) → c`. Both are left-associative. A
+workflow has no grouping syntax — parentheses are **not** supported inside it, because stage-level
+parallelism plus sequencing already expresses every topology a workflow admits (§9). Parentheses
+group whole turns one level up, in a program (§11).
 
 ### 3.2 The connector rule (the only thing that keeps this safe)
 
@@ -480,14 +481,20 @@ free 2s → grok 28s → claude 1m2s → review → one aggregate. Tests: `workf
 
 ## 9. Non-goals
 
-No parentheses inside CWL (chains have them, §3.7). No loops beyond `/repeat`. No conditionals. No variables or named intermediate results. No saved
-or shareable workflows. No nesting (`/team` inside a stage). No per-stage model parameters
-(temperature, thinking budget) beyond what `/frontier` already means as a leg.
+Inside a workflow: no parentheses, no loops, no conditionals, no nesting (`/team` inside a
+stage), and no per-stage model parameters (temperature, thinking budget) beyond what `/frontier`
+already means as a leg. Saved workflows exist since August (`/wf save`).
 
-If a use case needs an `if`, a `$var`, or a saved definition, that is the signal the feature has
-outgrown its justification - the answer then is a real orchestration surface, not more syntax on
-the prompt line. The value here is entirely in the two topologies that a one-line notation can
-express honestly: **refine in sequence** and **fan out then join**.
+Groups, loops and one condition - `||`, on failure - live one level up, in programs (§11),
+which compose whole turns and leave the workflow itself unchanged. Still out, at both levels:
+variables and named intermediate results, conditions on content, and parallel branches of
+several turns each.
+
+If a use case needs an `if` on content or a `$var`, that is the signal the feature has outgrown
+its justification - the answer then is a real orchestration surface, not more syntax on the
+prompt line. [ORCHESTRATION_MAPPING.md](ORCHESTRATION_MAPPING.md) lists what other
+orchestrators do that a program does not. The value of a workflow is in the two topologies that
+a one-line notation can express honestly: **refine in sequence** and **fan out then join**.
 
 ## 10. Open parameters
 
@@ -501,3 +508,154 @@ express honestly: **refine in sequence** and **fan out then join**.
 | W6 | Grade non-terminal stages? | No - the review only sees the terminal stage; scoring unread text would poison the averages |
 | W7 | Live step tracking without a fork change? | **Shipped** via §5.1 + §5.2 (verified live). A dedicated TUI widget fed by `/v1/activity` remains a possible improvement |
 | W8 | Single-worker terminal stage: attribute? | **Shipped as: no.** The first live run answered "(w1-grok) - only one worker reported…"; the review instruction now has a single-worker form that returns the deliverable itself |
+
+## 11. Programs: groups, chains, loops and fallbacks (level 2)
+
+Status: in source since 2026-10-05, not in a release yet. Parser: `pkg/captaincode/program.go`.
+Runner: `cmd/captaincode/brain_program.go`.
+
+A workflow (§3) joins legs. A program joins whole **turns**. A turn is anything Captain already
+runs from one typed prompt: a workflow, one leg, a `/team` task, a lane turn (`/quality …`), or
+plain text as the body of a loop. A program adds four things: parentheses, chains of whole
+turns, loops inside a chain, and fallbacks.
+
+### 11.1 Grammar
+
+```ebnf
+program = alt ;
+alt     = chain { "||" chain } ;              (* the first chain that succeeds ends it *)
+chain   = { step SEQ } ( step | loop ) ;      (* a failed step stops the chain *)
+loop    = "/repeat" [ N ] chain [ "until:" command ] ;
+step    = "(" alt ")" | turn ;
+turn    = workflow | "/team" text | lane text ;   (* plain text only as a loop body *)
+SEQ     = ">" | "->" ;
+```
+
+Precedence, from the loosest to the tightest:
+
+| Operator | Joins | Example | Reads as |
+|---|---|---|---|
+| `\|\|` | alternatives | `A > B \|\| C` | `(A > B) \|\| C` |
+| `/repeat N` | the rest of its chain | `/repeat 3 A > B` | `/repeat 3 (A > B)` |
+| `>` before a non-leg | steps | `/team A > /codex B` | two turns |
+| `>` `+` between legs | stages of one workflow (§3) | `/grok A > /claude B` | one turn, one review |
+
+Rules:
+
+1. The connector rule (§3.2) still holds. `>`, `->` and `||` count only when a command follows
+   them: a leg, `/frontier`, `/team`, `/repeat`, a lane word, or a `(` that opens on one of these.
+   The words `then` and `and` never join whole turns, so prose that names `/team` or `/repeat`
+   stays prose.
+2. Legs next to each other form one workflow turn, with one director review. Parentheses split
+   them: `(/codex draft) > /claude review` is two turns, each with its own answer.
+3. A `/repeat` runs everything after it, up to the end of its group or the next `||`. To run
+   steps after a loop, put the loop in parentheses: `(/repeat 4 …) > /claude review`.
+4. `until: <command>` is the loop's exit check. It comes last in its loop, and it belongs to the
+   innermost loop of its group.
+5. A gate on a `/team`, lane or plain turn (`… gate: make test`) is checked by the program
+   runner, with one repair. A gate on a leg stays the workflow's: one repair, then one escalation
+   to a stronger leg.
+6. Code in backticks, and text after a blank line, are never syntax. A gate command ends at the
+   first blank line.
+7. A lane word cannot apply to a whole group. Put it on each step.
+8. A text with no program syntax runs on the path it ran on before: a leg, a workflow, a plain
+   `/repeat N <task>`.
+
+### 11.2 What a step reads
+
+Each turn runs through the normal dispatch: solo, team or workflow, with its run record and its
+scorecard rows. The earlier steps of its chain are conversation turns: the step's text as the
+user's turn, and the last 8,000 characters of its answer as Captain's turn, at most 8 steps
+back. Every leg of a workflow step reads them, not only the last stage.
+
+Loop rounds do not read each other. A round works from the repository's current state, as a
+`/repeat` round always has. With `until:`, a round also reads the check's failing output.
+
+A fallback reads what the failed alternative tried and why it failed.
+
+Every turn ends with a contract line: where the turn sits (`step 2/3 › round 1`), the program's
+steps in plain words, and that the next step reads the end of its answer. The line holds no
+routing syntax.
+
+### 11.3 When a step fails
+
+A **turn** fails when it returns an error or no answer, when a workflow gate still fails after
+its repair, when a workflow stage produces no output, or when a runner-checked gate still fails
+after one repair.
+
+A **loop** fails when its `until:` check still fails after the last round, when three rounds in
+a row fail, or when no round succeeds. A loop without `until:` that ends on its round count, or
+on two rounds that say the same thing, has succeeded.
+
+A failed step stops its chain, and `||` runs the next alternative. A user stop, an abort or the
+turn budget stops the whole program: `||` does not run then.
+
+### 11.4 Limits
+
+| Limit | Value | Why |
+|---|---|---|
+| steps per chain | 8 | a typo must not become a long run |
+| alternatives per fallback | 8 | same |
+| nesting | 3 levels | each group and each loop is one level |
+| turns per program | 100 (`CAPTAIN_REPEAT_MAX`) | one budget for every loop and step in the program; a runner repair is a turn, a gate repair inside a workflow is not |
+| one check run | 5 minutes | `until:` and gates; the deadline kills the whole process group |
+| a workflow inside a step | §3.6 | unchanged |
+
+An open loop (`/repeat` with no count) runs until its check passes, the guards stop it, or the
+turn budget ends.
+
+### 11.5 Running, watching, stopping
+
+A program runs as a detached thread on the `/repeat` machinery. The launching turn prints how
+Captain read the program, as an indented plan, then streams each turn as it finishes. The last
+turn's answer closes the program. Esc stops watching; the program keeps running.
+
+`/repeat watch`, `show`, `status`, `finish` and `abort`, and `captain stop`, work on programs.
+`finish` ends the program after the turn in flight. `/wf parse <program>` prints the plan and
+the turn bound, and runs nothing.
+
+### 11.6 Safety
+
+- Only a typed prompt starts a program or a loop. `captain send` refuses `/repeat`, groups, `||`
+  and `until:`: a watcher, a cron or a worker cannot start a 100-turn run that nobody saw start.
+- A program's own turns never start a program. An answer that quotes program syntax is passed
+  on as text and cannot recurse.
+- `until:` and gates run a shell command you typed, in the folder you typed the program in,
+  with the same trust as `gate:` has always had.
+- `/openshell` cannot be a step of a program, for the reason mixed workflows are refused: a
+  sandbox's answer may not feed a host step, and a check on your checkout cannot see a change
+  that stays in a sandbox. A plain `/repeat N /openshell …` still works.
+
+### 11.7 Not supported, on purpose
+
+- **Variables and named results.** The shared state of agentic engineering is the repository and
+  its git history, plus the end of the previous answer.
+- **Conditions on content.** `||` branches on failure only. To route on what a task says, use
+  the director: a bare prompt, or `/team`.
+- **Parallel groups**, such as `(A > B) + (C > D)`. Parallel branches of several turns would
+  write one checkout at the same time. Use `+` between legs (isolated worktrees, one ruling per
+  conflict), or `/team`.
+- **Loops started from `captain send`.**
+- **English to programs.** `/wf <english>` compiles to workflows only.
+
+### 11.8 Examples
+
+Each line below parses. `TestDocumentedProgramsParse` checks it.
+
+```captain
+# a chain of whole turns
+/team research the API > /codex implement it > /claude review the diff
+# a loop with an objective exit
+/repeat 10 /codex fix the failing tests until: go test ./...
+# the same loop, with a fallback when it fails
+/repeat 10 /codex fix the failing tests until: go test ./... || /claude explain why the tests still fail
+# plan once, then loop over build and review
+/frontier write the spec for the next roadmap item > /repeat 5 (/codex implement the next item gate: go test ./... > /claude review the diff)
+# a loop in the middle of a chain
+/team research the problem and write the design > (/repeat 4 /quality implement the next design item gate: make test) > /claude + /codex audit the whole change > /frontier write the release notes
+# a gate on a lane turn
+/quality implement the next item gate: make test
+# parentheses split a workflow into two turns
+(/codex draft the API) > /claude review the draft
+```
+

@@ -33,6 +33,7 @@ const (
 	// questions in, calibrated answers out. A leg on it is a DECISION leg -
 	// it can never take a task (ServesTasks), so it is no worker rung, no
 	// model in the TUI's picker and no stage in a workflow.
+	TransportLocal     Transport = "local"      // tool-free small calls only
 	TransportSystemOne Transport = "system-one" // POST /v1/systemone
 	// TransportOpencodeShell is NVIDIA OpenShell: a sandboxed edit–test–export
 	// cycle executed inside MicroVMs, with Shield masking, Landlock and network
@@ -90,6 +91,7 @@ func (s LegSpec) EnvPrefix() string {
 // defaultLegSpecs are the compiled legs, in cold-start prior order (ties keep
 // this order: grok before codex splits on cost, not quality).
 var defaultLegSpecs = []LegSpec{
+	{ID: LegLocal, Transport: TransportLocal, Provider: "loopback", Model: "operator-selected", Prior: 0, Display: "Local helper", Note: "Qualified tool-free small calls only; never a coding worker"},
 	// jev carries no worker prior (0): it is not a worker. Priced per input
 	// token only - output is free - so the registry estimate runs a little
 	// under the bill (EstimateCost assumes a 3:1 split); cents per thousand
@@ -189,7 +191,7 @@ func Spec(l Leg) (LegSpec, bool) {
 // workflow stage - the brain asks it questions instead.
 func ServesTasks(l Leg) bool {
 	s, ok := specs[l]
-	return ok && s.Transport != TransportSystemOne
+	return ok && l != LegLocal && s.Transport != TransportSystemOne && s.Transport != TransportLocal
 }
 
 // AutoRoutes reports whether the router may hand a leg work on its own: a
@@ -320,10 +322,17 @@ func validateSpec(s LegSpec) error {
 	if reservedLegName(id) {
 		return fmt.Errorf("/%s is a reserved word of the command language (docs/LANGUAGE.md §9)", id)
 	}
+	if s.ID == LegLocal && s.Transport != TransportLocal {
+		return errors.New("local helper transport cannot be changed")
+	}
 	switch s.Transport {
 	case "", TransportOpencode:
 		if s.Provider == "" || s.Model == "" {
 			return errors.New("opencode legs need provider and model")
+		}
+	case TransportLocal:
+		if s.ID != LegLocal {
+			return errors.New("local transport is reserved for the local helper")
 		}
 	case TransportSystemOne:
 		if s.Provider == "" || s.Model == "" {

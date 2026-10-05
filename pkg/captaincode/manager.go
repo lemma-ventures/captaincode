@@ -157,6 +157,9 @@ func BuildPickPrompt(task string, class Class, prefer string, menu []Scored, sel
 	case "save":
 		sb.WriteString("The user asked for savings (/save): take the cheapest row that can plausibly do it. ")
 	}
+	if prefer == "" {
+		sb.WriteString("\nTie-break policy cheap-capable-v1: when two rows meet the task quality and safety requirements and neither has a clear advantage, choose the lower estimated cost; at equal cost use lower subscription pressure, then lower latency. Uncertainty about safety or capability is not a tie. Honor explicit model and quality requests.\n")
+	}
 	sb.WriteString("\n\nMenu (best value first):\n")
 	for i, r := range menu {
 		note := ""
@@ -466,6 +469,7 @@ Rules:
   - medium: ordinary implementation or focused bugfix
   - high: architecture, concurrency/race, security, multi-file redesign, hard debugging
 - You are the director. You plan, direct, and assess. Trivial and medium work never goes to you; for HIGH class work you may assign yourself when you appear in the worker list above and rank strongest for it - the hardest task should reach the best leg, and that is sometimes the judge. Every worker you name must be on the list.
+- Tie-break policy cheap-capable-v1: among equally capable choices, use lower estimated cost, then lower subscription pressure, then latency; uncertainty about safety or capability is not a tie. Explicit user choices win.
 - Optimize jointly for quality needed by THIS task, speed, and cost: prefer cheaper legs when they clear the quality bar, escalate to a stronger worker only when the task needs it.
 - Be fair: judge legs by their scorecards and task fit, not by family loyalty.
 - Each "brief" must be complete standalone instructions for that worker: it sees neither this planning call nor the other briefs. In the TUI wrapper it DOES see the user's conversation, so carry the user's OWN wording of every requirement through verbatim - never paraphrase away one that is anchored in the conversation ("in my writing style", "the file we discussed", "fix that bug"); a generic restatement makes the worker answer a question nobody asked.

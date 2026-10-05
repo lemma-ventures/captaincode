@@ -25,13 +25,25 @@ func usageBlock(leg captaincode.Leg, res captaincode.Result) map[string]any {
 	}
 	prompt := res.Tokens * 3 / 4
 	completion := res.Tokens - prompt
+	split := "estimated_3_to_1"
+	if d := res.TokenUsage; d != nil && d.Input != nil && d.Output != nil && d.CacheRead != nil && (d.CacheWrite != nil || d.Source == "codex" || d.Source == "local") {
+		prompt = *d.Input + *d.CacheRead
+		if d.CacheWrite != nil {
+			prompt += *d.CacheWrite
+		}
+		completion = *d.Output
+		split = d.Source + ":" + d.Scope
+	}
 	return map[string]any{
-		"prompt_tokens":     prompt,
-		"completion_tokens": completion,
-		"total_tokens":      res.Tokens,
-		"cost":              u.CostUSD, // USD; openrouter's field name, read by clients that know it
-		"captain_cost_usd":  u.CostUSD,
-		"captain_cost":      string(u.CostStatus),
+		"captain_usage_split": split,
+		"captain_token_usage": res.TokenUsage,
+		"captain_ttft_ms":     res.TTFTMs,
+		"prompt_tokens":       prompt,
+		"completion_tokens":   completion,
+		"total_tokens":        res.Tokens,
+		"cost":                u.CostUSD, // USD; openrouter's field name, read by clients that know it
+		"captain_cost_usd":    u.CostUSD,
+		"captain_cost":        string(u.CostStatus),
 	}
 }
 

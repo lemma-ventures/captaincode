@@ -73,17 +73,20 @@ func PolicyFor(c Class, estTokens int, exploreRate float64) Policy {
 
 // Decision is one routing choice with the evidence that produced it.
 type Decision struct {
-	Version    int       `json:"version"`
-	At         time.Time `json:"at"`
-	TaskID     string    `json:"task_id,omitempty"` // joins to the M1.2 charge tree
-	Task       string    `json:"task"`
-	Class      Class     `json:"class"`
-	Domain     Domain    `json:"domain,omitempty"`
-	Path       string    `json:"path"`
-	Chosen     Leg       `json:"chosen"`
-	Rationale  string    `json:"rationale,omitempty"`
-	NeedVision bool      `json:"need_vision,omitempty"`
-	DecidedMs  int64     `json:"decided_ms,omitempty"`
+	ChosenFrontier *bool     `json:"chosen_frontier,omitempty"`
+	Preference     string    `json:"preference,omitempty"`
+	TiePolicy      string    `json:"tie_policy,omitempty"`
+	Version        int       `json:"version"`
+	At             time.Time `json:"at"`
+	TaskID         string    `json:"task_id,omitempty"` // joins to the M1.2 charge tree
+	Task           string    `json:"task"`
+	Class          Class     `json:"class"`
+	Domain         Domain    `json:"domain,omitempty"`
+	Path           string    `json:"path"`
+	Chosen         Leg       `json:"chosen"`
+	Rationale      string    `json:"rationale,omitempty"`
+	NeedVision     bool      `json:"need_vision,omitempty"`
+	DecidedMs      int64     `json:"decided_ms,omitempty"`
 
 	// Exploration is recorded as what it is: a deliberate departure from the
 	// ranking, naming the leg that was passed over. Without PassedOver an
@@ -146,6 +149,12 @@ func (d Decision) Considered() []Scored { return Eligible(d.Candidates) }
 // refines the class, a reroute moves the work), and two rows for one task
 // would read as two tasks.
 func (l *Ledger) RecordDecision(d Decision) {
+	if d.Chosen != "" {
+		if spec, ok := Spec(d.Chosen); ok {
+			f := spec.Frontier
+			d.ChosenFrontier = &f
+		}
+	}
 	d.Version = DecisionVersion
 	if d.At.IsZero() {
 		d.At = time.Now()

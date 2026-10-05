@@ -199,6 +199,16 @@ func IsBrainRoot(root string) bool {
 // dashboard. root is the brain directory (…/.euclid); the scripts run in its
 // host with EUCLID_ROOT set, exactly as the dashboard's own server does.
 func Reindex(root string, timeout time.Duration) IndexResult {
+	return reindexWithOptions(root, timeout, false)
+}
+
+// ReindexFast rebuilds root's catalog and dashboard, skipping the slow live
+// benchmark suite. Used for automatic reindexing (journal bursts, periodic check).
+func ReindexFast(root string, timeout time.Duration) IndexResult {
+	return reindexWithOptions(root, timeout, true)
+}
+
+func reindexWithOptions(root string, timeout time.Duration, fast bool) IndexResult {
 	res := IndexResult{Root: root}
 	if !IsBrainRoot(root) {
 		res.Error = "not a Euclid brain: " + root
@@ -219,6 +229,9 @@ func Reindex(root string, timeout time.Duration) IndexResult {
 	}
 	host := filepath.Dir(root)
 	env := append(os.Environ(), "EUCLID_ROOT="+host, "EUCLID_NO_AUTOBUILD=1")
+	if fast {
+		env = append(env, "EUCLID_SKIP_BENCHMARKS=1")
+	}
 	res.OK = true
 	for _, script := range []string{catalog, dashboard} {
 		step := runIndexScript(script, host, env, timeout)
@@ -247,6 +260,13 @@ func Reindex(root string, timeout time.Duration) IndexResult {
 				_ = os.MkdirAll(dir, 0o755)
 				_ = os.WriteFile(dst, b, 0o644)
 			}
+		}
+	}
+	if res.OK {
+		idxPath := filepath.Join(root, "dashboard", "index.html")
+		if isFile(idxPath) {
+			now := time.Now()
+			_ = os.Chtimes(idxPath, now, now)
 		}
 	}
 	res.FinishedAt = time.Now().Format(time.RFC3339)
@@ -312,11 +332,114 @@ type EnsureReport struct {
 	Local string // the local brain's root, "" when cwd is not in a repository
 }
 
+var ensureState struct {
+	mu      sync.Mutex
+	running bool
+	again   bool
+	last    map[string]time.Time
+}
+
+// BrainNeedsReindex reports whether any journal file or register file in root
+// is newer than root/dashboard/index.html, or if the index/catalog is missing.
+func BrainNeedsReindex(root string) bool {
+	if !IsBrainRoot(root) {
+		return false
+	}
+	idxPath := filepath.Join(root, "dashboard", "index.html")
+	idxStat, err := os.Stat(idxPath)
+	if err != nil {
+		return true // dashboard missing or not built
+	}
+	if !isFile(filepath.Join(root, "index", "catalog.jsonl")) && !isFile(filepath.Join(root, "index", "build-catalog.py.ran")) {
+		return true // catalog missing
+	}
+	idxMtime := idxStat.ModTime()
+
+	// 1. Check journal/
+	jdir := filepath.Join(root, "journal")
+	if entries, err := os.ReadDir(jdir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasSuffix(name, ".jsonl") || strings.HasSuffix(name, ".md") {
+				if fi, err := e.Info(); err == nil && fi.ModTime().After(idxMtime) {
+					return true
+				}
+			}
+		}
+	}
+
+	// 2. Check register files in root
+	regFiles := []string{
+		"BRAIN.md", "WISDOM.md", "INTUITION.md", "AFFECT.md",
+		"SOUL.md", "VISION.md", "MAP.md",
+	}
+	for _, name := range regFiles {
+		if fi, err := os.Stat(filepath.Join(root, name)); err == nil {
+			if fi.ModTime().After(idxMtime) {
+				return true
+			}
+		}
+	}
+
+	// 3. Check memory/
+	memDir := filepath.Join(root, "memory")
+	if entries, err := os.ReadDir(memDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				if fi, err := e.Info(); err == nil && fi.ModTime().After(idxMtime) {
+					return true
+				}
+			}
+		}
+	}
+
+	// 4. Check developers/
+	devDir := filepath.Join(root, "developers")
+	if devs, err := os.ReadDir(devDir); err == nil {
+		for _, d := range devs {
+			if !d.IsDir() {
+				continue
+			}
+			devRoot := filepath.Join(devDir, d.Name())
+			if entries, err := os.ReadDir(filepath.Join(devRoot, "journal")); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() && (strings.HasSuffix(e.Name(), ".jsonl") || strings.HasSuffix(e.Name(), ".md")) {
+						if fi, err := e.Info(); err == nil && fi.ModTime().After(idxMtime) {
+							return true
+						}
+					}
+				}
+			}
+			for _, name := range regFiles {
+				if fi, err := os.Stat(filepath.Join(devRoot, name)); err == nil {
+					if fi.ModTime().After(idxMtime) {
+						return true
+					}
+				}
+			}
+			if entries, err := os.ReadDir(filepath.Join(devRoot, "memory")); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+						if fi, err := e.Info(); err == nil && fi.ModTime().After(idxMtime) {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
 // EnsureBrains is the launch-time step: the main brain exists, the folder's
 // repo brain exists (scaffolded on first launch - VISION/MAP/BRAIN are then
 // bootstrapped by the caller, which needs the brain running), and both
-// indexes are fresh. Always rebuilding beats deciding staleness: the catalog
-// reads the repo's files, whose changes no register mtime reflects.
+// indexes are fresh. A second launch coalesces rather than starting a second
+// full ensure.
 func EnsureBrains(cwd string, w io.Writer) EnsureReport {
 	var rep EnsureReport
 	say := func(format string, a ...any) {
@@ -330,6 +453,25 @@ func EnsureBrains(cwd string, w io.Writer) EnsureReport {
 		say("euclid: off (CAPTAIN_EUCLID=0)")
 		return rep
 	}
+
+	ensureState.mu.Lock()
+	if ensureState.running {
+		ensureState.again = true
+		ensureState.mu.Unlock()
+		say("euclid: ensure already running (coalesced)")
+		return rep
+	}
+	ensureState.running = true
+	if ensureState.last == nil {
+		ensureState.last = map[string]time.Time{}
+	}
+	ensureState.mu.Unlock()
+	defer func() {
+		ensureState.mu.Lock()
+		ensureState.running = false
+		ensureState.mu.Unlock()
+	}()
+
 	main := MainBrainPath()
 	if main != "" {
 		if created, err := Scaffold(main, "main"); err != nil {
@@ -338,7 +480,17 @@ func EnsureBrains(cwd string, w io.Writer) EnsureReport {
 			say("euclid main brain: created %s", main)
 		}
 		if isDir(main) {
-			say("euclid main brain: %s", describeIndex(Reindex(main, 0)))
+			ensureState.mu.Lock()
+			lastMain := ensureState.last[main]
+			ensureState.mu.Unlock()
+			if time.Since(lastMain) < 2*time.Minute && !BrainNeedsReindex(main) {
+				say("euclid main brain: fresh (no changes)")
+			} else {
+				say("euclid main brain: %s", describeIndex(Reindex(main, 0)))
+				ensureState.mu.Lock()
+				ensureState.last[main] = time.Now()
+				ensureState.mu.Unlock()
+			}
 		}
 	}
 	repo := RepoRoot(cwd)
@@ -366,7 +518,17 @@ func EnsureBrains(cwd string, w io.Writer) EnsureReport {
 			say("euclid local brain: corpus set to %s (%s)", strings.Join(roots, ", "), strings.Join(exts, " "))
 		}
 	}
-	say("euclid local brain: %s", describeIndex(Reindex(shared, 0)))
+	ensureState.mu.Lock()
+	lastShared := ensureState.last[shared]
+	ensureState.mu.Unlock()
+	if time.Since(lastShared) < 2*time.Minute && !BrainNeedsReindex(shared) {
+		say("euclid local brain: fresh (no changes)")
+	} else {
+		say("euclid local brain: %s", describeIndex(Reindex(shared, 0)))
+		ensureState.mu.Lock()
+		ensureState.last[shared] = time.Now()
+		ensureState.mu.Unlock()
+	}
 	return rep
 }
 
@@ -455,7 +617,7 @@ func autoReindex(root string) {
 	autoIndex.mu.Unlock()
 
 	for {
-		res := Reindex(root, 2*time.Minute)
+		res := ReindexFast(root, 2*time.Minute)
 		if !res.OK {
 			fmt.Fprintf(os.Stderr, "captain brain: euclid index of %s not rebuilt - %s\n", root, describeIndex(res))
 		}
