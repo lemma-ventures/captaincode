@@ -520,10 +520,6 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 		emit("no repeat thread to watch (`/repeat status`).")
 		return
 	}
-	unit := "round"
-	if th.steps != nil {
-		unit = "step"
-	}
 	emit(fmt.Sprintf("**watching %s** - the running round's activity shows above, rounds appear here as they finish. Esc to stop watching; the loop keeps running (typed input is queued until then; `! captain stop` works at any time).\n\nTask: %s\n",
 		th.id, promptPeek(th.task)))
 

@@ -785,3 +785,51 @@ func (p Program) outline(sb *strings.Builder, indent, label string) {
 		p.Steps[0].outline(sb, indent+"   ", "")
 	}
 }
+
+// SplitRepeat splits "/repeat [N] <rest>" into its count and the rest.
+// count 0 means until stopped. ok is false when raw does not open with
+// /repeat.
+func SplitRepeat(raw string) (count int, rest string, ok bool) {
+	t := strings.TrimSpace(raw)
+	if !strings.HasPrefix(strings.ToLower(t), "/repeat") || (len(t) > 7 && isWordByte(t[7])) {
+		return 0, "", false
+	}
+	t = strings.TrimSpace(t[len("/repeat"):])
+	if t == "" {
+		return 0, "", true
+	}
+	fields := strings.Fields(t)
+	if n, err := strconv.Atoi(fields[0]); err == nil && n > 0 {
+		return n, strings.TrimSpace(strings.TrimPrefix(t, fields[0])), true
+	}
+	return 0, t, true
+}
+
+// RepeatControl recognizes "/repeat status|stop|finish|abort|show|watch
+// [last|all|thread-id]". ok is false when rest is not a control directive.
+func RepeatControl(rest string) (word, arg string, ok bool) {
+	f := strings.Fields(strings.ToLower(rest))
+	if len(f) == 0 || !repeatControlWords[f[0]] {
+		return "", "", false
+	}
+	if len(f) == 1 {
+		return f[0], "", true
+	}
+	if len(f) == 2 && (f[1] == "last" || f[1] == "all" ||
+		strings.HasPrefix(f[1], "rp_") || strings.HasPrefix(f[1], "ch_")) {
+		return f[0], f[1], true
+	}
+	return "", "", false
+}
+
+// StartsLoop reports whether a typed prompt would start a /repeat loop or
+// a program. /repeat's control words (status, show, finish …) start nothing.
+func StartsLoop(text string) bool {
+	h := HoistLeading(strings.TrimSpace(text))
+	if _, rest, ok := SplitRepeat(h); ok {
+		_, _, ctl := RepeatControl(strings.ToLower(strings.TrimSpace(rest)))
+		return strings.TrimSpace(rest) != "" && !ctl
+	}
+	_, ok, _ := ParseProgram(h)
+	return ok
+}
