@@ -975,6 +975,7 @@ See the [pilot setup and limits](../examples/openshell-pilot/README.md).
 | `CAPTAIN_WORKER_TOOL_TIMEOUT` | `12m` | How long a run may be silent **while a tool is running** (a build, a test suite, a CI watch) before it counts as quiet. opencode bounds a bash tool at 10m, so longer is a wedged tool, not a slow one. |
 | `CAPTAIN_WORKER_IDLE_TIMEOUT` | `90s` | Idle gap inside an opencode worker run with no tool in flight. |
 | `CAPTAIN_WORKER_CLI_IDLE_TIMEOUT` | `30m` | Same for the CLI legs (claude -p, codex exec, cursor-agent), whose reasoning is invisible: minutes of silence between two tool calls is thinking, not a stall. |
+| `CAPTAIN_WORKER_LIVENESS` | on | Once a minute, read a silent CLI worker's own process: CPU time or network traffic moving (a model streaming tokens) counts as activity, so a working run is never cut for silence. A run quiet for 5 minutes or more says so in its status, with whether the process is idle. When a CLI worker ends, the processes it started and left running are named in the run's status (not killed: a deliberate watcher must survive). `0` turns it off. |
 | `CAPTAIN_WORKER_CLI_TOOL_TIMEOUT` | `2h` | How long a CLI leg may be silent while one of its tools runs (a benchmark, a long test): the CLI bounds its own tools, opencode's 10m bash cap does not apply. |
 | `CAPTAIN_WORKER_FIRST_EVENT_TIMEOUT` | `90s` | Nothing at all from a fresh worker ⇒ treat the leg as down. |
 | `CAPTAIN_WORKER_LOGS` | on (`0` disables) | Write `~/.captaincode/runs/<id>-<leg>.log`. |

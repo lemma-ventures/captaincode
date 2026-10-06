@@ -18,6 +18,7 @@ package captaincode
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -120,6 +121,76 @@ type progress struct {
 	tools atomic.Int32
 	idle  time.Duration // 0 = cliIdleTimeout()
 	tool  time.Duration // 0 = cliToolTimeout()
+	// live samples the worker process (liveness.go): CPU or network
+	// movement keeps a silent run alive, and a quiet one says it is idle.
+	live atomic.Pointer[liveness]
+}
+
+// watch starts sampling the worker process: name labels its status lines,
+// note receives them (nil = none). Safe on a nil progress.
+func (p *progress) watch(pid int, name string, note func(string)) {
+	if p == nil || pid <= 0 || os.Getenv("CAPTAIN_WORKER_LIVENESS") == "0" {
+		return
+	}
+	p.live.Store(&liveness{pid: pid, name: name, note: note})
+}
+
+// snapshotKids records the worker's children now, before it exits. Safe on
+// a nil progress.
+func (p *progress) snapshotKids() {
+	if p == nil {
+		return
+	}
+	if l := p.live.Load(); l != nil {
+		l.snapshot()
+	}
+}
+
+// leftoverNote names the processes the worker left running after it ended,
+// or "". Safe on a nil progress.
+func (p *progress) leftoverNote() string {
+	if p == nil {
+		return ""
+	}
+	l := p.live.Load()
+	if l == nil {
+		return ""
+	}
+	return leftoverLine(l.name, l.leftovers())
+}
+
+// checkLive samples the worker process once per livenessEvery: movement
+// counts as activity, and a run quiet for five minutes or more says so.
+func (p *progress) checkLive(now time.Time, lastSample *time.Time, lastNote *time.Time) {
+	l := p.live.Load()
+	if l == nil {
+		return
+	}
+	l.snapshot() // every poll: a child started in the last minute still counts
+	if now.Sub(*lastSample) < livenessEvery {
+		return
+	}
+	*lastSample = now
+	active, detail, ok := l.sample()
+	if !ok {
+		return
+	}
+	silent := now.Sub(time.Unix(0, p.last.Load()))
+	if active {
+		if silent >= 5*time.Minute && l.note != nil {
+			l.note(fmt.Sprintf("%s silent %s but working: %s", l.name, silent.Round(time.Minute), detail))
+		}
+		p.touch()
+		return
+	}
+	if silent >= 5*time.Minute && now.Sub(*lastNote) >= 5*time.Minute && l.note != nil {
+		*lastNote = now
+		state := "idle"
+		if p.tools.Load() > 0 {
+			state = "a tool is running"
+		}
+		l.note(fmt.Sprintf("%s quiet %s, process %s (%s)", l.name, silent.Round(time.Minute), state, detail))
+	}
 }
 
 func (p *progress) touch() { p.last.Store(time.Now().UnixNano()) }
@@ -172,11 +243,13 @@ func progressCtx(base, ceil time.Duration) (context.Context, context.CancelFunc,
 	go func() {
 		t := time.NewTicker(poll)
 		defer t.Stop()
+		var lastSample, lastNote time.Time
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				p.checkLive(time.Now(), &lastSample, &lastNote)
 				el := time.Since(start)
 				if (ceil > 0 && el >= ceil) || (el >= base && p.quiet()) {
 					capped.Store(true)

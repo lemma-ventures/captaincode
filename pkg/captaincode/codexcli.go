@@ -254,6 +254,7 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		}
 		return Result{}, fmt.Errorf("codex exec start: %w", err)
 	}
+	prog.watch(cmd.Process.Pid, "codex-cli", onStatus)
 	scanDone := make(chan struct{})
 	defer close(scanDone)
 	go func() {
@@ -348,7 +349,9 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 			failed, haveFailed = ev.Error.Message, true
 		}
 	}
+	prog.snapshotKids()
 	waitErr := waitBounded(cmd, 2*time.Second)
+	reportLeftovers(prog, onStatus)
 	if stopped.Load() {
 		return Result{Text: strings.TrimSpace(acc.String()), Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
 			fmt.Errorf("codex exec stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)

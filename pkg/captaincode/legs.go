@@ -2176,6 +2176,17 @@ type claudeStreamLine struct {
 	} `json:"usage"`
 }
 
+// reportLeftovers names the processes a finished CLI worker left running
+// (liveness.go), in the brain log and the run's status.
+func reportLeftovers(p *progress, onStatus func(string)) {
+	if s := p.leftoverNote(); s != "" {
+		fmt.Printf("captain: %s\n", s)
+		if onStatus != nil {
+			onStatus(s)
+		}
+	}
+}
+
 // waitBounded waits for a finished/killed command, but not forever: Stderr is a
 // strings.Builder, so exec.Wait blocks on its copy goroutine until EVERY holder
 // of the pipe closes it - and an orphaned grandchild (a shell's `sleep`, a
@@ -2308,6 +2319,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("claude -p start: %w", err)
 	}
+	prog.watch(cmd.Process.Pid, "claude", onStatus)
 	in := &claudeStdin{w: stdinPipe}
 	defer in.close()
 	// The task itself, off the scan loop: a pipe takes 64K before the reader
@@ -2458,7 +2470,9 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		}
 	}
 	in.close()
+	prog.snapshotKids()
 	waitErr := waitBounded(cmd, 2*time.Second)
+	reportLeftovers(prog, onStatus)
 	if stopped.Load() {
 		return Result{Text: strings.TrimSpace(acc.String()), Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
 			fmt.Errorf("claude -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
@@ -2597,6 +2611,7 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 	if err := cmd.Start(); err != nil {
 		return Result{}, fmt.Errorf("cursor-agent start: %w", err)
 	}
+	prog.watch(cmd.Process.Pid, "cursor", onStatus)
 	scanDone := make(chan struct{})
 	defer close(scanDone)
 	go func() { // see runClaudeStreamOpts: keep the cap authoritative
@@ -2668,7 +2683,9 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 			result.WriteString(ev.Result)
 		}
 	}
+	prog.snapshotKids()
 	waitErr := waitBounded(cmd, 2*time.Second)
+	reportLeftovers(prog, onStatus)
 	if stopped.Load() {
 		return Result{Text: strings.TrimSpace(acc.String()), Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
 			fmt.Errorf("cursor-agent -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
