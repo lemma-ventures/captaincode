@@ -78,7 +78,7 @@ A stated preference names a lane, not a leg. Each lane counts where its last `CA
 | Lane | Legs | Runs at |
 |---|---|---|
 | `frontier` | The frontier-class legs and claude, ranked by perf index (claude and codex-cli today; grok-max sits below the floor) | claude as the frontier pseudo-leg (pinned strongest model, max thinking); any other leg at max effort (codex-cli: its frontier model at `xhigh`) |
-| `quality` | The two best legs by blended quality, the director's own leg included when it is open | high effort |
+| `quality` | The legs within 85% of the best by blended quality, the director's own leg included when it is open. Frontier-class legs (`codex-cli`, `grok-max`) stay out: they run on `/frontier` | high effort |
 | `cheap` (`/save`) | Open-weight legs that clear the class's quality bar (`CAPTAIN_VALUE_TAU`) | medium effort: the leg's own model, not its flash sibling |
 
 With no open-weight leg open, `/save` routes over the whole ladder at low effort, as before lanes, and the feed says so. A forced leg (`/glm …`), legs named in the prompt, and a task-API plan that sends nothing are not counted or balanced. `/team`, workflows and a `/frontier` stage inside a workflow keep their own leg choice. The route's rationale names the lane, the leg and the tally (`frontier lane: codex-cli (under-used: 3 of the last 8, share 4.0; claude 5 · codex-cli 3)`).

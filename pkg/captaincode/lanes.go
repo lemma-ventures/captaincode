@@ -36,7 +36,8 @@ package captaincode
 //     max thinking); any other leg runs at max effort (codex-cli: its
 //     frontier model at xhigh).
 //   - quality: the top legs by blended quality (TopQuality), the director's
-//     own leg included, at high effort.
+//     own leg included, at high effort. Frontier-class legs (codex-cli,
+//     grok-max) stay out: they run on /frontier only.
 //   - cheap: open-weight legs only, each at its quality tier - its own model
 //     at medium effort rather than its flash sibling. The lane saves by
 //     running open models, not small ones. A leg below the class's

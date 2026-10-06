@@ -1,6 +1,6 @@
 # The Captain command language
 
-Version **1.0** · normative · implementation: `pkg/captaincode/language.go`
+Version **1.1** · normative · implementation: `pkg/captaincode/language.go`
 
 Every line typed into a Captain session is a program in this language: a task, plus the words
 that say who runs it, how, how often, and in what order. This document defines the language.
@@ -173,7 +173,7 @@ Text with no head is routed ([ROUTING.md](ROUTING.md)). `/auto` asks for routing
 
 | Word | Kind | Meaning |
 |---|---|---|
-| `/quality` `/q` `/best` | lane | The best legs by blended quality, at high effort. |
+| `/quality` `/q` `/best` | lane | Takes turns across the legs within 85% of the best by blended quality, at high effort. Frontier-class legs (`codex-cli`, `grok-max`) are left to `/frontier`. |
 | `/speed` `/fast` | lane | The director picks among fast legs. |
 | `/save` `/cheap` | lane | The open-weight legs that clear the quality bar, at medium effort. |
 | `/frontier` | effort | The leg's most capable settings (as a modifier, §4.6). |
@@ -330,4 +330,5 @@ says why and the version moves.
 
 | Version | Date | Change |
 |---|---|---|
+| 1.1 | 2026-10-06 | `/quality` leaves frontier-class legs (`codex-cli`, `grok-max`) to `/frontier`. Every line parses as before; the lane `/quality` names has fewer legs. Its description now matches the code: every leg within 85% of the best, not "the two best". |
 | 1.0 | 2026-10-05 | First specification of the whole line: workflows (CWL, 2026-07-30), modifiers and hoisting, chains and groups, `/repeat` control words with chain ids, the run budget and the inbox rules. Lines led by `/openshell` that are chains now run as chains. |

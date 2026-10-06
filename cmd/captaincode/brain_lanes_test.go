@@ -213,6 +213,25 @@ func TestQualityLaneSpreadsOverTheTopLegs(t *testing.T) {
 	assert.Contains(t, resp["rationale"], "quality lane:", "the short alias at the head is /quality")
 }
 
+// /quality is the best of the legs that are not frontier-class: a social
+// post sent to /quality ran codex-cli's gpt-6-astra because the lane rotated
+// over it (2026-10-06). codex-cli and grok-max run on /frontier only.
+func TestQualityLaneLeavesFrontierLegsToFrontier(t *testing.T) {
+	b := teamBrain()
+	noDirector(t, b)
+	seen := map[string]int{}
+	for i := 0; i < 20; i++ {
+		resp := routeBody(t, b, "write the launch post for the release", map[string]any{"prefer": "quality"})
+		leg := resp["leg"].(string)
+		seen[leg]++
+		assert.False(t, captaincode.IsFrontierClass(captaincode.Leg(leg)), "/quality sent a turn to frontier-class %s", leg)
+		assert.NotContains(t, resp["rationale"], "codex-cli", "the tally does not list frontier legs")
+	}
+	assert.GreaterOrEqual(t, len(seen), 2, "still a rotation: %v", seen)
+	assert.Empty(t, withoutFrontierClass([]captaincode.Leg{captaincode.LegCodexCLI, captaincode.LegGrokMax, captaincode.LegFrontier}))
+	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude}, withoutFrontierClass([]captaincode.Leg{captaincode.LegClaude, captaincode.LegCodexCLI}))
+}
+
 // A high-class /quality turn had the director's leg on its menu twice: the
 // high-class ladder adds it, and /quality added it again, so the top two by
 // quality were "claude, claude" - a lane of one.

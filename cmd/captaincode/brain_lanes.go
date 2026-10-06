@@ -57,6 +57,20 @@ func reliableLane(cands []captaincode.LaneCandidate, stats map[captaincode.Leg]c
 	return out
 }
 
+// withoutFrontierClass drops the frontier-class legs (codex-cli, grok-max,
+// the frontier pseudo-leg): they belong to /frontier. /quality is the best of
+// the rest, at high effort - a social post sent to /quality ran gpt-6-astra,
+// codex-cli's frontier model, because the lane rotated over it (2026-10-06).
+func withoutFrontierClass(legs []captaincode.Leg) []captaincode.Leg {
+	out := make([]captaincode.Leg, 0, len(legs))
+	for _, l := range legs {
+		if !captaincode.IsFrontierClass(l) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // qualityMenuSize is how many legs /quality offers. Two meant claude and
 // grok-max took 68 of 72 turns with near-equal scores; the lane's floor,
 // not the menu, decides who shares the lane.
@@ -67,6 +81,7 @@ const qualityMenuSize = 4
 // so OSSTurn has one to give them to.
 func (b *brain) qualityMenu(cand []captaincode.Leg, st map[captaincode.Leg]captaincode.LegStats, task string) []captaincode.Leg {
 	d := captaincode.TriageTask(task).Domain
+	cand = withoutFrontierClass(cand)
 	menu := captaincode.TopQualityFor(cand, st, d, qualityMenuSize)
 	if b.ossTarget() <= 0 {
 		return menu
@@ -158,7 +173,7 @@ func (b *brain) pickLane(lane captaincode.Lane, task string, order []captaincode
 		if d == "" {
 			d = captaincode.TriageTask(task).Domain
 		}
-		for _, l := range order {
+		for _, l := range withoutFrontierClass(order) {
 			cands = append(cands, captaincode.LaneCandidate{Leg: l, Score: captaincode.BlendedQualityFor(l, stats[l], d)})
 		}
 		cands = reliableLane(cands, stats)

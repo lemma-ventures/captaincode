@@ -25,7 +25,7 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/team /frontier <task>`" + ` (or ` + "`/team /codex-cli …`" + `, any leg) - that member is binding, the director fills the rest
 - ` + "`/frontier <task>`" + ` - maximum effort; the frontier legs (claude and codex-cli today) take turns, the one behind its share of recent turns going next
 - ` + "`/codex-cli <task>`" + ` - gpt-6-astra at maximum effort via the Codex CLI (frontier-class, slow)
-- ` + "`/quality` `/speed` `/save`" + ` - preference, before or after a leg prefix · ` + "`/quality`" + ` takes turns across the two best legs at high effort, ` + "`/save`" + ` across the open-weight legs, each on its own model at medium effort
+- ` + "`/quality` `/speed` `/save`" + ` - preference, before or after a leg prefix · ` + "`/quality`" + ` takes turns across the legs within 85% of the best at high effort (not the frontier legs - those are ` + "`/frontier`" + `), ` + "`/save`" + ` across the open-weight legs, each on its own model at medium effort
 - ` + "`/oss`" + ` - only open-weight models · ` + "`/deterministic`" + ` - only legs green in the Agentic Determinism Index, pinned to the measured serving tuple (` + "`captain adi`" + ` shows who qualifies); both compose with everything: ` + "`/oss /repeat 5 <task>`" + `, ` + "`/team /deterministic <task>`" + `
 
 **Chain work (Captain Workflow Language)**
