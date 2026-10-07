@@ -938,7 +938,7 @@ func (b *brain) demoteDirector(err error, reason string) {
 }
 
 func (b *brain) plan(ws captaincode.Workspace, task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
-	return b.planWith(ws, nil, task, class, prefer, open, stats, teams, allowFanOut)
+	return b.planWith(ws, nil, task, class, prefer, open, stats, teams, allowFanOut, false)
 }
 
 // directorPickEnabled: CAPTAIN_DIRECTOR_PICK=0 restores the plan-and-
@@ -971,23 +971,30 @@ func (b *brain) pick(task string, class captaincode.Class, prefer string, menu [
 
 // planWith is plan with caller-bound legs: a leg or /frontier named right
 // after /team is a BINDING team member, passed to the director as such.
-func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
+func (b *brain) planWith(ws captaincode.Workspace, required []captaincode.Leg, task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut, team bool) (captaincode.Plan, error) {
 	if b.planFn != nil {
 		if b.planRequiredFn != nil {
 			b.planRequiredFn(required)
 		}
-		return b.planFn(task, class, prefer, open, stats, teams, allowFanOut)
+		p, err := b.planFn(task, class, prefer, open, stats, teams, allowFanOut)
+		if err == nil && team {
+			p = captaincode.EnsureTeam(p, open)
+		}
+		return p, err
 	}
 	// Called under mu (route holds it): safe to read/update director state.
 	// The workspace's memory rides along: the director plans with what the
 	// project already decided and learned, not from the task alone.
-	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Required: required, Hints: b.planHints, Memory: captaincode.DirectorMemoryWith(ws.Dir, ws.Brains)}
+	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port, Required: required, Team: team, Hints: b.planHints, Memory: captaincode.DirectorMemoryWith(ws.Dir, ws.Brains)}
 	if prefer == "" {
 		mgr.SteerNote = b.steerNote()
 	}
 	mgr.CallLabel, mgr.OnCall = "director", b.chargeRoute(task)
 	p, err := mgr.Plan(task, class, prefer, open, stats, teams, allowFanOut)
 	b.noteDirectorOutcome(err)
+	if err == nil && team {
+		p = captaincode.EnsureTeam(p, open)
+	}
 	return p, err
 }
 

@@ -206,3 +206,33 @@ func TestPlanPromptCarriesRequiredLegsAsBinding(t *testing.T) {
 	assert.Contains(t, out, legDescription(LegFrontier), "the menu describes the frontier pseudo-leg")
 	assert.NotEmpty(t, legDescription(LegFrontier))
 }
+
+// A /team turn asks for a team: the routing default "usually ONE worker" is
+// replaced, and a director that still returns one worker gets a second of
+// another family. 15 of 19 single-worker /team plans had /frontier bound,
+// read by the director as the whole team (2026-10-07).
+func TestTeamPlanAsksForTwoOrThreeWorkers(t *testing.T) {
+	base := buildPlanPrompt("design the threat model", "", "", []Leg{LegFrontier, LegGrok, LegCursor}, nil, nil, true, LegFrontier)
+	require.Contains(t, base, fanOutRule, "the routing rule the team rule replaces is still in the prompt")
+	team := teamPrompt(base)
+	assert.NotContains(t, team, "Usually assign ONE worker")
+	assert.Contains(t, team, "The user asked for a TEAM: assign 2 or 3 workers")
+	assert.Contains(t, team, "A leg the user bound is ONE member of the team")
+}
+
+func TestEnsureTeamAddsAnIndependentSecondWorker(t *testing.T) {
+	one := Plan{Workers: []Worker{{Leg: LegFrontier, Brief: "review the strategy"}}, Rationale: "user bound frontier"}
+
+	p := EnsureTeam(one, []Leg{LegFrontier, LegClaude, LegGrok, LegCursor})
+	require.Len(t, p.Workers, 2)
+	assert.Equal(t, LegGrok, p.Workers[1].Leg, "claude is the frontier leg's own family, so the next open leg")
+	assert.Contains(t, p.Workers[1].Brief, "review the strategy")
+	assert.Contains(t, p.Workers[1].Brief, "second, independent worker")
+	assert.Contains(t, p.Rationale, "+grok: a /team runs at least two workers")
+
+	alone := EnsureTeam(one, []Leg{LegFrontier, LegClaude})
+	assert.Len(t, alone.Workers, 1, "no other family open: the plan stays as it is")
+
+	two := Plan{Workers: []Worker{{Leg: LegGrok}, {Leg: LegCursor}}}
+	assert.Equal(t, two, EnsureTeam(two, []Leg{LegGrok, LegCursor, LegClaude}))
+}

@@ -180,7 +180,7 @@ func (b *brain) teamPlanFor(ws captaincode.Workspace, task, prefer string, requi
 	}
 	b.planHints = b.valueHints(captaincode.ClassHigh, captaincode.TriageTask(task).Domain, order, prefer == "" && ws.Pool.Empty())
 	defer func() { b.planHints = nil }()
-	return b.planWith(ws, required, task, "", prefer, order, stats, teams, true)
+	return b.planWith(ws, required, task, "", prefer, order, stats, teams, true, true)
 }
 
 // teamRequired extracts the legs named as directives right after /team -

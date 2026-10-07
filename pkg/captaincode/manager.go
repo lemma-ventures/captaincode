@@ -24,6 +24,9 @@ type Manager struct {
 	// Required binds legs the caller insists on (a leg or /frontier named
 	// right after /team); they head the BINDING block of the plan prompt.
 	Required []Leg
+	// Team marks a plan the user asked for with /team: an ensemble of two
+	// or three workers, not the routing default of one (ensureTeam).
+	Team bool
 	// Memory is the project's Euclid block for the director (DirectorMemory):
 	// what is decided, mapped and learned, so plans and briefs build on it.
 	Memory string
@@ -295,6 +298,9 @@ func (m Manager) Plan(task string, class Class, prefer string, open []Leg, stats
 		note = m.SteerNote
 	}
 	prompt := buildPlanPromptHints(task, string(class), prefer, open, stats, teams, allowFanOut, m.Required, m.Hints, note)
+	if m.Team && allowFanOut {
+		prompt = teamPrompt(prompt)
+	}
 	if m.Memory != "" {
 		prompt += "\n" + m.Memory + "\nWhen a brief touches something the memory covers, carry the relevant decision or lesson into the brief verbatim; do not plan a step the FAILURES already record as failing.\n"
 	}
@@ -311,6 +317,47 @@ func (m Manager) Plan(task string, class Class, prefer string, open []Leg, stats
 		p.Class = ClassMedium
 	}
 	return validatePlan(p, task, open, allowFanOut)
+}
+
+// fanOutRule and teamRule are the planner's worker-count instruction: the
+// routing default, and what a /team turn asks for instead (teamPrompt).
+var (
+	fanOutRule = fmt.Sprintf("- Usually assign ONE worker. Split into up to %d parallel workers ONLY when the task decomposes into independent subtasks (different files/subsystems/questions); their outputs will be synthesized afterwards.\n", maxWorkers)
+	teamRule   = fmt.Sprintf("- The user asked for a TEAM: assign 2 or %d workers on DIFFERENT legs. Split the task when it decomposes into independent parts; otherwise give each worker the whole task as an independent take (a second model's answer, a reviewer, a red-team) - their outputs are compared and synthesized afterwards. A leg the user bound is ONE member of the team, never all of it.\n", maxWorkers)
+)
+
+// teamPrompt turns a fan-out plan prompt into a /team one.
+func teamPrompt(prompt string) string {
+	return strings.Replace(prompt, fanOutRule, teamRule, 1)
+}
+
+// EnsureTeam keeps a /team plan a team: a director that still returns one
+// worker gets a second, independent one - the first open leg of another
+// model family, on the same brief. 15 of 19 single-worker /team plans had
+// the user bind /frontier and the director read that as the whole team
+// (2026-10-07). With no other leg open, the plan stays as it is.
+func EnsureTeam(p Plan, open []Leg) Plan {
+	if len(p.Workers) != 1 {
+		return p
+	}
+	first := p.Workers[0].Leg
+	for _, l := range open {
+		if l == first || sameFamily(l, first) {
+			continue
+		}
+		p.Workers = append(p.Workers, Worker{Leg: l, Brief: p.Workers[0].Brief +
+			"\n\n[captain] You are the second, independent worker on this team: do the same assignment without seeing the other worker's answer; the director compares and combines the two."})
+		p.Rationale = strings.TrimSpace(p.Rationale + fmt.Sprintf(" · +%s: a /team runs at least two workers", l))
+		return p
+	}
+	return p
+}
+
+// sameFamily: two legs that run the same model family, which would make a
+// second opinion no second opinion (the frontier pseudo-leg is claude).
+func sameFamily(a, b Leg) bool {
+	claude := func(l Leg) bool { return l == LegClaude || l == LegFrontier }
+	return claude(a) && claude(b)
 }
 
 // validatePlan enforces the worker-count rules and repairs off-menu picks.
@@ -475,7 +522,7 @@ Rules:
 - Each "brief" must be complete standalone instructions for that worker: it sees neither this planning call nor the other briefs. In the TUI wrapper it DOES see the user's conversation, so carry the user's OWN wording of every requirement through verbatim - never paraphrase away one that is anchored in the conversation ("in my writing style", "the file we discussed", "fix that bug"); a generic restatement makes the worker answer a question nobody asked.
 `)
 	if allowFanOut {
-		fmt.Fprintf(&sb, "- Usually assign ONE worker. Split into up to %d parallel workers ONLY when the task decomposes into independent subtasks (different files/subsystems/questions); their outputs will be synthesized afterwards.\n", maxWorkers)
+		sb.WriteString(fanOutRule)
 	} else {
 		sb.WriteString("- Assign exactly ONE worker.\n")
 	}
