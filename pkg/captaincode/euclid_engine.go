@@ -3,6 +3,7 @@ package captaincode
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -239,10 +240,6 @@ func AppendNote(cwd, kind, text, by string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("no write brain for %s (run `captain euclid init`)", cwd)
 	}
-	if memoryMCPEnabled() {
-		e := JournalEntry{Kind: kind, Task: Scrub(text), Summary: Scrub(by)}
-		return recordMemoryEvent(wb, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "note"))
-	}
 	p := filepath.Join(wb.Root, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
@@ -263,6 +260,18 @@ func AppendNote(cwd, kind, text, by string) (string, error) {
 	// that brain travels in git (euclid_share.go). Local brains stay local.
 	if wb.Kind == "developer" {
 		ShareNote(cwd, kind, text, by)
+	}
+	if memoryMCPEnabled() {
+		key := fmt.Sprintf("%x", sha256.Sum256([]byte(time.Now().Format(time.RFC3339Nano)+":"+text)))
+		ev := memoryEvent{
+			ID:             "captain:note:" + key,
+			Kind:           "note",
+			TaskID:         "captain:" + key,
+			SourceRevision: "legacy-import:unknown",
+			Text:           Scrub(text),
+			Category:       strings.ToLower(strings.TrimSpace(kind)),
+		}
+		_, _ = recordMemoryEvent(wb, ev)
 	}
 	return p, nil
 }
@@ -508,7 +517,31 @@ func callEuclidMCP(cwd, tool string, args any) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("no repository root")
 	}
-	result, err := mcpclient.Call(context.Background(), os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG"), tool, args, nil)
+	configPath := os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG")
+	if configPath == "" {
+		return "", fmt.Errorf("memory MCP is not configured")
+	}
+	cfg, err := mcpclient.ReadConfig(configPath)
+	if err != nil {
+		return "", err
+	}
+	for _, arg := range cfg.Args {
+		if arg == "--root" || strings.HasPrefix(arg, "--root=") ||
+			arg == "--scope" || strings.HasPrefix(arg, "--scope=") ||
+			arg == "--handle" || strings.HasPrefix(arg, "--handle=") ||
+			arg == "--alias" || strings.HasPrefix(arg, "--alias=") {
+			return "", fmt.Errorf("configuration args contain %s; use CAPTAIN_EUCLID_MEMORY_CONFIG for pinned servers", arg)
+		}
+	}
+	env := make(map[string]string, len(cfg.Env)+3)
+	for k, v := range cfg.Env {
+		env[k] = v
+	}
+	env["EUCLID_BRAIN_SCOPE"] = "shared"
+	env["EUCLID_ROOT"] = root
+	env["EUCLID_ALLOW_WRITES"] = "0"
+
+	result, err := mcpclient.Call(context.Background(), configPath, tool, args, env)
 	if err != nil {
 		return "", err
 	}

@@ -553,3 +553,37 @@ func TestFormatBudgetAdmissionMode(t *testing.T) {
 		t.Fatalf("FormatBudget should mention admission mode, got:\n%s", s)
 	}
 }
+
+// ROADMAP Q5: a reservation that never reached a provider is released, so
+// settled attempts keep equal to provider calls.
+func TestBudgetReleaseReturnsAnUnusedReservation(t *testing.T) {
+	b := NewBudget("t1", "test task", BudgetOpts{MaxAttempts: 2})
+	if !b.Reserve(1) {
+		t.Fatal("first reserve must succeed")
+	}
+	b.Release(1)
+	if b.ReservedAttempts != 0 || b.SettledAttempts != 0 || b.SettledCostUSD != 0 {
+		t.Fatalf("release must settle nothing: %+v", b)
+	}
+	b.Release(1) // more than is reserved: no negative count
+	if b.ReservedAttempts != 0 {
+		t.Fatalf("reserved went negative: %d", b.ReservedAttempts)
+	}
+	if !b.Reserve(2) {
+		t.Fatal("a released attempt is available again")
+	}
+}
+
+func TestBilledUsageLabelsACommitmentAsAnEstimate(t *testing.T) {
+	billed := BilledUsage(LegGrok, Result{CostUSD: 0.02, CostCommitted: 0.05})
+	if billed.CostUSD != 0.02 || billed.CostStatus != UsageMeasured {
+		t.Fatalf("a provider bill wins and is measured: %+v", billed)
+	}
+	committed := BilledUsage(LegGrok, Result{CostCommitted: 0.05})
+	if committed.CostUSD != 0.05 || committed.CostStatus != UsageEstimated || committed.PriceSource != "shield-committed" {
+		t.Fatalf("a commitment alone is an estimate: %+v", committed)
+	}
+	if got := OpenShellUsage(Result{CostCommitted: 0.05}); got.CostStatus != committed.CostStatus || got.CostUSD != committed.CostUSD {
+		t.Fatalf("OpenShellUsage keeps the same rule: %+v", got)
+	}
+}

@@ -79,7 +79,7 @@ func TestLinkedBrainsAreReadOnlyAndWeighted(t *testing.T) {
 	for _, b := range set[2:] {
 		assert.False(t, b.Writable, "linked brains are never written")
 	}
-	orientCache.key = ""
+	orientCache.reset()
 	assert.Contains(t, Orientation(ash), `<brain source="repo:axiom">Axiom's PoR claim encoding`, "a linked brain's snapshot reaches orientation")
 
 	// Search sees the linked brain, tags the source, and weights it below local.
@@ -150,7 +150,7 @@ func TestOtherDevelopersAreSearchOnly(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(ash, ".euclid", "developers", "alice", "WISDOM.md"), []byte("# WISDOM\n\nThe zk verifier bench needs 32 GB; run it on the box, never the laptop.\n"), 0o644))
-	orientCache.key = ""
+	orientCache.reset()
 	o := Orientation(ash)
 	assert.NotContains(t, o, "zk verifier bench", "another developer's subtree is never warm-loaded")
 	labels := []string{}

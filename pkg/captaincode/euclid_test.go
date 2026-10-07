@@ -22,7 +22,7 @@ func euclidHome(t *testing.T) string {
 	t.Setenv("EUCLID_HANDLE", "romain")
 	t.Setenv("EUCLID_TEMPLATE_DIR", filepath.Join(home, "no-template"))
 	t.Setenv("CAPTAIN_EUCLID", "")
-	orientCache.key = "" // drop the 30s cache between tests
+	orientCache.reset() // drop the 30s cache between tests
 	return home
 }
 
@@ -112,7 +112,7 @@ func TestOrientationRendersWithinBudget(t *testing.T) {
 
 	// Budget is enforced, and the block still closes.
 	t.Setenv("CAPTAIN_EUCLID_ORIENTATION_CHARS", "400")
-	orientCache.key = ""
+	orientCache.reset()
 	small := Orientation(repo)
 	assert.Less(t, len(small), 520)
 	assert.True(t, strings.HasSuffix(strings.TrimSpace(small), "</euclid>"))

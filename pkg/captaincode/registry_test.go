@@ -19,7 +19,7 @@ func TestRegistryDefaultsReproduceTheLadder(t *testing.T) {
 	t.Setenv("CAPTAIN_GLM_PROVIDER", "")
 	_, err := LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
 	require.NoError(t, err)
-	assert.Equal(t, []Leg{LegLocal, LegJev, LegOpenShell, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
+	assert.Equal(t, []Leg{LegLocal, LegJev, LegOpenShell, LegFree, LegQwen, LegStep, LegGPTOSS, LegGrok, LegLuna, LegMimo, LegKolibri, LegDS4Flash, LegDSFlash, LegMiniMax, LegDeepSeek, LegMistral, LegGemini, LegKimi, LegCursor, LegGLM, LegCodex, LegGrokMax, LegCodexCLI, LegClaude}, AllLegs)
 	assert.False(t, ServesTasks(LegLocal), "the local helper cannot take coding tasks")
 	assert.False(t, AutoRoutes(LegLocal), "the local helper is never an automatic worker")
 	assert.NotContains(t, Rungs, LegLocal)

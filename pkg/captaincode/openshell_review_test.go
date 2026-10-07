@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,11 +179,199 @@ func TestOpenShellReviewMarkerIsExplicitAndScoped(t *testing.T) {
 	assert.False(t, isOpenShellReview("--reviewer inspect"))
 }
 
-func TestAdvisoryHostReviewDisabledByDefault(t *testing.T) {
+func TestAdvisoryHostReviewOptOut(t *testing.T) {
 	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "0")
 	review, err := advisoryHostReview(context.Background(), "fix a bug", []byte("+fixed"))
 	assert.NoError(t, err)
 	assert.Empty(t, review)
+}
+
+func TestAdvisoryReviewRunsAfterSoloWorkflowAndRecovery(t *testing.T) {
+	r := openShellLegEnv(t)
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
+	fakeReviewer := func(ctx context.Context, task string, diff []byte) (string, error) {
+		return "fake review: all good", nil
+	}
+	ctx := WithOpenShellReviewer(context.Background(), fakeReviewer)
+
+	// 1. Solo run
+	soloRes, err := (Workspace{Dir: r.Repo}).RunOpenShell(ctx, `{"write":{"a.txt":"solo\n"}}`)
+	require.NoError(t, err, soloRes.Text)
+	require.NotNil(t, soloRes.Export)
+	assert.Contains(t, soloRes.Text, "[advisory host review]")
+	assert.Contains(t, soloRes.Text, "fake review: all good")
+	require.NotNil(t, soloRes.AdvisoryReview)
+	assert.Equal(t, "fake review: all good", soloRes.AdvisoryReview.Text)
+	assert.Equal(t, "ok", soloRes.AdvisoryReview.Status)
+
+	// 2. Workflow run
+	wf, err := ParseWorkflow(`/openshell {"write":{"a.txt":"workflow\n"}}`)
+	require.NoError(t, err)
+	wfRes, err := (Workspace{Dir: r.Repo}).RunOpenShellWorkflow(ctx, wf, "")
+	require.NoError(t, err, wfRes.Text)
+	require.NotNil(t, wfRes.Export)
+	assert.Contains(t, wfRes.Text, "[advisory host review]")
+	assert.Contains(t, wfRes.Text, "fake review: all good")
+	require.NotNil(t, wfRes.AdvisoryReview)
+	assert.Equal(t, "fake review: all good", wfRes.AdvisoryReview.Text)
+	assert.Equal(t, "ok", wfRes.AdvisoryReview.Status)
+
+	// 3. Recovery run
+	teams := resumeSequenceTeams()
+	result, err := runOpenShellSequence(ctx, r, teams, nil)
+	require.NoError(t, err)
+	var run OpenShellRun
+	_, err = decodeOpenShellSequence(result.Export.RunRecord, &run)
+	require.NoError(t, err)
+	run.Verdict, run.Integrated = "fail", nil
+	require.NoError(t, saveOpenShellSequence(r.RunDir, &run))
+	recRes, err := ResumeOpenShellSequence(ctx, r.RunDir, nil)
+	require.NoError(t, err, recRes.Text)
+	require.NotNil(t, recRes.Export)
+	assert.Contains(t, recRes.Text, "[advisory host review]")
+	assert.Contains(t, recRes.Text, "fake review: all good")
+	require.NotNil(t, recRes.AdvisoryReview)
+	assert.Equal(t, "fake review: all good", recRes.AdvisoryReview.Text)
+	assert.Equal(t, "ok", recRes.AdvisoryReview.Status)
+}
+
+func TestAdvisoryReviewSavedOnAttempt(t *testing.T) {
+	dir := t.TempDir()
+	ledger := NewLedger(filepath.Join(dir, "ledger.json"))
+	attemptID := "attempt-advisory-1"
+	taskID := "task-advisory-1"
+	ledger.RecordAttemptState(AttemptState{
+		AttemptID: attemptID,
+		TaskID:    taskID,
+		State:     StateRunning,
+		Leg:       LegOpenShell,
+		StartedAt: time.Now(),
+	})
+
+	secretText := "Review findings: api_key=secret_token_1234567890abcdef found in file"
+	review := AdvisoryReview{
+		Text:       secretText,
+		Model:      "claude",
+		DurationMs: 350,
+		Status:     "ok",
+	}
+	require.NoError(t, ledger.RecordAdvisoryReview(attemptID, review))
+
+	as := ledger.AttemptStateFor(attemptID)
+	require.NotNil(t, as)
+	require.NotNil(t, as.AdvisoryReview)
+	assert.NotContains(t, as.AdvisoryReview.Text, "secret_token_1234567890abcdef")
+	assert.Contains(t, as.AdvisoryReview.Text, "[REDACTED]")
+	assert.Equal(t, "claude", as.AdvisoryReview.Model)
+	assert.Equal(t, int64(350), as.AdvisoryReview.DurationMs)
+
+	// Test 16 KiB truncation
+	longText := strings.Repeat("A", 20*1024)
+	require.NoError(t, ledger.RecordAdvisoryReview(attemptID, AdvisoryReview{
+		Text:   longText,
+		Status: "ok",
+	}))
+	as = ledger.AttemptStateFor(attemptID)
+	require.NotNil(t, as.AdvisoryReview)
+	assert.Equal(t, 16*1024, len(as.AdvisoryReview.Text))
+
+	// Test persistence across ledger reload
+	require.NoError(t, ledger.Save())
+	restored := NewLedger(filepath.Join(dir, "ledger.json"))
+	require.NoError(t, restored.Reload())
+	restoredAs := restored.AttemptStateFor(attemptID)
+	require.NotNil(t, restoredAs)
+	require.NotNil(t, restoredAs.AdvisoryReview)
+	assert.Equal(t, as.AdvisoryReview.Text, restoredAs.AdvisoryReview.Text)
+	assert.Equal(t, as.AdvisoryReview.Status, restoredAs.AdvisoryReview.Status)
+}
+
+func TestAdvisoryReviewCountsOneAttempt(t *testing.T) {
+	r := openShellLegEnv(t)
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
+	fakeReviewer := func(ctx context.Context, task string, diff []byte) (string, error) {
+		return "looks good", nil
+	}
+	ctx := WithOpenShellReviewer(context.Background(), fakeReviewer)
+	res, err := (Workspace{Dir: r.Repo}).RunOpenShell(ctx, `{"write":{"a.txt":"counted\n"}}`)
+	require.NoError(t, err, res.Text)
+	require.NotNil(t, res.OpenShellAttempts)
+	assert.Equal(t, 1, res.OpenShellAttempts.Directors, "advisory review counts as one director attempt")
+}
+
+func TestAdvisoryReviewSkippedWhenCapIsShort(t *testing.T) {
+	// 1. Attempt cap is short
+	t.Run("attempt cap short", func(t *testing.T) {
+		r := openShellLegEnv(t)
+		t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
+		t.Setenv("CAPTAIN_MAX_ATTEMPTS", "1")
+		fakeReviewer := func(ctx context.Context, task string, diff []byte) (string, error) {
+			return "should not be called", nil
+		}
+		ctx := WithOpenShellReviewer(context.Background(), fakeReviewer)
+		res, err := (Workspace{Dir: r.Repo}).RunOpenShell(ctx, `{"write":{"a.txt":"cap\n"}}`)
+		require.NoError(t, err, "run must not be refused when cap cannot cover review")
+		require.NotNil(t, res.Export)
+		assert.NotContains(t, res.Text, "[advisory host review]")
+		assert.Contains(t, res.Text, "advisory review skipped: attempt cap reached")
+		require.NotNil(t, res.AdvisoryReview)
+		assert.Equal(t, "skipped", res.AdvisoryReview.Status)
+		assert.Equal(t, "attempt cap reached", res.AdvisoryReview.SkipReason)
+	})
+
+	// 2. Strict cost cap is short
+	t.Run("strict cost cap short", func(t *testing.T) {
+		r := openShellLegEnv(t)
+		t.Setenv("CAPTAIN_OPENSHELL_PROFILE", "cerebras")
+		t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
+		t.Setenv("CAPTAIN_STRICT", "1")
+		t.Setenv("CAPTAIN_MAX_COST", "0.01")
+		t.Setenv("CAPTAIN_OPENSHELL_DIRECTOR_USD", "0.05")
+		fakeReviewer := func(ctx context.Context, task string, diff []byte) (string, error) {
+			return "should not be called", nil
+		}
+		ctx := WithOpenShellReviewer(context.Background(), fakeReviewer)
+		res, err := (Workspace{Dir: r.Repo}).RunOpenShell(ctx, `{"write":{"a.txt":"cost\n"}}`)
+		require.NoError(t, err, "run must not be refused when cost cap cannot cover review")
+		require.NotNil(t, res.Export)
+		assert.NotContains(t, res.Text, "[advisory host review]")
+		assert.Contains(t, res.Text, "advisory review skipped: strict cost cap")
+		require.NotNil(t, res.AdvisoryReview)
+		assert.Equal(t, "skipped", res.AdvisoryReview.Status)
+		assert.Equal(t, "strict cost cap", res.AdvisoryReview.SkipReason)
+	})
+}
+
+func TestNoOpenShellTestStartsRealClaude(t *testing.T) {
+	tempDir := t.TempDir()
+	markerPath := filepath.Join(tempDir, "claude_trap_marker")
+	trapScript := fmt.Sprintf("#!/bin/sh\ntouch %q\nexit 1\n", markerPath)
+	trapPath := filepath.Join(tempDir, "claude")
+	require.NoError(t, os.WriteFile(trapPath, []byte(trapScript), 0o755))
+
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", tempDir+string(os.PathListSeparator)+origPath)
+
+	r := openShellLegEnv(t)
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
+	fakeReviewer := func(ctx context.Context, task string, diff []byte) (string, error) {
+		return "fake review text", nil
+	}
+	ctx := WithOpenShellReviewer(context.Background(), fakeReviewer)
+
+	// Run solo
+	soloRes, err := (Workspace{Dir: r.Repo}).RunOpenShell(ctx, `{"write":{"a.txt":"no_real_claude_solo\n"}}`)
+	require.NoError(t, err, soloRes.Text)
+	require.NotNil(t, soloRes.Export)
+
+	// Run workflow
+	wf, err := ParseWorkflow(`/openshell {"write":{"a.txt":"no_real_claude_wf\n"}}`)
+	require.NoError(t, err)
+	wfRes, err := (Workspace{Dir: r.Repo}).RunOpenShellWorkflow(ctx, wf, "")
+	require.NoError(t, err, wfRes.Text)
+	require.NotNil(t, wfRes.Export)
+
+	assert.NoFileExists(t, markerPath, "real claude executable was invoked!")
 }
 
 func TestAdvisoryHostReviewWithEmptyDiff(t *testing.T) {
@@ -194,9 +384,10 @@ func TestAdvisoryHostReviewWithEmptyDiff(t *testing.T) {
 }
 
 func TestAdvisoryHostReviewRunsInSafeMode(t *testing.T) {
-	if _, err := exec.LookPath("claude"); err != nil {
+	if out, err := exec.Command("claude", "--version").CombinedOutput(); err != nil || !strings.Contains(string(out), "Claude") {
 		t.Skip("claude not installed")
 	}
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
 	task := "fix the parser bug in src/parser.go"
 	diff := []byte("diff --git a/src/parser.go b/src/parser.go\n--- a/src/parser.go\n+++ b/src/parser.go\n@@ -10,6 +10,7 @@\n package parser\n+// Fix: handle nil input cleanly.\n func Parse(input string) (*AST, error) {\n+	if input == \"\" {\n+\t\treturn nil, fmt.Errorf(\"empty input\")\n+\t}\n\treturn parseInternal(input)\n }")
 	review, err := advisoryHostReview(context.Background(), task, diff)
@@ -208,9 +399,10 @@ func TestAdvisoryHostReviewRunsInSafeMode(t *testing.T) {
 }
 
 func TestAdvisoryHostReviewRejectsHostilePatch(t *testing.T) {
-	if _, err := exec.LookPath("claude"); err != nil {
+	if out, err := exec.Command("claude", "--version").CombinedOutput(); err != nil || !strings.Contains(string(out), "Claude") {
 		t.Skip("claude not installed")
 	}
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
 	task := "add error handling to parser.go"
 	diff := []byte(`diff --git a/.claude/settings.json b/.claude/settings.json
 new file mode 100644

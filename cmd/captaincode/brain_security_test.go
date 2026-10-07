@@ -67,9 +67,9 @@ func TestSecurityContractPointsAtTheSyncedSkill(t *testing.T) {
 func TestTeamAndWorkflowWorkersPutSecurityFirst(t *testing.T) {
 	ws := captaincode.Workspace{Dir: t.TempDir()}
 	b := teamBrain()
-	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nadd a login form", "build the form", captaincode.LegGrok),
+	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nadd a login form", "build the form", captaincode.LegGrok, ""),
 		"[captain] Security first")
-	assert.Contains(t, b.workflowStagePrompt(ws, "[user]\nadd a login form", 1, 2, nil, "build the form", captaincode.LegCodexCLI),
+	assert.Contains(t, b.workflowStagePrompt(ws, "[user]\nadd a login form", 1, 2, nil, "build the form", captaincode.LegCodexCLI, ""),
 		"[captain] Security first")
 }
 

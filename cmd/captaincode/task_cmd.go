@@ -146,6 +146,27 @@ func cmdTaskInspect(args []string) {
 					fmt.Println("    resume with: captain task resume <task-id> <attempt-id>")
 				}
 			}
+			if a.AdvisoryReview != nil {
+				if a.AdvisoryReview.Status == "skipped" {
+					fmt.Printf("    advisory review: skipped (%s)\n", terminalSafe(a.AdvisoryReview.SkipReason, 300))
+				} else if a.AdvisoryReview.Text != "" {
+					fmt.Printf("    advisory review: %s\n", terminalSafe(a.AdvisoryReview.Text, 300))
+				}
+			}
+		}
+		for _, s := range insp.Stages {
+			digest := s.CandidateDigest
+			if len(digest) > 12 {
+				digest = digest[:12]
+			}
+			files := strings.Join(s.FilesLanded, ", ")
+			if files == "" {
+				files = "none"
+			}
+			fmt.Printf("  stage %d: %s (%s) — files landed: %s\n", s.Stage, s.Status, digest, files)
+			for _, line := range rulingLines(s.Rulings) {
+				fmt.Printf("    %s\n", line)
+			}
 		}
 		if insp.Budget != nil {
 			fmt.Printf("  budget: %d/%d attempts", insp.Budget.SettledAttempts, insp.Budget.MaxAttempts)
@@ -161,6 +182,23 @@ func cmdTaskInspect(args []string) {
 			fmt.Print("\n" + captaincode.FormatHandoffBrief(*insp.Handoff))
 		}
 	})
+}
+
+// rulingLines renders one line per conflict-group ruling (ROADMAP Q7). The
+// reason is model text, so it is made terminal-safe.
+func rulingLines(rulings []captaincode.GroupRuling) []string {
+	var out []string
+	for _, r := range rulings {
+		line := fmt.Sprintf("ruling on %s: %s lands", strings.Join(r.Files, ", "), r.Winner)
+		if len(r.Dropped) > 0 {
+			line += ", set aside: " + strings.Join(r.Dropped, ", ")
+		}
+		if r.Reason != "" {
+			line += " - " + terminalSafe(r.Reason, 200)
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 func cmdTaskEvents(args []string) {
@@ -238,8 +276,13 @@ func cmdTaskArtifacts(args []string) {
 				fmt.Printf("  · %s (%s)\n", c.File, strings.Join(c.Workers, ", "))
 			}
 		}
-		if arts.Integration.Winner != "" {
-			fmt.Printf("director's call: %s's changes land - %s\n", arts.Integration.Winner, arts.Integration.Ruling)
+		switch {
+		case len(arts.Integration.Rulings) > 0:
+			for _, line := range rulingLines(arts.Integration.Rulings) {
+				fmt.Println(line)
+			}
+		case arts.Integration.Winner != "":
+			fmt.Printf("director's call: %s's changes land - %s\n", arts.Integration.Winner, terminalSafe(arts.Integration.Ruling, 200))
 			if len(arts.Integration.Dropped) > 0 {
 				fmt.Printf("set aside: %s\n", strings.Join(arts.Integration.Dropped, ", "))
 			}

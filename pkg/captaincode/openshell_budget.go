@@ -38,10 +38,11 @@ const openShellDirectorCallUSD = 0.05
 // forwards a request only if its worst case fits the worker's share. Unused
 // shares are not reassigned.
 type OpenShellCostBudget struct {
-	LimitUSD    float64 `json:"limit_usd"`
-	WorkerUSD   float64 `json:"worker_usd"`
-	Workers     int     `json:"workers"`
-	DirectorUSD float64 `json:"director_usd,omitempty"`
+	LimitUSD       float64 `json:"limit_usd"`
+	WorkerUSD      float64 `json:"worker_usd"`
+	Workers        int     `json:"workers"`
+	DirectorUSD    float64 `json:"director_usd,omitempty"`
+	ReviewReserved bool    `json:"review_reserved,omitempty"`
 }
 
 type openShellCostLimitKey struct{}
@@ -67,7 +68,8 @@ func openShellStrictCost(ctx context.Context) float64 {
 
 // costBudget admits a plan under a strict cap. Every worker must run on a
 // priced lane, and no host call may go unpriced: a conflict ruling is a
-// subscription call, so a stage that could need one is refused. A runner that
+// subscription call, so each one a stage could need reserves
+// openShellDirectorUSD before the workers split the rest. A runner that
 // already holds a share (a sequence's stage) keeps it rather than splitting
 // the cap again.
 func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam) (*OpenShellCostBudget, error) {
@@ -105,7 +107,21 @@ func (r *OpenShellRunner) costBudget(ctx context.Context, teams []OpenShellTeam)
 		if !(split > 0) {
 			return nil, fmt.Errorf("%w: director reservation $%g does not fit in $%g", ErrOpenShellCostCap, budget.DirectorUSD, budget.LimitUSD)
 		}
-		budget.WorkerUSD = math.Floor(split/float64(budget.Workers)*1e6) / 1e6
+		if !advisoryHostReviewDisabled() && callUSD > 0 && split-callUSD > 0 {
+			shareWithReview := math.Floor((split-callUSD)/float64(budget.Workers)*1e6) / 1e6
+			if shareWithReview > 0 && float64(budget.Workers)*shareWithReview+budget.DirectorUSD+callUSD <= budget.LimitUSD+1e-9 {
+				budget.ReviewReserved = true
+				budget.WorkerUSD = shareWithReview
+			} else {
+				budget.WorkerUSD = math.Floor(split/float64(budget.Workers)*1e6) / 1e6
+			}
+		} else {
+			budget.WorkerUSD = math.Floor(split/float64(budget.Workers)*1e6) / 1e6
+		}
+	} else if r.WorkerCostUSD > 0 {
+		if !advisoryHostReviewDisabled() && callUSD > 0 && budget.LimitUSD-(budget.WorkerUSD*float64(budget.Workers)+budget.DirectorUSD) >= callUSD {
+			budget.ReviewReserved = true
+		}
 	}
 	if !(budget.WorkerUSD > 0 && float64(budget.Workers)*budget.WorkerUSD+budget.DirectorUSD <= budget.LimitUSD+1e-9) {
 		return nil, fmt.Errorf("%w: $%g cannot cover %d workers and a $%g director reservation", ErrOpenShellCostCap, budget.LimitUSD, budget.Workers, budget.DirectorUSD)
@@ -205,13 +221,20 @@ func (r Result) BilledUSD() float64 {
 // bill is measured. An incomplete bill charges the committed reservation and
 // says so. Neither path prices the sandbox as a free model.
 func OpenShellUsage(res Result) Usage {
+	return BilledUsage(LegOpenShell, res)
+}
+
+// BilledUsage is the ledger row for the amount BilledUSD charges. A provider
+// bill is measured; a committed amount with no bill is an estimate, never a
+// measured cost.
+func BilledUsage(leg Leg, res Result) Usage {
 	if res.CostUSD > 0 {
-		return CallUsage(LegOpenShell, res.Tokens, res.CostUSD, nil)
+		return CallUsage(leg, res.Tokens, res.CostUSD, nil)
 	}
 	if res.CostCommitted > 0 {
 		return NormalizeUsage(Usage{Total: res.Tokens, CostUSD: res.CostCommitted, CostStatus: UsageEstimated, PriceSource: "shield-committed"})
 	}
-	return CallUsage(LegOpenShell, res.Tokens, 0, nil)
+	return CallUsage(leg, res.Tokens, 0, nil)
 }
 
 // checkCostReport confirms a worker's Shield enforced its share: a report
@@ -369,8 +392,9 @@ type openShellDirectorAttempts struct {
 }
 
 type OpenShellAttemptBudget struct {
-	Limit    int `json:"limit"`
-	Required int `json:"required"`
+	Limit          int  `json:"limit"`
+	Required       int  `json:"required"`
+	ReviewReserved bool `json:"review_reserved,omitempty"`
 }
 
 type openShellAttemptLimitKey struct{}
@@ -410,6 +434,14 @@ func (r *OpenShellRunner) attemptBudget(ctx context.Context, teams []OpenShellTe
 	}
 	if budget.Limit > 0 && budget.Required > budget.Limit {
 		return budget, fmt.Errorf("%w: plan requires %d attempt slots; cap is %d", ErrOpenShellAttemptCap, budget.Required, budget.Limit)
+	}
+	if !advisoryHostReviewDisabled() {
+		if budget.Limit == 0 || budget.Required+1 <= budget.Limit {
+			budget.ReviewReserved = true
+			budget.Required++
+		} else {
+			budget.ReviewReserved = false
+		}
 	}
 	return budget, nil
 }

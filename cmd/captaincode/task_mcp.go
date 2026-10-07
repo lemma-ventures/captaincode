@@ -409,6 +409,13 @@ func formatInspectResponse(resp *captaincode.TaskResponse) string {
 	}
 	for _, a := range insp.Attempts {
 		fmt.Fprintf(&sb, "  attempt %s — %s (leg: %s)\n", a.AttemptID, a.State, a.Leg)
+		if a.AdvisoryReview != nil {
+			if a.AdvisoryReview.Status == "skipped" {
+				fmt.Fprintf(&sb, "    advisory review: skipped (%s)\n", terminalSafe(a.AdvisoryReview.SkipReason, 300))
+			} else if a.AdvisoryReview.Text != "" {
+				fmt.Fprintf(&sb, "    advisory review: %s\n", terminalSafe(a.AdvisoryReview.Text, 300))
+			}
+		}
 	}
 	if insp.Budget != nil {
 		fmt.Fprintf(&sb, "  budget: %d/%d attempts", insp.Budget.SettledAttempts, insp.Budget.MaxAttempts)

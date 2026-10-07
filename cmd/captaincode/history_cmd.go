@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 // cmdRuns lists recent turns, newest first.
@@ -63,14 +65,46 @@ func hasLeg(r runRecord, leg string) bool {
 	return false
 }
 
+// runShown is the same line Last Runs and the session header use:
+// harness:model@effort. "frontier" is the lane, not a model. The worker
+// that ran is claude or codex-cli (or whichever leg the record names).
+func runShown(r runRecord) string {
+	if r.Label != "" && r.Label != "frontier" {
+		return r.Label
+	}
+	effort := captaincode.Effort(r.Effort)
+	if effort == "" && (r.Kind == "frontier" || r.Model == "frontier") {
+		effort = captaincode.EffortMax
+	}
+	var parts []string
+	for _, id := range r.Legs {
+		if id == "" || id == "frontier" {
+			continue
+		}
+		leg := captaincode.Leg(id)
+		if captaincode.KnownLeg(leg) && captaincode.ServesTasks(leg) {
+			parts = append(parts, captaincode.RunLabel(leg, effort))
+			continue
+		}
+		parts = append(parts, id)
+	}
+	if len(parts) == 0 {
+		if r.Model != "" && r.Model != "frontier" {
+			return r.Model
+		}
+		return r.Kind
+	}
+	sep := " + "
+	if r.Kind == "workflow" {
+		sep = " → "
+	}
+	return strings.Join(parts, sep)
+}
+
 func runLine(r runRecord) string {
 	mark := "✓"
 	if r.Error != "" {
 		mark = "✗"
-	}
-	legs := strings.Join(r.Legs, "+")
-	if legs == "" {
-		legs = r.Model
 	}
 	detail := promptPeek(r.Task)
 	if len(detail) > 64 {
@@ -83,8 +117,8 @@ func runLine(r runRecord) string {
 			size = size[:39] + "…"
 		}
 	}
-	return fmt.Sprintf("%s %-14s %s  %-9s %-26s %-8s  %-64s  %s",
-		mark, r.ID, r.At.Format("01-02 15:04"), r.Kind, legs,
+	return fmt.Sprintf("%s %-14s %s  %-40s %-8s  %-64s  %s",
+		mark, r.ID, r.At.Format("01-02 15:04"), runShown(r),
 		(time.Duration(r.DurationMs) * time.Millisecond).Round(time.Second), detail, size)
 }
 
@@ -99,7 +133,7 @@ func cmdShow(args []string) {
 		fmt.Printf("no run matching %q - `captain runs` lists what is recorded\n", id)
 		return
 	}
-	fmt.Printf("%s · %s · %s · %s\n", r.ID, r.At.Format("2006-01-02 15:04:05"), r.Kind,
+	fmt.Printf("%s · %s · %s · %s\n", r.ID, r.At.Format("2006-01-02 15:04:05"), runShown(r),
 		(time.Duration(r.DurationMs) * time.Millisecond).Round(time.Second))
 	if len(r.Legs) > 0 {
 		fmt.Printf("legs: %s\n", strings.Join(r.Legs, " → "))

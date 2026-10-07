@@ -118,16 +118,50 @@ type IntegrationCandidate struct {
 	// Winner, Ruling and Dropped record the director's call on a conflicted
 	// candidate (status resolved): whose changes land, why, and which
 	// workers' changes were set aside. Their diffs stay on disk.
-	Winner    string    `json:"winner,omitempty"`
-	Ruling    string    `json:"ruling,omitempty"`
-	Dropped   []string  `json:"dropped,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Winner  string   `json:"winner,omitempty"`
+	Ruling  string   `json:"ruling,omitempty"`
+	Dropped []string `json:"dropped,omitempty"`
+	// Rulings holds one entry per conflict group, in group order (ROADMAP
+	// Q7). Winner, Ruling and Dropped above are their union.
+	Rulings   []GroupRuling `json:"rulings,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
-// FileConflict records a file that two or more workers changed.
+// FileConflict records a file that two or more workers changed. Workers are
+// worker ids (ManifestID), not legs: two workers on one leg are two owners.
 type FileConflict struct {
 	File    string   `json:"file"`
 	Workers []string `json:"workers"`
+}
+
+// ConflictGroup is a connected set of workers whose changed files overlap,
+// directly or through another member. Each group gets its own ruling.
+type ConflictGroup struct {
+	// Files are the group's contested files (changed by two or more
+	// members), sorted. Files[0] orders the groups.
+	Files   []string        `json:"files"`
+	Members []PatchManifest `json:"-"`
+}
+
+// IDs lists the group's worker ids in manifest order.
+func (g ConflictGroup) IDs() []string {
+	out := make([]string, len(g.Members))
+	for i, m := range g.Members {
+		out[i] = m.ManifestID()
+	}
+	return out
+}
+
+// GroupRuling is the director's call on one conflict group: one winner lands
+// whole, the other members are set aside whole. Error is set when the group
+// got no usable ruling.
+type GroupRuling struct {
+	Files      []string `json:"files"`
+	Contenders []string `json:"contenders"`
+	Winner     string   `json:"winner,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Dropped    []string `json:"dropped,omitempty"`
+	Error      string   `json:"error,omitempty"`
 }
 
 // SemanticConflict records a cross-worker dependency: worker A changed file X,
@@ -329,7 +363,7 @@ func BuildIntegrationCandidate(taskID, stageID, baseRevision string, manifests [
 		}
 		anyChanges = true
 		for _, f := range m.ChangedFiles {
-			fileOwners[f] = append(fileOwners[f], m.Leg)
+			fileOwners[f] = append(fileOwners[f], m.ManifestID())
 		}
 	}
 	for f, workers := range fileOwners {
@@ -419,6 +453,109 @@ func (c IntegrationCandidate) Resolve(winner, ruling string) (IntegrationCandida
 			c.Dropped = append(c.Dropped, id)
 		}
 	}
+	c.Status = IntegrationResolved
+	return c, nil
+}
+
+// ConflictGroups splits the contested workers into groups that share files,
+// directly or through another member. Groups are sorted by their first
+// contested file, so the rulings run in a stable order. A worker that shares
+// no file with another worker is in no group. The host /team path and
+// OpenShell both rule once per group.
+func (c IntegrationCandidate) ConflictGroups() []ConflictGroup {
+	contested := map[string]bool{}
+	for _, id := range c.Contested() {
+		contested[id] = true
+	}
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(id string) string {
+		if parent[id] == id {
+			return id
+		}
+		parent[id] = find(parent[id])
+		return parent[id]
+	}
+	owner := map[string]string{}
+	shared := map[string]bool{}
+	for _, m := range c.Manifests {
+		id := m.ManifestID()
+		if !contested[id] {
+			continue
+		}
+		if _, ok := parent[id]; !ok {
+			parent[id] = id
+		}
+		for _, f := range m.ChangedFiles {
+			if first, ok := owner[f]; ok {
+				shared[f] = true
+				parent[find(id)] = find(first)
+			} else {
+				owner[f] = id
+			}
+		}
+	}
+	index := map[string]int{}
+	var groups []ConflictGroup
+	for _, m := range c.Manifests {
+		if !contested[m.ManifestID()] {
+			continue
+		}
+		root := find(m.ManifestID())
+		i, ok := index[root]
+		if !ok {
+			i = len(groups)
+			index[root] = i
+			groups = append(groups, ConflictGroup{})
+		}
+		groups[i].Members = append(groups[i].Members, m)
+	}
+	for f := range shared {
+		i := index[find(owner[f])]
+		groups[i].Files = append(groups[i].Files, f)
+	}
+	for i := range groups {
+		sort.Strings(groups[i].Files)
+	}
+	sort.SliceStable(groups, func(i, j int) bool { return groups[i].Files[0] < groups[j].Files[0] })
+	return groups
+}
+
+// ResolveGroups settles a conflicted candidate with one ruling per conflict
+// group, in ConflictGroups order. Each group's winner lands whole and the
+// other members are dropped whole; a worker in no group keeps its changes.
+// A ruling that names no member of its group refuses the whole candidate:
+// a partial landing is not applied on a guess.
+func (c IntegrationCandidate) ResolveGroups(rulings []GroupRuling) (IntegrationCandidate, error) {
+	if c.Status != IntegrationConflicted {
+		return c, fmt.Errorf("resolve: candidate is %s, not conflicted", c.Status)
+	}
+	groups := c.ConflictGroups()
+	if len(rulings) != len(groups) {
+		return c, fmt.Errorf("resolve: %d ruling(s) for %d conflict group(s)", len(rulings), len(groups))
+	}
+	var winners, reasons, dropped []string
+	out := make([]GroupRuling, len(groups))
+	for i, g := range groups {
+		ids := g.IDs()
+		r := GroupRuling{Files: g.Files, Contenders: ids, Winner: rulings[i].Winner, Reason: rulings[i].Reason}
+		found := false
+		for _, id := range ids {
+			if id == r.Winner {
+				found = true
+			} else {
+				r.Dropped = append(r.Dropped, id)
+			}
+		}
+		if !found {
+			return c, fmt.Errorf("resolve: %q is not one of the workers that changed %s (%s)", r.Winner, strings.Join(g.Files, ", "), strings.Join(ids, ", "))
+		}
+		out[i] = r
+		winners = append(winners, r.Winner)
+		reasons = append(reasons, r.Reason)
+		dropped = append(dropped, r.Dropped...)
+	}
+	c.Winner, c.Ruling, c.Dropped, c.Rulings = strings.Join(winners, ", "), strings.Join(reasons, "; "), dropped, out
 	c.Status = IntegrationResolved
 	return c, nil
 }
@@ -515,6 +652,41 @@ func (c IntegrationCandidate) ConflictFiles() []string {
 		out[i] = cf.File
 	}
 	return out
+}
+
+// LandedFiles returns the list of files touched by manifests that were not dropped.
+func (c IntegrationCandidate) LandedFiles() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range c.Manifests {
+		if !m.HasChanges() || c.dropped(m) {
+			continue
+		}
+		for _, f := range m.ChangedFiles {
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// CandidateDigest returns a sha256 hex digest of the integration candidate's landed diffs.
+func CandidateDigest(ic IntegrationCandidate) string {
+	h := sha256.New()
+	for _, m := range ic.Manifests {
+		if m.DiffDigest != "" && !ic.dropped(m) {
+			h.Write([]byte(m.DiffDigest))
+		}
+	}
+	if len(ic.Conflicts) > 0 {
+		for _, c := range ic.Conflicts {
+			h.Write([]byte(c.File))
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // Summary returns a one-line status for the progress feed and `captain why`.
@@ -722,7 +894,7 @@ func DetectSemanticConflicts(manifests []PatchManifest) []SemanticConflict {
 	for _, m := range manifests {
 		for _, f := range m.ChangedFiles {
 			if _, exists := changedByWorker[f]; !exists {
-				changedByWorker[f] = m.Leg
+				changedByWorker[f] = m.ManifestID()
 			}
 		}
 	}
@@ -746,19 +918,19 @@ func DetectSemanticConflicts(manifests []PatchManifest) []SemanticConflict {
 				if dep == f || dep == "." {
 					continue
 				}
-				matchedFile, matchedLeg := findChangedDependency(dep, changedFiles, changedByWorker, m.Leg)
+				matchedFile, matchedLeg := findChangedDependency(dep, changedFiles, changedByWorker, m.ManifestID())
 				if matchedFile == "" {
 					continue
 				}
 				if changedByWorker[f] == matchedLeg {
 					continue
 				}
-				key := conflictKey(f, matchedFile, m.Leg, matchedLeg)
+				key := conflictKey(f, matchedFile, m.ManifestID(), matchedLeg)
 				if seen[key] {
 					continue
 				}
 				seen[key] = true
-				workers := []string{m.Leg, matchedLeg}
+				workers := []string{m.ManifestID(), matchedLeg}
 				sort.Strings(workers)
 				conflicts = append(conflicts, SemanticConflict{
 					File:      f,

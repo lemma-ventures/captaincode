@@ -135,6 +135,30 @@ var defaultLegSpecs = []LegSpec{
 		PriceIn: 0.52, PriceOut: 1.6, Ctx: 1048576, Prior: 7.6, Display: "DeepSeek V4 Pro (captain · opencode)",
 		Tiers: map[Tier]string{TierCheap: "deepseek/deepseek-v4-flash"},
 		Note:  "DeepSeek V4 Pro (OpenRouter, ~$0.52/M in); strong cheap coder/reasoner with 1M context; good grok alternative when xAI wobbles"},
+	// No Artificial Analysis row yet, so no AA slug and a conservative prior:
+	// 7.7 sits below Gemini and above DeepSeek until the leg has a scorecard.
+	// The price below is the two-week 50% launch discount; list is $1.36 in /
+	// $4.18 out (cached $0.14/M). OpenRouter lists 512k context here, not the
+	// post's 1M. Recheck the price when the discount ends (2026-10-20).
+	{ID: LegMistral, Transport: TransportOpencode, Provider: "openrouter", Model: "mistralai/mistral-large-4-0",
+		PriceIn: 0.68, PriceOut: 2.09, Ctx: 524288, Vision: true, Open: boolp(true), Prior: 7.7, Display: "Mistral Large 4 (captain · opencode)",
+		Note: "Mistral Large 4 (Le Chonk), 1T params / 49B active, open weights, natively multimodal via OpenRouter; 512k context here and 256k max output (the launch post claims 1M); $0.68/M in, $2.09/M out during the two-week 50% launch discount, list $1.36/$4.18, cached $0.07/M; public preview, no scorecard or Artificial Analysis row yet - benchmark claims unverified"},
+	// MiMo V2.6 Pro (2026-10-07): Xiaomi's open-weight 1M-context model.
+	// OpenRouter catalogues: context 1,050,000 (not 1M). BenchLM coding #12
+	// (63.9) on 6 Oct with 4 published category rows. Artificial Analysis
+	// coding index is absent on the 22 Sep snapshot, so no AA slug.
+	{ID: LegMimo, Transport: TransportOpencode, Provider: "openrouter", Model: "xiaomi/mimo-v2.6-pro",
+		PriceIn: 0.435, PriceOut: 0.87, Ctx: 1050000, Open: boolp(true), Prior: 7.0,
+		Display: "MiMo V2.6 Pro (captain · opencode)",
+		Note: "Xiaomi MiMo V2.6 Pro, open weights, 1M context via OpenRouter ($0.435/M in); BenchLM coding #12 (63.9, 6 Oct, partial coverage 4/613 categories); Artificial Analysis coding index absent - cold prior 7.0 until a scorecard lands or 3 local passes clear"},
+	// Kolibri-1 (2026-10-07): Aleph Alpha Kolibri-1, Apache 2.0 license, ~78B
+	// total / 3B active per token, 128K context. Local-only: no hosted API
+	// exists on OpenRouter. Marked as OpenRouter transport with a local note;
+	// the opencode provider must point at ollama/llama.cpp on 127.0.0.1.
+	{ID: LegKolibri, Transport: TransportOpencode, Provider: "openrouter", Model: "aleph-alpha/kolibri-1",
+		Ctx: 131072, Open: boolp(true), Prior: 7.0, Vision: true,
+		Display: "Kolibri-1 (captain · opencode)",
+		Note: "Aleph Alpha Kolibri-1, Apache 2.0, ~78B/3B active, 128K context, local-only via ollama/llama.cpp (no hosted endpoint on OpenRouter); vision-capable; cold prior 7.0 until a scorecard lands or 3 local passes clear"},
 	{ID: LegGLM, Transport: TransportOpencode, Provider: "nim", Model: "z-ai/glm-5.3", AA: "glm-5-3",
 		Ctx: 1310720, Prior: 8.2, Open: boolp(true), Display: "GLM-5.3 (captain · NIM)",
 		Tiers: map[Tier]string{TierCheap: "z-ai/glm-5.3-flash"},

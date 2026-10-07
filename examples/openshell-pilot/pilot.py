@@ -16,7 +16,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from profiles import PROFILES, QUALIFY_REPAIRS, profile, require_qualified
+from profiles import (OPENSHELL_VERSION, PROFILES, QUALIFY_REPAIRS, machine_profile, profile, require_qualified,
+                      selection_machine)
 
 HERE = Path(__file__).resolve().parent
 MODEL = "z-ai/glm-5.3-flash"
@@ -178,7 +179,7 @@ class Pilot:
         self.gateway = None
         self.middleware = None
         self.start = time.monotonic()
-        self.report = {"schema": 1, "openshell": "0.1.2", "opencode": "1.18.32", "model": MODEL,
+        self.report = {"schema": 1, "openshell": OPENSHELL_VERSION, "opencode": "1.18.32", "model": MODEL,
                        "verdict": "inconclusive", "checks": {name: {"verdict": "inconclusive", "detail": "not run"} for name in self.checks}, "timings_seconds": {},
                        "worker_attempts": 0, "task_successes": 0}
         saved = self.state / "checkpoint.json"
@@ -198,8 +199,10 @@ class Pilot:
             runtime = runtime or "docker"
             # A task runs only on a profile that passed this fixture's checks;
             # the fixture itself is how a profile qualifies.
+            # The record must match this machine's OpenShell build and VM driver.
             if self.task_mode:
-                require_qualified(inference or "nim", CHECKS)
+                driver = self.state / "bin/openshell-driver-vm" if runtime == "vm" else None
+                require_qualified(inference or "nim", CHECKS, machine=selection_machine(driver))
             self.checkpoint = {"name": "cc-" + os.urandom(5).hex(), "phase": "new", "runtime": runtime,
                                "inference": inference or "nim",
                                **({"max_cost_usd": max_cost_usd} if max_cost_usd is not None else {}),
@@ -260,6 +263,7 @@ class Pilot:
             driver = self.state / "bin/openshell-driver-vm"
             version = command([driver, "--version"], env=self.env).stdout.decode().strip()
             self.report["vm_driver"] = {"version": version, "sha256": hashlib.sha256(driver.read_bytes()).hexdigest()}
+            self.report["machine"] = machine_profile(driver, self.report["openshell"])
             # The driver only reads a unix:// DOCKER_HOST. A missing socket
             # would send it to the registry for the local-only worker image.
             endpoint = self.env.get("DOCKER_HOST") or command(
@@ -274,6 +278,7 @@ class Pilot:
                           "--security-opt", "no-new-privileges", "captain-openshell-pilot:2", "python", "-c", probe])
         facts = json.loads(result.stdout)
         self.report["runtime"] = facts
+        self.report["machine"] = machine_profile(None, self.report["openshell"])
         self.report["timings_seconds"]["landlock_probe"] = round(time.monotonic() - started, 3)
         self.report["checks"]["landlock"] = {"verdict": "pass" if facts["landlock_abi"] >= 3 else "fail", "detail": "ABI 3 or newer is required"}
         self.save()

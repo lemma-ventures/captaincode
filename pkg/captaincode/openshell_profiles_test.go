@@ -2,7 +2,9 @@ package captaincode
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -163,4 +165,102 @@ func TestOpenShellQualifyRecordsOnlyThreeOfThree(t *testing.T) {
 
 	_, err = r.Qualify(context.Background(), "../x", io.Discard)
 	assert.ErrorContains(t, err, "not a profile name")
+}
+
+func TestOpenShellProfilesNeedMatchingDriver(t *testing.T) {
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	driver := strings.Repeat("d", 64)
+	machine := func(driverSHA, id string) map[string]any {
+		return map[string]any{"os": "macos", "os_version": "15.6", "arch": "arm64", "cpu_model": "Apple M3 Max",
+			"memory_gib": 128, "openshell_version": "0.1.2", "vm_driver_sha256": driverSHA, "machine_id": id}
+	}
+	record := func(at time.Time, m map[string]any) map[string]any {
+		r := map[string]any{"qualified_at": at.Format(time.RFC3339), "repair_attempts": 1,
+			"runs": []map[string]string{{"report": "a"}, {"report": "b"}, {"report": "c"}}}
+		if m != nil {
+			r["machine"] = m
+		}
+		return r
+	}
+	pilot := t.TempDir()
+	data, err := json.Marshal(map[string]any{"schema": 1, "profiles": map[string]any{
+		"same":     record(now.Add(-time.Hour), machine(driver, "0123456789abcdef")),
+		"other":    record(now.Add(-time.Hour), machine(driver, "fedcba9876543210")),
+		"driver":   record(now.Add(-time.Hour), machine(strings.Repeat("e", 64), "0123456789abcdef")),
+		"legacy":   record(now.Add(-5*24*time.Hour), nil),
+		"expired":  record(now.Add(-31*24*time.Hour), nil),
+		"onerun":   map[string]any{"qualified_at": now.Format(time.RFC3339), "repair_attempts": 1},
+		"badid":    record(now.Add(-time.Hour), machine(driver, "host-name")),
+		"noDriver": record(now.Add(-time.Hour), machine("", "0123456789abcdef")),
+	}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(pilot, "qualified.json"), data, 0o644))
+
+	here := OpenShellMachine{OpenShellVersion: "0.1.2", VMDriverSHA256: driver, MachineID: "0123456789abcdef"}
+	got, err := ReadOpenShellQualifications(pilot, &here, now)
+	require.NoError(t, err)
+	byName := map[string]OpenShellQualification{}
+	for _, q := range got {
+		byName[q.Profile] = q
+	}
+	require.Len(t, byName, 8)
+	assert.True(t, byName["same"].Selectable)
+	assert.Equal(t, "qualified 2026-10-07", byName["same"].Status)
+	assert.True(t, byName["other"].Selectable)
+	assert.True(t, byName["other"].OtherMachine)
+	assert.Contains(t, byName["other"].Status, "on another machine (fedcba9876543210)")
+	assert.False(t, byName["driver"].Selectable)
+	assert.Contains(t, byName["driver"].Status, "another OpenShell version or VM driver")
+	assert.False(t, byName["noDriver"].Selectable, "a record with no driver does not match a VM driver")
+	assert.True(t, byName["legacy"].Selectable)
+	assert.True(t, byName["legacy"].Legacy)
+	assert.Contains(t, byName["legacy"].Status, "legacy")
+	assert.False(t, byName["expired"].Selectable)
+	assert.False(t, byName["onerun"].Selectable)
+	assert.False(t, byName["badid"].Selectable)
+
+	other := here
+	other.OpenShellVersion = "0.1.3"
+	got, err = ReadOpenShellQualifications(pilot, &other, now)
+	require.NoError(t, err)
+	for _, q := range got {
+		if q.Profile == "same" {
+			assert.False(t, q.Selectable, "another OpenShell version must requalify")
+		}
+	}
+
+	got, err = ReadOpenShellQualifications(pilot, nil, now)
+	require.NoError(t, err)
+	for _, q := range got {
+		if q.Profile == "driver" {
+			assert.True(t, q.Selectable)
+			assert.Contains(t, q.Status, "driver not checked")
+		}
+	}
+}
+
+func TestLocalOpenShellMachineReadsDriverAndNeverMakesAnID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	pilot, prepared := t.TempDir(), t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(pilot, "artifacts.lock.json"), []byte(`{"openshell":"0.1.2"}`), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(prepared, "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(prepared, "bin", "openshell-driver-vm"), []byte("driver"), 0o755))
+
+	m, err := LocalOpenShellMachine(pilot, prepared)
+	require.NoError(t, err)
+	assert.Equal(t, "0.1.2", m.OpenShellVersion)
+	assert.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte("driver"))), m.VMDriverSHA256)
+	assert.Empty(t, m.MachineID)
+	assert.NoFileExists(t, filepath.Join(home, ".captaincode", "machine-id"))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".captaincode"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".captaincode", "machine-id"), []byte("0123456789abcdef\n"), 0o600))
+	m, err = LocalOpenShellMachine(pilot, prepared)
+	require.NoError(t, err)
+	assert.Equal(t, "0123456789abcdef", m.MachineID)
+
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".captaincode", "machine-id"), []byte("not-an-id\n"), 0o600))
+	_, err = LocalOpenShellMachine(pilot, prepared)
+	assert.ErrorContains(t, err, "not a machine id")
 }

@@ -38,11 +38,11 @@ type Worktree struct {
 	repo string
 }
 
-// gitRoot finds the top-level directory of the git repo containing dir, or ""
+// GitRoot finds the top-level directory of the git repo containing dir, or ""
 // if dir is not inside a git repository. A worker's workspace is often a
 // subdirectory of the repo (cmd/captaincode, packages/opencode/src), so
 // checking for .git in dir alone would miss it.
-func gitRoot(dir string) string {
+func GitRoot(dir string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--show-toplevel").Output()
@@ -51,10 +51,6 @@ func gitRoot(dir string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-
-// GitRoot is the top-level directory of the git repository containing dir,
-// or "" when dir is not in one.
-func GitRoot(dir string) string { return gitRoot(dir) }
 
 // NewWorktree creates a git worktree at the pinned revision. The worktree is
 // a sibling of the source repo (under the system temp dir) so it does not
@@ -66,7 +62,7 @@ func NewWorktree(ctx context.Context, repo, revision string) (*Worktree, error) 
 	if err != nil {
 		return nil, fmt.Errorf("worktree: resolve repo path: %w", err)
 	}
-	root := gitRoot(abs)
+	root := GitRoot(abs)
 	if root == "" {
 		return nil, fmt.Errorf("worktree: %s is not inside a git repository", abs)
 	}
@@ -133,6 +129,26 @@ func IsolateWorkers(ctx context.Context, repo, revision string, n int) ([]*Workt
 	return wts, nil
 }
 
+// CreateStageWorktrees creates n worktrees at the pinned revision.
+// Unlike IsolateWorkers which skips isolation for n=1, CreateStageWorktrees
+// creates an isolated worktree for every worker (n >= 1) so no stage writes
+// directly into the user's checkout (ROADMAP M3.2 / Q6).
+func CreateStageWorktrees(ctx context.Context, repo, revision string, n int) ([]*Worktree, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	wts := make([]*Worktree, 0, n)
+	for i := 0; i < n; i++ {
+		wt, err := NewWorktree(ctx, repo, revision)
+		if err != nil {
+			CloseAll(wts)
+			return nil, fmt.Errorf("create stage worktree %d/%d: %w", i+1, n, err)
+		}
+		wts = append(wts, wt)
+	}
+	return wts, nil
+}
+
 // CloseAll closes every worktree in the slice, returning the first error. It
 // always attempts to close all of them even if one fails, because a leaked
 // worktree is a disk leak the user will not notice until git complains.
@@ -150,7 +166,7 @@ func CloseAll(wts []*Worktree) error {
 // "" if dir is not inside a git repository. This is the pinned base revision a
 // worktree is created at.
 func CurrentRevision(repo string) string {
-	root := gitRoot(repo)
+	root := GitRoot(repo)
 	if root == "" {
 		return ""
 	}

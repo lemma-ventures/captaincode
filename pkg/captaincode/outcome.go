@@ -430,6 +430,7 @@ func (l *Ledger) RecordTaskReview(taskID, verdict, reviewer, note string, amend 
 	o.DecidedBy, o.SettledAt = DecidedByReviewer, rev.At
 	o.UpdatedAt = time.Now()
 	l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: taskID, Outcome: o})
+	l.queueOutcome(o)
 	return nil
 }
 
@@ -472,6 +473,7 @@ func (l *Ledger) RecordRegression(taskID, reason, source string) {
 	if o.Status == AcceptanceAccepted {
 		o.Status = AcceptanceRegressed
 		o.DecidedBy, o.SettledAt = DecidedByRegression, o.Regression.At
+		l.queueOutcome(o)
 	}
 	o.UpdatedAt = time.Now()
 	l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: taskID, Outcome: o})

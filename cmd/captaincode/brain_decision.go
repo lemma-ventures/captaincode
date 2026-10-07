@@ -178,6 +178,8 @@ func similarAsk(a, b string) bool {
 func (b *brain) recordFollowUpLocked(taskID, text string) {
 	b.ledger.RecordReprompt(taskID, truncate(text, 160), time.Now())
 	b.ledger.SettleOutcomes(time.Now())
+	notices := b.ledger.TakeOutcomeNotices()
+	go captaincode.PublishOutcomeNotices(notices)
 	if err := b.ledger.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save reprompt: %v\n", err)
 	}

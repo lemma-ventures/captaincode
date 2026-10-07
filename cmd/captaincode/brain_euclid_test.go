@@ -31,9 +31,72 @@ func euclidTestHome(t *testing.T) string {
 	return home
 }
 
+func TestSoloPathSendsTheOpenTaskIDToTheWriteBrain(t *testing.T) {
+	home := euclidTestHome(t)
+	root := filepath.Join(home, ".euclid")
+	_, err := captaincode.Scaffold(root, "main")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "fixture-exposure.json"), []byte(
+		`[{"lesson":"lesson-1","arm":"shown","p":0.5}]`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "fixture-items.json"), []byte(
+		`[{"id":"lesson-1","kind":"candidate","source":"lesson:lesson-1","text":"Check the catalog after a merge.","score":2}]`), 0o600))
+	dir := t.TempDir()
+	script := filepath.Join(dir, "server.py")
+	require.NoError(t, os.WriteFile(script, []byte(`import json,os,pathlib,sys
+root=os.environ.get('EUCLID_ROOT','')
+brain=pathlib.Path(root if os.environ.get('EUCLID_BRAIN_SCOPE')=='main' else os.path.join(root,'.euclid'))
+for line in sys.stdin:
+ req=json.loads(line); mid=req.get('id'); method=req['method']
+ if mid is None: continue
+ if method=='initialize': result={'protocolVersion':'2025-06-18','capabilities':{'tools':{}}}
+ elif method=='tools/list': result={'tools':[{'name':n} for n in ['euclid_status','euclid_orientation','euclid_record_event']]}
+ else:
+  name=req['params']['name']; args=req['params'].get('arguments') or {}
+  if name=='euclid_status': value={'brain':str(brain),'writable':os.environ.get('EUCLID_ALLOW_WRITES')=='1'}
+  elif name=='euclid_orientation':
+   items=json.loads((brain/'fixture-items.json').read_text()) if (brain/'fixture-items.json').exists() else []
+   exposure=json.loads((brain/'fixture-exposure.json').read_text()) if args.get('task_id') and (brain/'fixture-exposure.json').exists() else []
+   with open(brain/'fixture-orient.jsonl','a') as out: out.write(json.dumps({'task_id':args.get('task_id')})+'\n')
+   value={'version':1,'items':items,'exposure':exposure}
+  else:
+   value={'id':args.get('event',{}).get('id','')}
+  result={'structuredContent':value,'content':[{'type':'text','text':json.dumps(value)}]}
+ print(json.dumps({'jsonrpc':'2.0','id':mid,'result':result}),flush=True)
+`), 0o600))
+	config := filepath.Join(dir, "config.json")
+	data, _ := json.Marshal(map[string]any{"command": "/usr/bin/python3", "args": []string{script}})
+	require.NoError(t, os.WriteFile(config, data, 0o600))
+	t.Setenv("CAPTAIN_EUCLID_MCP_CONFIG", config)
+	t.Setenv("CAPTAIN_EUCLID_MEMORY_CONFIG", "")
+	b := teamBrain()
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		assert.Contains(t, brief, "Check the catalog after a merge.")
+		assert.Contains(t, brief, `kind="candidate" are unproven`)
+		return leg, captaincode.Result{Text: "done", DurationMs: 5}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "grok", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "update the plan doc"}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code)
+	logged, err := os.ReadFile(filepath.Join(root, "fixture-orient.jsonl"))
+	require.NoError(t, err)
+	require.Len(t, b.ledger.MemoryExposure, 1)
+	var taskID string
+	for id, exposure := range b.ledger.MemoryExposure {
+		taskID = id
+		require.Len(t, exposure.Entries, 1)
+		assert.Equal(t, "shown", exposure.Entries[0].Arm)
+		require.NotNil(t, exposure.Entries[0].Rendered)
+		assert.True(t, *exposure.Entries[0].Rendered)
+	}
+	assert.Contains(t, string(logged), `"task_id": "`+taskID+`"`)
+	assert.NotContains(t, string(logged), `"task_id": null`)
+}
+
 func TestWorkerContextWithoutABrainIsUnchanged(t *testing.T) {
 	euclidTestHome(t)
-	ctx := workerContext(defaultWorkspace())
+	ctx := workerContext(defaultWorkspace(), "", "")
 	assert.NotContains(t, ctx, "<euclid>")
 }
 
@@ -42,7 +105,7 @@ func TestWorkerContextCarriesEuclidOrientation(t *testing.T) {
 	_, err := captaincode.Scaffold(filepath.Join(home, ".euclid"), "main")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(home, ".euclid", "BRAIN.md"), []byte("# BRAIN\n\nThe ash plan lives in ~/Gits/ash, not QMX.\n"), 0o644))
-	ctx := workerContext(defaultWorkspace())
+	ctx := workerContext(defaultWorkspace(), "", "")
 	assert.Contains(t, ctx, "<euclid>")
 	assert.Contains(t, ctx, "The ash plan lives in ~/Gits/ash")
 }

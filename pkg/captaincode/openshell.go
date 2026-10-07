@@ -472,6 +472,23 @@ type OpenShellBuild struct {
 // OpenShellDirector picks one winner among tasks that changed the same files.
 type OpenShellDirector func(ctx context.Context, task string, contenders map[string]Contender) (Ruling, error)
 
+// OpenShellReviewer performs an advisory review of an exported patch.
+type OpenShellReviewer func(ctx context.Context, task string, diff []byte) (string, error)
+
+type openShellReviewerKey struct{}
+
+// WithOpenShellReviewer injects an advisory reviewer into the context.
+func WithOpenShellReviewer(ctx context.Context, reviewer OpenShellReviewer) context.Context {
+	return context.WithValue(ctx, openShellReviewerKey{}, reviewer)
+}
+
+func openShellReviewerFromContext(ctx context.Context) OpenShellReviewer {
+	if r, ok := ctx.Value(openShellReviewerKey{}).(OpenShellReviewer); ok {
+		return r
+	}
+	return nil
+}
+
 // OpenShellRunner runs a team's tasks, each through task.py in its own state
 // directory, and lands what holds up.
 type OpenShellRunner struct {
@@ -493,6 +510,8 @@ type OpenShellRunner struct {
 	Pinned        *OpenShellProvenance // a sequence plan's build: a stage under any other refuses to start
 	Director      OpenShellDirector    // nil: overlapping tasks are not landed
 	DirectorName  string
+	Reviewer      OpenShellReviewer // nil: default tool-less claude reviewer
+	Task          string            // prompt or task being executed
 	Log           func(format string, args ...any)
 
 	landing sync.Mutex // worktree add and capture, one task at a time
@@ -1209,50 +1228,11 @@ func (r *OpenShellRunner) integrate(ctx context.Context, team OpenShellTeam, run
 
 // openShellGroups splits a conflicted candidate's contested manifests into
 // groups that share files, directly or through another member; each group
-// gets its own ruling.
+// gets its own ruling. The host /team path uses the same ConflictGroups.
 func openShellGroups(c IntegrationCandidate) [][]PatchManifest {
-	contested := map[string]bool{}
-	for _, id := range c.Contested() {
-		contested[id] = true
-	}
-	parent := map[string]string{}
-	var find func(string) string
-	find = func(id string) string {
-		if parent[id] == id {
-			return id
-		}
-		parent[id] = find(parent[id])
-		return parent[id]
-	}
-	owner := map[string]string{}
-	for _, m := range c.Manifests {
-		id := m.ManifestID()
-		if !contested[id] {
-			continue
-		}
-		parent[id] = id
-		for _, f := range m.ChangedFiles {
-			if first, ok := owner[f]; ok {
-				parent[find(id)] = find(first)
-			} else {
-				owner[f] = id
-			}
-		}
-	}
-	index := map[string]int{}
 	var groups [][]PatchManifest
-	for _, m := range c.Manifests {
-		if !contested[m.ManifestID()] {
-			continue
-		}
-		root := find(m.ManifestID())
-		i, ok := index[root]
-		if !ok {
-			i = len(groups)
-			index[root] = i
-			groups = append(groups, nil)
-		}
-		groups[i] = append(groups[i], m)
+	for _, g := range c.ConflictGroups() {
+		groups = append(groups, g.Members)
 	}
 	return groups
 }
@@ -1623,6 +1603,10 @@ func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, O
 		StateRoot:    "/tmp",
 		Concurrency:  concurrency,
 		DirectorName: value("CAPTAIN_OPENSHELL_DIRECTOR", "none"),
+		Task:         task,
+	}
+	if fn := openShellReviewerFromContext(ctx); fn != nil {
+		runner.Reviewer = fn
 	}
 	if runner.Runtime != "vm" && runner.Runtime != "docker" {
 		return nil, team, fmt.Errorf("openshell: runtime must be vm or docker")
@@ -1634,13 +1618,17 @@ func openShellConfig(ctx context.Context, dir, task string) (*OpenShellRunner, O
 	default:
 		return nil, team, fmt.Errorf("openshell: CAPTAIN_OPENSHELL_DIRECTOR must be none or claude")
 	}
+	repairAttempts := 1
+	if raw := os.Getenv("CAPTAIN_MAX_ATTEMPTS"); raw == "1" {
+		repairAttempts = 0
+	}
 	taskID := fmt.Sprintf("brain-%x", sha256.Sum256([]byte(task)))[:12]
 	team = OpenShellTeam{Schema: 1, ID: taskID, Tasks: []OpenShellTask{{
 		ID: taskID, Profile: value("CAPTAIN_OPENSHELL_PROFILE", "glm-cheap-z-ai-fp8"),
 		Prompt: task, Verify: verify, Allowed: allowed,
 		Protected:      paths("CAPTAIN_OPENSHELL_PROTECTED"),
 		Baseline:       value("CAPTAIN_OPENSHELL_BASELINE", "any"),
-		RepairAttempts: 1, DeadlineSeconds: 600, VerifySeconds: 120,
+		RepairAttempts: repairAttempts, DeadlineSeconds: 600, VerifySeconds: 120,
 	}}}
 	if err := team.Validate(); err != nil {
 		return nil, team, err
@@ -1769,10 +1757,94 @@ func finishOpenShellRun(ctx context.Context, runner *OpenShellRunner, run *OpenS
 	}
 	if res.Export.Manifest.HasChanges() {
 		res.Text += fmt.Sprintf("exported (not applied)\napply with: %s\n", shellJoin([]string{"git", "-C", res.Export.Repository, "apply", res.Export.Manifest.DiffPath}))
+		diff, diffErr := os.ReadFile(res.Export.Manifest.DiffPath)
+		if diffErr == nil && len(diff) > 0 {
+			runner.runAdvisoryReview(ctx, run, &res, diff)
+		}
 	} else {
 		res.Text += "verified unchanged snapshot; nothing to apply\n"
 	}
 	return res, nil
+}
+
+func (r *OpenShellRunner) runAdvisoryReview(ctx context.Context, run *OpenShellRun, res *Result, diff []byte) {
+	if advisoryHostReviewDisabled() || len(diff) == 0 {
+		return
+	}
+	if run.AttemptBudget != nil && run.AttemptBudget.Limit > 0 {
+		if !run.AttemptBudget.ReviewReserved || (run.AttemptUsage != nil && run.AttemptUsage.Total()+1 > run.AttemptBudget.Limit) {
+			res.AdvisoryReview = &AdvisoryReview{
+				Status:     "skipped",
+				SkipReason: "attempt cap reached",
+			}
+			res.Text += "\nadvisory review skipped: attempt cap reached\n"
+			return
+		}
+	}
+	if openShellStrictCost(ctx) > 0 || (run.CostBudget != nil && run.CostBudget.LimitUSD > 0) {
+		if run.CostBudget != nil && !run.CostBudget.ReviewReserved {
+			res.AdvisoryReview = &AdvisoryReview{
+				Status:     "skipped",
+				SkipReason: "strict cost cap",
+			}
+			res.Text += "\nadvisory review skipped: strict cost cap\n"
+			return
+		}
+	}
+
+	task := r.Task
+	start := time.Now()
+	reviewFn := r.Reviewer
+	if reviewFn == nil {
+		reviewFn = openShellReviewerFromContext(ctx)
+	}
+	if reviewFn == nil {
+		reviewFn = defaultAdvisoryHostReview
+	}
+
+	reviewText, err := reviewFn(ctx, task, diff)
+	durationMs := time.Since(start).Milliseconds()
+
+	if err != nil {
+		res.AdvisoryReview = &AdvisoryReview{
+			Model:      "claude",
+			DurationMs: durationMs,
+			Status:     "error",
+			SkipReason: err.Error(),
+		}
+		return
+	}
+
+	reviewText = strings.TrimSpace(reviewText)
+	if reviewText == "" {
+		return
+	}
+
+	res.Text += "\n[advisory host review]\n" + reviewText + "\n"
+	res.AdvisoryReview = &AdvisoryReview{
+		Text:       reviewText,
+		Model:      "claude",
+		DurationMs: durationMs,
+		Status:     "ok",
+	}
+
+	if res.OpenShellAttempts == nil {
+		res.OpenShellAttempts = &OpenShellAttemptUsage{}
+	}
+	res.OpenShellAttempts.Directors++
+	if run.AttemptUsage != nil {
+		run.AttemptUsage.Directors++
+	}
+	if run.CostBudget != nil && run.CostBudget.ReviewReserved {
+		callUSD := openShellDirectorUSD()
+		if callUSD > 0 {
+			if res.CostUSD > 0 {
+				res.CostUSD += callUSD
+			} else {
+				res.CostCommitted += callUSD
+			}
+		}
+	}
 }
 
 func (r *OpenShellRunner) verifiedExport(ctx context.Context, run *OpenShellRun) (*VerifiedExport, error) {

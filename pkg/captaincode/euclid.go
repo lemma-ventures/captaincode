@@ -21,6 +21,7 @@ package captaincode
 // whole `.euclid/` tree is gitignored while Euclid is not the default install.
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -287,54 +288,156 @@ func clipText(s string, limit int) string {
 	return strings.TrimSpace(s[:limit]) + "…"
 }
 
+// orientationCache keeps rendered blocks for 30s. The key holds the folder,
+// the named repositories and the SHA-256 of the task text (P1c): two tasks in
+// the same folder match different guardrails, so they must not share a block.
 type orientationCache struct {
-	mu   sync.Mutex
-	key  string
+	mu      sync.Mutex
+	entries map[string]orientationCached
+}
+
+// OrientationView is one rendered block plus the write brain's exposure.
+type OrientationView struct {
+	Text string
+	Rec  TaskExposure
+}
+
+type orientationCached struct {
 	at   time.Time
-	text string
+	view OrientationView
 }
 
 var orientCache orientationCache
 
+const (
+	orientationCacheTTL = 30 * time.Second
+	orientationTaskMax  = 4096 // bytes; Euclid's euclid_orientation refuses a longer task
+)
+
+func (c *orientationCache) get(key string) (OrientationView, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok || time.Since(e.at) >= orientationCacheTTL {
+		return OrientationView{}, false
+	}
+	return e.view, true
+}
+
+func (c *orientationCache) put(key string, view OrientationView) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[string]orientationCached{}
+	}
+	for k, e := range c.entries {
+		if time.Since(e.at) >= orientationCacheTTL {
+			delete(c.entries, k)
+		}
+	}
+	c.entries[key] = orientationCached{at: time.Now(), view: view}
+}
+
+func (c *orientationCache) reset() {
+	c.mu.Lock()
+	c.entries = nil
+	c.mu.Unlock()
+}
+
+// orientationTask is the task text Captain sends to Euclid: secrets masked,
+// white space collapsed, at most 4,096 bytes on a rune boundary.
+func orientationTask(task string) string {
+	return CutHead(strings.Join(strings.Fields(Scrub(task)), " "), orientationTaskMax)
+}
+
 // Orientation renders the `<euclid>` block for cwd: the write brain's BRAIN
 // snapshot first (it is the freshest "you are here"), the repo's MAP, then
-// the other brains' BRAIN theses, within the budget. Empty when no brain.
-// Cached for 30s per cwd - it is rendered into every worker prompt.
-func Orientation(cwd string) string { return OrientationWith(cwd, nil) }
+// the other brains' BRAIN theses, within the budget. Empty when no brain, and
+// empty when no item was rendered. Cached for 30s - it is rendered into every
+// worker prompt.
+func Orientation(cwd string) string { return OrientationFor(cwd, nil, "") }
 
 // OrientationWith is Orientation over ReadSetWith: the named repos' brains
 // are in the block too.
-func OrientationWith(cwd string, also []string) string {
+func OrientationWith(cwd string, also []string) string { return OrientationFor(cwd, also, "") }
+
+// OrientationFor is OrientationWith for one task. Over MCP, Euclid matches
+// the task against FAILURES, accepted lessons and WISDOM (P1b); the file path
+// keeps its task-independent selection.
+func OrientationFor(cwd string, also []string, task string) string {
+	return OrientationForTask(cwd, also, task, "").Text
+}
+
+// OrientationForTask is OrientationFor for one ledger task. The cache key
+// includes the task ID, so two tasks with the same text do not share an arm.
+// The view's exposure is what the write brain assigned, including a shown
+// lesson the budget did not render.
+func OrientationForTask(cwd string, also []string, task, taskID string) OrientationView {
 	if !euclidEnabled() {
-		return ""
+		return OrientationView{}
 	}
+	task = orientationTask(task)
+	key := fmt.Sprintf("%s\x00%s\x00%x\x00%s", cwd, strings.Join(also, "\x00"), sha256.Sum256([]byte(task)), taskID)
+	if view, ok := orientCache.get(key); ok {
+		return view
+	}
+	var view OrientationView
 	if memoryMCPEnabled() {
-		return memoryOrientation(ReadSetWith(cwd, also), orientationBudget())
+		view = memoryOrientationTask(ReadSetWith(cwd, also), orientationBudget(), task, taskID)
+	} else {
+		view.Text = renderOrientation(ReadSetWith(cwd, also), orientationBudget())
 	}
-	key := cwd + "\x00" + strings.Join(also, "\x00")
-	orientCache.mu.Lock()
-	defer orientCache.mu.Unlock()
-	if orientCache.key == key && time.Since(orientCache.at) < 30*time.Second {
-		return orientCache.text
+	orientCache.put(key, view)
+	return view
+}
+
+// OrientationProbe counts the items one task-free orientation renders for
+// each brain of cwd's read set, keyed by label. A brain whose probe failed
+// maps to its error text instead (`captain euclid status`).
+func OrientationProbe(cwd string) (map[string]int, map[string]string) {
+	counts, errs := map[string]int{}, map[string]string{}
+	if !euclidEnabled() {
+		return counts, errs
 	}
-	text := renderOrientation(ReadSetWith(cwd, also), orientationBudget())
-	orientCache.key, orientCache.at, orientCache.text = key, time.Now(), text
-	return text
+	for _, b := range ReadSet(cwd) {
+		if memoryMCPEnabled() {
+			items, _, err := memoryOrientationItems(b, orientationBudget(), "", "")
+			if err != nil {
+				errs[b.Label] = err.Error()
+				continue
+			}
+			counts[b.Label] = len(items)
+			continue
+		}
+		_, n := renderOrientationItems([]EuclidBrain{b}, orientationBudget())
+		counts[b.Label] = n
+	}
+	return counts, errs
 }
 
 func renderOrientation(set []EuclidBrain, budget int) string {
+	text, _ := renderOrientationItems(set, budget)
+	return text
+}
+
+// renderOrientationItems renders the file-path block and counts its items.
+// No item rendered means no block: an empty <euclid> pair still changes every
+// worker prompt and tells the worker nothing.
+func renderOrientationItems(set []EuclidBrain, budget int) (string, int) {
 	if len(set) == 0 {
-		return ""
+		return "", 0
 	}
 	var sb strings.Builder
 	sb.WriteString("\n\n<euclid>\nThis project carries Euclid memory (git-native registers). Consult it before re-deriving where things live or what was decided; the write brain's journal records every prior run.\n")
 	used := sb.Len()
+	items := 0
 	add := func(s string) bool {
 		if used+len(s) > budget {
 			return false
 		}
 		sb.WriteString(s)
 		used += len(s)
+		items++
 		return true
 	}
 	read := func(root, name string) string {
@@ -411,8 +514,11 @@ func renderOrientation(set []EuclidBrain, budget int) string {
 		}
 	}
 
+	if items == 0 {
+		return "", 0
+	}
 	sb.WriteString("</euclid>\n")
-	return sb.String()
+	return sb.String(), items
 }
 
 // ------------------------------------------------------------------- journal
@@ -463,11 +569,6 @@ func JournalRun(cwd string, e JournalEntry) (string, error) {
 	e.Task = Scrub(clipText(strings.Join(strings.Fields(e.Task), " "), 300))
 	e.Error = Scrub(clipText(e.Error, 200))
 	sort.Strings(e.Files)
-	if memoryMCPEnabled() {
-		if _, err := recordMemoryEvent(b, memoryEntry(e, entryKeys([]JournalEntry{e})[0], "journal")); err != nil {
-			return "", err
-		}
-	}
 	path := JournalPath(b, e.At)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
@@ -486,6 +587,10 @@ func JournalRun(cwd string, e JournalEntry) (string, error) {
 	}
 	writeJournalEntryMarkdown(b, e)
 	ScheduleReindex(b)
+	if memoryMCPEnabled() {
+		ev := memoryEntry(e, entryKeys([]JournalEntry{e})[0], "journal")
+		_, _ = recordMemoryEvent(b, ev)
+	}
 	return path, nil
 }
 

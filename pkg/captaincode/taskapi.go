@@ -227,12 +227,24 @@ type InspectRequest struct {
 
 // InspectResponse carries everything the server knows about a task.
 type InspectResponse struct {
-	Task     *TaskState     `json:"task,omitempty"`
-	Attempts []AttemptState `json:"attempts,omitempty"`
-	Charges  []Charge       `json:"charges,omitempty"`
-	Budget   *Budget        `json:"budget,omitempty"`
-	Decision *Decision      `json:"decision,omitempty"`
-	Handoff  *HandoffBrief  `json:"handoff,omitempty"`
+	Task     *TaskState         `json:"task,omitempty"`
+	Attempts []AttemptState     `json:"attempts,omitempty"`
+	Charges  []Charge           `json:"charges,omitempty"`
+	Budget   *Budget            `json:"budget,omitempty"`
+	Decision *Decision          `json:"decision,omitempty"`
+	Handoff  *HandoffBrief      `json:"handoff,omitempty"`
+	Stages   []StageIntegration `json:"stages,omitempty"`
+}
+
+// StageIntegration records what one workflow stage produced and landed.
+type StageIntegration struct {
+	Stage           int      `json:"stage"`
+	StageID         string   `json:"stage_id,omitempty"`
+	Status          string   `json:"status"`
+	CandidateDigest string   `json:"candidate_digest,omitempty"`
+	FilesLanded     []string `json:"files_landed,omitempty"`
+	// Rulings is the director's call on each conflict group (ROADMAP Q7).
+	Rulings []GroupRuling `json:"rulings,omitempty"`
 }
 
 // EventsRequest reads a bounded batch of task events from a cursor. The
@@ -265,6 +277,7 @@ type ArtifactsResponse struct {
 	Integration *IntegrationCandidate `json:"integration,omitempty"`
 	Manifests   []PatchManifest       `json:"manifests,omitempty"`
 	Exports     []VerifiedExport      `json:"exports,omitempty"`
+	Stages      []StageIntegration    `json:"stages,omitempty"`
 }
 
 // CancelRequest cancels a task and all its descendants.

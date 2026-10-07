@@ -212,6 +212,20 @@ func (b *Budget) Reconcile(reservedAttempts int, actualCostUSD float64) {
 	}
 }
 
+// Release returns n reserved attempts that never reached a provider: nothing
+// settles and nothing is charged. A workflow escalation that finds no
+// stronger leg releases the attempt it reserved (ROADMAP Q5).
+//
+// The caller must hold the brain's budgetMu.
+func (b *Budget) Release(n int) {
+	if n > b.ReservedAttempts {
+		n = b.ReservedAttempts
+	}
+	if n > 0 {
+		b.ReservedAttempts -= n
+	}
+}
+
 // Stop records a stopping reason and timestamp. A budget that was already
 // stopped keeps its first reason: the original cause is what the report needs.
 func (b *Budget) Stop(reason string) {

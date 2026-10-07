@@ -581,12 +581,13 @@ task first, bind cancellation to the controller and keep the verified export.
 | `CAPTAIN_OPENSHELL_PILOT` | required | `examples/openshell-pilot` of a Captain checkout you trust. Its controller runs on the host, so it never defaults to the repository being sandboxed |
 | `CAPTAIN_OPENSHELL_REPO` | current workspace | Repository to snapshot; resolved to its top level |
 | `CAPTAIN_OPENSHELL_REVISION` | `HEAD` | Commit or ref, resolved once to a full commit ID before execution |
-| `CAPTAIN_OPENSHELL_PROFILE` | `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI's ZDR endpoint) | Pilot inference profile: `nim`, a kept gpt-oss lane, or a registry-generated profile from the pilot's `catalog.json` (`captain openshell profiles`). A new task runs only on a profile that passed the pilot's 18-check fixture 3 times out of 3, with the one repair a task gets, in the last 30 days (`captain openshell qualify`); `python3 <pilot>/profiles.py` lists which are |
+| `CAPTAIN_OPENSHELL_PROFILE` | `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI's ZDR endpoint) | Pilot inference profile: `nim`, a kept gpt-oss lane, or a registry-generated profile from the pilot's `catalog.json` (`captain openshell profiles`). A new task runs only on a profile that passed the pilot's 18-check fixture 3 times out of 3, with the one repair a task gets, in the last 30 days (`captain openshell qualify`), on the same OpenShell version and VM driver hash as the prepared runtime; `python3 <pilot>/profiles.py --prepared <dir>` lists which are |
 | `CAPTAIN_OPENSHELL_RUNTIME` | `vm` | `vm` or `docker`; the runtime must pass the pilot's enforcement gates |
 | `CAPTAIN_OPENSHELL_PROTECTED` | empty | Additional comma-separated file paths whose content must stay unchanged; Git metadata is always outside the writable scope |
 | `CAPTAIN_OPENSHELL_BASELINE` | `any` | Expected baseline result: `fail` for a regression task, `pass`, or `any`; final verification must pass in every mode |
 | `CAPTAIN_OPENSHELL_CONCURRENCY` | `1` | Maximum simultaneous sandbox workers, 1-8; an explicit parallel stage accepts 2-4 workers |
 | `CAPTAIN_OPENSHELL_DIRECTOR` | `none` | `none` or `claude`; arbitration is only needed for teams with overlapping patches. `/team /openshell` needs `claude`, which also plans the split |
+| `CAPTAIN_OPENSHELL_ADVISORY_REVIEW` | `1` | Advisory review after an exported patch: `1` runs tool-less Claude on the host in an empty temporary folder; `0` disables it |
 
 There is no default verification command. JSON preserves spaces, commas and
 quoting inside arguments. An operator who explicitly supplies a no-op check
@@ -607,6 +608,18 @@ reservation is the charge, because the subscription returns no bill. The
 sandbox then admits only the remainder. Shield's committed amount is what the
 ledger records when the provider bill is incomplete.
 The prepared image must contain the test runtime and dependencies.
+
+**Advisory host review.** After every successful sandbox run that exports a patch
+(solo, workflow, team, and recovered), an advisory review runs on the host using
+`claude -p --safe-mode --tools "" --strict-mcp-config` in an empty temporary folder.
+It is enabled by default unless `CAPTAIN_OPENSHELL_ADVISORY_REVIEW=0`. The review
+is untrusted model output: it never applies, edits, or signs patches. It counts as
+one director attempt in `CAPTAIN_MAX_ATTEMPTS` admission. Under a strict cost cap,
+it reserves `CAPTAIN_OPENSHELL_DIRECTOR_USD` ($0.05). If the attempt cap or strict
+cost cap cannot cover the review, the review is skipped and the run succeeds with
+`advisory review skipped: <reason>`. The review text (masked and truncated to 16 KiB),
+model, duration, status, and any skip reason are saved on the attempt record in the
+ledger. `captain task inspect` prints the first 300 characters.
 
 The direct CLI bypasses the host OpenCode server, routing ladder and director.
 It refuses `--until`; phrases such as "until tests pass" stay in the task prompt
@@ -694,18 +707,20 @@ restarted for the same worker rebuilds the committed total from its fsync'd audi
 Captain also fails a worker whose report lacks the budget, names another limit or
 shows more committed than its share.
 
-Strict caps need an OpenRouter lane (`cerebras`, `sambanova`, `together`,
-`deepinfra`, `crusoe` or `parasail`); NIM returns no price and is refused. Host
-calls that are not priced are refused rather than left outside the cap:
-`/team /openshell`, whose planner is a subscription call, and any stage with two
-or more edit workers while `CAPTAIN_OPENSHELL_DIRECTOR` is set, since it could
-need a ruling. Verification sandboxes call no model and get a zero allocation.
-Recovery of a strict-capped run is refused for now (`--resume`, task resume and
-startup recovery): rerunning a stopped stage would need each worker's share less
-what its Shield already committed. An unreadable `CAPTAIN_MAX_COST` under
+Strict caps need a priced lane: an OpenRouter lane (`cerebras`, `sambanova`,
+`together`, `deepinfra`, `crusoe` or `parasail`) or a priced profile from the
+generated catalog. NIM returns no price and is refused. The host director calls
+are priced by reservation: the `/team /openshell` planner and each possible
+conflict ruling reserve `CAPTAIN_OPENSHELL_DIRECTOR_USD` each, as described
+above. Verification sandboxes call no model and get a zero allocation.
+Recovery of a strict-capped run (`--resume`, task resume and startup recovery)
+subtracts the committed spend of the verified stages, of each set-aside run and
+the director reservation from the saved cap. A set-aside run with no known
+commitment counts as its full worker share. A verified stage with no known
+commitment refuses the recovery. An unreadable `CAPTAIN_MAX_COST` under
 `CAPTAIN_STRICT` refuses execution. `run.json` keeps `cost_budget` and each
-worker's `report.shield.budget`. The committed amount is not yet charged to the
-ledger's task budget, so `captain budget` shows the cap but not this spend.
+worker's `report.shield.budget`. When the provider bill is incomplete, the
+ledger charges Shield's committed amount.
 
 Spend is read at the Shield, not from the worker. Each response's audit row keeps
 the provider's own token counts and, on OpenRouter lanes, its `usage.cost`; no
@@ -1030,7 +1045,7 @@ a single model runs it in all three bands, at that band's effort.
 | `deepseek` | `deepseek-v4-flash` | `deepseek-v4-pro` | `deepseek-v4-pro` |
 | `glm` | `glm-5.3-flash` | `glm-5.3` | `glm-5.3` |
 | `qwen` | `qwen3.6-35b-a3b` | `qwen3.5-397b-a17b` | `qwen3.5-397b-a17b` |
-| `luna`, `grok-max`, `kimi`, `minimax`, `step`, `gpt-oss`, `ds4-flash`, `ds-flash`, `free` | one model | one model | one model |
+| `luna`, `grok-max`, `kimi`, `minimax`, `mistral`, `mimo`, `kolibri`, `step`, `gpt-oss`, `ds4-flash`, `ds-flash`, `free` | one model | one model | one model |
 
 `<PREFIX>_CHEAP_MODEL` and `<PREFIX>_FRONTIER_MODEL` pin a band
 (`CAPTAIN_CODEX_CHEAP_MODEL`, `CAPTAIN_CURSOR_FRONTIER_MODEL`,
@@ -1167,7 +1182,7 @@ privacy limits, token semantics, and routing comparisons.
 | Variable | Default | Effect |
 |---|---|---|
 | `CAPTAIN_MAX_WALLTIME` | unset (`0` = unlimited) | Shared task wall-time limit, such as `10m`. OpenShell persists its absolute deadline across stages and recovery; downtime counts. |
-| `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries. OpenShell admits the complete worst-case plan before dispatch; other paths use the budget controller. |
+| `CAPTAIN_MAX_ATTEMPTS` | unset (`0` = unlimited) | Shared attempt cap across director, workers, reviews and retries. OpenShell admits the complete worst-case plan before dispatch; other paths use the budget controller. When host `/team` or `+` workers change the same files, Captain reserves 2 director attempts per conflict group (the ruling and one retry) before the first ruling. If the cap cannot cover every group, no group is ruled, nothing is applied and every diff is kept. |
 | `CAPTAIN_MAX_COST` | unset | USD cost cap for a task. **Tracked** in admission mode; with `CAPTAIN_STRICT=1`, legs that cannot report per-turn cost are rejected before dispatch, and OpenShell workers are held to it request by request at Shield ([strict dollar caps](#openshell-workers)). |
 | `CAPTAIN_STRICT` | off | When set with a cost cap, only cost-reporting adapters may run (see `captain budget`). |
 | `CAPTAIN_MAX_REPAIRS` | `1` | Same-leg objective-failure repairs before escalation. `0` = no repairs. |

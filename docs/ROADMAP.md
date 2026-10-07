@@ -1,6 +1,6 @@
 # Captain Code implementation roadmap
 
-Prepared 13 September 2026; status refreshed 4 October 2026.
+Prepared 13 September 2026; status refreshed 7 October 2026.
 
 **M1–M5 control surfaces have largely landed in source** (accounting, eval harness,
 decisions, capabilities, quotas, budgets, escalation, isolation, artifacts,
@@ -19,6 +19,67 @@ guides, not release promises.
 | M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
+| M3.2 host workflows | Stages hand over their tree and cumulative diff applies at end (Q6 done); host `/team` and `+` stages rule once per conflict group (Q7 done) |
+| M3.8 `/btw` on codex | Named, not built; the installed `codex app-server` (0.156.0) has `turn/steer` |
+
+### Build queue (October 2026)
+
+The 7 October review turned the open items into this queue. Each row has a
+spec under [Build queue specs](#build-queue-specs-october-2026). To find one,
+run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
+
+| ID | Item | Milestone | Status |
+|---|---|---|---|
+| Q1 | Correct stale OpenShell, strict-cap, attempt, fixture and corpus statements | M1.3, M3.7, M5.3 | done (7 October, spec pass) |
+| Q2 | Advisory review: saved, counted, capped, and tested without a real model | M3.7 | done (7 October, Q2 pass) |
+| Q3 | Machine profile in OpenShell reports and qualifications; second-machine runbook | M3.7 | done (7 October; the pilot stays the gate, Go reads the records for the `profiles` listing only) |
+| Q4 | Live OpenShell evidence: attempt-cap refusal, wall-time expiry, advisory review | M3.7 | blocked: prepared runtime incomplete (7 October: the `/tmp` runtime has an empty `bin/` and no generated stubs; prepare it again outside `/tmp`, with the user) |
+| Q5 | A workflow gate repair or escalation is charged once, at the billed amount | M2.4 | done (7 October; the repair also counted its cost twice, and an escalation with no target settled an attempt with no call) |
+| Q6 | Host workflow stages hand over their tree; one cumulative apply at the end | M3.2 | done (7 October, Q6 pass) |
+| Q7 | Host `/team` rules once per conflict group | M3.2 | done (7 October; workflow `+` stages use the same path, and semantic-conflict owners are also worker ids) |
+| Q8 | Run records keep the full tool input and every prompt a worker received | M1.2, M3.5 | next |
+| Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | queued |
+| Q10 | A new Euclid MCP server ends when its parent or its folder is gone | Euclid adapter | queued |
+| Q11 | M1 pilot: blind review without arm names; evaluation section in the release report | M1.3, M1.5 | queued |
+| Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | queued |
+| Q13 | Outcome commands in the TUI | M5.1 | queued |
+| Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | queued |
+| Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | queued |
+| Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | queued |
+| Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
+| N1 | Install a local model runtime and pull one candidate model | Small calls | needs you |
+| N2 | Qualify and run one real task on a second machine | M3.7 | needs you, after Q3 |
+| N3 | OpenShell #3940: maintainer vouch, then reopen with a DCO sign-off | M3.7 | blocked: maintainer |
+| N4 | M1 evidence: approve the fixture publication and the pilot spend; do the blind review | M1.3-M1.5 | needs you, after Q11 |
+| N5 | Pi and Jido drop-in packages: choose toolchains and registries | M4.3, M4.4 | needs you |
+| W1 | Frontier share before and after `cheap-capable-v1` | Routing | waiting: Q16, then 7 days of turns |
+| D1 | Host edit, then sandbox stage, in one turn | M3.7 | deferred |
+| P1 | Trailing time window for the statistics that rank legs | M2 | proposed |
+| P2 | `captain task explain <id> --html` | M2.1 | proposed |
+| P3 | `captain wf import` for LangGraph graph exports | Workflows | proposed |
+
+**Rules for a `/repeat` round.**
+
+1. Take the row marked `next`. If there is none, take the first `queued` row.
+   Never take a row marked `needs you`, `blocked`, `waiting`, `deferred` or
+   `proposed`. When no row is left, report "no buildable row" and stop.
+2. Read the spec, then the files it cites. Line numbers are from 7 October. If
+   a line moved, find the code by name. If the code no longer matches "Today",
+   adapt the build and write the difference in the row.
+3. Write the named tests first, and see them fail where the spec says the code
+   is wrong. Then build. Run the focused tests, `gofmt -l pkg cmd` and
+   `go vet ./...`, and `bun test` in `plugin/` for a plugin change. The full
+   suite runs after the turn.
+4. Update the docs the spec names. Set the row to `done (date)` or
+   `blocked: <reason>`, and mark the next buildable row `next`.
+5. Do not commit, push, tag, restart the brain, install software or stop a
+   process you did not start, unless the user asks. Never send a test prompt
+   to the live brain (127.0.0.1:14097) or the shared OpenCode server
+   (127.0.0.1:14096): a side brain still reaches port 14096. Use `go test`
+   stubs.
+6. A live provider run is allowed only where the spec says so: from a binary
+   built from the working tree, with `CAPTAIN_STRICT=1` and the cap the spec
+   names. Name every prompt you sent in the report.
 
 ## Product direction
 
@@ -387,7 +448,10 @@ The fixture repo is reproducible: a git bundle
 `docs/eval/fixtures/setup.sh` clones and promotes the task branches to
 local refs so the eval harness's `git clone --no-local` transfers them.
 The bundle is tracked in the captaincode repo; the fixture repo's `.git`
-is gitignored to avoid the nested-repo issue.
+is gitignored to avoid the nested-repo issue. (7 October 2026: not true. The
+bundle and `setup.sh` are not in this repository or its history, so a clean
+checkout cannot run the pilot and `captain release check` cannot find the
+bundle. See Q11 in the [build queue](#build-queue-october-2026).)
 
 Remaining for M1.3: running the pilot (144 executions against live
 providers) to produce the M1.4 baseline report. The harness, the corpus
@@ -1109,6 +1173,20 @@ same way. Before this, an isolated team's file changes were deleted with
 its worktrees. The synthesis and the workflow review are told what
 landed, so the answer does not describe a set-aside change as done.
 
+**One ruling per conflict group (7 October 2026, Q7).** The paragraph above
+gave one ruling for all contested workers: if A and B changed `x.go` and C and
+D changed `y.go`, one worker landed and three were dropped. Now
+`IntegrationCandidate.ConflictGroups` links workers whose changed files
+overlap, directly or through another worker, and sorts the groups by their
+first contested file. The host `/team` path, workflow `+` stages and OpenShell
+use it. `ResolveGroups` takes one ruling per group: each winner lands, and a
+worker in no group lands as it is. Before the first ruling, the task budget
+reserves 2 director attempts per group (the call and one retry for a reply
+that is not JSON). If it cannot, no group is ruled and every diff is kept. A
+failed ruling in any group applies nothing. Conflict owners are worker ids
+(`w1-claude`, `s1w2-codex`), not legs. `captain task inspect` prints one
+`ruling on <files>` line per group.
+
 **M3.2 test evidence capture (14 September 2026).**
 [`pkg/captaincode/artifact.go`](../pkg/captaincode/artifact.go) adds
 `CaptureTestEvidence`, which auto-detects the project's test suite from
@@ -1176,6 +1254,18 @@ so a worker that created a new file is applied as faithfully as one that
 modified an existing one. The apply is all-or-nothing per manifest: a diff
 that does not apply cleanly stops the whole candidate rather than leaving
 the user's tree in a half-merged state.
+
+**M3.2 stage handoff and cumulative integration (7 October 2026, Q6).**
+Host workflows now hand over the tree between stages using isolated git worktrees
+(`pkg/captaincode/workflow_handoff.go`). The base is an initial commit of the user's
+checkout (including uncommitted and untracked files) created using a temporary index file
+(`GIT_INDEX_FILE`). Every stage, single or parallel, runs in worktrees created at the
+current stage base. After each stage, its integration candidate is committed to form the
+next stage base. At the end of the workflow, a single cumulative diff from the initial
+base to the final tree is verified against the checkout: if the user concurrently edited
+any touched file during the run, the patch is kept as a task artifact without overwriting
+user files. Otherwise, the patch is applied cleanly. `captain task inspect <task-id>`
+reports per-stage integration status, candidate digests, and landed files.
 
 **M3.3 status (14 September 2026).** The durable lifecycle has landed in
 [`pkg/captaincode/lifecycle.go`](../pkg/captaincode/lifecycle.go): the
@@ -1605,7 +1695,8 @@ export is returned. User files and the Git index are not changed.
 The ledger retains one task/aggregate attempt linked to the per-worker run
 record. Cancellation reaches all active controllers; there is no host fallback,
 host verification, automatic planning or synthesis. Mixed host/sandbox stages
-and ordinary team planning remain open. Regression coverage includes configuration, independent assignments,
+and ordinary team planning remain open (superseded: see the 7 October correction
+below). Regression coverage includes configuration, independent assignments,
 combined verification, failed-worker/conflict rejection and HTTP cancellation.
 
 The [parallel HTTP report](../examples/openshell-pilot/results/2026-10-02-parallel-entry.json)
@@ -1799,7 +1890,10 @@ attempt settings and already-used generic root budgets remain refused.
 
 This is admission against a fixed upper bound, not dynamic reservation/refund:
 unused repair/ruling slots are not redistributed, and actual worker/director
-attempts are not yet reconciled into generic ledger counters. Local controller
+attempts are not yet reconciled into generic ledger counters (superseded: when
+the run ends, `Ledger.ReconcileOpenShellSpend` settles the measured worker,
+repair and director counts into the task budget that host workers also use;
+admission reserves nothing, so no slot needs to be returned). Local controller
 and HTTP regressions cover accepted/refused plans, real director retry dispatch
 through a fake CLI, multiple conflicts, reviews, nested limits, durable cap/stop
 records and recovery without replay. No new live-provider or MicroVM benchmark
@@ -1852,7 +1946,8 @@ an evidence digest, requires inspection before explicit run-directory recovery.
 That explicit command still checks local consistency and runtime provenance, but
 has no independent ledger anchor. The ledger itself remains trusted. This binds
 completed-stage evidence; it does not solve unknown usage from an interrupted
-worker or recovery after a controller crash mid-stage.
+worker or recovery after a controller crash mid-stage (the crash rerun is
+superseded: see the 7 October correction below).
 
 Local controller regressions cover the previously accepted rewrite, durable
 ledger reload, three-stage continuation, stopped-stage reruns, altered evidence
@@ -1899,7 +1994,8 @@ requests: 70,849 tokens and $0.0252; the planning call is a counted, unpriced
 subscription call. Host files and index stayed unchanged, and the patch reproduced
 the verified tree. This qualifies one cleanly separable task on one host, not
 planning quality, conflict-heavy splits or scale. Mixed host/sandbox teams remain
-open. The following extension adds multi-stage planning.
+open (superseded: refused by design, see the 7 October correction below). The
+following extension adds multi-stage planning.
 
 **M3.7 multi-stage director plans (2 October 2026, shipped in v0.3.0).**
 The sandbox planner now returns ordered `edit` or `review` stages: at most four
@@ -1940,11 +2036,13 @@ response at the provider's bill. Unpriced and failed responses keep their whole
 reservation; a bill above its reservation stops the Shield and fails the worker.
 A restarted Shield rebuilds the committed total from its audit. Host calls that
 are not priced are refused rather than left outside the cap: the `/team /openshell`
-planner, and stages that could need a conflict ruling while a director is set.
+planner, and stages that could need a conflict ruling while a director is set
+(superseded in v0.3.6: each director call now reserves a price).
 
 Recovery of a capped run is refused for now, the committed amount is not yet
 charged to the ledger's task budget, and NIM has no price, so it is refused under
-a cap. A worker that fails now still reports what crossed its Shield, so its
+a cap (the first two clauses are superseded in v0.3.6; NIM is still refused). A
+worker that fails now still reports what crossed its Shield, so its
 spend is measured rather than unknown. Tests cover the reservation bound, refusal,
 settlement, breach, audit rebuild, checkpoint pinning, admission refusals, the
 per-worker hand-off and the recovery refusal.
@@ -1955,6 +2053,34 @@ ran one public worker on Cerebras twice. Under $0.10 it passed every check with
 Shield refused both requests, none reached the provider and nothing was spent.
 Requests reserved $0.019-0.034 against bills of $0.0005-0.0028. This is one fixture
 on the patched driver, not evidence of how often real tasks fit a cap.
+
+**M3.7 status correction (7 October 2026).** Five statements above were true on
+2 October and are not true now. The text above stays as written; this note
+records what changed.
+
+- **Director calls under a strict cap** (v0.3.6, 4 October). Each tool-less
+  director call, the `/team /openshell` planner and each possible conflict
+  ruling, reserves `CAPTAIN_OPENSHELL_DIRECTOR_USD` (default $0.05) before it
+  runs. The reservation is the charge. The workers share the rest of the cap.
+- **Shield spend on the ledger** (v0.3.6). When the provider bill is
+  incomplete, the ledger charges Shield's committed amount (`Result.BilledUSD`).
+- **Recovery of a capped run** (v0.3.6). A resume subtracts the committed spend
+  of the verified stages, of each set-aside run and the director reservation
+  from the saved cap (`openShellRecoverySpent`). A set-aside run with no known
+  commitment counts as its full worker share. A verified stage with no known
+  commitment refuses the recovery.
+- **Controller crash mid-stage** (v0.3.6). A stage still marked running that
+  does not revalidate is set aside and run again. Its attempts and spend count
+  once.
+- **Mixed host/sandbox stages** (v0.3.8, 6 October). Refused by design with a
+  400 (`ClassifyWorkflowMode`, `MixedWorkflowRefusal`). A sandbox stage's output
+  must not become a host agent's working tree or prompt. A program step cannot
+  be `/openshell`. After a successful sandbox workflow, a tool-less
+  `claude -p --safe-mode` call reviews the diff. That review is advisory: it
+  never applies the patch and never blocks a stage.
+
+NIM is still refused under a strict cap, because it returns no price. The
+remaining OpenShell work is in the [build queue](#build-queue-october-2026).
 
 **M3.8 status (20 September 2026).** Named, not built.
 
@@ -2578,7 +2704,11 @@ shows `-` for cost/time per accepted when no task in a role was accepted
 
 Remaining for M5.3: the comparison needs the M1.3 pilot corpus to produce
 real numbers — the classification and aggregation are done, but the data
-they aggregate is the 12-task fixture set M1.3 has not yet written.
+they aggregate is the 12-task fixture set M1.3 has not yet written. (7 October
+2026: the corpus is written, `docs/eval/pilot-12.json`. What is missing is a
+pilot run with recorded charges, and `RoleEconomics` still counts a finished
+run as accepted instead of reading the M5.1 verdict. See Q11 and Q12 in the
+[build queue](#build-queue-october-2026).)
 
 **M5.4 status (14 September 2026).** Policy evaluation has landed in
 [`pkg/captaincode/policy.go`](../pkg/captaincode/policy.go), and with it
@@ -2694,6 +2824,743 @@ acceptance evidence, which the calibration already joins by task id.
 `agents-md-drift` is asked because Euclid makes its state cheap, and left
 UNCOMPARED because nothing observes it - an honest missing label rather than
 an invented one.
+
+## Build queue specs (October 2026)
+
+Each spec gives the facts on 7 October (**Today**, with `file:line`), what to
+build, the tests and the definition of done. The order and the status of each
+item are in the [build queue](#build-queue-october-2026).
+
+#### Q1. Correct stale statements (done 7 October)
+
+Fixed in the spec pass. Docs and one code comment only:
+
+- M3.7: five sentences are marked superseded, with a dated correction note
+  before M3.8. The attempt-admission note said that measured counts do not
+  reach the task budget. `Ledger.ReconcileOpenShellSpend` settles them.
+- `docs/CONFIGURATION.md`: the strict-cap paragraph said that capped recovery,
+  priced director calls and Shield spend on the ledger were missing. All three
+  shipped in v0.3.6.
+- `pkg/captaincode/openshell_budget.go`: the `costBudget` comment said that a
+  stage that could need a ruling is refused. The code reserves a director
+  price for each possible ruling.
+- M1.3: the fixture bundle is not in this repository. M5.3: the corpus exists.
+
+#### Q2. Advisory review: saved, counted, capped, tested without a real model
+
+**Today**
+
+- `advisoryHostReview` runs `claude -p --safe-mode --tools ""` after a
+  successful `RunOpenShellWorkflow` (`pkg/captaincode/openshell_workflow.go:97,
+  172-173`). It is on unless `CAPTAIN_OPENSHELL_ADVISORY_REVIEW=0`.
+- Its text goes only into the reply: CLI stdout
+  (`cmd/captaincode/openshell_solo.go:76-77`) or the HTTP body
+  (`cmd/captaincode/brain_openshell.go:138-143`). `run.json` is written before
+  the review runs (`pkg/captaincode/openshell.go:638-640`). The ledger does not
+  keep it (`openshell_solo.go:141-159`).
+- It is not an attempt, it is not charged, and a strict cost cap does not
+  limit it. Every other host call under a cap reserves a price.
+- It does not run after a plain solo run (`RunOpenShell`) or a recovered run.
+- `openshell_review_test.go:180` is named "DisabledByDefault" but tests the
+  opt-out. No test runs the review with a fake `claude`. Workflow tests that
+  leave the variable unset start the real `claude` when it is on `PATH`
+  (for example `:103`).
+- Same file, separate defect: a mixed turn that starts with `/openshell` gets
+  its own 400 text (`openshell_workflow.go:47-48`), not `MixedWorkflowRefusal`
+  (`pkg/captaincode/workflow.go:389`).
+
+**Build**
+
+1. Run the review after every successful sandbox run that exports a patch:
+   solo, workflow, team and recovered. One function, one call site, after the
+   export.
+2. Make the review command injectable, like the director call. Tests use a
+   fake that returns fixed text. No test may start the real `claude`.
+3. Count the review as one director attempt in the `CAPTAIN_MAX_ATTEMPTS`
+   admission. Under a strict cap, `costBudget` reserves `openShellDirectorUSD()`
+   for it. If the cap or the attempt limit cannot cover it, skip the review and
+   write "advisory review skipped: <reason>" in the reply. Never refuse the run
+   because of the review.
+4. Save the review on the attempt record: the text (passed through
+   `MaskSecrets`, cut at 16 KiB), the model, the duration, the exit status and
+   any skip reason. `captain task inspect` prints the first 300 characters
+   through `terminalSafe`.
+5. Use `MixedWorkflowRefusal` for the mixed refusal in `openShellChat`.
+
+**Security.** The review stays tool-less, in an empty temporary folder, with
+`--safe-mode --strict-mcp-config`. Its text is untrusted model output: no code
+reads it to make a decision.
+
+**Tests**
+
+- `TestAdvisoryReviewRunsAfterSoloWorkflowAndRecovery` (fake reviewer).
+- `TestAdvisoryReviewSavedOnAttempt` (the text survives a ledger reload, masked).
+- `TestAdvisoryReviewCountsOneAttempt`, `TestAdvisoryReviewSkippedWhenCapIsShort`.
+- `TestNoOpenShellTestStartsRealClaude`: a `claude` on `PATH` that writes a
+  marker file; the review paths run; no marker exists.
+- Rename the opt-out test to what it checks.
+
+**Done when.** The tests pass with no `claude` on `PATH` and with the trap
+`claude` on `PATH`. The OpenShell section of `docs/CONFIGURATION.md` says when
+the review runs, what it costs and where it is saved.
+
+**Out of scope.** A review that blocks, applies or edits a patch.
+
+#### Q3. Machine profile in OpenShell reports and qualifications
+
+**Today**
+
+- A report records the VM driver version and SHA-256
+  (`examples/openshell-pilot/pilot.py:262`) and the sandbox kernel. It records
+  nothing about the host machine.
+- A `qualified.json` record is keyed by an `identity` that hashes the provider
+  endpoint (`examples/openshell-pilot/profiles.py:123-128`). It also stores the
+  model, route, checks, date, repairs, runs, compute driver and OpenShell
+  version (`:197-200`).
+- `qualified.json` is tracked in git. A clone on another machine inherits all
+  six qualifications, but the 18 checks include sandbox denials that depend on
+  the local driver.
+
+**Build**
+
+1. A machine profile, made by the pilot: `os`, `os_version`, `arch`,
+   `cpu_model`, `memory_gib`, `openshell_version`, `vm_driver_sha256` and
+   `machine_id`. `machine_id` is 16 hex characters of a random value, created
+   once in `~/.captaincode/machine-id` (mode 0600). No hostname, user name,
+   serial number or MAC address.
+2. Every report and every new `qualified.json` record carries the profile.
+3. Selection, in `profiles.py` and `pkg/captaincode/openshell_profiles.go`: a
+   profile is selectable only if a 3-of-3 record from the last 30 days has the
+   same `openshell_version` and `vm_driver_sha256` as this machine. Another
+   `machine_id` with the same driver still selects, and the record says that
+   it came from another machine.
+4. Records written before this change have no profile. They stay selectable
+   until they expire (30 days after 2 October), and
+   `captain openshell profiles` marks them `legacy`.
+5. `examples/openshell-pilot/SECOND_MACHINE.md` is the runbook for N2:
+   prepare the runtime, qualify one profile 3 of 3, run one real task from a
+   public repository under `CAPTAIN_STRICT=1 CAPTAIN_MAX_COST=0.50`, and bring
+   the reports back. It lists what to compare: pass counts, sandbox start
+   time, worker time and Shield spend.
+
+**Tests.** Python: the profile fields exist; no report contains
+`socket.gethostname()` or `getpass.getuser()`; selection refuses a driver
+mismatch, accepts another `machine_id` and marks a legacy record. Go:
+`TestOpenShellProfilesNeedMatchingDriver`.
+
+**Done when.** The pilot Python tests and the Go OpenShell tests pass. The
+pilot README states the rule.
+
+#### Q4. Live OpenShell evidence
+
+**Today.** The whole-plan attempt-cap refusal, wall-time expiry, the brain's
+own stop path and the advisory review have controller or unit tests only.
+Every other OpenShell feature has a live report from 2 October in
+`examples/openshell-pilot/results/`. The prepared runtime from 2 October is
+incomplete: its `bin/` folder is empty.
+
+**Build**
+
+1. Check the runtime first. `CAPTAIN_OPENSHELL_PREPARED` must name a folder
+   whose `bin/`, `generated/` and `venv/` exist, and whose binaries match
+   `artifacts.lock.json`. If not, set the row to
+   `blocked: prepared runtime incomplete` and stop. Do not run `prepare.py`
+   without the user.
+2. Build `go build -o /tmp/captain-os ./cmd/captaincode`. Use
+   `captain openshell`, never the live brain.
+3. Run on the public numbers fixture, with the default profile and
+   `CAPTAIN_STRICT=1 CAPTAIN_MAX_COST=0.25` for each run:
+   - Attempt-cap refusal: `CAPTAIN_MAX_ATTEMPTS` one below the plan's need.
+     Expect a refusal before any sandbox starts, and $0.
+   - Wall-time expiry: a two-stage sequence with `CAPTAIN_MAX_WALLTIME=45s`.
+     Expect controller cleanup, no export and a wall-time stop reason.
+   - Advisory review, after Q2: one solo run. Expect the review on the attempt.
+4. Write one report per run, in the existing format, as
+   `results/2026-10-<day>-<name>.json`, and add a line to the pilot README.
+
+**Done when.** Three reports exist, or the row says why not. The total spend is
+below $0.75 and the reports show it. The M3.7 open-items row moves these
+features from "tests only" to "passed live once".
+
+**Out of scope.** A live run of the brain's own stop path, which needs a brain
+restart. Its unit tests stay.
+
+**Status (7 October).** Blocked at step 1. The prepared runtime under `/tmp`
+links to a state folder whose `bin/` has none of the four binaries
+`prepare.py` extracts (`openshell`, the gateway, the prover and the VM
+driver), whose `generated/` has no gRPC stubs, and whose venv has only a
+`python` link. macOS removes old files under `/tmp`. Prepare the runtime
+again in a folder outside `/tmp`, with the user, then run this item.
+
+#### Q5. A workflow gate repair or escalation is charged once
+
+**Today**
+
+- A gate repair reserves an attempt (`cmd/captaincode/brain_workflow.go:554`),
+  calls `runWorkflowLeg`, then reconciles (`:564`). An escalation does the same
+  (`:572`, `:586`).
+- `runWorkflowLeg` reaches `runWorkerRerouted`, which also reserves
+  (`cmd/captaincode/brain.go:1613`) and reconciles (`:1627`). So a repair can
+  count twice in the task budget. No test covers it.
+- The escalation reconciles `escRes.CostUSD` (`:586`). Every other path uses
+  `BilledUSD()`.
+- Member lines record `CallUsage` from `CostUSD` (`brain_workflow.go:629,
+  750-753`). No host workflow member has a Shield commitment today, so this
+  has no effect yet.
+
+**Build**
+
+1. Write the tests first. If a repair counts once, record that, and change
+   only the escalation field.
+2. Keep one reserve and one reconcile per provider call. Either remove the
+   outer pair, or let the inner pair skip when the caller holds the
+   reservation. Keep the budget-exhausted message at `:554-557`.
+3. Use `BilledUSD()` for the escalation and for member lines.
+
+**Tests.** `TestWorkflowGateRepairChargesOneAttempt`,
+`TestWorkflowEscalationChargesOneAttemptAtBilledAmount`,
+`TestWorkflowGateRepairStopsAtBudget` (the existing message still appears).
+
+**Done when.** The tests pass. After a stubbed repair, the task's settled
+attempts equal its provider calls.
+
+**Result (7 October).** Done. The repair and the escalation reserve the
+attempt, then hand it to `runWorkerReroutedHeld`, which settles it once.
+Before the fix, a repair settled 2 attempts and twice its cost, and an
+escalation settled 2 attempts at `CostUSD`. An escalation that finds no
+stronger leg now releases its reservation (`Budget.Release`); before, it
+settled an attempt with no call. Member lines use `BilledUsage`, which
+labels a Shield commitment as an estimate. Tests: the three named tests,
+`TestWorkflowEscalationWithNoTargetSettlesNoAttempt`,
+`TestBudgetReleaseReturnsAnUnusedReservation` and
+`TestBilledUsageLabelsACommitmentAsAnEstimate`.
+
+#### Q6. Host workflow stages hand over their tree
+
+**Today**
+
+- Only text passes between stages: `upstream = got`
+  (`cmd/captaincode/brain_workflow.go:788`, used at `:339-343`).
+- A parallel stage makes its worktrees from `CurrentRevision(req.ws.Dir)`
+  (`:509-512`), which is the checkout's `HEAD`
+  (`pkg/captaincode/worktree.go:148-159`). A single-leg or serialized stage
+  writes into the user's checkout (`:524`).
+- A task has one integration slot: `setLastIntegration` (`:738`) overwrites
+  `b.lastIntegrations[taskID]` (`cmd/captaincode/brain.go:1249`). Only that
+  last candidate is applied, at the end (`:889-890`).
+- Parallel, then parallel: stage 2 starts at `HEAD`, and its candidate
+  replaces stage 1's. Stage 1's files are lost; only its diff files remain.
+- Parallel, then single: stage 2 edits the checkout without stage 1's files.
+  Stage 1's candidate is applied last. Any overlap fails `git apply --check`
+  (`pkg/captaincode/artifact.go:482-486`), and all of stage 1 is dropped with
+  one feed note (`brain_workflow.go:891-892`).
+- The repository's own skill forbids this design
+  (`pkg/captaincode/skills/land_parallel_agent_work.md:150-154`). No test runs
+  two parallel stages.
+
+**Build.** Reuse the method of `runSequence`
+(`pkg/captaincode/openshell_sequence.go:270-434`).
+
+1. The base is a commit of the checkout's current tree, made with a temporary
+   index (`GIT_INDEX_FILE`). Uncommitted files and untracked files that are
+   not ignored are in it. The user's index and checkout do not change.
+2. Every stage, single or parallel, runs in worktrees made from the current
+   stage base. No stage writes into the user's checkout.
+3. After a stage, apply its integration candidate (clean, or ruled as in Q7)
+   in a scratch worktree at the stage base. Commit that tree with
+   `commit-tree`; it becomes the next stage base. Gates run in the stage
+   worktree.
+4. At the end, make one diff from the base to the final tree. Check it with
+   `git apply --check` against the checkout, then apply it. If the user
+   changed the same files during the run, do not apply: keep the patch as a
+   task artifact and name the files.
+5. Replace the single slot with a per-stage list on the task (stage,
+   candidate digest, files landed), so `captain task inspect` shows each stage.
+
+**Security.** Worktrees stay under the existing worktree root. Never run
+`git reset`, `git checkout` or `git stash` on the user's checkout. Reuse the
+patch path checks in `artifact.go`: no `.git/` paths, no symlink escapes.
+
+**Tests** (`cmd/captaincode/brain_workflow_test.go`, stub workers)
+
+- `TestWorkflowParallelThenParallelKeepsStageOneFiles`
+- `TestWorkflowParallelThenSingleSeesStageOneTree`
+- `TestWorkflowStartsFromDirtyCheckout` (the index is unchanged after the run)
+- `TestWorkflowCheckoutUntouchedUntilFinalApply`
+- `TestWorkflowFinalApplyRefusesConcurrentEdit`
+
+**Done when.** The tests pass. `docs/WORKFLOW_LANGUAGE.md` describes the stage
+handoff. M3.2 gets a dated status note.
+
+**Out of scope.** OpenShell stages, which already work this way.
+
+#### Q7. Host `/team` rules once per conflict group
+
+**Today**
+
+- `cmd/captaincode/brain_arbitrate.go:45-54` sends every contested worker to
+  one `doArbitrate` call. `Contested()` is one flat set across all files
+  (`pkg/captaincode/artifact.go:378-395`). One winner lands, and every other
+  contested worker is dropped (`:416-419`).
+- Example: A and B change `x.go`; C and D change `y.go`. One worker lands and
+  three are dropped.
+- OpenShell already rules per group (`openShellGroups`,
+  `pkg/captaincode/openshell.go:1213-1258`; one ruling per group at
+  `:1165-1166`). The director prompt already asks for "one whole winner per
+  conflict group" (`pkg/captaincode/manager.go:580`).
+- Conflict owners are recorded by leg name (`artifact.go:332`), so two workers
+  on one leg show as "claude, claude".
+
+**Build**
+
+1. One shared `ConflictGroups` in `artifact.go`. Two workers are linked when
+   their changed-file sets overlap; a group is a connected set. The host path
+   and OpenShell both use it.
+2. One ruling per group, in a stable order (by first file path). Each group's
+   winner lands. A worker in no group lands as it is.
+3. Before the first ruling, reserve one director attempt per group plus one
+   retry for a malformed reply, as OpenShell does. If the budget cannot cover
+   every group, rule none and keep every diff as an artifact.
+4. Record owners by worker id (attempt id, or `leg#n`), not by leg name.
+
+**Tests.** `TestTeamRulesEachConflictGroup`,
+`TestTeamDisjointWorkerLandsWithoutRuling`,
+`TestTeamConflictOwnersNamedByWorker`, `TestTeamRulingsFitAttemptBudget`. The
+OpenShell grouping tests pass unchanged.
+
+**Done when.** The tests pass, and `captain task inspect` shows each ruling.
+With Q6, a stage's ruled result becomes the next stage base.
+
+#### Q8. Run records keep the full tool input and every prompt
+
+**Today**
+
+- A tool line is cut to 80 characters (`statusMaxDetail`,
+  `pkg/captaincode/progress.go:19, 25-26`). The worker log gets only that line
+  (`cmd/captaincode/brain.go:1530-1531`, `cmd/captaincode/workerlog.go:71-77`).
+  The full input exists where each line is built
+  (`pkg/captaincode/legs.go:2495-2499` claude, `:1204-1206` opencode,
+  `pkg/captaincode/codexcli.go:152` codex).
+- A reroute sends the same prompt (`brain.go:1690`), but the new log keeps 600
+  characters of the last user turn (`workerlog.go:57`). `lastUserTurn` stops at
+  the first `\n\n[` (`brain.go:1333-1336`), so stage outputs and assignments
+  are lost. The escalation prompt (`brain_workflow.go:583-584`) is never saved.
+- `docs/RUN_RECORDS.md:191-199` lists both gaps.
+
+**Build**
+
+1. The TUI line stays at 80 characters. The worker log gets a second line,
+   `input: <text>`, with the full tool input, masked by `MaskSecrets`
+   (`pkg/captaincode/redact.go:398`) and cut at 16 KiB with `[cut N bytes]`.
+2. Save the exact prompt that each worker receives (first dispatch, reroute,
+   escalation, stage assignment) to
+   `~/.captaincode/runs/<run-id>-<leg>.prompt.md`. Mask it the same way, write
+   it with mode 0600, and cut it at 256 KiB with a marker. The worker log names
+   the file.
+3. The journal and the ledger keep what they keep today. No prompt text goes
+   into them.
+
+**Tests.** `TestWorkerLogKeepsFullToolInput` (an input longer than 80
+characters is complete, and a fake key is masked), `TestReroutedWorkerPromptSaved`,
+`TestEscalationPromptSaved`, `TestPromptFileMode0600`.
+
+**Done when.** The tests pass. `docs/RUN_RECORDS.md` replaces the two gaps with
+the new files.
+
+#### Q9. One slash namespace
+
+**Today**
+
+- The TUI refuses an unknown leading `/word` (`plugin/commands.ts`,
+  `OPENCODE_WORDS` at `:11`). The brain does not, on `main`: that change is
+  commit `fbbb339` on the unmerged branch `unknown-slash-brain` (`UnknownSlash`,
+  `opencodeWords`; 4 files, 222 lines).
+- Both opencode word lists are kept by hand, and no test compares them. The
+  3 October review found 20 opencode palette words missing (for example
+  `mcps`, `skills`, `warp`, `move`, `diff`, `debug`). So `/skills <text>` is
+  refused as unknown.
+- `GET /v1/commands` returns Captain words only
+  (`cmd/captaincode/brain.go:226-228`).
+- `defaultCommands()` (`pkg/captaincode/initcfg.go:85-121`) writes no opencode
+  command for 18 Captain words: `adi auto cheap context det fast help jev local
+  noslop open parallel private q run wf wfrun workflow`. `/q` collides with the
+  `/exit` alias `q`. A bare `/help` opens opencode's dialog.
+- `/jev <task>` is not refused. It passes the TUI gate, `/v1/models` leaves
+  `jev` out (`cmd/captaincode/brain_openai.go:1255-1257`), and the turn runs on
+  automatic routing with `/jev` still in the text. `docs/CONFIGURATION.md`
+  ("Decision legs: jev") says that it is refused.
+
+**Build**
+
+1. Bring in `fbbb339` without a commit (`git cherry-pick --no-commit fbbb339`),
+   and resolve it against the current `brain_openai.go`.
+2. One list, in Go (`pkg/captaincode/hoist.go`). Update `opencodeWords` to the
+   palette names and aliases of the pinned opencode version, and write that
+   version in a comment. `GET /v1/commands` returns
+   `{"commands": [...], "opencode": [...]}`. The plugin uses the brain's
+   `opencode` list, and keeps its own list only for when the brain is down.
+3. `TestOpencodeWordListsMatch`: a Go test reads `plugin/commands.ts` and
+   compares its fallback list with the Go list.
+4. Register a pass-through command (`/word $ARGUMENTS`) for each Captain word
+   that can start a turn. Leave out `help` (a bare `/help` stays opencode's
+   dialog, and `/captain` is Captain's cheat sheet), `q` (the `/exit` alias)
+   and decision legs that refuse a turn (`jev`, `local`). Write the reason in
+   a comment.
+5. The brain refuses `/jev <task>` with the text that `/v1/route` uses
+   (`cmd/captaincode/brain.go:2491-2493`).
+
+**Tests.** The tests from `fbbb339`, `TestOpencodeWordListsMatch`,
+`TestDefaultCommandsCoverTurnWords`, `TestJevTurnRefused`, and
+`plugin/commands.test.ts` for the new response field.
+
+**Done when.** The tests pass. `docs/TUI.md` lists the palette entries and the
+`/help` and `/q` rules. The `/jev` sentence in `docs/CONFIGURATION.md` is true.
+A TUI gets the plugin change when it restarts; the brain change waits for a
+brain restart.
+
+#### Q10. A new Euclid MCP server ends when its parent or its folder is gone
+
+**Today**
+
+- `captain euclid mcp` exits only when stdin closes or a line is longer than
+  4 MiB (`cmd/captaincode/euclid_mcp.go:308-318, 358-360`). It has no parent
+  check, no idle limit and no maximum lifetime.
+- On 7 October: 24 processes, about 735 MiB resident. All parents are alive.
+  One `opencode serve` holds 9 of them (ages from 1 minute to 18 hours). The
+  oldest process is 3 days and 14 hours old. 6 of the 24 run in a folder that
+  no longer exists, such as a removed worktree.
+- The user asked not to stop these processes, because other TUIs use them.
+
+**Build.** New processes only. Nothing signals a running process.
+
+1. At start, save the absolute working folder and `os.Getppid()`. Every 60
+   seconds, between requests: if the folder no longer exists, or the parent
+   pid changed, exit 0. A request in progress finishes first.
+2. `CAPTAIN_EUCLID_MCP_IDLE` (default off; for example `30m`): exit after that
+   long with no request. It is off by default, because OpenCode may not
+   restart a server it lost.
+3. `captain doctor` adds one read-only line: the count and total resident
+   memory of `captain euclid mcp` processes, and how many run in a folder that
+   is gone.
+
+**Tests.** `TestEuclidMCPExitsWhenFolderRemoved`,
+`TestEuclidMCPExitsWhenParentChanges` (inject the clock, ppid and stat
+functions), `TestEuclidMCPIdleOffByDefault`, `TestEuclidMCPIdleExit`,
+`TestDoctorCountsEuclidMCP` (fake process list).
+
+**Done when.** The tests pass. `docs/EUCLID.md` states the lifetime rules. The
+change applies when OpenCode next starts a server from the new binary.
+
+#### Q11. M1 pilot: blind review without arm names
+
+**Today**
+
+- The harness exists: `captain eval validate|verify|plan|run|report|review`
+  (`cmd/captaincode/eval_cmd.go:22-41`). `docs/eval/pilot-12.json` has 12
+  tasks, 4 arms and 3 repeats. Two tasks are blinded.
+- The blinding leaks. The snapshot folder name contains the arm name
+  (`pkg/captaincode/eval.go:374`), and `captain eval review` prints that path
+  to the reviewer (`pkg/captaincode/eval_review.go:74`,
+  `cmd/captaincode/eval_cmd.go:268-269`). The result JSON stores `arm` next to
+  `arm_alias` (`eval.go:257-258`).
+- Every task points at `docs/eval/fixtures/captainfix`, which is not in this
+  repository (see the M1.3 correction). `captain release check` requires the
+  bundle (`pkg/captaincode/release.go:176`).
+- `BuildReleaseReport` holds the manifest, the checks and the compatibility
+  table, and no evaluation results (`release.go:195-212`).
+- The 15 September run recorded 0 charges in all 144 results, because the
+  brain it ran against had no accounting.
+
+**Build**
+
+1. Snapshot folders use the alias: `<task>.<alias>.<repeat>-`.
+2. `captain eval review --export <dir>` writes a review packet: for each
+   execution, the alias, the diff and the check output. No arm, model or leg
+   name in any file name or content. The alias-to-arm key goes to a separate
+   file, mode 0600, outside the packet.
+3. `captain release report --eval <results.json>` adds an evaluation section:
+   for each arm, acceptance by checks and by review, time and cost. When any
+   run has unknown usage, print "at least $X; N runs unknown", never a total.
+4. `captain eval run` refuses a brain that records no charges (probe one stub
+   call first), so a run cannot repeat 15 September.
+
+**Tests.** `TestEvalSnapshotNamesUseAlias`, `TestReviewPacketHasNoArmNames`
+(search every packet file for each arm, leg and model name),
+`TestReleaseReportEvalSection`, `TestReleaseReportNoTotalWithUnknownUsage`,
+`TestEvalRunRefusesBrainWithoutCharges`.
+
+**Done when.** The tests pass. `docs/eval/README.md` describes the packet and
+the key file. N4 can start.
+
+**Out of scope.** Publishing the fixture bundle and running the pilot (N4).
+
+#### Q12. Role economics counts the M5.1 verdict
+
+**Today.** `RoleEconomics` (`pkg/captaincode/role_econ.go:81`) counts a task as
+accepted when its state is `StateSucceeded` (`:107`). A reviewer rejection or
+a later regression (`pkg/captaincode/outcome.go`) does not count against it.
+
+**Build**
+
+1. Accepted means outcome status `accepted`. `rejected` and `regressed` are not
+   accepted.
+2. A finished task with no outcome, or with `pending`, is "unreviewed". Report
+   `finished`, `accepted`, `rejected` and `unreviewed` for each group. Cost and
+   time per accepted task use accepted tasks only, and the report gives the
+   number of unreviewed tasks.
+
+**Tests.** `TestRoleEconomicsUsesVerdict`: four tasks (succeeded and accepted,
+succeeded and rejected, succeeded with no outcome, failed).
+
+**Done when.** `captain roles` shows the four counts. M5.3 gets a dated status
+note.
+
+#### Q13. Outcome commands in the TUI
+
+**Today.** The CLI records verdicts (`captain outcome <task> review
+accept|reject`, `correction`, `regression`;
+`cmd/captaincode/outcome_cmd.go:188-239`). The brain serves
+`GET/POST /v1/outcome` (`cmd/captaincode/brain.go:208-209`,
+`outcome_cmd.go:29-103`). The TUI plugin has no outcome command. It does not
+know the task id of a turn: only OpenShell replies send `X-Captain-Task-ID`
+(`cmd/captaincode/brain_openshell.go:184-185`).
+
+**Build**
+
+1. The brain sends `X-Captain-Task-ID` on every chat completion that creates a
+   task.
+2. Plugin words, handled out of band like `/btw` and never sent to a model:
+   `/accept [note]`, `/reject <reason>`, `/correction <minutes> [reason]` and
+   `/regressed <reason>`. Each acts on the last task that this session started,
+   and shows the brain's answer in one line.
+3. The reviewer is `tui:<OS user>`. It is stored only in the local outcome
+   record.
+4. The sidebar shows the outcome of the last task: pending, accepted, rejected
+   or regressed.
+5. Add the four words to the slash namespace (after Q9).
+
+**Tests.** Plugin: word parsing, the POST body, and the errors for no task and
+an unknown task. Go: `TestChatCompletionSendsTaskID`,
+`TestOutcomePostFromPluginShape`.
+
+**Done when.** The tests pass. In an in-process brain test, an accept from the
+plugin's request changes `captain outcomes <task>` to accepted. `docs/TUI.md`
+documents the four words.
+
+#### Q14. `/btw` reaches a running codex worker
+
+**Today**
+
+- Each codex turn is a new `codex exec --json` process
+  (`pkg/captaincode/codexcli.go:73-74`, started at `:242`). It never calls
+  `steer.Attach`, and the capability table says so
+  (`pkg/captaincode/capability.go:130`).
+- A `/btw` for a running codex worker runs as the next turn
+  (`cmd/captaincode/brain_btw.go:160, 246-249`).
+- The installed `codex-cli 0.156.0` has `codex app-server`, marked
+  experimental. It speaks JSON-RPC over stdio by default and can write its
+  schema (`generate-json-schema`). Its binary names `thread/start`,
+  `turn/start`, `turn/steer` (with an `additionalContext` field),
+  `turn/interrupt` and `turn/completed`. The event shapes in
+  `codexcli.go:89` were recorded against 0.153.4.
+
+**Build**
+
+1. `CAPTAIN_CODEX_TRANSPORT=app-server` selects a new transport. `exec` stays
+   the default.
+2. One `codex app-server` process per worker turn, on stdio only:
+   `initialize`, `thread/start` (the same model, effort, folder, sandbox mode
+   and approval policy as the exec path), `turn/start` with the prompt, then
+   read events until `turn/completed`. Map the events onto the existing
+   `Result` fields: text, split token counts, and the thread id as the session
+   id.
+3. Register the worker with `steer.Attach`. A `/btw` sends `turn/steer` with
+   the note. If the server refuses it, the note runs as the next turn, and the
+   reply says why.
+4. Cancel: `turn/interrupt`, close stdin, then the existing process-group kill
+   after the grace period.
+5. Version gate: write the schema into a temporary folder, and check the method
+   and field names that this transport uses. If one is missing, use `exec`,
+   and `captain doctor` says why. A test fixture pins the names.
+
+**Security.** The sandbox mode and approval policy are never weaker than with
+`exec`; a test compares them. No `--listen` socket. Each JSON line is bounded
+(16 MiB). Unknown notifications are ignored.
+
+**Tests.** A fake app-server script (JSON-RPC over stdio): a normal turn, a
+steer during the turn, a refused steer, an interrupt, a malformed line (worker
+error, no hang), and settings parity with `exec`.
+
+**Done when.** The tests pass with the flag set. With the flag unset, the
+existing codex tests pass unchanged. `capability.go:130`, the `/btw` section of
+`docs/TUI.md` and `docs/CONFIGURATION.md` describe the flag. M3.8 gets a dated
+status note.
+
+**Out of scope.** Making `app-server` the default, which needs live evidence
+in a throwaway session first. Reusing one thread across turns.
+
+#### Q15. Host certification runs its dynamic gates; editor MCP recipe
+
+**Today**
+
+- The Go helpers exist: `pkg/captaincode/host_adapter.go` (interface `:49`,
+  lifecycle `:145-246`, `CertChecklist` `:272-377`), `host_pi.go`,
+  `host_jido.go` and `host_editor.go`.
+- `captain host` offers `pi`, `jido` and `cert`
+  (`cmd/captaincode/host_cmd.go:35-44`). There is no `captain host editor`.
+  `cert` runs four static checks (`:145-168`). The dynamic gates (cancel during
+  execution, recover after a restart, refuse a conflicting retry, keep the root
+  budget, deny scope widening) never run.
+- No host has a drop-in package.
+
+**Build**
+
+1. Run the five dynamic gates in `go test`, against an in-process brain with
+   stub workers.
+2. `captain host cert --dynamic --brain <url>` runs the same gates against a
+   brain that the user names. It refuses `127.0.0.1:14097` unless
+   `--allow-live-brain` is given, because the gates cancel and restart work.
+3. `captain host editor config <cursor|vscode|zed>` prints the MCP server
+   entry for `captain task mcp`, with the absolute binary path. This is the
+   M4.5 choice: editors that already speak MCP, with no extension to package.
+
+**Tests.** `TestHostCertDynamicGates`, `TestHostCertRefusesLiveBrainByDefault`,
+`TestHostEditorConfigJSON` (valid JSON, an absolute path, one server entry for
+each editor).
+
+**Done when.** The tests pass. The M4.3-M4.5 status names the gates that pass
+in-process. `docs/TASK_MCP_CONTRACT.md` has the editor recipe.
+
+**Out of scope.** The Pi and Jido packages (N5).
+
+#### Q16. Measure the small-call changes
+
+**Today**
+
+- Both director prompts state the `cheap-capable-v1` rule
+  (`pkg/captaincode/manager.go:160-162, 472`). Decisions record
+  `chosen_frontier`, `preference` and `tie_policy`
+  (`pkg/captaincode/decision.go:76-78, 150-156`). No command in this
+  repository reads those fields.
+- No code reads `examples/evals/abstention.json`. The local probe requires the
+  answer `CANNOT_TELL` (`pkg/captaincode/local.go:334`), but that file expects
+  an empty answer.
+- `CAPTAIN_EUCLID_TOOL_PROFILE=lean` is passed to CLI workers
+  (`pkg/captaincode/euclid_engine.go:296`), but not written into the OpenCode
+  MCP entry (`pkg/captaincode/initcfg.go:874`). `EfficiencyRecord.Schema`
+  (`pkg/captaincode/efficiency.go:28`) is never filled.
+
+**Build**
+
+1. `captain why --share [--days 7,30]`: the frontier share of automatic
+   decisions in each period, from the decision records. Exclude explicit
+   preferences, forced models and lanes. Print the sample sizes and the first
+   date on which the rule appears in the records.
+2. One abstention rule: `abstain: true`, an answer that is empty or
+   `CANNOT_TELL`, and no citations. A test loads
+   `examples/evals/abstention.json` and scores both probes with the local
+   scorer.
+3. When `CAPTAIN_EUCLID_TOOL_PROFILE` is set, write it into the OpenCode MCP
+   entry. Fill `EfficiencyRecord.Schema` from the routing event's
+   `tool_schema`.
+
+**Tests.** `TestWhyShareExcludesExplicitChoices`,
+`TestAbstentionFixtureScoresBothProbes`, `TestInitWritesEuclidToolProfile`,
+`TestEfficiencyRecordCarriesSchema`.
+
+**Done when.** The tests pass. `docs/SMALL_CALLS.md` names the command. W1 can
+start to count.
+
+#### Q17. Qualify a local helper model and measure it (blocked: N1)
+
+After N1, run `CAPTAIN_LOCAL_MODEL=<name:tag> captain local qualify`
+(`cmd/captaincode/local_cmd.go:25-39`): 3 rounds of 9 checks, and all 27 must
+pass. The record goes to `~/.captaincode/local-qualified.json`. If it passes,
+the user sets `CAPTAIN_LOCAL_TASKS=classify,title` for 7 days. Then report the
+latency, the failures and the classify results from the routing events in
+`docs/SMALL_CALLS.md`. If it fails, record which checks failed and stop. Coding
+turns stay off the local helper.
+
+#### N1. Install a local model runtime (needs you)
+
+Install Ollama from its official source, pull one candidate model, and set
+`CAPTAIN_LOCAL_MODEL`. The 5 October review suggested a 27B dense model at Q8,
+or a mixture-of-experts model near 100B at Q4, on this 128 GB machine. Captain
+does not install software for you.
+
+#### N2. A second machine (needs you, after Q3)
+
+Follow `examples/openshell-pilot/SECOND_MACHINE.md` and bring the reports back.
+The loop then adds them to the pilot README and the M3.7 open-items row.
+
+#### N3. OpenShell #3940 (blocked: maintainer)
+
+The PR stays closed until a maintainer vouches in discussion #4079. After the
+vouch, the author reopens it (`gh pr reopen 3940 -R NVIDIA/OpenShell`) and adds
+a DCO sign-off comment. After an OpenShell release with the fix, the loop
+moves the pin in `artifacts.lock.json` past v0.1.2, removes the `--vm-driver`
+step from `prepare.py:50-53, 84-91`, requalifies every default profile 3 of 3
+and updates the pilot README.
+
+#### N4. M1 evidence (needs you, after Q11)
+
+Three decisions:
+
+1. Publish the fixture bundle and `setup.sh` in this repository, after
+   `captain leakcheck` passes on their content.
+2. Approve the spend for 144 executions against a brain that records charges.
+   Estimate it from the token counts of the 15 September run first.
+3. Review the blinded executions from `captain eval review --export`.
+
+The loop then writes the M1.4 baseline report and the M1.5 dated evidence
+report, and Q12 gives M5.3 its numbers.
+
+#### N5. Pi and Jido packages (needs you)
+
+Pi needs an npm package and Jido a hex package. Each needs a toolchain on this
+machine and a registry account. Choose the first host; the loop then builds an
+in-repository package that passes the Q15 gates.
+
+#### W1. Frontier share before and after `cheap-capable-v1` (waiting)
+
+This needs Q16, and 7 days of automatic turns on a brain built from v0.3.8 or
+later (`built` in `GET /v1/health`). Then compare `captain why --share
+--days 7,30` with the early October figure (55-60% of attempts on frontier legs),
+and record the result and the sample sizes in `docs/SMALL_CALLS.md`. A drop
+alone proves nothing: compare acceptance and repair counts as well.
+
+#### D1. Host edit, then sandbox stage (deferred)
+
+Build it only when a real task needs a host edit before a sandbox stage. The
+constraints from 5 October still apply. The VM sees only a pinned commit, so
+the host diff must become a labelled commit in the snapshot repository. The
+result is two patches: host-written, and sandbox-verified. The checkpoint
+binds the hash of the host patch. If the user rejects the host patch, the
+sandbox patch may not apply. A sandbox result never feeds a host agent.
+
+#### P1. Trailing time window for leg statistics (proposed)
+
+`Ledger.Stats()` (`pkg/captaincode/ledger.go:270-284`) reads every event with
+no time filter. Its only bound is the 500-event buffer (`:407, 452-453`). It
+feeds `ValueRank` (`pkg/captaincode/value.go:164-171`), reroutes and planning.
+Proposal: `CAPTAIN_STATS_WEEKS` (default 2) filters the events by time before
+aggregation. Below a minimum sample per leg, use the full buffer, and
+`captain why` says so. Fairness over the turns where a leg was available is a
+second step. This needs your go.
+
+#### P2. `captain task explain <id> --html` (proposed)
+
+One self-contained HTML file per task: the route decision, workers, stages,
+gates, rulings, charges and changed files. No external assets, and every value
+HTML-escaped. `captain task` has no `explain` subcommand today
+(`cmd/captaincode/task_cmd.go:33-51`). This needs your go.
+
+#### P3. `captain wf import` (proposed)
+
+The design is in `docs/ORCHESTRATION_MAPPING.md:136-149`: read a LangGraph
+topology (`get_graph().to_json()`) and a node map, and print a Captain program
+without running it. Refuse stages wider than 4 legs and graphs that are not
+series-parallel. This needs your go.
 
 
 ## First ten working days

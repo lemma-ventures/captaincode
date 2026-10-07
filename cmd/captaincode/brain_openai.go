@@ -695,7 +695,6 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		prompt = titlePrompt(lastUserTurn(prompt))
 	} else {
 		prompt = b.fitPrompt(req.ws, leg, prompt, budget)
-		prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
 	}
 	// One execution per (leg, task): the fork re-issues a turn's request, and a
 	// retry of an 8-minute run used to start a SECOND 8-minute run while the
@@ -724,6 +723,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt), lastUserRaw(req.Messages))
 		taskID = b.openTask(lastUserTurn(prompt))
 		b.noteVerifyBase(taskID, req.ws.Dir)
+	}
+	if !titleReq {
+		prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
 	}
 
 	// An answer produced for a client that had gone away (stall→reroute chains

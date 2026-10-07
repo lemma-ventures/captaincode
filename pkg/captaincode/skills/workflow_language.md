@@ -10,7 +10,7 @@ workflow    = stage { SEQ stage } ;
 stage       = leg { PAR leg } ;
 leg         = "/" legname [ inline-prompt ] ;
 legname     = "grok" | "claude" | "codex" | "cursor" | "free" | "glm"
-            | "minimax" | "qwen" | "deepseek" | "gemini" | "kimi" | "codex-cli" | "frontier" ;
+            | "minimax" | "mistral" | "qwen" | "deepseek" | "gemini" | "kimi" | "codex-cli" | "frontier" ;
 SEQ         = ">" | "then" ;      (* sequential: join and advance *)
 PAR         = "+" | "and" ;       (* parallel: same stage          *)
 ```

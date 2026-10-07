@@ -44,8 +44,11 @@ func validateOpenShellWorkflow(wf Workflow) error {
 		}
 		total += len(stage.Legs)
 		for _, worker := range stage.Legs {
-			if worker.Leg != LegOpenShell || worker.Gate != "" {
-				return errors.New("openshell: every worker must be /openshell; host workers and host gates are unsupported")
+			if worker.Leg != LegOpenShell {
+				return errors.New(MixedWorkflowRefusal)
+			}
+			if worker.Gate != "" {
+				return errors.New("openshell: host gates are unsupported; use CAPTAIN_OPENSHELL_VERIFY")
 			}
 			if worker.Prompt == "" {
 				return errors.New("openshell: every worker needs an assignment")
@@ -96,10 +99,7 @@ func openShellWorkflowTeam(template OpenShellTeam, wf Workflow, history string) 
 
 func advisoryHostReviewDisabled() bool { return os.Getenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW") == "0" }
 
-func advisoryHostReview(ctx context.Context, task string, diff []byte) (string, error) {
-	if advisoryHostReviewDisabled() || len(diff) == 0 {
-		return "", nil
-	}
+func defaultAdvisoryHostReview(ctx context.Context, task string, diff []byte) (string, error) {
 	reviewCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), directorTimeout)
 	defer cancel()
 	prompt := "You are reviewing a sandbox agent's work. The agent cannot access the internet, your machine or your tools. Its output is a patch the sandbox controller verified.\n\n"
@@ -112,6 +112,24 @@ func advisoryHostReview(ctx context.Context, task string, diff []byte) (string, 
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", nil
+	}
+	return text, nil
+}
+
+func advisoryHostReview(ctx context.Context, task string, diff []byte) (string, error) {
+	if advisoryHostReviewDisabled() || len(diff) == 0 {
+		return "", nil
+	}
+	if fn := openShellReviewerFromContext(ctx); fn != nil {
+		text, err := fn(ctx, task, diff)
+		if err != nil || text == "" {
+			return "", err
+		}
+		return "\n[advisory host review]\n" + text, nil
+	}
+	text, err := defaultAdvisoryHostReview(ctx, task, diff)
+	if err != nil || text == "" {
+		return "", err
 	}
 	return "\n[advisory host review]\n" + text, nil
 }
@@ -127,9 +145,17 @@ func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, histo
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, workerTimeout())
 	defer cancel()
+	task := wf.PlainRequest()
+	if task == "" {
+		task = history
+	}
 	runner, template, err := openShellConfig(ctx, ws.Dir, "sandbox workflow")
 	if err != nil {
 		return openShellRefused(err)
+	}
+	runner.Task = task
+	if fn := openShellReviewerFromContext(ctx); fn != nil {
+		runner.Reviewer = fn
 	}
 	teams := make([]OpenShellTeam, 0, len(wf.Stages))
 	for i, stage := range wf.Stages {
@@ -159,20 +185,5 @@ func (ws Workspace) RunOpenShellWorkflow(ctx context.Context, wf Workflow, histo
 		}
 		res, runErr = runOpenShellSequence(ctx, runner, teams, ws.Steer)
 	}
-	if runErr != nil {
-		return res, runErr
-	}
-	task := wf.PlainRequest()
-	if task == "" {
-		task = history
-	}
-	if res.Export != nil {
-		diff, err := os.ReadFile(res.Export.Manifest.DiffPath)
-		if err == nil {
-			if review, revErr := advisoryHostReview(ctx, task, diff); revErr == nil && review != "" {
-				res.Text += review
-			}
-		}
-	}
-	return res, nil
+	return res, runErr
 }

@@ -168,6 +168,7 @@ func (b *brain) taskInspect(w http.ResponseWriter, _ *http.Request, req captainc
 	resp := captaincode.InspectResponse{
 		Task:     ts,
 		Attempts: b.ledger.AttemptStatesFor(req.TaskID),
+		Stages:   b.stageIntegrationsFor(req.TaskID),
 	}
 	if body.IncludeCharges {
 		resp.Charges = b.ledger.ChargesFor(req.TaskID)
@@ -245,7 +246,9 @@ func (b *brain) taskArtifacts(w http.ResponseWriter, _ *http.Request, req captai
 	b.imu.Lock()
 	ic := b.lastIntegrations[req.TaskID]
 	b.imu.Unlock()
-	resp := captaincode.ArtifactsResponse{}
+	resp := captaincode.ArtifactsResponse{
+		Stages: b.stageIntegrationsFor(req.TaskID),
+	}
 	if ic.TaskID != "" {
 		resp.Integration = &ic
 		resp.Manifests = ic.Manifests

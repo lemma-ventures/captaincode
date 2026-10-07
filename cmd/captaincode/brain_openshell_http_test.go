@@ -122,8 +122,8 @@ func TestOpenShellHTTPRejectsUnsafePrelude(t *testing.T) {
 		{"directive only", "/openshell", "", "provide a user task"},
 		{"directives only", " /openshell  /quality ", "", "provide a user task"},
 		{"gate", "/openshell fix parser gate: touch host-marker", "", "host gates"},
-		{"sequence", "/openshell fix parser > /cursor review", "", "host workers"},
-		{"mixed parallel", "/openshell fix parser + /cursor review", "", "host workers"},
+		{"sequence", "/openshell fix parser > /cursor review", "", "host and sandbox"},
+		{"mixed parallel", "/openshell fix parser + /cursor review", "", "host and sandbox"},
 		{"relative workspace", "fix parser", "relative", "existing absolute directory"},
 		{"missing workspace", "fix parser", "/nonexistent-captain-test-repository", "existing absolute directory"},
 	} {

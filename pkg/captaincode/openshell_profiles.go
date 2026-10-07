@@ -406,3 +406,159 @@ func (r *OpenShellRunner) qualifyRun(ctx context.Context, profile string, out io
 	}
 	return state, report, nil
 }
+
+// The machine profile rule (profiles.py qualification). The sandbox denial
+// checks depend on the local VM driver, so a qualification selects only on a
+// machine with the same OpenShell version and driver. A record from another
+// machine with the same driver still selects and says so. A record written
+// before machine profiles existed has none: it selects until it ages out,
+// marked legacy.
+const (
+	openShellQualifyDays = 30
+	openShellQualifyFile = "qualified.json"
+	openShellLockFile    = "artifacts.lock.json"
+	openShellDriverName  = "openshell-driver-vm"
+)
+
+var (
+	openShellMachineID = regexp.MustCompile(`^[0-9a-f]{16}$`)
+	openShellSHA256    = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// OpenShellMachine is the machine profile a pilot report and a
+// qualification carry (profiles.py MACHINE_FIELDS). It holds no hostname,
+// user name, serial number or MAC address. An empty VMDriverSHA256 means no
+// VM driver (the docker runtime).
+type OpenShellMachine struct {
+	OS               string `json:"os"`
+	OSVersion        string `json:"os_version"`
+	Arch             string `json:"arch"`
+	CPUModel         string `json:"cpu_model"`
+	MemoryGiB        int    `json:"memory_gib"`
+	OpenShellVersion string `json:"openshell_version"`
+	VMDriverSHA256   string `json:"vm_driver_sha256"`
+	MachineID        string `json:"machine_id"`
+}
+
+// OpenShellQualification is one qualified.json record judged on this machine.
+type OpenShellQualification struct {
+	Profile      string
+	Selectable   bool
+	Legacy       bool
+	OtherMachine bool
+	Status       string
+}
+
+type openShellQualifiedRecord struct {
+	QualifiedAt    string            `json:"qualified_at"`
+	RepairAttempts int               `json:"repair_attempts"`
+	Runs           []json.RawMessage `json:"runs"`
+	Machine        *OpenShellMachine `json:"machine"`
+}
+
+// LocalOpenShellMachine is the part of this machine's profile that
+// selection compares: the pilot's pinned OpenShell version, the prepared
+// runtime's VM driver hash, and the machine id. It never creates the id;
+// the pilot does that when it writes a report.
+func LocalOpenShellMachine(pilot, prepared string) (OpenShellMachine, error) {
+	var m OpenShellMachine
+	data, err := readOpenShellFile(filepath.Join(pilot, openShellLockFile), 1<<20)
+	if err != nil {
+		return m, fmt.Errorf("openshell: %w", err)
+	}
+	var lock struct {
+		OpenShell string `json:"openshell"`
+	}
+	if err := json.Unmarshal(data, &lock); err != nil || lock.OpenShell == "" {
+		return m, fmt.Errorf("openshell: %s names no OpenShell version", openShellLockFile)
+	}
+	m.OpenShellVersion = lock.OpenShell
+	if prepared != "" {
+		driver := filepath.Join(prepared, "bin", openShellDriverName)
+		if _, err := os.Stat(driver); err == nil {
+			if m.VMDriverSHA256, err = fileSHA256(driver); err != nil {
+				return m, fmt.Errorf("openshell: %w", err)
+			}
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return m, nil
+	}
+	file := filepath.Join(home, ".captaincode", "machine-id")
+	data, err = readOpenShellFile(file, 64)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return m, nil
+	case err != nil:
+		return m, fmt.Errorf("openshell: %w", err)
+	}
+	m.MachineID = strings.TrimSpace(string(data))
+	if !openShellMachineID.MatchString(m.MachineID) {
+		return m, fmt.Errorf("openshell: %s: not a machine id; remove the file to make a new one", file)
+	}
+	return m, nil
+}
+
+// ReadOpenShellQualifications judges every record in <pilot>/qualified.json
+// on this machine. here nil leaves the driver unchecked. This is the listing
+// rule only: profiles.py, which a task runs, also checks the model, route and
+// check set, and stays the gate.
+func ReadOpenShellQualifications(pilot string, here *OpenShellMachine, now time.Time) ([]OpenShellQualification, error) {
+	data, err := readOpenShellFile(filepath.Join(pilot, openShellQualifyFile), openShellCatalogLimit)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("openshell: %w", err)
+	}
+	var file struct {
+		Schema   int                                 `json:"schema"`
+		Profiles map[string]openShellQualifiedRecord `json:"profiles"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil || file.Schema != 1 {
+		return nil, fmt.Errorf("openshell: %s: unsupported record", openShellQualifyFile)
+	}
+	names := make([]string, 0, len(file.Profiles))
+	for name := range file.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]OpenShellQualification, 0, len(names))
+	for _, name := range names {
+		q := judgeOpenShellQualification(file.Profiles[name], here, now)
+		q.Profile = name
+		out = append(out, q)
+	}
+	return out, nil
+}
+
+func judgeOpenShellQualification(r openShellQualifiedRecord, here *OpenShellMachine, now time.Time) OpenShellQualification {
+	refuse := func(reason string) OpenShellQualification { return OpenShellQualification{Status: reason} }
+	if r.RepairAttempts != 1 || len(r.Runs) != openShellQualifyRuns {
+		return refuse(fmt.Sprintf("qualified under an older rule; qualify it again (%d runs with repair)", openShellQualifyRuns))
+	}
+	at, err := time.Parse(time.RFC3339, r.QualifiedAt)
+	if err != nil {
+		return refuse("qualification has no valid date")
+	}
+	if age := now.Sub(at); age < 0 || age > openShellQualifyDays*24*time.Hour {
+		return refuse(fmt.Sprintf("qualification is older than %d days; qualify it again", openShellQualifyDays))
+	}
+	status := "qualified " + at.UTC().Format(time.DateOnly)
+	m := r.Machine
+	switch {
+	case m == nil:
+		return OpenShellQualification{Selectable: true, Legacy: true, Status: status + ", legacy: no machine profile"}
+	case m.OpenShellVersion == "" || !openShellMachineID.MatchString(m.MachineID) ||
+		(m.VMDriverSHA256 != "" && !openShellSHA256.MatchString(m.VMDriverSHA256)):
+		return refuse("qualification has an invalid machine profile; qualify it again")
+	case here == nil:
+		return OpenShellQualification{Selectable: true, Status: status + ", driver not checked"}
+	case m.OpenShellVersion != here.OpenShellVersion || m.VMDriverSHA256 != here.VMDriverSHA256:
+		return refuse("qualified with another OpenShell version or VM driver; qualify it again on this machine")
+	case m.MachineID != here.MachineID:
+		return OpenShellQualification{Selectable: true, OtherMachine: true, Status: status + " on another machine (" + m.MachineID + ")"}
+	}
+	return OpenShellQualification{Selectable: true, Status: status}
+}

@@ -201,3 +201,63 @@ func TestLandParallelSkillMatchesThePublishedOne(t *testing.T) {
 		t.Fatal("pkg/captaincode/skills/land_parallel_agent_work.md drifted from skills/land-parallel-agent-work/SKILL.md - copy it over")
 	}
 }
+
+// ROADMAP Q7: workers link when their files overlap, directly or through
+// another worker. Groups run in order of their first contested file, and a
+// worker that overlaps nobody is in no group.
+func TestConflictGroupsLinkOverlapsAndSortByFile(t *testing.T) {
+	ic := BuildIntegrationCandidate("t", "s", "base", []PatchManifest{
+		{Leg: "claude", Worker: "w1", ChangedFiles: []string{"z.go"}},
+		{Leg: "codex", Worker: "w2", ChangedFiles: []string{"z.go", "m.go"}},
+		{Leg: "grok", Worker: "w3", ChangedFiles: []string{"m.go"}},
+		{Leg: "cursor", Worker: "w4", ChangedFiles: []string{"b.go"}},
+		{Leg: "kimi", Worker: "w5", ChangedFiles: []string{"b.go"}},
+		{Leg: "claude", Worker: "w6", ChangedFiles: []string{"alone.go"}},
+	})
+	groups := ic.ConflictGroups()
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2", len(groups))
+	}
+	if got := strings.Join(groups[0].Files, ","); got != "b.go" {
+		t.Fatalf("first group files = %s, want b.go", got)
+	}
+	if got := strings.Join(groups[0].IDs(), ","); got != "w4,w5" {
+		t.Fatalf("first group = %s", got)
+	}
+	if got := strings.Join(groups[1].Files, ","); got != "m.go,z.go" {
+		t.Fatalf("second group files = %s, want m.go,z.go", got)
+	}
+	if got := strings.Join(groups[1].IDs(), ","); got != "w1,w2,w3" {
+		t.Fatalf("second group = %s, want w1,w2,w3 (linked through w2)", got)
+	}
+}
+
+// One ruling per group; a ruling that names no member of its own group
+// refuses the whole candidate.
+func TestResolveGroupsLandsEachWinner(t *testing.T) {
+	ic := BuildIntegrationCandidate("t", "s", "base", []PatchManifest{
+		{Leg: "claude", Worker: "w1", ChangedFiles: []string{"x.go"}},
+		{Leg: "claude", Worker: "w2", ChangedFiles: []string{"x.go"}},
+		{Leg: "grok", Worker: "w3", ChangedFiles: []string{"y.go"}},
+		{Leg: "cursor", Worker: "w4", ChangedFiles: []string{"y.go"}},
+	})
+	if got := strings.Join(ic.Conflicts[0].Workers, ","); got != "w1,w2" {
+		t.Fatalf("owners = %s, want worker ids", got)
+	}
+	r, err := ic.ResolveGroups([]GroupRuling{{Winner: "w2", Reason: "a"}, {Winner: "w3", Reason: "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != IntegrationResolved || strings.Join(r.Dropped, ",") != "w1,w4" || r.Winner != "w2, w3" {
+		t.Fatalf("resolved = %s winner %q dropped %v", r.Status, r.Winner, r.Dropped)
+	}
+	if strings.Join(r.LandedFiles(), ",") != "x.go,y.go" {
+		t.Fatalf("landed = %v", r.LandedFiles())
+	}
+	if _, err := ic.ResolveGroups([]GroupRuling{{Winner: "w3"}, {Winner: "w3"}}); err == nil {
+		t.Fatal("a winner from another group must be refused")
+	}
+	if _, err := ic.ResolveGroups([]GroupRuling{{Winner: "w2"}}); err == nil {
+		t.Fatal("one ruling for two groups must be refused")
+	}
+}

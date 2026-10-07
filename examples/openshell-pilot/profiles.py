@@ -4,7 +4,10 @@ import hashlib
 import json
 import math
 import os
+import platform
 import re
+import secrets
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,6 +22,15 @@ QUALIFY_DAYS = 30
 # run without the repair tests a stricter setting than tasks use.
 QUALIFY_RUNS = 3
 QUALIFY_REPAIRS = 1
+# The OpenShell release the pilot pins; a report and a qualification name it.
+OPENSHELL_VERSION = json.loads((HERE / "artifacts.lock.json").read_text())["openshell"]
+# A random value made once per machine. It tells two machines apart without
+# a hostname, user name, serial number or MAC address.
+MACHINE_ID_FILE = Path.home() / ".captaincode" / "machine-id"
+MACHINE_ID = re.compile(r"[0-9a-f]{16}")
+MACHINE_FIELDS = ("os", "os_version", "arch", "cpu_model", "memory_gib", "openshell_version",
+                  "vm_driver_sha256", "machine_id")
+SHA256 = re.compile(r"[0-9a-f]{64}")
 
 OPENROUTER = {
     "model": "openai/gpt-oss-120b", "host": "openrouter.ai", "base_path": "/api/v1",
@@ -128,6 +140,99 @@ def identity(name):
     return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
 
 
+def machine_id(create=True):
+    """This machine's id from MACHINE_ID_FILE. With create, a missing file is
+    made with a new random id (mode 0600); without it, a missing file is None."""
+    path = Path(MACHINE_ID_FILE)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        if not create:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            return machine_id(create=False)
+        try:
+            value = secrets.token_hex(8)
+            os.write(descriptor, (value + "\n").encode())
+        finally:
+            os.close(descriptor)
+        return value
+    try:
+        value = os.read(descriptor, 64).decode("ascii", "replace").strip()
+    finally:
+        os.close(descriptor)
+    if not MACHINE_ID.fullmatch(value):
+        raise ValueError(f"{path}: not a machine id; remove the file to make a new one")
+    return value
+
+
+def driver_sha256(driver):
+    """The SHA-256 of a VM driver binary, or None when there is no driver."""
+    if driver is None or not Path(driver).is_file():
+        return None
+    return hashlib.sha256(Path(driver).read_bytes()).hexdigest()
+
+
+def _sysctl(name):
+    try:
+        result = subprocess.run(["/usr/sbin/sysctl", "-n", name], capture_output=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.decode("utf-8", "replace").strip() if result.returncode == 0 else None
+
+
+def _cpu_model():
+    model = None
+    if sys.platform == "darwin":
+        model = _sysctl("machdep.cpu.brand_string")
+    elif Path("/proc/cpuinfo").is_file():
+        for line in Path("/proc/cpuinfo").read_text(errors="replace").splitlines():
+            if line.startswith("model name"):
+                model = line.partition(":")[2]
+                break
+    model = re.sub(r"[^A-Za-z0-9 ()@.,_+-]", "", (model or platform.processor() or "").strip())[:96]
+    return model or None
+
+
+def _memory_gib():
+    try:
+        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (OSError, ValueError, AttributeError):
+        total = int(_sysctl("hw.memsize") or 0) if sys.platform == "darwin" else 0
+    return round(total / 2**30) if total > 0 else None
+
+
+def machine_profile(driver=None, openshell=None, create=True):
+    """What a fixture result depends on outside the pilot: the host and its
+    OpenShell build. No hostname, user name, serial number or MAC address."""
+    if sys.platform == "darwin":
+        os_name, os_version = "macos", platform.mac_ver()[0]
+    else:
+        os_name, os_version = platform.system().lower(), platform.release()
+    return {"os": os_name, "os_version": os_version or None, "arch": platform.machine() or None,
+            "cpu_model": _cpu_model(), "memory_gib": _memory_gib(),
+            "openshell_version": openshell or OPENSHELL_VERSION, "vm_driver_sha256": driver_sha256(driver),
+            "machine_id": machine_id(create=create)}
+
+
+def selection_machine(driver=None, openshell=None):
+    """The part of the machine profile that selection compares. It never
+    creates the machine id."""
+    return {"openshell_version": openshell or OPENSHELL_VERSION, "vm_driver_sha256": driver_sha256(driver),
+            "machine_id": machine_id(create=False)}
+
+
+def valid_machine(machine):
+    return (type(machine) is dict and set(machine) == set(MACHINE_FIELDS)
+            and type(machine["openshell_version"]) is str and machine["openshell_version"] != ""
+            and (machine["vm_driver_sha256"] is None or (type(machine["vm_driver_sha256"]) is str
+                                                         and SHA256.fullmatch(machine["vm_driver_sha256"])))
+            and type(machine["machine_id"]) is str and MACHINE_ID.fullmatch(machine["machine_id"]) is not None)
+
+
 def read_qualified(path=None):
     path = Path(path or QUALIFIED_FILE)
     if not path.exists():
@@ -138,8 +243,15 @@ def read_qualified(path=None):
     return value["profiles"]
 
 
-def qualification(name, checks, now=None, path=None):
-    """Whether a task may select this profile, and why not."""
+def qualification(name, checks, now=None, path=None, machine=None):
+    """Whether a task may select this profile, and why not.
+
+    machine is selection_machine() for this machine. A record that carries a
+    machine profile selects only with the same OpenShell version and VM driver:
+    the sandbox denial checks depend on that driver. A record from another
+    machine with the same driver still selects and says so. A record written
+    before machine profiles existed selects until it ages out, marked legacy.
+    machine None leaves the driver unchecked (a listing with no runtime)."""
     if name not in PROFILES:
         return False, "unsupported inference profile"
     record = read_qualified(path).get(name)
@@ -158,11 +270,24 @@ def qualification(name, checks, now=None, path=None):
     now = now or datetime.datetime.now(datetime.timezone.utc)
     if at.tzinfo is None or not datetime.timedelta(0) <= now - at <= datetime.timedelta(days=QUALIFY_DAYS):
         return False, f"qualification is older than {QUALIFY_DAYS} days; qualify it again"
-    return True, "qualified " + at.date().isoformat()
+    status = "qualified " + at.date().isoformat()
+    recorded = record.get("machine")
+    if recorded is None:
+        return True, status + ", legacy: no machine profile"
+    if not valid_machine(recorded):
+        return False, "qualification has an invalid machine profile; qualify it again"
+    if machine is None:
+        return True, status + ", driver not checked"
+    if (recorded["openshell_version"] != machine.get("openshell_version")
+            or recorded["vm_driver_sha256"] != machine.get("vm_driver_sha256")):
+        return False, "qualified with another OpenShell version or VM driver; qualify it again on this machine"
+    if recorded["machine_id"] != machine.get("machine_id"):
+        return True, status + " on another machine (" + recorded["machine_id"] + ")"
+    return True, status
 
 
-def require_qualified(name, checks):
-    allowed, reason = qualification(name, checks)
+def require_qualified(name, checks, machine=None):
+    allowed, reason = qualification(name, checks, machine=machine)
     if not allowed:
         raise ValueError(f"profile {name} cannot run tasks: {reason}")
 
@@ -182,9 +307,16 @@ def record_qualification(name, reports, checks, path=None, evidence=None, now=No
             raise ValueError("only fixture runs that passed every check qualify a profile")
         if report.get("max_worker_attempts") != 1 + QUALIFY_REPAIRS:
             raise ValueError(f"a qualifying run needs the task repair budget ({QUALIFY_REPAIRS})")
+        if not valid_machine(report.get("machine")):
+            raise ValueError("a qualifying run needs a machine profile")
         blobs.append((json.dumps(report, indent=2, sort_keys=True) + "\n").encode())
     if len({hashlib.sha256(data).digest() for data in blobs}) != len(blobs):
         raise ValueError("the same fixture run cannot count twice")
+    machine = reports[0]["machine"]
+    if any({key: report["machine"][key] for key in ("openshell_version", "vm_driver_sha256", "machine_id")}
+           != {key: machine[key] for key in ("openshell_version", "vm_driver_sha256", "machine_id")}
+           for report in reports):
+        raise ValueError("the qualifying runs come from different machines or VM drivers")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     path, evidence = Path(path or QUALIFIED_FILE), Path(evidence or EVIDENCE_DIR)
     evidence.mkdir(parents=True, exist_ok=True)
@@ -197,7 +329,8 @@ def record_qualification(name, reports, checks, path=None, evidence=None, now=No
     record = {"identity": identity(name), "model": PROFILES[name]["model"], "route": PROFILES[name].get("route"),
               "checks": sorted(checks), "qualified_at": now.isoformat(timespec="seconds"),
               "repair_attempts": QUALIFY_REPAIRS, "runs": runs,
-              "compute_driver": reports[0].get("compute_driver"), "openshell": reports[0].get("openshell")}
+              "compute_driver": reports[0].get("compute_driver"), "openshell": reports[0].get("openshell"),
+              "machine": machine}
     descriptor = os.open(path.parent / ".qualified.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o644)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
@@ -287,7 +420,8 @@ def response_provider(data, name, status):
 
 def main(argv=None):
     """List every profile and whether a task may select it, or with
-    `record <profile> <report.json>...` record a qualification."""
+    `record <profile> <report.json>...` record a qualification. With
+    `--prepared <runtime>`, the listing checks that runtime's VM driver."""
     from pilot import CHECKS
     if argv and argv[0] == "record":
         if len(argv) < 3:
@@ -301,11 +435,19 @@ def main(argv=None):
             return 1
         print(json.dumps(record, indent=2))
         return 0
+    machine = None
+    if argv and "--prepared" in argv:
+        index = argv.index("--prepared")
+        if index + 1 >= len(argv):
+            print("usage: profiles.py [--json] [--prepared <runtime>]", file=sys.stderr)
+            return 2
+        machine = selection_machine(Path(argv[index + 1]) / "bin" / "openshell-driver-vm")
     rows = []
     for name, selected in sorted(PROFILES.items(), key=lambda item: (item[1].get("source") != "kept", item[0])):
-        allowed, reason = qualification(name, CHECKS)
+        allowed, reason = qualification(name, CHECKS, machine=machine)
         rows.append({"profile": name, "source": selected.get("source"), "model": selected["model"],
-                     "route": selected.get("route"), "selectable": allowed, "status": reason})
+                     "route": selected.get("route"), "selectable": allowed, "legacy": "legacy" in reason,
+                     "status": reason})
     if argv and "--json" in argv:
         print(json.dumps(rows, indent=2))
     else:

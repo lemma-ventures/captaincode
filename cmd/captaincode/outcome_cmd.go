@@ -67,6 +67,8 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 			b.ledger.SweepCommits(ctx, time.Now())
 			cancel()
 			n := b.ledger.SettleOutcomes(time.Now())
+			notices := b.ledger.TakeOutcomeNotices()
+			go captaincode.PublishOutcomeNotices(notices)
 			if err := b.ledger.Save(); err != nil {
 				fmt.Fprintf(os.Stderr, "captain brain: save outcome sweep: %v\n", err)
 			}
@@ -92,6 +94,8 @@ func (b *brain) outcomeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 400, map[string]any{"error": "unknown action: " + req.Action + " (review|correction|regression|settle)"})
 			return
 		}
+		notices := b.ledger.TakeOutcomeNotices()
+		go captaincode.PublishOutcomeNotices(notices)
 		if err := b.ledger.Save(); err != nil {
 			fmt.Fprintf(os.Stderr, "captain brain: save outcome: %v\n", err)
 		}

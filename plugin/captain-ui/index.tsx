@@ -247,6 +247,7 @@ function View(props: { api: TuiPluginApi }) {
     kimi: "kimi-nim", glm: "glm-nim", "ds-flash": "deepseek-nim", "ds4-flash": "deepseek-hf",
     step: "step-hf", gemini: "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter",
     qwen: "qwen-openrouter", minimax: "minimax-openrouter", deepseek: "deepseek-openrouter",
+    mistral: "mistral-openrouter",
     free: "nemotron-opencode", openshell: "openshell-nvidia",
   }
   const harnessOf = (leg: string) => {
@@ -264,9 +265,12 @@ function View(props: { api: TuiPluginApi }) {
     return (ro.models.find((m) => effort && m.efforts.includes(effort)) ?? ro.models[Math.min(1, ro.models.length - 1)]).model
   }
   // How a run reads on Last Runs and in the session: harness:model@effort:x.
+  const isLane = (name?: string) => !!name && /^(frontier|team|pool|director|context|workflow|auto)$/.test(name)
   const runLabel = (leg: string, effort?: string, model?: string) => {
+    // frontier is a lane. The row names claude or codex-cli, not the lane.
+    if (isLane(leg)) return ""
     const harness = harnessOf(leg)
-    const version = model && model !== leg && !/^(frontier|team|pool|director|context|workflow|auto|openshell)$/.test(model)
+    const version = model && model !== leg && !isLane(model) && model !== "openshell"
       ? model.split("/").pop()!.toLowerCase()
       : modelAt(leg, effort)
     const eff = effort || "default"
@@ -274,9 +278,9 @@ function View(props: { api: TuiPluginApi }) {
   }
   const runLine = (a: Activity) => {
     if (a.kind === "feed") return a.leg
-    if (a.label) return a.label
+    if (a.label && !isLane(a.label)) return a.label
     if (a.kind === "route" || a.kind === "run" || a.kind === "done") return runLabel(a.leg, a.effort, a.model)
-    return harnessOf(a.leg)
+    return isLane(a.leg) ? "" : harnessOf(a.leg)
   }
 
   const feed = createMemo(() => acts().slice(0, 7))

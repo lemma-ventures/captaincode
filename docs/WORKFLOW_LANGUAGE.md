@@ -73,7 +73,7 @@ workflow    = stage { SEQ stage } ;
 stage       = leg { PAR leg } ;
 leg         = "/" legname [ inline-prompt ] ;
 legname     = "grok" | "claude" | "codex" | "luna" | "cursor" | "free" | "glm"
-            | "minimax" | "qwen" | "deepseek" | "gemini" | "kimi" | "codex-cli" | "frontier" ;
+            | "minimax" | "mistral" | "qwen" | "deepseek" | "gemini" | "kimi" | "codex-cli" | "frontier" ;
 inline-prompt = <text up to the next connector-at-a-leg-boundary or end of input> ;
 
 SEQ         = ">" | "then" | "->" ;          (* sequential: join and advance *)
@@ -248,6 +248,16 @@ chain in parentheses.
   chain. A prompt and every loop or chain it starts share one run budget
   (`CAPTAIN_RUN_BUDGET`, 200 turns), and a prompt sent with `captain send` may not start a
   loop or a chain. [The formal model](../formal/README.md) proves both bounds.
+
+### 3.8 Stage tree handoff and cumulative integration (M3.2 / Q6)
+
+Host workflows hand over the tree between stages using isolated git worktrees:
+
+1. **Initial base snapshot.** At the start of the workflow, a commit of the user's checkout is created using a private temporary index file (`GIT_INDEX_FILE`). Tracked, uncommitted, and untracked (non-ignored) files are included. The user's index and checkout are never touched.
+2. **Stage isolation.** Every stage (single or parallel) runs in worktrees created at the current stage base commit. No stage writes directly into the user's checkout.
+3. **Stage handoff.** After each stage, its integration candidate (clean, or settled by the director) is applied in a scratch worktree at the stage base and committed with `commit-tree`. This commit becomes the base for the next stage, so subsequent stages see the preceding stage's files.
+4. **Cumulative final apply.** When the director review passes, one cumulative diff is computed from the initial base commit to the final stage tree. It is checked against the user's checkout with `git apply --check`. If the user concurrently edited any touched file during the run, the patch is preserved as a task artifact (`.cumulative.patch`) and not applied. If clean, it lands as uncommitted working-tree changes.
+5. **Stage inspection.** `captain task inspect <task-id>` displays the per-stage integration status, candidate digest, and landed files.
 
 ## 4. The skill: plain English → CWL
 
@@ -634,7 +644,7 @@ the turn bound, and runs nothing.
   the director: a bare prompt, or `/team`.
 - **Parallel groups**, such as `(A > B) + (C > D)`. Parallel branches of several turns would
   write one checkout at the same time. Use `+` between legs (isolated worktrees, one ruling per
-  conflict), or `/team`.
+  conflict group), or `/team`.
 - **Loops started from `captain send`.**
 - **English to programs.** `/wf <english>` compiles to workflows only.
 

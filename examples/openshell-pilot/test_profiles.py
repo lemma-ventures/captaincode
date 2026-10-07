@@ -1,9 +1,12 @@
 import contextlib
 import datetime
+import getpass
 import hashlib
 import io
 import json
 import os
+import socket
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -204,9 +207,22 @@ def catalog_entry(**overrides):
     return entry
 
 
+DRIVER = "d" * 64
+MACHINE_A = "0123456789abcdef"
+
+
+def machine(driver=DRIVER, machine_id=MACHINE_A, openshell="0.1.2"):
+    return {"os": "macos", "os_version": "15.6", "arch": "arm64", "cpu_model": "Apple M3 Max", "memory_gib": 128,
+            "openshell_version": openshell, "vm_driver_sha256": driver, "machine_id": machine_id}
+
+
+def selecting(driver=DRIVER, machine_id=MACHINE_A, openshell="0.1.2"):
+    return {"openshell_version": openshell, "vm_driver_sha256": driver, "machine_id": machine_id}
+
+
 def passing_report(name, run=1):
     return {"verdict": "pass", "inference": name, "openshell": "0.1.2", "compute_driver": "vm", "run": run,
-            "max_worker_attempts": 1 + profiles.QUALIFY_REPAIRS,
+            "max_worker_attempts": 1 + profiles.QUALIFY_REPAIRS, "machine": machine(),
             "checks": {check: {"verdict": "pass", "detail": ""} for check in pilot.CHECKS}}
 
 
@@ -268,7 +284,8 @@ class QualificationTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
-        for name, value in [("QUALIFIED_FILE", self.root / "qualified.json"), ("EVIDENCE_DIR", self.root / "results/qualify")]:
+        for name, value in [("QUALIFIED_FILE", self.root / "qualified.json"), ("EVIDENCE_DIR", self.root / "results/qualify"),
+                            ("MACHINE_ID_FILE", self.root / "home/.captaincode/machine-id")]:
             patcher = patch.object(profiles, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -317,6 +334,110 @@ class QualificationTests(unittest.TestCase):
         repriced = dict(PROFILES, cerebras=dict(PROFILES["cerebras"], ceiling=(9, 9)))
         with patch.object(profiles, "PROFILES", repriced):
             self.assertTrue(profiles.qualification("cerebras", pilot.CHECKS, now=now)[0])
+
+    def test_machine_profile_has_the_fields_and_no_host_or_user_name(self):
+        driver = self.root / "openshell-driver-vm"
+        driver.write_bytes(b"driver")
+        profile_ = profiles.machine_profile(driver)
+        self.assertEqual(set(profile_), set(profiles.MACHINE_FIELDS))
+        self.assertEqual(profile_["vm_driver_sha256"], hashlib.sha256(b"driver").hexdigest())
+        self.assertEqual(profile_["openshell_version"], profiles.OPENSHELL_VERSION)
+        self.assertTrue(profiles.valid_machine(profile_))
+        self.assertIsNone(profiles.machine_profile(None)["vm_driver_sha256"])
+        report = pilot.Pilot(self.root / "fixture", runtime="vm", inference="cerebras").report
+        report["machine"] = profile_
+        text = json.dumps(report)
+        for private in [socket.gethostname(), socket.gethostname().split(".")[0], getpass.getuser()]:
+            if len(private) > 2:
+                self.assertNotIn(private, text)
+
+    def test_machine_id_is_random_private_and_made_once(self):
+        self.assertIsNone(profiles.machine_id(create=False))
+        self.assertIsNone(profiles.selection_machine()["machine_id"])
+        self.assertFalse(profiles.MACHINE_ID_FILE.exists())
+        first = profiles.machine_id()
+        self.assertRegex(first, r"^[0-9a-f]{16}$")
+        self.assertEqual(stat.S_IMODE(profiles.MACHINE_ID_FILE.stat().st_mode), 0o600)
+        self.assertEqual(profiles.machine_id(), first)
+        self.assertEqual(profiles.machine_id(create=False), first)
+        profiles.MACHINE_ID_FILE.write_text("not-an-id\n")
+        with self.assertRaisesRegex(ValueError, "not a machine id"):
+            profiles.machine_id()
+
+    def test_selection_needs_the_same_driver_and_openshell_version(self):
+        now = datetime.datetime(2026, 10, 7, 12, tzinfo=datetime.timezone.utc)
+        record = profiles.record_qualification("cerebras", passing_runs("cerebras"), pilot.CHECKS, now=now)
+        self.assertEqual(record["machine"], machine())
+        same = profiles.qualification("cerebras", pilot.CHECKS, now=now, machine=selecting())
+        self.assertEqual(same, (True, "qualified 2026-10-07"))
+        other = profiles.qualification("cerebras", pilot.CHECKS, now=now, machine=selecting(machine_id="fedcba9876543210"))
+        self.assertEqual(other, (True, "qualified 2026-10-07 on another machine (0123456789abcdef)"))
+        self.assertTrue(profiles.qualification("cerebras", pilot.CHECKS, now=now, machine=selecting(machine_id=None))[0])
+        for mismatch in [selecting(driver="e" * 64), selecting(driver=None), selecting(openshell="0.1.3")]:
+            with self.subTest(mismatch=mismatch):
+                allowed, reason = profiles.qualification("cerebras", pilot.CHECKS, now=now, machine=mismatch)
+                self.assertFalse(allowed)
+                self.assertIn("another OpenShell version or VM driver", reason)
+                with self.assertRaisesRegex(ValueError, "cannot run tasks"):
+                    profiles.require_qualified("cerebras", pilot.CHECKS, machine=mismatch)
+        self.assertIn("driver not checked", profiles.qualification("cerebras", pilot.CHECKS, now=now)[1])
+
+    def test_a_record_without_a_machine_profile_is_legacy_until_it_ages_out(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        record = profiles.record_qualification("cerebras", passing_runs("cerebras"), pilot.CHECKS, now=now)
+        del record["machine"]
+        profiles.QUALIFIED_FILE.write_text(json.dumps({"schema": 1, "profiles": {"cerebras": record}}))
+        allowed, reason = profiles.qualification("cerebras", pilot.CHECKS, now=now, machine=selecting(driver="e" * 64))
+        self.assertTrue(allowed)
+        self.assertIn("legacy", reason)
+        expired = profiles.qualification("cerebras", pilot.CHECKS, now=now + datetime.timedelta(days=31),
+                                         machine=selecting())
+        self.assertFalse(expired[0])
+        with contextlib.redirect_stdout(io.StringIO()) as listing:
+            self.assertEqual(profiles.main(["--json"]), 0)
+        row = next(row for row in json.loads(listing.getvalue()) if row["profile"] == "cerebras")
+        self.assertTrue(row["selectable"])
+        self.assertTrue(row["legacy"])
+
+    def test_runs_without_one_machine_profile_do_not_qualify(self):
+        no_profile = passing_runs("cerebras")
+        del no_profile[2]["machine"]
+        other_driver = passing_runs("cerebras")
+        other_driver[1]["machine"] = machine(driver="e" * 64)
+        other_machine = passing_runs("cerebras")
+        other_machine[0]["machine"] = machine(machine_id="fedcba9876543210")
+        bad_id = passing_runs("cerebras")
+        for report in bad_id:
+            report["machine"] = machine(machine_id="host-name")
+        for runs, message in [(no_profile, "machine profile"), (other_driver, "different machines"),
+                              (other_machine, "different machines"), (bad_id, "machine profile")]:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                profiles.record_qualification("cerebras", runs, pilot.CHECKS)
+        self.assertFalse(profiles.QUALIFIED_FILE.exists())
+
+    def test_task_mode_selects_only_with_the_qualified_driver(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        runs = passing_runs("cerebras")
+        driver_bytes = b"qualified driver"
+        for report in runs:
+            report["machine"] = machine(driver=hashlib.sha256(driver_bytes).hexdigest())
+        profiles.record_qualification("cerebras", runs, pilot.CHECKS, now=now)
+
+        class Gated(pilot.Pilot):
+            task_mode = True
+        for name, content, allowed in [("same", driver_bytes, True), ("other", b"another driver", False)]:
+            with self.subTest(driver=name):
+                state = self.root / name
+                (state / "bin").mkdir(parents=True)
+                (state / "bin/openshell-driver-vm").write_bytes(content)
+                if allowed:
+                    Gated(state, runtime="vm", inference="cerebras")
+                    self.assertTrue((state / "checkpoint.json").exists())
+                else:
+                    with self.assertRaisesRegex(ValueError, "another OpenShell version or VM driver"):
+                        Gated(state, runtime="vm", inference="cerebras")
+                    self.assertFalse((state / "checkpoint.json").exists())
+        self.assertFalse(profiles.MACHINE_ID_FILE.exists(), "selection must not create the machine id")
 
     def test_a_single_run_record_from_the_older_rule_lapses(self):
         now = datetime.datetime(2026, 10, 2, 12, tzinfo=datetime.timezone.utc)

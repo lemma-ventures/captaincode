@@ -239,6 +239,32 @@ or a record older than 30 days makes the profile unselectable again; a changed
 ceiling or token cap does not. A task already started on a profile resumes even
 if its qualification has since aged. This applies to the kept profiles too.
 
+**Machine profile.** Every report and every new `qualified.json` record carry
+a `machine` object: `os`, `os_version`, `arch`, `cpu_model`, `memory_gib`,
+`openshell_version`, `vm_driver_sha256` and `machine_id`. `machine_id` is 16
+hex characters of a random value. The pilot makes it once in
+`~/.captaincode/machine-id` (mode 0600). The profile has no hostname, user
+name, serial number or MAC address. `record` refuses three runs that do not
+share one OpenShell version, VM driver and machine id.
+
+The sandbox denial checks depend on the VM driver. So a task selects a record
+only when the record's `openshell_version` and `vm_driver_sha256` are the same
+as those of the task's runtime. The hash is of `bin/openshell-driver-vm` in the
+prepared runtime, after `prepare.py` signs it. A record from another
+`machine_id` with the same driver still selects, and the listing says
+`on another machine (<id>)`. A record written before 7 October has no machine
+profile. It selects until it is 30 days old, and the listing marks it
+`legacy`. The six records from 2 October expire on 1 November.
+
+```sh
+python3 examples/openshell-pilot/profiles.py --prepared /tmp/cc-prep   # check that runtime's driver
+captain openshell profiles --pilot examples/openshell-pilot --prepared /tmp/cc-prep --dry-run
+```
+
+`qualified.json` is in git, so a clone inherits its records. A second machine
+with a different driver build must qualify again. See
+[SECOND_MACHINE.md](SECOND_MACHINE.md).
+
 Three runs are three samples only for a model that varies. gpt-oss-120b on
 Cerebras is deterministic here: on 2 October its first attempt took the same
 path in all three runs (read the canary, hash it, find `slugify.py`, then

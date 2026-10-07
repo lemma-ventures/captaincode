@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -100,7 +102,7 @@ func TestTeamConflictIsTheDirectorsCall(t *testing.T) {
 	assert.Equal(t, "package p // codex\n", string(got), "the winner's version lands, not a splice")
 	_, err = os.Stat(filepath.Join(repo, "extra.go"))
 	assert.True(t, os.IsNotExist(err), "the losing worker's changes are set aside whole")
-	assert.Contains(t, out, "director's call: w2-codex's changes land")
+	assert.Contains(t, out, "director's call on parse.go: w2-codex's changes land")
 	assert.Contains(t, objective, "only w2-codex's changes were applied")
 	assert.Contains(t, objective, "w1-claude's changes were NOT applied")
 
@@ -205,4 +207,213 @@ func TestWorkflowStageConflictIsTheDirectorsCall(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "package p // claude\n", string(got))
 	assert.Contains(t, objective, "only s1w2-claude's changes were applied")
+}
+
+// runTeamPlan runs one team turn with the given workers in a git repo.
+func runTeamPlan(t *testing.T, b *brain, repo, task string, workers []captaincode.Worker) string {
+	t.Helper()
+	b.storeTeamPlan(task, captaincode.Plan{Class: captaincode.ClassHigh, Rationale: "split", Workers: workers})
+	body, _ := json.Marshal(map[string]any{"model": "team", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": task}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions?cwd="+url.QueryEscape(repo), bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	return rec.Body.String()
+}
+
+func readRepoFile(t *testing.T, repo, name string) string {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(repo, name))
+	if os.IsNotExist(err) {
+		return ""
+	}
+	require.NoError(t, err)
+	return string(got)
+}
+
+var fourWorkers = []captaincode.Worker{{Leg: captaincode.LegClaude, Brief: "x"}, {Leg: captaincode.LegCodex, Brief: "x"},
+	{Leg: captaincode.LegGrok, Brief: "y"}, {Leg: captaincode.LegCursor, Brief: "y"}}
+
+// fourWayEdits: claude and codex change x.go, grok and cursor change y.go.
+var fourWayEdits = map[captaincode.Leg]map[string]string{
+	captaincode.LegClaude: {"x.go": "package p // claude\n"},
+	captaincode.LegCodex:  {"x.go": "package p // codex\n"},
+	captaincode.LegGrok:   {"y.go": "package p // grok\n"},
+	captaincode.LegCursor: {"y.go": "package p // cursor\n"},
+}
+
+// ROADMAP Q7: two separate overlaps get two rulings. Before this, one ruling
+// covered every contested worker: one of the four landed and three were
+// dropped, although x.go and y.go never touched each other.
+func TestTeamRulesEachConflictGroup(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.runWorkerFn = editingWorker(t, fourWayEdits)
+	var mu sync.Mutex
+	var asked [][]string
+	b.arbitrateFn = func(task string, c map[string]captaincode.Contender) (captaincode.Ruling, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		var ids []string
+		for id := range c {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		asked = append(asked, ids)
+		if _, ok := c["w2-codex"]; ok {
+			return captaincode.Ruling{Winner: "w2-codex", Reason: "smaller x change"}, nil
+		}
+		return captaincode.Ruling{Winner: "w3-grok", Reason: "keeps the y tests"}, nil
+	}
+	b.assessMultiFn = func(string, map[string]captaincode.WorkerOutput, string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "ANSWER"}, nil
+	}
+
+	out := runTeamPlan(t, b, repo, "fix x and y", fourWorkers)
+
+	assert.Equal(t, [][]string{{"w1-claude", "w2-codex"}, {"w3-grok", "w4-cursor"}}, asked,
+		"one ruling per group, x.go's group first, each asked only about its own members")
+	assert.Equal(t, "package p // codex\n", readRepoFile(t, repo, "x.go"))
+	assert.Equal(t, "package p // grok\n", readRepoFile(t, repo, "y.go"), "the second group's winner lands too")
+	assert.Contains(t, out, "director's call on x.go: w2-codex's changes land")
+	assert.Contains(t, out, "director's call on y.go: w3-grok's changes land")
+
+	stages := b.stageIntegrationsFor(firstTaskID(t, b))
+	require.Len(t, stages, 1, "the team's integration is kept for `captain task inspect`")
+	require.Len(t, stages[0].Rulings, 2)
+	assert.Equal(t, []string{"x.go"}, stages[0].Rulings[0].Files)
+	assert.Equal(t, []string{"w1-claude"}, stages[0].Rulings[0].Dropped)
+	assert.Equal(t, []string{"y.go"}, stages[0].Rulings[1].Files)
+	assert.Equal(t, []string{"w4-cursor"}, stages[0].Rulings[1].Dropped)
+	lines := rulingLines(stages[0].Rulings)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "ruling on x.go: w2-codex lands, set aside: w1-claude - smaller x change", lines[0])
+}
+
+// A worker that shares no file with another worker is in no group: it lands
+// as it is, and the director rules only on the overlap.
+func TestTeamDisjointWorkerLandsWithoutRuling(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.runWorkerFn = editingWorker(t, map[captaincode.Leg]map[string]string{
+		captaincode.LegClaude: {"x.go": "package p // claude\n"},
+		captaincode.LegCodex:  {"x.go": "package p // codex\n"},
+		captaincode.LegGrok:   {"z.go": "package p // grok\n"},
+	})
+	rulings := 0
+	b.arbitrateFn = func(task string, c map[string]captaincode.Contender) (captaincode.Ruling, error) {
+		rulings++
+		_, inRuling := c["w3-grok"]
+		assert.False(t, inRuling, "the disjoint worker is not a contender")
+		return captaincode.Ruling{Winner: "w1-claude", Reason: "fewer lines"}, nil
+	}
+	b.assessMultiFn = func(string, map[string]captaincode.WorkerOutput, string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "ANSWER"}, nil
+	}
+	runTeamPlan(t, b, repo, "fix x, add z", []captaincode.Worker{{Leg: captaincode.LegClaude, Brief: "x"},
+		{Leg: captaincode.LegCodex, Brief: "x"}, {Leg: captaincode.LegGrok, Brief: "z"}})
+
+	assert.Equal(t, 1, rulings)
+	assert.Equal(t, "package p // claude\n", readRepoFile(t, repo, "x.go"))
+	assert.Equal(t, "package p // grok\n", readRepoFile(t, repo, "z.go"))
+}
+
+// Two workers on one leg are two owners. Owners used to be recorded by leg,
+// so the conflict read "claude, claude" and named nobody the director could
+// pick.
+func TestTeamConflictOwnersNamedByWorker(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	var mu sync.Mutex
+	n := 0
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2)
+		mu.Lock()
+		n++
+		body := fmt.Sprintf("package p // take %d\n", n)
+		mu.Unlock()
+		require.NoError(t, os.WriteFile(filepath.Join(m[1], "parse.go"), []byte(body), 0o644))
+		return leg, captaincode.Result{Text: "rewrote parse.go"}, nil
+	}
+	var asked []string
+	b.arbitrateFn = func(task string, c map[string]captaincode.Contender) (captaincode.Ruling, error) {
+		for id := range c {
+			asked = append(asked, id)
+		}
+		return captaincode.Ruling{Winner: "w2-claude", Reason: "clearer"}, nil
+	}
+	b.assessMultiFn = func(string, map[string]captaincode.WorkerOutput, string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "ANSWER"}, nil
+	}
+	out := runTeamPlan(t, b, repo, "two takes on the parser", []captaincode.Worker{{Leg: captaincode.LegClaude, Brief: "a"},
+		{Leg: captaincode.LegClaude, Brief: "b"}})
+
+	assert.ElementsMatch(t, []string{"w1-claude", "w2-claude"}, asked)
+	assert.Contains(t, out, "[conflict] parse.go ← w1-claude, w2-claude")
+	ic, ok := b.lastIntegration(firstTaskID(t, b))
+	require.True(t, ok)
+	require.Len(t, ic.Conflicts, 1)
+	assert.Equal(t, []string{"w1-claude", "w2-claude"}, ic.Conflicts[0].Workers)
+	assert.Equal(t, captaincode.IntegrationResolved, ic.Status)
+}
+
+// Every group's ruling is reserved before the first one runs: two director
+// attempts per group (the call and one retry for a malformed reply). A
+// budget that cannot cover every group rules none, applies nothing and
+// keeps the diffs. A budget that can settles what ran and holds nothing.
+func TestTeamRulingsFitAttemptBudget(t *testing.T) {
+	for _, tc := range []struct {
+		cap   string
+		ruled int
+	}{{"3", 0}, {"4", 2}} {
+		t.Run("cap "+tc.cap, func(t *testing.T) {
+			t.Setenv("CAPTAIN_MAX_ATTEMPTS", tc.cap)
+			repo := arbitrationRepo(t)
+			b := teamBrain()
+			b.runWorkerFn = editingWorker(t, fourWayEdits)
+			ruled := 0
+			b.arbitrateFn = func(task string, c map[string]captaincode.Contender) (captaincode.Ruling, error) {
+				ruled++
+				for _, id := range []string{"w1-claude", "w3-grok"} {
+					if _, ok := c[id]; ok {
+						return captaincode.Ruling{Winner: id, Reason: "ok"}, nil
+					}
+				}
+				return captaincode.Ruling{}, assert.AnError
+			}
+			b.assessMultiFn = func(string, map[string]captaincode.WorkerOutput, string) (captaincode.MultiAssessment, error) {
+				return captaincode.MultiAssessment{Synthesis: "ANSWER"}, nil
+			}
+			out := runTeamPlan(t, b, repo, "fix x and y", fourWorkers)
+
+			assert.Equal(t, tc.ruled, ruled)
+			bud := workflowBudget(t, b)
+			assert.Zero(t, bud.ReservedAttempts, "no reservation is left behind")
+			if tc.ruled == 0 {
+				assert.Contains(t, out, "cannot cover 2 conflict ruling(s) (4 director attempts) - nothing applied; the diffs are kept")
+				assert.Empty(t, readRepoFile(t, repo, "x.go"))
+				assert.Empty(t, readRepoFile(t, repo, "y.go"))
+				ic, ok := b.lastIntegration(firstTaskID(t, b))
+				require.True(t, ok)
+				assert.Equal(t, captaincode.IntegrationConflicted, ic.Status)
+				for _, m := range ic.Manifests {
+					_, err := os.Stat(m.DiffPath)
+					assert.NoError(t, err, "%s's diff is kept as an artifact", m.Worker)
+				}
+				return
+			}
+			assert.Equal(t, "package p // claude\n", readRepoFile(t, repo, "x.go"))
+			assert.Equal(t, "package p // grok\n", readRepoFile(t, repo, "y.go"))
+		})
+	}
+}
+
+// firstTaskID is the one task a test turn opened.
+func firstTaskID(t *testing.T, b *brain) string {
+	t.Helper()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	require.Len(t, b.ledger.Budgets, 1, "one turn opens one task")
+	return b.ledger.Budgets[0].TaskID
 }

@@ -28,6 +28,7 @@ package captaincode
 // same TaskID/AttemptID keys but serve different readers.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -154,6 +155,15 @@ type AttemptState struct {
 	OpenShell         *OpenShellCheckpoint   `json:"openshell,omitempty"`
 	OpenShellAttempts *OpenShellAttemptUsage `json:"openshell_attempts,omitempty"`
 	OpenShellPlan     *OpenShellPlanRecord   `json:"openshell_plan,omitempty"`
+	AdvisoryReview    *AdvisoryReview        `json:"advisory_review,omitempty"`
+}
+
+type AdvisoryReview struct {
+	Text       string `json:"text,omitempty"`
+	Model      string `json:"model,omitempty"`
+	DurationMs int64  `json:"duration_ms,omitempty"`
+	Status     string `json:"status,omitempty"` // "ok", "error", "skipped"
+	SkipReason string `json:"skip_reason,omitempty"`
 }
 
 // TaskState is the roll-up view of a task's lifecycle: its own state plus the
@@ -503,6 +513,23 @@ func (l *Ledger) RecordVerifiedExport(attemptID string, export VerifiedExport) {
 	}
 	as.Export = &export
 	as.UpdatedAt = time.Now()
+}
+
+func (l *Ledger) RecordAdvisoryReview(attemptID string, review AdvisoryReview) error {
+	as := l.AttemptStateFor(attemptID)
+	if as == nil {
+		return errors.New("advisory review: attempt not found")
+	}
+	if review.Text != "" {
+		masked, _ := MaskSecrets(review.Text, "[REDACTED]")
+		if len(masked) > 16*1024 {
+			masked = masked[:16*1024]
+		}
+		review.Text = masked
+	}
+	as.AdvisoryReview = &review
+	as.UpdatedAt = time.Now()
+	return nil
 }
 
 // ReconcileCheckpoints walks interrupted attempts after a brain restart and

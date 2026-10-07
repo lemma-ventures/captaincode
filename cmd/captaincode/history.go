@@ -40,6 +40,8 @@ type runRecord struct {
 	Kind       string         `json:"kind"` // solo | team | workflow | frontier
 	Model      string         `json:"model,omitempty"`
 	Legs       []string       `json:"legs,omitempty"`
+	Effort     string         `json:"effort,omitempty"` // how hard the worker thought; a frontier turn is max
+	Label      string         `json:"label,omitempty"`  // harness:model@effort, the Last Runs line
 	Task       string         `json:"task"`
 	Dir        string         `json:"dir,omitempty"` // the folder the turn ran in; a recovered answer is only served there
 	Output     string         `json:"output,omitempty"`

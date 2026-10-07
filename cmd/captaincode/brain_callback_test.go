@@ -38,9 +38,9 @@ func TestEveryWorkerPathCarriesTheCallback(t *testing.T) {
 	dir := t.TempDir()
 	ws := captaincode.Workspace{Dir: dir}
 	b := teamBrain()
-	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nship it", "review the patch", captaincode.LegGrok),
+	assert.Contains(t, b.teamWorkerPrompt(ws, "[user]\nship it", "review the patch", captaincode.LegGrok, ""),
 		"captain send --reply rt_")
-	assert.Contains(t, b.workflowStagePrompt(ws, "[user]\nship it", 1, 2, nil, "review the patch", captaincode.LegCodexCLI),
+	assert.Contains(t, b.workflowStagePrompt(ws, "[user]\nship it", 1, 2, nil, "review the patch", captaincode.LegCodexCLI, ""),
 		"captain send --reply rt_")
 
 	var mu sync.Mutex

@@ -96,14 +96,14 @@ func (b *brain) runWorker(ws captaincode.Workspace, leg captaincode.Leg, brief s
 // bug") was silently dropped and two workers cheerfully answered a question
 // nobody asked (live 2026-07-29: "give me a simple sentence in my writing
 // style" → generic sentences from models that had never seen the user write).
-func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief string, leg captaincode.Leg) string {
+func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief string, leg captaincode.Leg, taskID string) string {
 	// Compaction, not lossy windowing (2026-08-27): team workers now share the
 	// solo path's summarize-the-overflow treatment.
 	convo := b.fitPrompt(ws, leg, conversation, minInt(promptBudget(leg), 400_000))
 	return convo + "\n\n[captain] You are ONE worker on a team answering the LAST user turn above." +
 		"\nYour assignment: " + brief +
 		"\nThe conversation above is authoritative: the user's own words, files, and style take precedence over any paraphrase in the assignment. Stay inside your assignment's scope; another worker covers the rest." +
-		workerContext(ws) +
+		b.workerContext(ws, lastUserTurn(conversation), taskID) +
 		deliverableContract +
 		callbackContract(ws, leg) +
 		securityContract() +
@@ -290,7 +290,8 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		req.ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
 		shelf := b.stockShelf(req.ws, task)     // M3.9: one worker, the user's own directory
 		defer shelf.Remove()
-		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg), nil, feed.note)
+		taskID := b.openTask(task)
+		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg, taskID), nil, feed.note)
 		feed.close()
 		if r2, e2, note := b.salvagePartial(leg, res, err); note != "" {
 			res, err = r2, e2
@@ -383,7 +384,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		}
 		// Per-worker tool activity, named - parallel workers interleave.
 		ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
-		leg, res, err := b.runWorker(ws, wk.Leg, b.teamWorkerPrompt(ws, prompt, wk.Brief, wk.Leg), nil, func(s string) {
+		leg, res, err := b.runWorker(ws, wk.Leg, b.teamWorkerPrompt(ws, prompt, wk.Brief, wk.Leg, taskID), nil, func(s string) {
 			status(fmt.Sprintf("[%s] %s\n", wk.Leg, s))
 		})
 		// Salvage a capped or rate-limited worker's output rather than
@@ -555,6 +556,32 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	finish()
 }
 
+// displayLeg is the worker a frontier turn should be named as. The lane
+// word is not a model. A pseudo-leg result falls back to the leg the lane
+// picked, then to claude, which is what that pseudo-leg runs.
+func displayLeg(ran, picked captaincode.Leg) captaincode.Leg {
+	if ran != "" && ran != captaincode.LegFrontier && captaincode.ServesTasks(ran) {
+		return ran
+	}
+	if picked != "" && picked != captaincode.LegFrontier && captaincode.ServesTasks(picked) {
+		return picked
+	}
+	return captaincode.LegClaude
+}
+
+// frontierActivity is one Last Runs row for a frontier turn. The label is
+// harness:model@effort for the leg that ran, at max effort.
+func frontierActivity(dir, kind string, leg captaincode.Leg, text string, ms int64) activity {
+	shown := displayLeg(leg, captaincode.LegClaude)
+	return activity{
+		Dir: dir, Kind: kind, Leg: string(shown),
+		Model:  captaincode.ModelIDAt(shown, captaincode.EffortMax),
+		Effort: string(captaincode.EffortMax),
+		Label:  captaincode.RunLabel(shown, captaincode.EffortMax),
+		Text:   text, Ms: ms,
+	}
+}
+
 // frontierChat serves model="frontier": the frontier lane's leg for this
 // turn (brain_lanes.go frontierLead) at its strongest settings. claude runs
 // as the frontier pseudo-leg (pinned strongest model version + maxed
@@ -582,9 +609,9 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		b.recordDecision(task, frontierDecision(task, pick))
 		taskID = b.openTask(task)
 	}
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: pick.Reason})
+	b.pushActivity(frontierActivity(req.ws.Dir, "route", pick.Leg, pick.Reason, 0))
 	status(pick.Reason + "\n")
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: string(pick.Leg), Model: "frontier", Effort: string(captaincode.EffortMax), Text: "frontier: " + promptPeek(lastUserTurn(prompt))})
+	b.pushActivity(frontierActivity(req.ws.Dir, "run", pick.Leg, promptPeek(lastUserTurn(prompt)), 0))
 	t0 := time.Now()
 	// Fit the replay before the contracts go on, like every other path. The
 	// frontier path replayed the whole conversation untouched: after a
@@ -599,7 +626,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// the very turn that motivated it (a frontier turn, 2026-09-22), and a
 	// frontier worker - the one trusted with the largest changes - was the
 	// only one never asked to put security first.
-	prompt += workerContext(req.ws) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
+	prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
 	// M3.9: the shelf a solo worker gets, staged in the user's directory for
 	// the turn. It carries the always-on security-audit skill, which a
 	// frontier worker otherwise never saw.
@@ -608,7 +635,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	stocked := shelf.Refs()
 	// Frontier thinks for minutes before its first token - the progress feed is
 	// the only thing standing between the user and an apparently dead turn.
-	feed := newProgressFeed("frontier · "+captaincode.RunLabel(pick.Leg, captaincode.EffortMax), status)
+	feed := newProgressFeed(captaincode.RunLabel(pick.Leg, captaincode.EffortMax), status)
 	defer feed.close()
 	feed.narrate(req.ws.Steer, lastUserTurn(prompt), b.narrateSteps)
 	// Through the reroute net like every other leg: a rate-limited claude
@@ -620,14 +647,17 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	feed.close()
 	if err != nil {
 		fmt.Printf("captain brain: frontier error in %s - %v\n", time.Since(t0).Round(time.Millisecond), err)
-		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(ranLeg), Model: "frontier", Text: "error: " + promptPeek(err.Error()), Ms: time.Since(t0).Milliseconds()})
+		b.pushActivity(frontierActivity(req.ws.Dir, "done", displayLeg(ranLeg, pick.Leg), "error: "+promptPeek(err.Error()), time.Since(t0).Milliseconds()))
 		writeWorkerError(w, ranLeg, err)
 		return
 	}
-	recordRunHistory(runRecord{Kind: "frontier", Model: "frontier", Legs: []string{string(ranLeg)},
+	shown := displayLeg(ranLeg, pick.Leg)
+	label := captaincode.RunLabel(shown, captaincode.EffortMax)
+	recordRunHistory(runRecord{Kind: "frontier", Model: captaincode.ModelIDAt(shown, captaincode.EffortMax),
+		Legs: []string{string(shown)}, Effort: string(captaincode.EffortMax), Label: label,
 		Task: lastUserTurn(prompt), Output: res.Text, DurationMs: time.Since(t0).Milliseconds()})
-	fmt.Printf("captain brain: frontier done on %s in %s (%d chars)\n", ranLeg, time.Since(t0).Round(time.Millisecond), len(res.Text))
-	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(ranLeg), Model: "frontier", Text: promptPeek(res.Text), Ms: time.Since(t0).Milliseconds()})
+	fmt.Printf("captain brain: frontier done on %s in %s (%d chars)\n", shown, time.Since(t0).Round(time.Millisecond), len(res.Text))
+	b.pushActivity(frontierActivity(req.ws.Dir, "done", shown, promptPeek(res.Text), time.Since(t0).Milliseconds()))
 	go b.recordRunAt(ranLeg, prompt, res, ws, taskID, 1, "", "", stocked...)
 	if !req.Stream || !res.Streamed {
 		emit(res.Text)

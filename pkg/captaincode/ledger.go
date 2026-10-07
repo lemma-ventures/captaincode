@@ -46,7 +46,12 @@ type Ledger struct {
 	// turns (lanes.go): the count the balancer evens out. Capped at
 	// maxLaneRuns, merged across processes like the other logs.
 	LaneRuns []LaneRun `json:"lane_runs,omitempty"`
-	path     string
+	// MemoryExposure is the lesson arms assigned to each task (P2). Capped
+	// like the lifecycle log. Not a second learning store: Euclid keeps the
+	// events; this map is what Captain sends when the task settles.
+	MemoryExposure map[string]TaskExposure `json:"memory_exposure,omitempty"`
+	outcomeQueue   []OutcomeNotice
+	path           string
 	// The size and mtime this process last wrote, so a save can tell that no
 	// other writer has touched the file and skip re-reading it (Save).
 	wroteSize int64
@@ -406,6 +411,28 @@ const (
 
 const maxEvents = 500
 
+// NewLedger creates an uninitialized ledger bound to path.
+func NewLedger(path string) *Ledger {
+	return &Ledger{
+		Sessions:  map[string]string{},
+		Threads:   map[string]ThreadRef{},
+		Cooldowns: map[Leg]time.Time{},
+		path:      path,
+	}
+}
+
+// Reload reads the ledger state from disk.
+func (l *Ledger) Reload() error {
+	if l.path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(l.path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, l)
+}
+
 func LoadLedger() (*Ledger, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -551,6 +578,9 @@ func (l *Ledger) mergeFromDisk() {
 	l.Canaries = mergeByKey(l.Canaries, disk.Canaries, func(c Canary) string { return c.ID })
 	l.Events = mergeByKey(l.Events, disk.Events, jsonKey)
 	l.LaneRuns = mergeByKey(l.LaneRuns, disk.LaneRuns, jsonKey)
+	for id, rec := range disk.MemoryExposure {
+		l.MergeMemoryExposure(id, rec)
+	}
 }
 
 // mergeByKey appends rows from disk whose identity is not already in memory.

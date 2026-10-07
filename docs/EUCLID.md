@@ -60,9 +60,15 @@ Runs line. Known repositories are the git repos one or two levels under
 
 ## What the worker sees
 
-An `<euclid>` block of roughly 2,500 characters is prepended to every worker
-prompt: the current BRAIN thesis, the repository MAP rows, and the WISDOM
-theses. It is a cheap orientation, not a retrieval system - workers that need
+An `<euclid>` block of roughly 2,500 characters is added to every worker
+prompt. With `CAPTAIN_EUCLID_MCP_CONFIG`, Captain sends the task text (the
+user's last turn, secrets masked, at most 4,096 bytes) to `euclid_orientation`
+for each brain. The block holds the FAILURES guardrails, accepted lessons and
+WISDOM lines that match the task, plus the BRAIN state, merged across brains
+in that order. Without MCP, it holds the current BRAIN thesis, the repository
+MAP rows, and the WISDOM theses. When no item is rendered, the prompt has no
+`<euclid>` block. `captain euclid status` shows the item count of an
+orientation probe per brain. It is a cheap orientation, not a retrieval system - workers that need
 more call the MCP tools (`euclid_search`, `euclid_read_register`,
 `euclid_recent_runs`, `euclid_status`), registered once and following the
 project the terminal is open in.

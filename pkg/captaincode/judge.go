@@ -24,6 +24,7 @@ var vendorPatterns = []struct{ needle, vendor string }{
 	{"kimi", "moonshot"}, {"moonshot", "moonshot"},
 	{"deepseek", "deepseek"},
 	{"minimax", "minimax"},
+	{"mistral", "mistral"},
 	{"qwen", "alibaba"},
 	{"step", "stepfun"},
 	{"nemotron", "nvidia"},

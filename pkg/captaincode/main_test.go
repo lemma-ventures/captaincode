@@ -11,7 +11,8 @@ import (
 // a serve builds an httptest one.
 func TestMain(m *testing.M) {
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
-	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
+	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0")          // no background engine runs against temp brains
+	os.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "0") // tests opt in with a fake reviewer
 	// A captain session sets these. That connection is bound to the live
 	// brain. A temp brain is a different root, so journal, learn and
 	// orientation fail closed ("bound to a different brain") instead of

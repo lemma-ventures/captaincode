@@ -17,9 +17,10 @@ import (
 func openShellLegEnv(t *testing.T) *OpenShellRunner {
 	t.Helper()
 	r := newFakeOpenShell(t)
-	for _, key := range []string{"PREPARED", "PILOT", "REPO", "REVISION", "RUNTIME", "CONCURRENCY", "DIRECTOR", "PROFILE", "ALLOWED", "PROTECTED", "VERIFY", "BASELINE"} {
+	for _, key := range []string{"PREPARED", "PILOT", "REPO", "REVISION", "RUNTIME", "CONCURRENCY", "DIRECTOR", "PROFILE", "ALLOWED", "PROTECTED", "VERIFY", "BASELINE", "ADVISORY_REVIEW"} {
 		t.Setenv("CAPTAIN_OPENSHELL_"+key, "")
 	}
+	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "0")
 	t.Setenv("CAPTAIN_OPENSHELL_PREPARED", r.Prepared)
 	t.Setenv("CAPTAIN_OPENSHELL_PILOT", r.Pilot)
 	t.Setenv("CAPTAIN_OPENSHELL_ALLOWED", "a.txt")

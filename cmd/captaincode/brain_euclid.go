@@ -105,6 +105,12 @@ type euclidStatus struct {
 	Journal map[string]int            `json:"journal"` // label → entries since last distillation
 	Orient  int                       `json:"orientation_chars"`
 	Checks  []captaincode.BrainCheck  `json:"checks"` // the launch check: main brain, local brain
+	// Probe is the item count of one task-free orientation per brain label;
+	// ProbeErr holds the error of a brain whose probe failed (P1c).
+	Probe    map[string]int    `json:"orientation_items,omitempty"`
+	ProbeErr map[string]string `json:"orientation_errors,omitempty"`
+	// DroppedShown is how many shown lessons did not fit a prompt (P2).
+	DroppedShown int `json:"dropped_shown"`
 }
 
 func (b *brain) euclidStatusNow(ws captaincode.Workspace) euclidStatus {
@@ -117,6 +123,10 @@ func (b *brain) euclidStatusNow(ws captaincode.Workspace) euclidStatus {
 		}
 	}
 	st.Orient = len(captaincode.Orientation(cwd))
+	st.Probe, st.ProbeErr = captaincode.OrientationProbe(cwd)
+	if b.ledger != nil {
+		st.DroppedShown = b.ledger.DroppedShown()
+	}
 	st.Checks = captaincode.CheckBrains(cwd)
 	return st
 }
@@ -139,9 +149,15 @@ func renderEuclidStatus(st euclidStatus) string {
 		if n, ok := st.Journal[br.Label]; ok {
 			line += fmt.Sprintf("  · %d runs journaled since last distill", n)
 		}
+		if e, ok := st.ProbeErr[br.Label]; ok {
+			line += "  · orientation failed: " + e
+		} else if n, ok := st.Probe[br.Label]; ok {
+			line += fmt.Sprintf("  · orientation %d items", n)
+		}
 		sb.WriteString(line + "\n")
 	}
 	fmt.Fprintf(&sb, "orientation injected into worker prompts: %d chars\n", st.Orient)
+	fmt.Fprintf(&sb, "shown lessons dropped for the budget: %d\n", st.DroppedShown)
 	sb.WriteString("`/euclid distill` folds the journal into your write brain; notes reach the shared repo brain as files under .euclid/notes/ and are folded on main (`captain euclid share`).\n")
 	return sb.String()
 }

@@ -53,6 +53,20 @@ const (
 	// ChatGPT credential as codex (GPT-6 Sol, the quality tier) and codex-cli
 	// (GPT-6 Astra, the frontier tier) - one vendor, three price points.
 	LegLuna Leg = "luna" // opencode serve -> openai/gpt-6-luna (ChatGPT sub)
+	// mistral (2026-10-06): Mistral Large 4 ("Le Chonk"), Mistral's 1T-param
+	// (49B active), natively multimodal open-weights model on OpenRouter. New
+	// and unbenchmarked, so it starts below the scored open-weight legs and
+	// moves on its scorecard (and an Artificial Analysis row when one exists).
+	LegMistral Leg = "mistral" // opencode serve -> mistralai/mistral-large-4-0 (OpenRouter)
+	// mimo (2026-10-07): Xiaomi MiMo V2.6 Pro, open-weight 1M-context model on
+	// OpenRouter. Cheap at $0.435/M in. BenchLM ranks it #12 coding on 6 Oct
+	// with 4 category rows (partial coverage). Artificial Analysis coding index
+	// is absent on the 22 Sep snapshot.
+	LegMimo Leg = "mimo" // opencode serve -> xiaomi/mimo-v2.6-pro (OpenRouter)
+	// kolibri (2026-10-07): Aleph Alpha Kolibri-1, Apache 2.0, ~78B total /
+	// 3B active, local-only on this Mac via ollama/llama.cpp. No hosted API
+	// on OpenRouter. 128K context.
+	LegKolibri Leg = "kolibri" // local ollama/llama.cpp (no hosted endpoint)
 	// jev (2026-09-17): TypeSafe's System One model, a DECISION leg. It answers
 	// typed questions (choice/score/noul) with calibrated probabilities in
 	// ~100-500ms and never generates text or runs a tool, so it is in the

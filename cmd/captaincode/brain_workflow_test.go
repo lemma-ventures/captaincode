@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -818,4 +820,232 @@ func TestMixedWorkflowRefused_FromSavedWorkflow(t *testing.T) {
 	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
 	assert.Equal(t, 400, rec.Code, "saved mixed workflow must be refused: %s", rec.Body.String())
 	assert.Contains(t, rec.Body.String(), "cannot share a workflow", rec.Body.String())
+}
+
+// Q6: Host workflow stages hand over their tree.
+
+func TestWorkflowParallelThenParallelKeepsStageOneFiles(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, obj string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "REVIEWED"}, nil
+	}
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2, "brief names no working directory")
+		dir := m[1]
+		switch {
+		case strings.Contains(brief, "in stage 1") && leg == captaincode.LegClaude:
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("package p // a\n"), 0o644))
+		case strings.Contains(brief, "in stage 1") && leg == captaincode.LegCodex:
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "b.go"), []byte("package p // b\n"), 0o644))
+		case strings.Contains(brief, "in stage 2") && leg == captaincode.LegClaude:
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "c.go"), []byte("package p // c\n"), 0o644))
+		case strings.Contains(brief, "in stage 2") && leg == captaincode.LegCodex:
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "d.go"), []byte("package p // d\n"), 0o644))
+		}
+		return leg, captaincode.Result{Text: string(leg) + " done"}, nil
+	}
+	req := wfReq(false, "/claude make a + /codex make b > /claude make c + /codex make d")
+	req.URL.RawQuery = "cwd=" + url.QueryEscape(repo)
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	// Both stage 1 and stage 2 files must be kept in the final checkout.
+	assert.FileExists(t, filepath.Join(repo, "a.go"), "stage 1 file a.go must be kept")
+	assert.FileExists(t, filepath.Join(repo, "b.go"), "stage 1 file b.go must be kept")
+	assert.FileExists(t, filepath.Join(repo, "c.go"), "stage 2 file c.go must be kept")
+	assert.FileExists(t, filepath.Join(repo, "d.go"), "stage 2 file d.go must be kept")
+
+	// Q6 item 5: per-stage list on the task (stage, candidate digest, files landed).
+	b.imu.Lock()
+	var taskID string
+	for tid := range b.stageIntegrations {
+		taskID = tid
+		break
+	}
+	stages := b.stageIntegrations[taskID]
+	b.imu.Unlock()
+	require.Len(t, stages, 2, "must have 2 stage integration records")
+	assert.Equal(t, 1, stages[0].Stage)
+	assert.Equal(t, captaincode.IntegrationClean, stages[0].Status)
+	assert.NotEmpty(t, stages[0].CandidateDigest)
+	assert.ElementsMatch(t, []string{"a.go", "b.go"}, stages[0].FilesLanded)
+
+	assert.Equal(t, 2, stages[1].Stage)
+	assert.Equal(t, captaincode.IntegrationClean, stages[1].Status)
+	assert.NotEmpty(t, stages[1].CandidateDigest)
+	assert.ElementsMatch(t, []string{"c.go", "d.go"}, stages[1].FilesLanded)
+
+	// Inspect API also returns these stages.
+	inspectRec := httptest.NewRecorder()
+	b.taskInspect(inspectRec, nil, captaincode.TaskRequest{TaskID: taskID})
+	require.Equal(t, 200, inspectRec.Code)
+	var taskResp captaincode.TaskResponse
+	require.NoError(t, json.Unmarshal(inspectRec.Body.Bytes(), &taskResp))
+	var insp captaincode.InspectResponse
+	require.NoError(t, json.Unmarshal(taskResp.Body, &insp))
+	require.Len(t, insp.Stages, 2)
+}
+
+func TestWorkflowParallelThenSingleSeesStageOneTree(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, obj string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "REVIEWED"}, nil
+	}
+	var stage2SawA, stage2SawB bool
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2, "brief names no working directory")
+		dir := m[1]
+		if strings.Contains(brief, "in stage 1") {
+			if leg == captaincode.LegClaude {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "a.go"), []byte("package p // a\n"), 0o644))
+			} else if leg == captaincode.LegCodex {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "b.go"), []byte("package p // b\n"), 0o644))
+			}
+		} else if strings.Contains(brief, "in stage 2") {
+			_, errA := os.Stat(filepath.Join(dir, "a.go"))
+			stage2SawA = errA == nil
+			_, errB := os.Stat(filepath.Join(dir, "b.go"))
+			stage2SawB = errB == nil
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "c.go"), []byte("package p // c\n"), 0o644))
+		}
+		return leg, captaincode.Result{Text: string(leg) + " done"}, nil
+	}
+	req := wfReq(false, "/claude make a + /codex make b > /grok make c")
+	req.URL.RawQuery = "cwd=" + url.QueryEscape(repo)
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	assert.True(t, stage2SawA, "stage 2 single worker must see stage 1 tree (a.go)")
+	assert.True(t, stage2SawB, "stage 2 single worker must see stage 1 tree (b.go)")
+	assert.FileExists(t, filepath.Join(repo, "a.go"))
+	assert.FileExists(t, filepath.Join(repo, "b.go"))
+	assert.FileExists(t, filepath.Join(repo, "c.go"))
+}
+
+func TestWorkflowStartsFromDirtyCheckout(t *testing.T) {
+	repo := arbitrationRepo(t)
+	// Create dirty uncommitted changes, untracked files, and staged files.
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "parse.go"), []byte("package p // dirty edit\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "untracked.go"), []byte("package p // untracked\n"), 0o644))
+	stagedPath := filepath.Join(repo, "staged.go")
+	require.NoError(t, os.WriteFile(stagedPath, []byte("package p // staged\n"), 0o644))
+	addCmd := exec.Command("git", "add", "staged.go")
+	addCmd.Dir = repo
+	out, err := addCmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	// Record index status before workflow.
+	statusCmd := exec.Command("git", "status", "--porcelain")
+	statusCmd.Dir = repo
+	statusBefore, err := statusCmd.CombinedOutput()
+	require.NoError(t, err)
+
+	b := teamBrain()
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, obj string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "REVIEWED"}, nil
+	}
+	var sawDirty, sawUntracked, sawStaged bool
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2, "brief names no working directory")
+		dir := m[1]
+		parseContent, _ := os.ReadFile(filepath.Join(dir, "parse.go"))
+		sawDirty = strings.Contains(string(parseContent), "dirty edit")
+		_, errU := os.Stat(filepath.Join(dir, "untracked.go"))
+		sawUntracked = errU == nil
+		_, errS := os.Stat(filepath.Join(dir, "staged.go"))
+		sawStaged = errS == nil
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "worker.go"), []byte("package p // worker\n"), 0o644))
+		return leg, captaincode.Result{Text: "done"}, nil
+	}
+	req := wfReq(false, "/claude add worker file > /codex review")
+	req.URL.RawQuery = "cwd=" + url.QueryEscape(repo)
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	assert.True(t, sawDirty, "worker worktree should see dirty uncommitted files")
+	assert.True(t, sawUntracked, "worker worktree should see untracked files")
+	assert.True(t, sawStaged, "worker worktree should see staged files")
+
+	// Final apply: worker.go should land.
+	assert.FileExists(t, filepath.Join(repo, "worker.go"))
+	// parse.go still has dirty content.
+	gotParse, _ := os.ReadFile(filepath.Join(repo, "parse.go"))
+	assert.Contains(t, string(gotParse), "dirty edit")
+	// staged.go is still staged in git index.
+	statusCmdAfter := exec.Command("git", "status", "--porcelain")
+	statusCmdAfter.Dir = repo
+	statusAfter, err := statusCmdAfter.CombinedOutput()
+	require.NoError(t, err)
+	assert.Contains(t, string(statusAfter), "A  staged.go", "staged file must remain staged")
+	_ = statusBefore
+}
+
+func TestWorkflowCheckoutUntouchedUntilFinalApply(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, obj string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "REVIEWED"}, nil
+	}
+	var stage2CheckoutHasStep1 bool
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2, "brief names no working directory")
+		dir := m[1]
+		if strings.Contains(brief, "in stage 1") {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "step1.go"), []byte("package p // step1\n"), 0o644))
+		} else if strings.Contains(brief, "in stage 2") {
+			// During stage 2, check if repo checkout has step1.go
+			_, err := os.Stat(filepath.Join(repo, "step1.go"))
+			stage2CheckoutHasStep1 = err == nil
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "step2.go"), []byte("package p // step2\n"), 0o644))
+		}
+		return leg, captaincode.Result{Text: "done"}, nil
+	}
+	req := wfReq(false, "/claude step1 > /codex step2")
+	req.URL.RawQuery = "cwd=" + url.QueryEscape(repo)
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	assert.False(t, stage2CheckoutHasStep1, "checkout must be untouched during workflow stages")
+	assert.FileExists(t, filepath.Join(repo, "step1.go"), "landed after final apply")
+	assert.FileExists(t, filepath.Join(repo, "step2.go"), "landed after final apply")
+}
+
+func TestWorkflowFinalApplyRefusesConcurrentEdit(t *testing.T) {
+	repo := arbitrationRepo(t)
+	b := teamBrain()
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, obj string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "REVIEWED"}, nil
+	}
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		m := workerDirRe.FindStringSubmatch(brief)
+		require.Len(t, m, 2, "brief names no working directory")
+		dir := m[1]
+		// Worker modifies parse.go in worktree
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "parse.go"), []byte("package p // worker edit\n"), 0o644))
+
+		// Concurrently, user modifies parse.go in the repo checkout!
+		require.NoError(t, os.WriteFile(filepath.Join(repo, "parse.go"), []byte("package p // user concurrent edit\n"), 0o644))
+		return leg, captaincode.Result{Text: "done"}, nil
+	}
+	req := wfReq(false, "/claude edit parse > /codex review")
+	req.URL.RawQuery = "cwd=" + url.QueryEscape(repo)
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+
+	// The user's concurrent edit in the checkout must NOT be stomped.
+	content, err := os.ReadFile(filepath.Join(repo, "parse.go"))
+	require.NoError(t, err)
+	assert.Equal(t, "package p // user concurrent edit\n", string(content))
 }

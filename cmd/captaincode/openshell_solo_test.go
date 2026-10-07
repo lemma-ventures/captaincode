@@ -67,7 +67,7 @@ func TestOpenShellSoloCLIHasNoHostPrelude(t *testing.T) {
 		{"missing configuration", []string{"with", "openshell", "fix parser"}, "CAPTAIN_OPENSHELL_PREPARED"},
 		{"natural language check", []string{"with", "openshell", "fix parser until tests pass"}, "CAPTAIN_OPENSHELL_PREPARED"},
 		{"parallel configuration", []string{"with", "openshell", "/openshell fix a + /openshell fix b"}, "CAPTAIN_OPENSHELL_PREPARED"},
-		{"mixed parallel", []string{"with", "openshell", "/openshell fix a + /cursor fix b"}, "host workers"},
+		{"mixed parallel", []string{"with", "openshell", "/openshell fix a + /cursor fix b"}, "host and sandbox"},
 		{"sequential", []string{"with", "openshell", "/openshell fix a > /openshell fix b"}, "CAPTAIN_OPENSHELL_PREPARED"},
 		{"workflow gate", []string{"with", "openshell", "/openshell fix a gate: touch host-test-ran"}, "host gates"},
 	} {

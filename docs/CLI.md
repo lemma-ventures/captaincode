@@ -66,7 +66,7 @@ Run controls reach the brain over HTTP and work while a TUI turn streams.
 | Command | What it does |
 |---|---|
 | `captain status` / `captain watch` | The live (or last) workflow checklist once, or redrawn until it ends |
-| `captain runs [-n 20] [--leg l] [--kind solo\|team\|workflow\|frontier] [--grep text] [--failed]` | Run history (alias `history`) |
+| `captain runs [-n 20] [--leg l] [--kind solo\|team\|workflow\|frontier] [--grep text] [--failed]` | Run history (alias `history`). Each row names the model as `harness:model@effort`, the same line as Last Runs. A frontier turn shows claude or codex-cli, not the lane. |
 | `captain show [<id>\|last]` | One run with its full output |
 | `captain kill [--loops]` | Stop the worker run in flight; `--loops` also ends `/repeat` threads |
 | `captain stop [--finish\|--abort] [--all]` | End this folder's `/repeat` loops after the current round (`--abort` drops the round, `--all` every folder) |

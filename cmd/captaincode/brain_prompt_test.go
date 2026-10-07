@@ -127,7 +127,7 @@ func TestDeliverableContractEndsBackgroundWork(t *testing.T) {
 // every worker path.
 func TestWorkerPromptCarriesAccurateContext(t *testing.T) {
 	t.Setenv("CAPTAIN_CWD", "/src/ash")
-	c := workerContext(defaultWorkspace())
+	c := workerContext(defaultWorkspace(), "", "")
 	assert.Contains(t, c, "/src/ash", "names where the work happens")
 	assert.Contains(t, c, "user's own")
 	assert.Contains(t, c, "ordinary development work")

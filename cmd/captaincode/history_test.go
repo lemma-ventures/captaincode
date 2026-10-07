@@ -67,6 +67,22 @@ func TestHistorySearchAndLimit(t *testing.T) {
 }
 
 // A failed turn is exactly what the user needs to look up afterwards.
+// A frontier turn is a lane. The row names the model that ran, in the same
+// form as Last Runs. The 15:28 record stored kind and model as "frontier"
+// and the worker as codex-cli.
+func TestFrontierRunNamesTheModelThatRan(t *testing.T) {
+	codex := runRecord{Kind: "frontier", Model: "frontier", Legs: []string{"codex-cli"},
+		Task: "scope the change", DurationMs: 144319}
+	line := runLine(codex)
+	want := captaincode.RunLabel(captaincode.LegCodexCLI, captaincode.EffortMax)
+	assert.Contains(t, line, want)
+	assert.NotContains(t, line, "frontier")
+
+	claude := runRecord{Kind: "frontier", Model: "frontier", Legs: []string{"claude"}, DurationMs: 1000}
+	assert.Contains(t, runLine(claude), captaincode.RunLabel(captaincode.LegClaude, captaincode.EffortMax))
+	assert.NotContains(t, runLine(claude), "frontier")
+}
+
 func TestFailedRunsAreRecorded(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	recordRunHistory(runRecord{Kind: "solo", Legs: []string{"grok"}, Task: "the lost turn",

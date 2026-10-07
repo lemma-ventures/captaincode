@@ -109,7 +109,9 @@ on whichever leg the lane balancer picks next".
 | `ds4-flash` | `deepseek-hf` | v4-flash in every slot | `/ds4-flash` |
 | `ds-flash` (in progress) | `deepseek-nim` | v4.1-flash in every slot | `/ds-flash` |
 | `free` | `nemotron` | nemotron-3.5-lightning-free in every slot | `/free` |
-| `gemini`, `glm`, `qwen`, `kimi`, `minimax`, `step`, `gpt-oss` | unchanged | the leg's current tiers; one model fills every slot | - |
+| `gemini`, `glm`, `qwen`, `kimi`, `minimax`, `mistral`, `step`, `gpt-oss` | unchanged | the leg's current tiers; one model fills every slot | - |
+| `mimo` | `openrouter` | v2.6-pro in every slot | `/mimo` |
+| `kolibri` | `openrouter` (local only) | kolibri-1 in every slot | `/kolibri` |
 | `jev` | unchanged | not a worker; no tiers | - |
 
 Two changes to how grok works: its quality slot moves from grok-build to

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import socket
 import subprocess
@@ -7,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pilot
+import profiles
 
 
 class PilotTests(unittest.TestCase):
@@ -23,6 +25,9 @@ class PilotTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.repo = Path(self.directory.name)
+        machine_id = patch.object(profiles, "MACHINE_ID_FILE", self.repo / "home/.captaincode/machine-id")
+        machine_id.start()
+        self.addCleanup(machine_id.stop)
         pilot.command(["git", "-c", "init.templateDir=", "init", "-q", self.repo])
         (self.repo / "slugify.py").write_text("before\n")
         (self.repo / "test_slugify.py").write_text("original tests\n")
@@ -127,6 +132,8 @@ class PilotTests(unittest.TestCase):
         with patch("pilot.command", side_effect=run):
             instance.preflight()
         self.assertEqual(instance.env["DOCKER_HOST"], endpoint)
+        self.assertEqual(instance.report["machine"]["vm_driver_sha256"], hashlib.sha256(b"driver").hexdigest())
+        self.assertEqual(instance.report["machine"]["machine_id"], profiles.MACHINE_ID_FILE.read_text().strip())
         instance.env["DOCKER_HOST"] = "tcp://127.0.0.1:2375"
         with patch("pilot.command", side_effect=run), self.assertRaisesRegex(RuntimeError, "no socket"):
             instance.preflight()

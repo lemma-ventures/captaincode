@@ -29,7 +29,7 @@ import (
 
 const openShellUsage = `usage: captain openshell --team <team.json> --pilot <dir> --prepared <dir> [flags]
        captain openshell --resume <run-directory>
-       captain openshell profiles --pilot <dir> [--dry-run]
+       captain openshell profiles --pilot <dir> [--prepared <dir>] [--dry-run]
        captain openshell qualify --pilot <dir> --prepared <dir> --profile <name> [--runtime vm|docker]
 
   --resume       continue a saved sequence from verified stages; never replay in-flight work
@@ -44,7 +44,10 @@ const openShellUsage = `usage: captain openshell --team <team.json> --pilot <dir
   --runtime      vm or docker (default vm)
 
   profiles  rebuild <pilot>/catalog.json from the registry's API-key legs and
-            OpenRouter's public zero-data-retention endpoint list
+            OpenRouter's public zero-data-retention endpoint list, then list
+            each qualification: legacy (no machine profile), from another
+            machine, or refused for another OpenShell version or VM driver
+            (with --prepared, that runtime's driver is checked)
   qualify   run the pilot's 18-check fixture on one profile three times, each
             with the one repair a task gets; only 3 of 3 full passes record it
             in <pilot>/qualified.json, and only then can a task use it`
@@ -296,6 +299,7 @@ func cmdOpenShellProfiles(args []string) {
 	fs := flag.NewFlagSet("openshell profiles", flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprintln(os.Stderr, openShellUsage) }
 	pilot := fs.String("pilot", "", "")
+	prepared := fs.String("prepared", "", "")
 	dryRun := fs.Bool("dry-run", false, "")
 	fs.Parse(args)
 	if *pilot == "" || fs.NArg() > 0 {
@@ -305,6 +309,7 @@ func cmdOpenShellProfiles(args []string) {
 	if _, err := os.Stat(filepath.Join(*pilot, "profiles.py")); err != nil {
 		fatal(fmt.Errorf("openshell: --pilot %s has no profiles.py", *pilot))
 	}
+	defer printOpenShellQualifications(*pilot, *prepared)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	endpoints, err := captaincode.FetchOpenRouterZDR(ctx, captaincode.OpenRouterZDRURL)
@@ -334,6 +339,34 @@ func cmdOpenShellProfiles(args []string) {
 	}
 	fmt.Fprintf(os.Stderr, "openshell: %d profile(s) from %d ZDR endpoint(s) written to %s; none is selectable until `captain openshell qualify` passes on it\n",
 		len(names), len(endpoints), path)
+}
+
+// printOpenShellQualifications lists qualified.json judged on this machine.
+// Without a prepared runtime the driver is not checked; the pilot checks it
+// when a task starts.
+func printOpenShellQualifications(pilot, prepared string) {
+	var here *captaincode.OpenShellMachine
+	if prepared != "" {
+		m, err := captaincode.LocalOpenShellMachine(pilot, prepared)
+		if err != nil {
+			fatal(err)
+		}
+		here = &m
+	}
+	quals, err := captaincode.ReadOpenShellQualifications(pilot, here, time.Now())
+	if err != nil {
+		fatal(err)
+	}
+	for _, q := range quals {
+		mark := "no "
+		switch {
+		case q.Selectable && q.Legacy:
+			mark = "legacy"
+		case q.Selectable:
+			mark = "yes"
+		}
+		fmt.Printf("qualified %-6s %-44s %s\n", mark, q.Profile, q.Status)
+	}
 }
 
 // cmdOpenShellQualify runs the pilot's fixture on one profile.

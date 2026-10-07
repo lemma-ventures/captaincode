@@ -22,8 +22,16 @@ import (
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
-// doArbitrate asks the director whose changes land; stubbed in tests.
-func (b *brain) doArbitrate(taskID, task string, contenders map[string]captaincode.Contender) (captaincode.Ruling, error) {
+// directorTally counts the provider calls one ruling made and what they
+// billed, so the attempts reserved for it settle at what actually ran.
+type directorTally struct {
+	calls int
+	usd   float64
+}
+
+// doArbitrate asks the director whose changes land; stubbed in tests. A stub
+// makes no provider call, so it leaves the tally at zero.
+func (b *brain) doArbitrate(taskID, task string, contenders map[string]captaincode.Contender, tally *directorTally) (captaincode.Ruling, error) {
 	if b.arbitrateFn != nil {
 		return b.arbitrateFn(task, contenders)
 	}
@@ -31,39 +39,83 @@ func (b *brain) doArbitrate(taskID, task string, contenders map[string]captainco
 	mgr := captaincode.Manager{Director: b.effectiveDirector(), Port: b.mgr.Port}
 	b.mu.Unlock()
 	// The ruling is coordination overhead billed to the task (M1.2).
-	mgr.CallLabel, mgr.OnCall = "arbitration", b.chargeAux(taskID)
+	charge := b.chargeAux(taskID)
+	mgr.CallLabel = "arbitration"
+	mgr.OnCall = func(leg captaincode.Leg, label string, res captaincode.Result, err error) {
+		tally.calls++
+		tally.usd += res.BilledUSD()
+		if charge != nil {
+			charge(leg, label, res, err)
+		}
+	}
 	return mgr.Arbitrate(task, contenders)
 }
 
-// settleConflict returns a conflicted candidate resolved on the director's
-// pick, or the candidate unchanged when there is no ruling. texts holds each
-// worker's report, keyed by manifest id.
+// rulingAttempts is what one conflict ruling may cost the task budget: the
+// director call, plus one retry when its reply is not valid JSON
+// (Manager.directorJSON).
+const rulingAttempts = 2
+
+// settleConflict returns a conflicted candidate resolved with one director
+// ruling per conflict group (ROADMAP Q7), or the candidate unchanged when any
+// group gets no usable ruling. texts holds each worker's report, keyed by
+// manifest id. Before the first ruling the task budget must cover every
+// group's attempts; if it cannot, no group is ruled and every diff is kept.
 func (b *brain) settleConflict(taskID, task string, ic captaincode.IntegrationCandidate, texts map[string]string, note func(string)) captaincode.IntegrationCandidate {
 	if ic.Status != captaincode.IntegrationConflicted {
 		return ic
 	}
-	contenders := map[string]captaincode.Contender{}
-	for _, m := range ic.Manifests {
-		for _, id := range ic.Contested() {
-			if id == m.ManifestID() {
-				contenders[id] = captaincode.Contender{Leg: captaincode.Leg(m.Leg), Text: texts[id],
-					Files: m.ChangedFiles, Evidence: manifestEvidence(m)}
-			}
+	groups := ic.ConflictGroups()
+	reserved, ok := rulingAttempts*len(groups), true
+	b.withBudget(taskID, func(budget *captaincode.Budget) {
+		if ok = budget.Reserve(reserved); ok {
+			b.ledger.RecordBudget(budget)
 		}
-	}
-	ruling, err := b.doArbitrate(taskID, task, contenders)
-	if err != nil {
-		note(fmt.Sprintf("[integration] no ruling on the conflict (%v) - nothing applied; the diffs are kept\n", err))
+	})
+	if !ok {
+		note(fmt.Sprintf("[integration] the task budget cannot cover %d conflict ruling(s) (%d director attempts) - nothing applied; the diffs are kept\n", len(groups), reserved))
 		return ic
 	}
-	resolved, err := ic.Resolve(ruling.Winner, ruling.Reason)
+	// settle moves one group's reservation to what its ruling actually ran.
+	settle := func(t directorTally) {
+		b.withBudget(taskID, func(budget *captaincode.Budget) {
+			n := min(t.calls, rulingAttempts)
+			budget.Reconcile(n, t.usd)
+			budget.Release(rulingAttempts - n)
+			b.ledger.RecordBudget(budget)
+		})
+	}
+	var rulings []captaincode.GroupRuling
+	for i, g := range groups {
+		contenders := map[string]captaincode.Contender{}
+		for _, m := range g.Members {
+			id := m.ManifestID()
+			contenders[id] = captaincode.Contender{Leg: captaincode.Leg(m.Leg), Text: texts[id],
+				Files: m.ChangedFiles, Evidence: manifestEvidence(m)}
+		}
+		var tally directorTally
+		ruling, err := b.doArbitrate(taskID, task, contenders, &tally)
+		settle(tally)
+		if err != nil {
+			b.withBudget(taskID, func(budget *captaincode.Budget) {
+				budget.Release(rulingAttempts * (len(groups) - i - 1))
+				b.ledger.RecordBudget(budget)
+			})
+			note(fmt.Sprintf("[integration] no ruling on the conflict over %s (%v) - nothing applied; the diffs are kept\n", strings.Join(g.Files, ", "), err))
+			return ic
+		}
+		rulings = append(rulings, captaincode.GroupRuling{Winner: ruling.Winner, Reason: ruling.Reason})
+	}
+	resolved, err := ic.ResolveGroups(rulings)
 	if err != nil {
 		note(fmt.Sprintf("[integration] ruling not usable (%v) - nothing applied; the diffs are kept\n", err))
 		return ic
 	}
-	note(fmt.Sprintf("[integration] director's call: %s's changes land - %s\n", resolved.Winner, resolved.Ruling))
-	if len(resolved.Dropped) > 0 {
-		note(fmt.Sprintf("[integration] set aside: %s\n", strings.Join(resolved.Dropped, ", ")))
+	for _, r := range resolved.Rulings {
+		note(fmt.Sprintf("[integration] director's call on %s: %s's changes land - %s\n", strings.Join(r.Files, ", "), r.Winner, r.Reason))
+		if len(r.Dropped) > 0 {
+			note(fmt.Sprintf("[integration] set aside: %s\n", strings.Join(r.Dropped, ", ")))
+		}
 	}
 	return resolved
 }
@@ -93,6 +145,14 @@ func manifestEvidence(m captaincode.PatchManifest) string {
 // not describe changes that were set aside as if they were applied.
 func rulingNote(ic captaincode.IntegrationCandidate, applyErr error) string {
 	switch {
+	case ic.Status == captaincode.IntegrationResolved && applyErr == nil && len(ic.Rulings) > 1:
+		var calls []string
+		for _, r := range ic.Rulings {
+			calls = append(calls, fmt.Sprintf("for %s only %s's changes were applied (%s); %s's changes were NOT applied",
+				strings.Join(r.Files, ", "), r.Winner, r.Reason, strings.Join(r.Dropped, ", ")))
+		}
+		return fmt.Sprintf("Workers changed the same files in %d separate groups, and the director ruled on each group: %s. Deliver the applied changes and say in one line which were set aside.",
+			len(ic.Rulings), strings.Join(calls, "; "))
 	case ic.Status == captaincode.IntegrationResolved && applyErr == nil:
 		return fmt.Sprintf("Workers changed the same files. The director's call: only %s's changes were applied to the user's directory (%s); %s's changes were NOT applied. Deliver %s's approach and say in one line that the others were set aside.",
 			ic.Winner, ic.Ruling, strings.Join(ic.Dropped, ", "), ic.Winner)
@@ -143,7 +203,10 @@ func (b *brain) integrateTeam(ctx context.Context, userDir, rev, taskID, stageID
 		note(fmt.Sprintf("[conflict] %s ← %s\n", cf.File, strings.Join(cf.Workers, ", ")))
 	}
 	ic = b.settleConflict(taskID, task, ic, texts, note)
-	b.setLastIntegration(taskID, ic)
+	// A team is one stage: record it so `captain task inspect` shows each
+	// ruling (ROADMAP Q7).
+	b.recordStageIntegration(taskID, captaincode.StageIntegration{Stage: 1, StageID: stageID, Status: ic.Status,
+		CandidateDigest: captaincode.CandidateDigest(ic), FilesLanded: ic.LandedFiles(), Rulings: ic.Rulings}, ic)
 	if ic.Status != captaincode.IntegrationClean && ic.Status != captaincode.IntegrationResolved {
 		return ic, nil
 	}

@@ -18,8 +18,8 @@ import (
 
 func TestParseOpenShellWorkflowBoundary(t *testing.T) {
 	for _, tc := range []struct{ prompt, want string }{
-		{"/openshell edit a > /cursor edit b", "host workers"},
-		{"/openshell edit a + /cursor edit b", "host workers"},
+		{"/openshell edit a > /cursor edit b", "cannot share a workflow"},
+		{"/openshell edit a + /cursor edit b", "cannot share a workflow"},
 		{"/openshell edit a + /openshell edit b gate: touch marker", "host gates"},
 		{"/openshell edit a gate: touch marker", "host gates"},
 		{"/openshell + /openshell", "assignment"},

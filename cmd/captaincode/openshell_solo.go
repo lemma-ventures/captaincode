@@ -156,6 +156,9 @@ func recordOpenShellSolo(ledger *captaincode.Ledger, taskID, attemptID, task str
 	if state == captaincode.StateSucceeded && res.Export != nil {
 		ledger.RecordVerifiedExport(attemptID, *res.Export)
 	}
+	if res.AdvisoryReview != nil {
+		ledger.RecordAdvisoryReview(attemptID, *res.AdvisoryReview)
+	}
 	ledger.RecordHandoff(captaincode.BuildHandoffBrief(ledger, taskID, task, nil))
 	return ledger.Save()
 }

@@ -183,6 +183,12 @@ func (r *OpenShellRecovery) Run(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	runner, run := r.runner, r.run
+	if fn := openShellReviewerFromContext(ctx); fn != nil {
+		runner.Reviewer = fn
+	}
+	if runner.Task == "" && len(r.teams) > 0 && len(r.teams[0].Tasks) > 0 {
+		runner.Task = r.teams[0].Tasks[0].Prompt
+	}
 	if r.expected != nil {
 		checkpoint, err := openShellCheckpoint(runner.RunDir, run, r.expected.VerifiedStages)
 		if err != nil {

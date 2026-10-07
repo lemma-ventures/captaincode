@@ -166,6 +166,7 @@ func (l *Ledger) SettleOutcomes(now time.Time) int {
 		o.stampEffort(l.TaskStateFor(o.TaskID))
 		changed++
 		l.journal(RoutingRecord{Kind: RoutingKindOutcome, TaskID: o.TaskID, Outcome: o})
+		l.queueOutcome(o)
 	}
 	return changed
 }

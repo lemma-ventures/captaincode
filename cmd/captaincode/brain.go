@@ -586,11 +586,12 @@ type brain struct {
 	// Keyed by task ID; Cancel cascades to children.
 	cancelTree *captaincode.CancelTree
 
-	// integration (ROADMAP M3.2): the last integration candidate per task,
-	// so `captain why` and the review can see what each worker changed and
-	// whether parallel workers conflicted. Guarded by imu.
-	imu              sync.Mutex
-	lastIntegrations map[string]captaincode.IntegrationCandidate
+	// integration (ROADMAP M3.2 / Q6): per-stage integration records and the
+	// last integration candidate per task, so `captain why`, `captain task inspect`,
+	// and the review can see what each worker changed and whether parallel workers conflicted. Guarded by imu.
+	imu               sync.Mutex
+	lastIntegrations  map[string]captaincode.IntegrationCandidate
+	stageIntegrations map[string][]captaincode.StageIntegration
 
 	// Director ladder (user preference 2026-07-19: claude → codex → grok).
 	// The active director failing directorFallbackAfter times in a row demotes
@@ -1236,6 +1237,15 @@ func (b *brain) reconcileAttempt(taskID string, actualCostUSD float64) {
 	})
 }
 
+// releaseAttempt returns a reservation that never reached a provider: nothing
+// settles and nothing is charged (ROADMAP Q5).
+func (b *brain) releaseAttempt(taskID string) {
+	b.withBudget(taskID, func(budget *captaincode.Budget) {
+		budget.Release(1)
+		b.ledger.RecordBudget(budget)
+	})
+}
+
 // stopBudget records why a task stopped dispatching. The first reason wins:
 // the original cause is what the report needs.
 func (b *brain) stopBudget(taskID, reason string) {
@@ -1250,6 +1260,31 @@ func (b *brain) budgetExhausted(taskID string) bool {
 	exhausted := false
 	b.withBudget(taskID, func(budget *captaincode.Budget) { exhausted = budget.Exhausted() })
 	return exhausted
+}
+
+// recordStageIntegration stores one stage's integration record for a task
+// (ROADMAP M3.2 / Q6), so `captain task inspect` shows each stage's outcome.
+func (b *brain) recordStageIntegration(taskID string, si captaincode.StageIntegration, ic captaincode.IntegrationCandidate) {
+	if taskID == "" {
+		return
+	}
+	b.imu.Lock()
+	defer b.imu.Unlock()
+	if b.stageIntegrations == nil {
+		b.stageIntegrations = map[string][]captaincode.StageIntegration{}
+	}
+	b.stageIntegrations[taskID] = append(b.stageIntegrations[taskID], si)
+	if b.lastIntegrations == nil {
+		b.lastIntegrations = map[string]captaincode.IntegrationCandidate{}
+	}
+	b.lastIntegrations[taskID] = ic
+}
+
+// stageIntegrationsFor returns the stage integration records for a task.
+func (b *brain) stageIntegrationsFor(taskID string) []captaincode.StageIntegration {
+	b.imu.Lock()
+	defer b.imu.Unlock()
+	return append([]captaincode.StageIntegration(nil), b.stageIntegrations[taskID]...)
 }
 
 // setLastIntegration stores the most recent integration candidate for a task
@@ -1494,10 +1529,22 @@ func isReroutable(err error) bool {
 // caller has no task identity yet (solo turn before recordRun): the budget
 // check is a no-op and the per-path bounds (2 hops, chain time cap) still apply.
 func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg, prompt string, onDelta, onStatus func(string), taskID string) (captaincode.Leg, captaincode.Result, error) {
+	return b.runWorkerReroutedHeld(ws, leg, prompt, onDelta, onStatus, taskID, false)
+}
+
+// runWorkerReroutedHeld is runWorkerRerouted for a caller that already
+// reserved the first call (held): a workflow gate repair or escalation must
+// see a budget refusal before it builds its prompt. The first call then uses
+// that reservation instead of a second one, and is reconciled here like every
+// other call - one reserve and one reconcile per provider call (ROADMAP Q5).
+func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.Leg, prompt string, onDelta, onStatus func(string), taskID string, held bool) (captaincode.Leg, captaincode.Result, error) {
 	// OpenShell has its own entries (openShellChat, the CLI, task recovery):
 	// they save the task before dispatch, bind cancellation to the sandbox
 	// controller and keep the verified export. This path does none of that.
 	if leg == captaincode.LegOpenShell {
+		if held {
+			b.releaseAttempt(taskID)
+		}
 		return leg, captaincode.Result{}, errOpenShellEntry
 	}
 	// A session title never reroutes. Rerouting exists so real work survives a
@@ -1627,8 +1674,10 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 	// Reserve the first call against the task's shared budget. If the budget
 	// refuses, the turn stops here rather than dispatching past its cap
 	// (ROADMAP M2.4). A task with no budget (no ledger, or MaxAttempts=0)
-	// always reserves.
-	b.reserveAttempt(taskID)
+	// always reserves. A held call already has its reservation.
+	if !held {
+		b.reserveAttempt(taskID)
+	}
 	if taskID != "" {
 		b.mu.Lock()
 		// M3.3: checkpoint at dispatch boundary so the recovery policy knows
@@ -1729,13 +1778,38 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 // (live 2026-09-09: a provider began declining routine backend work in the
 // user's own repository). This is accurate description, not persuasion: it says
 // where the work happens and what kind of work it is, and nothing more.
-func workerContext(ws captaincode.Workspace) string {
-	dir := ws.Dir
+//
+// task is the user's last turn. Euclid matches it against the brains'
+// guardrails and lessons, so the block carries what applies to this task.
+func contextLead(dir string) string {
 	return fmt.Sprintf("\n\n[captain] Working context: you are a software engineer working in the user's own"+
 		" repository at %s. This is ordinary development work - reading, writing, reviewing,"+
 		" testing and documenting code in that repository, on the user's behalf and at their"+
 		" direction. File paths, commands and services named in the task refer to that project.\n",
-		dir) + captaincode.OrientationWith(dir, ws.Brains) // Euclid memory, when the project has a brain (MM38); the named repos' too
+		dir)
+}
+
+func workerContext(ws captaincode.Workspace, task, taskID string) string {
+	return contextLead(ws.Dir) + captaincode.OrientationForTask(ws.Dir, ws.Brains, task, taskID).Text
+}
+
+// workerContext records the write brain's exposure for taskID, then returns
+// the same block as workerContext. A prompt with an empty taskID sends no
+// task_id. The task must already be open.
+func (b *brain) workerContext(ws captaincode.Workspace, task, taskID string) string {
+	view := captaincode.OrientationForTask(ws.Dir, ws.Brains, task, taskID)
+	if taskID != "" && b.ledger != nil && (len(view.Rec.Entries) > 0 || len(view.Rec.Guardrails) > 0) {
+		rec := view.Rec
+		rec.Dir = ws.Dir
+		if rec.SourceRevision == "" && ws.Dir != "" {
+			rec.SourceRevision = captaincode.CurrentRevision(ws.Dir)
+		}
+		b.mu.Lock()
+		b.ledger.MergeMemoryExposure(taskID, rec)
+		_ = b.ledger.Save()
+		b.mu.Unlock()
+	}
+	return contextLead(ws.Dir) + view.Text
 }
 
 // sentTurnContract tells a worker that the turn it answers was sent by
@@ -2079,9 +2153,11 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 		cancel()
 	}
 	b.ledger.SettleOutcomes(time.Now())
+	notices := b.ledger.TakeOutcomeNotices()
 	if err := b.ledger.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "captain brain: save run record: %v\n", err)
 	}
+	go captaincode.PublishOutcomeNotices(notices)
 }
 
 // chargeTurn writes the task/attempt/call spine for one wrapper turn and
@@ -2945,8 +3021,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 	}
 	if req.Forced == "frontier" {
 		b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: "frontier", Model: "frontier", Rationale: "forced frontier", At: time.Now().Format("15:04:05")}
-		fmt.Printf("captain brain: routed %q -> forced frontier\n", b.last.Task)
-		b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: "frontier", Model: "frontier", Text: "forced frontier: best model, best version, max effort"})
+		fmt.Printf("captain brain: routed %q -> frontier lane\n", b.last.Task)
 		return routeResp{Class: string(class), Leg: "frontier", Provider: "captain", Model: "frontier", Brief: req.Task, Rationale: "forced frontier"}, nil
 	}
 	if req.Forced == "team" {
