@@ -136,6 +136,9 @@ func main() {
 		case "redact":
 			cmdRedact(args[1:])
 			return
+		case "inbox": // sent prompts the injection screen held (inbox_cmd.go)
+			cmdInbox(args[1:])
+			return
 		case "parse": // how captain reads a line, before it is sent (docs/LANGUAGE.md)
 			cmdParse(args[1:])
 			return

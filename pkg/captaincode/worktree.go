@@ -52,6 +52,10 @@ func gitRoot(dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// GitRoot is the top-level directory of the git repository containing dir,
+// or "" when dir is not in one.
+func GitRoot(dir string) string { return gitRoot(dir) }
+
 // NewWorktree creates a git worktree at the pinned revision. The worktree is
 // a sibling of the source repo (under the system temp dir) so it does not
 // disturb the repo's own working tree. Returns an error when the repo is not

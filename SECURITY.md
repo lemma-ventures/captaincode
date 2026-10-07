@@ -79,6 +79,55 @@ Its limits, stated so nobody over-trusts it:
 - It is a classifier. It will be wrong in both directions, and it is not a
   substitute for a container, a VM, or a machine without the credentials.
 
+## Messages between captains and prompt injection
+
+Captains message each other on purpose: a worker or watcher in one folder can
+hand a prompt to the TUI open in another (`captain send --cwd`), or reply to
+the session that started it (`captain send --reply`). A sent prompt arrives
+as a user turn, the strongest authority a worker sees. The sender may itself
+have read a hostile web page or file, so this channel carries prompt
+injection from one project into another.
+
+| Channel | Written by | Arrives as | Risk |
+|---|---|---|---|
+| `captain send` | another agent, a watcher, a script | a user turn | high |
+| program step handoff | our own previous worker | an assistant turn | medium |
+| shared context (`/context consume`) | another project's digest | memory | medium |
+| a task that names another repository | the user, in another TUI | the user's own turn | low |
+
+What the brain does with a sent prompt (`brain_inbox.go`,
+`pkg/captaincode/injection.go`):
+
+- **Filter.** Invisible and direction-changing characters and Unicode tag
+  characters are removed, and lines that forge captain's own markers
+  (`[captain]`, `[system]`) are neutralized.
+- **Detect.** The text is screened for instruction overrides, role spoofing,
+  sending secrets out, reading secret files, running fetched code
+  (`curl … | sh`), switching off a safety check, and hiding work from the
+  user. No model is called.
+- **Hold.** A high finding holds the message: it is never submitted, the TUI
+  says so, and `captain inbox` lists it with its findings to release or drop
+  (`CAPTAIN_INBOX_HOLD=0` turns holding off). A medium finding is delivered
+  with the finding named on its "sent by" line.
+- **Provenance.** Every delivered sent prompt ends with who sent it and from
+  where, and the worker that answers it is told the turn was not typed by
+  the user: it may not reveal or send out secrets, push, delete, publish,
+  spend money, switch off a safety check, or message other captains on that
+  request alone.
+- **Bounds.** A sent prompt cannot start a loop or a program, and at most
+  `CAPTAIN_INBOX_QUOTA` (5) are accepted between two turns the user types
+  (proved in `formal/`).
+
+The screen is a heuristic: it misses attacks worded in ways it does not
+know, and it can hold a harmless message that quotes an attack. The
+provenance line is the layer that does not depend on recognizing the
+wording. Program step handoffs and shared context are not screened yet.
+
+A task typed in one TUI that names another repository runs there. If that
+repository already has a worker, loop or program running, the moved worker
+gets its own git worktree and its changes come back as a patch in
+`~/.captaincode/runs/diffs/` (`CAPTAIN_ISOLATE_MOVED=0` turns this off).
+
 ## What we do protect
 
 - **Shield (secrets masking).** On by default (`CAPTAIN_REDACT`). Recognisable

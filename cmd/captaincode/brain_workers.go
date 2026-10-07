@@ -9,7 +9,9 @@ package main
 
 import (
 	"net/http"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,7 @@ type activeRun struct {
 	started time.Time
 	task    string
 	dir     string             // the workspace the run is for
+	origin  string             // the TUI folder the request came from
 	effort  captaincode.Effort // how hard it was asked to think ("" = the transport's default)
 }
 
@@ -39,7 +42,7 @@ func (a *activeRuns) begin(ws captaincode.Workspace, l captaincode.Leg, task str
 		a.runs = map[captaincode.Leg]activeRun{}
 	}
 	if _, busy := a.runs[l]; !busy {
-		a.runs[l] = activeRun{started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir, effort: ws.Effort}
+		a.runs[l] = activeRun{started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir, origin: ws.Origin, effort: ws.Effort}
 	}
 }
 
@@ -68,6 +71,9 @@ type workerRow struct {
 	Runs         int    `json:"runs"`
 	ElapsedMs    int64  `json:"elapsed_ms,omitempty"`
 	CoolingUntil int64  `json:"coolingUntil,omitempty"`
+	// From names the TUI folder a run came from when it is not this one: a
+	// task that named this repository was typed elsewhere.
+	From string `json:"from,omitempty"`
 }
 
 func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
@@ -75,9 +81,10 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	// A sidebar sees its own project's runs. Cooldowns and run counts stay
 	// machine-wide: a rate limit is per account, whichever folder hit it.
-	if dir, mine := workspaceFilter(r); mine {
+	dir, mine := workspaceFilter(r)
+	if mine {
 		for l, run := range live {
-			if run.dir != dir {
+			if run.dir != dir && !insideRepo(run.dir, dir) {
 				delete(live, l)
 			}
 		}
@@ -106,6 +113,9 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 			row.Task = run.task
 			row.Effort = string(run.effort)
 			row.ElapsedMs = now.Sub(run.started).Milliseconds()
+			if mine && run.origin != "" && filepath.Clean(run.origin) != dir {
+				row.From = filepath.Base(run.origin)
+			}
 			row.CoolingUntil = 0
 		}
 		rows = append(rows, row)
@@ -126,4 +136,12 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 		return rows[i].Leg < rows[j].Leg
 	})
 	writeJSON(w, 200, map[string]any{"workers": rows, "busy": len(live)})
+}
+
+// insideRepo: run dir is a worktree of the repository at dir. An isolated
+// worker runs in a temporary worktree; the panel of the repository it works
+// on still lists it.
+func insideRepo(runDir, dir string) bool {
+	return strings.Contains(filepath.Base(runDir), "captain-wt-") && captaincode.GitRoot(dir) != "" &&
+		gitCommonDir(runDir) == gitCommonDir(dir)
 }

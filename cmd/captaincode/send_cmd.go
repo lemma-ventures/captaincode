@@ -76,6 +76,23 @@ func cmdSend(args []string) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode == 202 {
+		// Held by the injection screen (brain_inbox.go): not delivered; the
+		// user reviews it. Exit 2 so a script can tell it from success.
+		var held struct {
+			ID       string `json:"id"`
+			Findings []struct {
+				Kind string `json:"kind"`
+			} `json:"findings"`
+		}
+		_ = json.Unmarshal(raw, &held)
+		kinds := make([]string, 0, len(held.Findings))
+		for _, f := range held.Findings {
+			kinds = append(kinds, f.Kind)
+		}
+		fmt.Fprintf(os.Stderr, "captain send: held %s for the user - it reads as possible prompt injection (%s). They review it with `captain inbox`.\n", held.ID, strings.Join(kinds, ", "))
+		os.Exit(2)
+	}
 	if resp.StatusCode != 200 {
 		// brainErrorText reads both error shapes: the inbox answers with
 		// writeErr's flat one, which left this line without its reason.

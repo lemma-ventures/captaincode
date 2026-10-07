@@ -1183,6 +1183,13 @@ privacy limits, token semantics, and routing comparisons.
 checkout for `captain upgrade`), `CAPTAIN_REPEAT_MAX` (default `100`),
 `CAPTAIN_AA_API_KEY` (the perf ranking's feed and `captain priors sync`).
 
+`CAPTAIN_INBOX_HOLD` (default on): a sent prompt the injection screen rates
+high is held for `captain inbox` instead of delivered; `0` delivers it with
+the finding named. `CAPTAIN_ISOLATE_MOVED` (default on): a worker moved into a
+repository that has work in flight runs in its own worktree and returns a
+patch; `0` lets it share the checkout. Both are described in
+[SECURITY.md](../SECURITY.md#messages-between-captains-and-prompt-injection).
+
 `CAPTAIN_RUN_BUDGET` (default `200`) is how many turns one typed prompt may
 start, shared by every `/repeat` round and chain step under it however they
 nest. `CAPTAIN_INBOX_QUOTA` (default `5`) is how many `captain send` prompts

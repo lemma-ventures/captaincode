@@ -52,6 +52,7 @@ type WorkerInfo = {
   coolingUntil?: number
   runs: number
   elapsed_ms?: number
+  from?: string // the TUI folder a run came from, when it is not this one
 }
 type Assignment = { leg: string; brief: string; team?: Assignment[] }
 type LastRoute = {
@@ -175,7 +176,16 @@ function View(props: { api: TuiPluginApi }) {
       // from rather than whichever TUI is open in the folder (brain_reply.go).
       const r = await fetch(brainURL(`/v1/inbox?session=${encodeURIComponent(cur.params.sessionID)}`), { signal: AbortSignal.timeout(3000) })
       if (!r.ok) return
-      const j = (await r.json()) as { items?: { id: string; text: string; leg?: string; from?: string; origin?: string }[] }
+      const j = (await r.json()) as {
+        items?: { id: string; text: string; leg?: string; from?: string; origin?: string }[]
+        held?: { id: string; origin?: string; findings?: { kind: string; severity: string }[] }[]
+      }
+      // A sent prompt the injection screen held is never submitted: say so,
+      // and how to review it (brain_inbox.go, captain inbox).
+      for (const h of j.held ?? []) {
+        const why = (h.findings ?? []).map((f) => f.kind).join(", ")
+        props.api.ui.toast({ title: "captain inbox held a message", message: `from ${h.origin || "an unnamed sender"}: possible prompt injection (${why}). Review: ! captain inbox`, variant: "warning", duration: 15000 } as any)
+      }
       for (const it of j.items ?? []) {
         if (!it?.text || inboxTaken.has(it.id)) continue
         inboxTaken.add(it.id)
@@ -372,7 +382,7 @@ function View(props: { api: TuiPluginApi }) {
     const n = () => legs().reduce((s, r) => s + (r.st?.N ?? 0), 0)
     const detail = () => {
       const b = busy()
-      if (b?.w) return `${fmtElapsed(b.w.elapsed_ms ?? 0)}${b.w.task ? " · " + b.w.task.slice(0, 26) : ""}`
+      if (b?.w) return `${fmtElapsed(b.w.elapsed_ms ?? 0)}${b.w.from ? " · from " + b.w.from : ""}${b.w.task ? " · " + b.w.task.slice(0, 26) : ""}`
       const c = cooling()
       if (c?.w) return statusLabel(c.w)
       return n() > 0 ? `n=${n()}` : ""

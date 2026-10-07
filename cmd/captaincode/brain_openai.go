@@ -391,7 +391,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if !round && !isTitleTurn(req.Messages) {
 		// A turn the user typed refills the folder's inbox quota; one the
 		// inbox handed to the TUI does not (brain_inbox.go).
-		b.inbox.noteTurn(req.ws.Dir, lastUserRaw(req.Messages))
+		if by, sent := b.inbox.noteTurn(req.ws.Dir, lastUserRaw(req.Messages)); sent {
+			req.ws.SentBy = by
+		}
 	}
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
 		b.markHandled(promptKey(req.ws.Dir, req.Messages, i))
@@ -467,6 +469,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// the TUI is open in; a task that names another repo runs there.
 	if !titleReq {
 		req.ws = b.followTask(req.ws, lastUserTurn(prompt))
+		// A worker moved into a repository with work in flight gets its own
+		// worktree; its changes come back as a patch (brain_isolate.go).
+		var land func()
+		req.ws, land = b.isolateMovedWorker(req.ws)
+		defer land()
 	}
 	// The request's effort (effort.go): what the user asked for, else the
 	// task's difficulty rating. A route below refines the rating; a title

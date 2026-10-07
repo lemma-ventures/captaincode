@@ -276,6 +276,7 @@ its budget is spent (§8). The control words:
 | `/openshell cannot be a step of a program` | `/openshell` in a program (§4.6) |
 | `until: ends its loop` | Something after a loop's `until:` command |
 | `/quality is a preference prefix, not a leg` | A lane joined to a workflow stage with `+` |
+| a sent prompt held (HTTP 202) | `captain send` text the injection screen rates high: review it with `captain inbox` ([SECURITY.md](../SECURITY.md#messages-between-captains-and-prompt-injection)) |
 | `captain send cannot start a loop or a program` | `captain send` with `/repeat`, a group, `\|\|` or `until:` (HTTP 403) |
 
 ## 8. Safety

@@ -42,11 +42,14 @@ type Workspace struct {
 	// Session is the TUI session that sent the request, when its sidebar
 	// said so ("" = unknown): a reply goes to that session first.
 	Session string
-	Effort  Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
-	Brains  []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
-	Steer   *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
-	Pool    Pool         // the turn's /oss and /deterministic constraints (pool.go)
-	Asked   []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
+	// SentBy names who sent this turn with `captain send` ("" = the user
+	// typed it): the worker prompt then says so (sentTurnContract).
+	SentBy string
+	Effort Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
+	Brains []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
+	Steer  *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
+	Pool   Pool         // the turn's /oss and /deterministic constraints (pool.go)
+	Asked  []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
 }
 
 // WithEffort is this workspace with the request's effort set.
