@@ -1183,10 +1183,13 @@ privacy limits, token semantics, and routing comparisons.
 checkout for `captain upgrade`), `CAPTAIN_REPEAT_MAX` (default `100`),
 `CAPTAIN_AA_API_KEY` (the perf ranking's feed and `captain priors sync`).
 
-`CAPTAIN_INBOX_JUDGE` (default on): a model reads every sent prompt the
-patterns pass or flag before it is delivered, and holds what it judges an
-injection; `CAPTAIN_INBOX_JUDGE_LEG` picks its leg (default: the compaction
-leg). `CAPTAIN_INBOX_HOLD` (default on): a sent prompt the injection screen rates
+`CAPTAIN_INBOX_JUDGE` (default on): a panel of two judges of different
+model families reads every sent prompt the patterns pass or flag before it
+is delivered, and holds it when any judge calls it an injection, when a
+judge fails its known-answer check, or when no judge answers (fail-closed);
+`0` delivers without it and marks each message "not screened by a model".
+`CAPTAIN_INBOX_JUDGE_LEG` picks the first judge (default: the compaction
+leg), `CAPTAIN_INBOX_JUDGE_LEGS` (comma-separated) the whole panel. `CAPTAIN_INBOX_HOLD` (default on): a sent prompt the injection screen rates
 high is held for `captain inbox` instead of delivered; `0` delivers it with
 the finding named. `CAPTAIN_ISOLATE_MOVED` (default on): a worker moved into a
 repository that has work in flight runs in its own worktree and returns a

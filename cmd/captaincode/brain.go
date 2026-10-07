@@ -443,7 +443,7 @@ type brain struct {
 	// chatFn stubs one repeat round in tests; nil → a real chatCompletions call.
 	chatFn func(w *captureWriter)
 	// judgeFn stubs the injection judge in tests (brain_inbox.go).
-	judgeFn func(message string) (captaincode.JudgeVerdict, bool)
+	judgeFn func(leg captaincode.Leg, message string) (captaincode.JudgeVerdict, bool)
 	// sessionPromptFn stubs reading an opencode session's prompt in tests
 	// (brain_sentgate.go).
 	sessionPromptFn func(session string) (string, error)

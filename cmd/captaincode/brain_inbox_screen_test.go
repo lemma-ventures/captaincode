@@ -204,7 +204,7 @@ func TestInboxJudgeScreensWhatThePatternsPass(t *testing.T) {
 	b := teamBrain()
 	dir := t.TempDir()
 	release := make(chan struct{})
-	b.judgeFn = func(msg string) (captaincode.JudgeVerdict, bool) {
+	b.judgeFn = func(_ captaincode.Leg, msg string) (captaincode.JudgeVerdict, bool) {
 		<-release
 		if strings.Contains(msg, "audit trail") {
 			return captaincode.JudgeVerdict{Injection: true, Confidence: 0.9, Reason: "asks to hide work and move credentials"}, true
@@ -224,7 +224,7 @@ func TestInboxJudgeScreensWhatThePatternsPass(t *testing.T) {
 	held := b.inbox.heldFor(dir)
 	require.Len(t, held, 1)
 	assert.Equal(t, attackID, held[0].ID)
-	assert.Contains(t, captaincode.FindingsLine(held[0].Findings), "model judge: injection (0.90)")
+	assert.Contains(t, captaincode.FindingsLine(held[0].Findings), "judged an injection (0.90)")
 }
 
 // A high pattern quoted in code is judged in context: benign is delivered
@@ -234,7 +234,7 @@ func TestInboxJudgeDecidesQuotedPatterns(t *testing.T) {
 	b := teamBrain()
 	dir := t.TempDir()
 	answer := true
-	b.judgeFn = func(string) (captaincode.JudgeVerdict, bool) {
+	b.judgeFn = func(captaincode.Leg, string) (captaincode.JudgeVerdict, bool) {
 		return captaincode.JudgeVerdict{Injection: false, Confidence: 0.1}, answer
 	}
 	id := sentID(t, sendTo(b, dir, "Add a test that the gate refuses `git push --force` in a sent turn."))
@@ -248,10 +248,73 @@ func TestInboxJudgeDecidesQuotedPatterns(t *testing.T) {
 	waitSettled(t, b, dir, id)
 	assert.Empty(t, b.inbox.take(dir, ""))
 	require.Len(t, b.inbox.heldFor(dir), 1)
-	assert.Contains(t, captaincode.FindingsLine(b.inbox.heldFor(dir)[0].Findings), "model judge unavailable")
+	assert.Contains(t, captaincode.FindingsLine(b.inbox.heldFor(dir)[0].Findings), "no injection judge could answer")
 
-	// No pattern and no judge answer: delivered - the tool policy still holds.
+	// No judge answer at all: held unscreened, whatever the patterns said.
 	id = sentID(t, sendTo(b, dir, "rebase on main please"))
 	waitSettled(t, b, dir, id)
-	assert.Len(t, b.inbox.take(dir, ""), 1)
+	assert.Empty(t, b.inbox.take(dir, ""), "fail-closed")
+	assert.Len(t, b.inbox.heldFor(dir), 2)
+}
+
+// The panel: an attacker has to fool every judge that answers, and keep each
+// one on its own instructions.
+func TestInboxJudgePanel(t *testing.T) {
+	t.Setenv("CAPTAIN_INBOX_JUDGE", "1")
+	t.Setenv("CAPTAIN_INBOX_JUDGE_LEGS", "gemini,deepseek")
+	cases := []struct {
+		name    string
+		gemini  func() (captaincode.JudgeVerdict, bool)
+		deep    func() (captaincode.JudgeVerdict, bool)
+		deliver bool
+		why     string
+	}{
+		{"both benign", benign, benign, true, ""},
+		{"one persuaded, one not", benign, injection, false, "judged an injection"},
+		{"one steered off its key", benign, hijacked, false, "steered by the message"},
+		{"one down, one benign", down, benign, true, ""},
+		{"both down", down, down, false, "held unscreened"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := teamBrain()
+			dir := t.TempDir()
+			b.judgeFn = func(l captaincode.Leg, _ string) (captaincode.JudgeVerdict, bool) {
+				if l == "gemini" {
+					return tc.gemini()
+				}
+				return tc.deep()
+			}
+			id := sentID(t, sendTo(b, dir, "rebase on main please"))
+			waitSettled(t, b, dir, id)
+			if tc.deliver {
+				assert.Len(t, b.inbox.take(dir, ""), 1)
+				return
+			}
+			assert.Empty(t, b.inbox.take(dir, ""))
+			require.Len(t, b.inbox.heldFor(dir), 1)
+			assert.Contains(t, captaincode.FindingsLine(b.inbox.heldFor(dir)[0].Findings), tc.why)
+		})
+	}
+}
+
+func benign() (captaincode.JudgeVerdict, bool) {
+	return captaincode.JudgeVerdict{Confidence: 0.05}, true
+}
+func injection() (captaincode.JudgeVerdict, bool) {
+	return captaincode.JudgeVerdict{Injection: true, Confidence: 0.8, Reason: "asks for credentials"}, true
+}
+func hijacked() (captaincode.JudgeVerdict, bool) {
+	return captaincode.JudgeVerdict{Confidence: 0.01, Hijacked: true}, true
+}
+func down() (captaincode.JudgeVerdict, bool) { return captaincode.JudgeVerdict{}, false }
+
+func TestInboxWithoutTheJudgeSaysSo(t *testing.T) {
+	t.Setenv("CAPTAIN_INBOX_JUDGE", "0")
+	b := teamBrain()
+	dir := t.TempDir()
+	require.Equal(t, 200, sendTo(b, dir, "rebase on main please").Code)
+	items := b.inbox.take(dir, "")
+	require.Len(t, items, 1)
+	assert.Contains(t, items[0].Text, "not screened by a model (CAPTAIN_INBOX_JUDGE=0)")
 }

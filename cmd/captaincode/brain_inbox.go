@@ -315,6 +315,15 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		judged := judgeEnabled()
+		if !judged {
+			it0 := strings.LastIndex(req.Text, "\n\n- sent by ")
+			note := " · not screened by a model (CAPTAIN_INBOX_JUDGE=0)"
+			if it0 >= 0 {
+				req.Text += note
+			} else {
+				req.Text += "\n\n- sent by " + orDash(origin) + note
+			}
+		}
 		it := b.inbox.pushScreening(dir, req.Text, leg, strings.TrimSpace(req.From), session, origin, judged)
 		if judged {
 			// A model reads what the patterns passed or only flagged
@@ -383,65 +392,73 @@ func (b *brain) inboxHeldHTTP(w http.ResponseWriter, r *http.Request) {
 // judgeEnabled: CAPTAIN_INBOX_JUDGE=0 turns the model's second opinion off.
 func judgeEnabled() bool { return os.Getenv("CAPTAIN_INBOX_JUDGE") != "0" }
 
-// judgeLeg is the leg that judges: CAPTAIN_INBOX_JUDGE_LEG, else the
-// compaction leg - fast, cheap, and not the leg most workers run on.
-func judgeLeg() captaincode.Leg {
+// judgeLegs is the panel: CAPTAIN_INBOX_JUDGE_LEGS (comma-separated), else
+// CAPTAIN_INBOX_JUDGE_LEG or the compaction leg, plus a leg of another
+// family (captaincode.JudgePanel).
+func judgeLegs() []captaincode.Leg {
+	first := compactLeg()
 	if l := strings.TrimSpace(os.Getenv("CAPTAIN_INBOX_JUDGE_LEG")); l != "" {
-		return captaincode.Leg(l)
+		first = captaincode.Leg(l)
 	}
-	return compactLeg()
+	return captaincode.JudgePanel(first, os.Getenv("CAPTAIN_INBOX_JUDGE_LEGS"))
 }
 
-// runJudge asks the judge about one message; ok is false when it could not
+// runJudge asks one judge about one message; ok is false when it could not
 // answer (an error, a timeout, or a reply that is not the verdict).
-func (b *brain) runJudge(message string) (captaincode.JudgeVerdict, bool) {
+func (b *brain) runJudge(leg captaincode.Leg, message string) (captaincode.JudgeVerdict, bool) {
 	if b.judgeFn != nil {
-		return b.judgeFn(message)
+		return b.judgeFn(leg, message)
 	}
+	key := captaincode.NewJudgeNonce()
 	d := captaincode.NewDispatcher(opencodePort)
 	d.Title = "injection-judge"
 	d.NoTools = true
 	d.Timeout = 45 * time.Second
-	res, err := d.Run(judgeLeg(), captaincode.JudgePrompt(message, captaincode.NewJudgeNonce()))
+	res, err := d.Run(leg, captaincode.JudgePrompt(message, captaincode.NewJudgeNonce(), key))
 	if err != nil {
 		return captaincode.JudgeVerdict{}, false
 	}
-	return captaincode.ParseJudgeVerdict(res.Text)
+	return captaincode.ParseJudgeVerdict(res.Text, key)
 }
 
-// judgeInbox settles a screening message: held when the judge says it is an
-// injection (or cannot answer about a high pattern quoted in code), else
-// released to the sidebar.
-func (b *brain) judgeInbox(dir, id, message string, findings []captaincode.Finding) {
-	v, ok := b.runJudge(message)
-	hold, why := false, ""
-	switch {
-	case ok && v.Injection && v.Confidence >= captaincode.JudgeBar:
-		hold, why = true, fmt.Sprintf("model judge: injection (%.2f) - %s", v.Confidence, v.Reason)
-	case !ok && captaincode.HasQuotedHigh(findings):
-		hold, why = true, "model judge unavailable, and a high pattern sits in quoted code"
+// judgePanel asks every judge at once and combines their answers
+// (captaincode.DecideJudges: fail-closed).
+func (b *brain) judgePanel(message string) captaincode.JudgeOutcome {
+	legs := judgeLegs()
+	verdicts := make([]captaincode.JudgeVerdict, len(legs))
+	answered := make([]bool, len(legs))
+	var wg sync.WaitGroup
+	for i, l := range legs {
+		wg.Add(1)
+		go func(i int, l captaincode.Leg) {
+			defer wg.Done()
+			verdicts[i], answered[i] = b.runJudge(l, message)
+		}(i, l)
 	}
-	it, found := b.inbox.settle(dir, id, hold)
+	wg.Wait()
+	return captaincode.DecideJudges(verdicts, answered)
+}
+
+// judgeInbox settles a screening message: held when the panel says so - an
+// injection vote, a judge steered by the message, or no judge able to answer
+// - else released to the sidebar.
+func (b *brain) judgeInbox(dir, id, message string, findings []captaincode.Finding) {
+	o := b.judgePanel(message)
+	it, found := b.inbox.settle(dir, id, o.Hold)
 	if !found {
 		return
 	}
-	if hold {
-		it.Findings = append(it.Findings, captaincode.Finding{Kind: "model judge", Severity: captaincode.SevHigh, Level: "high", Excerpt: why})
+	if o.Hold {
+		it.Findings = append(it.Findings, captaincode.Finding{Kind: "model judge", Severity: captaincode.SevHigh, Level: "high", Excerpt: o.Why})
 		b.inbox.hold(it)
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "held", From: it.Origin, Dir: dir, Findings: it.Findings, Detail: promptPeek(message)})
-		fmt.Printf("captain brain: inbox - HELD %s after screening (%s)\n", id, why)
+		fmt.Printf("captain brain: inbox - HELD %s after screening (%s)\n", id, o.Why)
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: "held",
-			Text: "held a sent prompt (" + why + ") - `captain inbox` to review"})
+			Text: "held a sent prompt (" + o.Why + ") - `captain inbox` to review"})
 		return
 	}
-	verdict := "judge could not answer"
-	if ok {
-		verdict = fmt.Sprintf("judged benign (%.2f)", 1-v.Confidence)
-		if v.Injection {
-			verdict = fmt.Sprintf("judge unsure (%.2f), below the bar", v.Confidence)
-		}
-	}
-	captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "screened", From: it.Origin, Dir: dir, Findings: findings, Detail: verdict})
+	captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "screened", From: it.Origin, Dir: dir, Findings: findings,
+		Detail: fmt.Sprintf("judged benign by %d of %d judges", o.Answered, o.Asked)})
 }
 
 // settle ends a message's screening: hold removes it from the queue and

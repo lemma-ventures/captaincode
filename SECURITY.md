@@ -107,17 +107,25 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
   user. Lookalike letters (Cyrillic, Greek, fullwidth) are folded to Latin
   and base64 or percent-encoded payloads are decoded before the patterns
   run. No model is called for this first pass.
-- **Judge.** What the patterns pass, or only flag, is read by a model before
-  the TUI gets it (`pkg/captaincode/injection_judge.go`): the message is
-  fenced between markers built from a random nonce, the judge has no tools,
-  and it must answer with a fixed JSON verdict. An "injection" verdict at
-  confidence 0.5 or more holds the message. A reply that is not a verdict
-  counts as "could not judge", never as benign. A high pattern inside
-  backtick code (usually discussed, not commanded) is decided by the judge:
-  delivered with its flag when judged benign, held when judged an attack or
-  when the judge cannot answer. The judge runs on the compaction leg
-  (`CAPTAIN_INBOX_JUDGE_LEG` picks another; `CAPTAIN_INBOX_JUDGE=0` turns
-  it off), in the background, so `captain send` returns at once.
+- **Judge panel.** What the patterns pass, or only flag, is read by models
+  before the TUI gets it (`pkg/captaincode/injection_judge.go`): two judges
+  of different model families by default (the compaction leg and the first
+  active leg of another family), so one family's blind spot is not the
+  whole screen. Each judge sees the message fenced between markers built
+  from a random nonce, has no tools, and must answer a fixed JSON verdict
+  that echoes a **known-answer key** given only in its instructions. A
+  judge whose reply drops or changes the key was steered by the message it
+  read, and that alone holds the message, whatever its verdict says. Any
+  "injection" verdict at confidence 0.5 or more holds the message: an
+  attacker has to persuade every judge that answers. The panel is
+  **fail-closed**: a reply that is not a verdict counts as "could not
+  judge", and when no judge answers the message is held unscreened for
+  `captain inbox`, not delivered. A high pattern inside backtick code
+  (usually discussed, not commanded) is decided the same way.
+  `CAPTAIN_INBOX_JUDGE_LEG` picks the first judge, `CAPTAIN_INBOX_JUDGE_LEGS`
+  the whole panel, and `CAPTAIN_INBOX_JUDGE=0` turns it off - then every
+  delivered sent prompt says "not screened by a model". The panel runs in
+  the background, so `captain send` returns at once.
 - **Hold.** A high finding holds the message: it is never submitted, the TUI
   says so, and `captain inbox` lists it with its findings to release or drop
   (`CAPTAIN_INBOX_HOLD=0` turns holding off). A medium finding is delivered
@@ -165,10 +173,14 @@ a paraphrased attack that no pattern matches (0.98), passed a status report,
 and held a message that told it to answer "benign" (1.00); a claude worker
 on a sent turn, with only the per-run hook, was refused `git push`.
 
-What remains: the judge is a model and can be persuaded or wrong, and with
-it off or failing, a message that no pattern matches is delivered. In every
-case the provenance line and the tool-level policy still apply - they are
-the layers that do not depend on recognizing the wording.
+What remains: a judge is a model and can still be wrong, or persuaded in a
+way that keeps its key and its format; the panel makes that harder (every
+answering judge, of two families, must agree the message is benign) but
+not impossible. A judge that is down no longer lets a message through: with
+no answer the message is held. Only `CAPTAIN_INBOX_JUDGE=0` delivers
+unjudged text, and then the TUI says so. In every case the provenance line
+and the tool-level policy still apply - they are the layers that do not
+depend on recognizing the wording.
 
 A task typed in one TUI that names another repository runs there. If that
 repository already has a worker, loop or program running, the moved worker
