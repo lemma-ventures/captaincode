@@ -150,7 +150,7 @@ var defaultLegSpecs = []LegSpec{
 	{ID: LegMimo, Transport: TransportOpencode, Provider: "openrouter", Model: "xiaomi/mimo-v2.6-pro",
 		PriceIn: 0.435, PriceOut: 0.87, Ctx: 1050000, Open: boolp(true), Prior: 7.0,
 		Display: "MiMo V2.6 Pro (captain · opencode)",
-		Note: "Xiaomi MiMo V2.6 Pro, open weights, 1M context via OpenRouter ($0.435/M in); BenchLM coding #12 (63.9, 6 Oct, partial coverage 4/613 categories); Artificial Analysis coding index absent - cold prior 7.0 until a scorecard lands or 3 local passes clear"},
+		Note:    "Xiaomi MiMo V2.6 Pro, open weights, 1M context via OpenRouter ($0.435/M in); BenchLM coding #12 (63.9, 6 Oct, partial coverage 4/613 categories); Artificial Analysis coding index absent - cold prior 7.0 until a scorecard lands or 3 local passes clear"},
 	// Kolibri-1 (2026-10-07): Aleph Alpha Kolibri-1, Apache 2.0 license, ~78B
 	// total / 3B active per token, 128K context. Local-only: no hosted API
 	// exists on OpenRouter. Marked as OpenRouter transport with a local note;
@@ -158,7 +158,7 @@ var defaultLegSpecs = []LegSpec{
 	{ID: LegKolibri, Transport: TransportOpencode, Provider: "openrouter", Model: "aleph-alpha/kolibri-1",
 		Ctx: 131072, Open: boolp(true), Prior: 7.0, Vision: true,
 		Display: "Kolibri-1 (captain · opencode)",
-		Note: "Aleph Alpha Kolibri-1, Apache 2.0, ~78B/3B active, 128K context, local-only via ollama/llama.cpp (no hosted endpoint on OpenRouter); vision-capable; cold prior 7.0 until a scorecard lands or 3 local passes clear"},
+		Note:    "Aleph Alpha Kolibri-1, Apache 2.0, ~78B/3B active, 128K context, local-only via ollama/llama.cpp (no hosted endpoint on OpenRouter); vision-capable; cold prior 7.0 until a scorecard lands or 3 local passes clear"},
 	{ID: LegGLM, Transport: TransportOpencode, Provider: "nim", Model: "z-ai/glm-5.3", AA: "glm-5-3",
 		Ctx: 1310720, Prior: 8.2, Open: boolp(true), Display: "GLM-5.3 (captain · NIM)",
 		Tiers: map[Tier]string{TierCheap: "z-ai/glm-5.3-flash"},

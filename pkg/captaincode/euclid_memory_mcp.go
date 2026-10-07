@@ -78,7 +78,6 @@ func memoryMCPEnabled() bool {
 	return os.Getenv("CAPTAIN_EUCLID_MEMORY_CONFIG") != "" || os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG") != ""
 }
 
-
 func memoryMCPConfig(brain EuclidBrain) (memoryConn, error) {
 	if path := os.Getenv("CAPTAIN_EUCLID_MEMORY_CONFIG"); path != "" {
 		data, err := os.ReadFile(path)
@@ -108,42 +107,62 @@ func memoryMCPConfig(brain EuclidBrain) (memoryConn, error) {
 	if config == "" {
 		return memoryConn{}, fmt.Errorf("memory MCP is not configured")
 	}
-	env, err := brainServerEnv(brain)
+	cfg, err := mcpclient.ReadConfig(config)
 	if err != nil {
 		return memoryConn{}, err
 	}
-	return memoryConn{Config: config, Env: env}, nil
-}
-
-// brainServerEnv points the one shared Euclid server config at this brain.
-// Without it the server serves the project brain of whatever folder it was
-// started in, and every other brain - main, the other repositories, a
-// developer's own - failed its identity check ("bound to a different
-// brain") on every turn, so workers started without their memory.
-func brainServerEnv(brain EuclidBrain) (map[string]string, error) {
+	// One shared server config serves every brain: captain points it at each
+	// one. A config that pins its brain in args would answer for that brain
+	// only, and every other brain failed its identity check ("bound to a
+	// different brain") on every turn, so workers started without memory.
+	for _, arg := range cfg.Args {
+		if arg == "--root" || strings.HasPrefix(arg, "--root=") ||
+			arg == "--scope" || strings.HasPrefix(arg, "--scope=") ||
+			arg == "--handle" || strings.HasPrefix(arg, "--handle=") ||
+			arg == "--alias" || strings.HasPrefix(arg, "--alias=") {
+			return memoryConn{}, fmt.Errorf("configuration args contain %s; use CAPTAIN_EUCLID_MEMORY_CONFIG for pinned servers", arg)
+		}
+	}
+	overlay := make(map[string]string)
+	for k, v := range cfg.Env {
+		overlay[k] = v
+	}
 	switch brain.Kind {
 	case "main":
-		return map[string]string{"EUCLID_BRAIN_SCOPE": "main", "EUCLID_ROOT": brain.Root}, nil
-	case "repo", "linked":
-		return map[string]string{"EUCLID_BRAIN_SCOPE": "shared", "EUCLID_ROOT": repoOfBrain(brain.Root)}, nil
-	case "developer", "developer-other":
-		// <repo>/.euclid/developers/<handle>
-		devs := filepath.Dir(brain.Root)
-		if filepath.Base(devs) != "developers" || filepath.Base(filepath.Dir(devs)) != ".euclid" {
-			return nil, fmt.Errorf("developer brain %s is not under .euclid/developers", brain.Root)
+		overlay["EUCLID_BRAIN_SCOPE"] = "main"
+		overlay["EUCLID_ROOT"] = brain.Root
+	case "repo", "named", "linked":
+		repoRoot := filepath.Dir(brain.Root)
+		if filepath.Base(brain.Root) != ".euclid" {
+			if r := RepoRoot(brain.Root); r != "" {
+				repoRoot = r
+			}
 		}
-		return map[string]string{"EUCLID_BRAIN_SCOPE": "developer", "EUCLID_ROOT": filepath.Dir(filepath.Dir(devs)),
-			"EUCLID_HANDLE": filepath.Base(brain.Root)}, nil
+		overlay["EUCLID_BRAIN_SCOPE"] = "shared"
+		overlay["EUCLID_ROOT"] = repoRoot
+	case "developer", "developer-other":
+		handle := filepath.Base(brain.Root)
+		repoRoot := filepath.Dir(brain.Root)
+		if filepath.Base(repoRoot) == "developers" {
+			dotEuclid := filepath.Dir(repoRoot)
+			if filepath.Base(dotEuclid) == ".euclid" {
+				repoRoot = filepath.Dir(dotEuclid)
+			}
+		} else if r := RepoRoot(brain.Root); r != "" {
+			repoRoot = r
+		}
+		overlay["EUCLID_BRAIN_SCOPE"] = "developer"
+		overlay["EUCLID_ROOT"] = repoRoot
+		overlay["EUCLID_HANDLE"] = handle
+	default:
+		return memoryConn{}, fmt.Errorf("unknown brain kind %s for %s", brain.Kind, brain.Label)
 	}
-	return nil, fmt.Errorf("no Euclid server scope for brain kind %q (%s)", brain.Kind, brain.Label)
-}
-
-// repoOfBrain is the repository a <repo>/.euclid brain belongs to.
-func repoOfBrain(root string) string {
-	if filepath.Base(root) == ".euclid" {
-		return filepath.Dir(root)
+	if brain.Writable {
+		overlay["EUCLID_ALLOW_WRITES"] = "1"
+	} else {
+		overlay["EUCLID_ALLOW_WRITES"] = "0"
 	}
-	return root
+	return memoryConn{Config: config, Env: overlay}, nil
 }
 
 func memoryCallWithResult(ctx context.Context, conn memoryConn, tool string, args any, out any) (bool, error) {
@@ -178,12 +197,8 @@ func memoryCall(ctx context.Context, conn memoryConn, tool string, args any, out
 }
 
 func memoryConnection(brain EuclidBrain, write bool) (memoryConn, error) {
-	config, err := memoryMCPConfig(brain)
-	if err != nil {
-		return memoryConn{}, err
-	}
-	if config.Env != nil {
-		config.Env["EUCLID_ALLOW_WRITES"] = map[bool]string{true: "1", false: "0"}[write]
+	if write && !brain.Writable {
+		return memoryConn{}, fmt.Errorf("brain is read-only")
 	}
 	conn, err := memoryMCPConfig(brain)
 	if err != nil {
@@ -219,7 +234,7 @@ func memoryConnection(brain EuclidBrain, write bool) (memoryConn, error) {
 		Scope    string `json:"scope"`
 		Writable bool   `json:"writable"`
 	}
-	if err := memoryCall(context.Background(), config, "euclid_status", map[string]any{}, &status); err != nil {
+	if err := memoryCall(context.Background(), conn, "euclid_status", map[string]any{}, &status); err != nil {
 		return memoryConn{}, err
 	}
 	statusBrain := filepath.Clean(status.Brain)
@@ -235,8 +250,11 @@ func memoryConnection(brain EuclidBrain, write bool) (memoryConn, error) {
 	if !match {
 		return memoryConn{}, fmt.Errorf("MCP connection is bound to a different brain")
 	}
-	if write && (!brain.Writable || !status.Writable) {
-		return memoryConn{}, fmt.Errorf("MCP brain is read-only")
+	if write != status.Writable {
+		if write {
+			return memoryConn{}, fmt.Errorf("MCP brain is read-only")
+		}
+		return memoryConn{}, fmt.Errorf("MCP server is writable for read connection")
 	}
 
 	connCacheMu.Lock()
@@ -308,7 +326,7 @@ func recordMemoryEvent(brain EuclidBrain, event memoryEvent) (string, error) {
 		if connErr != nil {
 			return false, connErr
 		}
-		return false, memoryCall(context.Background(), conn, "euclid_record_event", map[string]any{"event": ev}, nil)
+		return memoryCallWithResult(context.Background(), conn, "euclid_record_event", map[string]any{"event": ev}, nil)
 	}
 
 	queuePath := filepath.Join(journalDir, ".mcp-pending.jsonl")

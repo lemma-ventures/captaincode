@@ -62,7 +62,7 @@ func TestInboxRefusesPromptsThatStartALoop(t *testing.T) {
 		"/oss /repeat 5 keep polling",
 		"/team audit it > /repeat 3 /quality fix it",
 	} {
-		assert.Equal(t, 400, sendTo(b, dir, text).Code, text)
+		assert.Equal(t, 403, sendTo(b, dir, text).Code, text) // one loop check, captaincode.StartsLoop
 	}
 	assert.Equal(t, 200, sendTo(b, dir, "/grok fixed the /repeat watch bug; tests pass").Code,
 		"a report that mentions /repeat is not a loop")
