@@ -131,32 +131,47 @@ func (p *progressFeed) heartbeat() {
 		return
 	case <-time.After(progressFirstDelay):
 	}
-	t := time.NewTicker(progressEvery)
-	defer t.Stop()
+	// While nothing new happens the beat backs off - 1, 2, 4, 8 minutes,
+	// then every 10 - and the last note is said once, not again on every
+	// beat (2026-10-08: eight lines of "… 38 tool calls · Nm ago: Combined
+	// three probe JSON files" in a row).
+	wait := progressEvery
+	said := ""
 	for {
 		select {
 		case <-p.stop:
 			return
-		case <-t.C:
-			if time.Since(time.Unix(0, p.last.Load())) < progressEvery {
-				continue // output is flowing - the user can see it already
-			}
-			p.last.Store(time.Now().UnixNano())
-			// Say what it is waiting on, not only that it waits.
-			p.nmu.Lock()
-			last, at, tools := p.lastNote, p.noteAt, p.tools
-			p.nmu.Unlock()
-			line := fmt.Sprintf("… %s still working (%s)", p.currentLabel(), time.Since(p.start).Round(time.Minute))
-			if tools > 0 {
-				line += fmt.Sprintf(" · %d tool calls", tools)
-			}
-			if last != "" {
-				if len(last) > 90 {
-					last = last[:90] + "…"
-				}
-				line += fmt.Sprintf(" · %s ago: %s", time.Since(at).Round(time.Minute), last)
-			}
-			p.write(line + "\n")
+		case <-time.After(wait):
 		}
+		if time.Since(time.Unix(0, p.last.Load())) < wait {
+			wait = progressEvery // output is flowing - the user can see it already
+			continue
+		}
+		p.last.Store(time.Now().UnixNano())
+		p.nmu.Lock()
+		last, at, tools := p.lastNote, p.noteAt, p.tools
+		p.nmu.Unlock()
+		line := fmt.Sprintf("… %s still working (%s)", p.currentLabel(), time.Since(p.start).Round(time.Minute))
+		if tools > 0 {
+			line += fmt.Sprintf(" · %d tool calls", tools)
+		}
+		switch {
+		case last != "" && last != said:
+			if len(last) > 90 {
+				last = last[:90] + "…"
+			}
+			line += fmt.Sprintf(" · %s ago: %s", time.Since(at).Round(time.Minute), last)
+			said, wait = p.lastNote, progressEvery
+		case last != "":
+			line += fmt.Sprintf(" · quiet %s", time.Since(at).Round(time.Minute))
+			if wait *= 2; wait > 10*time.Minute {
+				wait = 10 * time.Minute
+			}
+		default:
+			if wait *= 2; wait > 10*time.Minute {
+				wait = 10 * time.Minute
+			}
+		}
+		p.write(line + "\n")
 	}
 }

@@ -94,6 +94,27 @@ func TestQuietWorkerStillShowsItIsAlive(t *testing.T) {
 	assert.GreaterOrEqual(t, strings.Count(reasoning, "working"), 2, "the heartbeat repeats while the run is quiet")
 }
 
+// A quiet run names its last step once, then says only how long it has been
+// quiet, and beats less often (2026-10-08: the same note eight times).
+func TestHeartbeatSaysTheLastNoteOnceAndBacksOff(t *testing.T) {
+	fastProgress(t)
+	b := teamBrain()
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		onStatus("≡ Combined three probe JSON files")
+		time.Sleep(400 * time.Millisecond)
+		onDelta("done")
+		return leg, captaincode.Result{Text: "done", Streamed: true}, nil
+	}
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, streamReq("claude"))
+	_, reasoning := sseDeltas(rec.Body.String())
+	assert.LessOrEqual(t, strings.Count(reasoning, "Combined three probe JSON files"), 2, "the note itself, and at most one beat naming it")
+	assert.Contains(t, reasoning, "quiet")
+	beats := strings.Count(reasoning, "still working")
+	assert.GreaterOrEqual(t, beats, 2)
+	assert.LessOrEqual(t, beats, 5, "backs off: 400ms of quiet at a 20ms beat would be ~19 lines")
+}
+
 // Progress writes the SSE header, after which a failure can only be surfaced
 // inline. Worker auth/quota/outage failures land in the first seconds (claude
 // "Not logged in" in 0.7s, 2026-07-29), so nothing may be emitted before
