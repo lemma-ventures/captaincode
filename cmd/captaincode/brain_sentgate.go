@@ -20,14 +20,20 @@ import (
 
 type sentSessions struct {
 	mu   sync.Mutex
-	seen map[string]bool
+	seen map[string]sessionFacts
+}
+
+// sessionFacts is what a worker session's prompt says about its turn: sent
+// by another agent, a release asked for, a checkout already dirty.
+type sessionFacts struct {
+	sent, mayPublish, dirty bool
 }
 
 var sentSessionCache = &sentSessions{}
 
-// sessionIsSent reports whether an opencode session answers a sent turn,
-// reading its first user message from the serve once. fetch is a test seam.
-func (s *sentSessions) isSent(session string, fetch func(string) (string, error)) bool {
+// facts reads an opencode session's worker prompt once, from the serve.
+// fetch is a test seam.
+func (s *sentSessions) facts(session string, fetch func(string) (string, error)) sessionFacts {
 	s.mu.Lock()
 	v, ok := s.seen[session]
 	s.mu.Unlock()
@@ -39,19 +45,23 @@ func (s *sentSessions) isSent(session string, fetch func(string) (string, error)
 		// The serve did not answer: no evidence the turn was typed by the
 		// user either. Fail closed for this call, and ask again next time.
 		fmt.Printf("captain brain: sent-turn gate - could not read session %s (%v); applying the sent-turn policy to this call\n", session, err)
-		return true
+		return sessionFacts{sent: true, dirty: true}
 	}
-	v = captaincode.IsSentTurn(prompt)
+	v = sessionFacts{sent: captaincode.IsSentTurn(prompt),
+		mayPublish: strings.Contains(prompt, captaincode.PublishGrantMarker),
+		dirty:      strings.Contains(prompt, captaincode.DirtyCheckoutMarker)}
 	s.mu.Lock()
-	if s.seen == nil {
-		s.seen = map[string]bool{}
-	}
-	if len(s.seen) > 5000 {
-		s.seen = map[string]bool{}
+	if s.seen == nil || len(s.seen) > 5000 {
+		s.seen = map[string]sessionFacts{}
 	}
 	s.seen[session] = v
 	s.mu.Unlock()
 	return v
+}
+
+// isSent reports whether an opencode session answers a sent turn.
+func (s *sentSessions) isSent(session string, fetch func(string) (string, error)) bool {
+	return s.facts(session, fetch).sent
 }
 
 // firstUserPrompt reads the first user message of an opencode session.
@@ -126,13 +136,28 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 	if b.sessionPromptFn != nil {
 		fetch = b.sessionPromptFn
 	}
-	if req.Session == "" || !sentSessionCache.isSent(req.Session, fetch) {
+	if req.Session == "" {
 		writeJSON(w, 200, map[string]any{"allow": true})
 		return
 	}
+	f := sentSessionCache.facts(req.Session, fetch)
 	a := captaincode.GateAction{Tool: strings.ToLower(req.Tool),
 		Command: firstString(req.Args, "command", "cmd", "url", "script"),
 		Path:    firstString(req.Args, "filePath", "file_path", "path"), Cwd: req.Cwd, SessionID: req.Session}
+	if !f.sent {
+		// Every worker: no unrequested release, no bulk staging over other
+		// sessions' changes (pkg workerguard.go).
+		if a.Tool == "bash" || a.Tool == "shell" {
+			if why := captaincode.WorkerGuardRefusal(a.Command, f.mayPublish, f.dirty); why != "" {
+				captaincode.AppendConduct(captaincode.ConductEvent{Rule: why, Command: a.Command, Dir: a.Cwd, Session: req.Session})
+				fmt.Printf("captain brain: worker guard - session %s refused: %s\n", req.Session, why)
+				writeJSON(w, 200, map[string]any{"allow": false, "reason": why})
+				return
+			}
+		}
+		writeJSON(w, 200, map[string]any{"allow": true})
+		return
+	}
 	dirFn := sessionDirectory
 	if b.sessionDirFn != nil {
 		dirFn = b.sessionDirFn

@@ -45,11 +45,16 @@ type Workspace struct {
 	// SentBy names who sent this turn with `captain send` ("" = the user
 	// typed it): the worker prompt then says so (sentTurnContract).
 	SentBy string
-	Effort Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
-	Brains []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
-	Steer  *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
-	Pool   Pool         // the turn's /oss and /deterministic constraints (pool.go)
-	Asked  []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
+	// MayPublish: the user's turn asked for a release or a publish;
+	// DirtyBefore: the folder had uncommitted changes when the turn started
+	// (workerguard.go).
+	MayPublish  bool
+	DirtyBefore bool
+	Effort      Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
+	Brains      []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
+	Steer       *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
+	Pool        Pool         // the turn's /oss and /deterministic constraints (pool.go)
+	Asked       []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
 }
 
 // WithEffort is this workspace with the request's effort set.
@@ -2339,6 +2344,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	// screening can judge an action against the work it was given rather than
 	// against the working directory alone (gate.go).
 	fenv = append(fenv, GateWorkerEnv(LegClaude, task, steer.Task())...)
+	fenv = append(fenv, WorkerGuardEnv(task)...) // no unrequested tags, releases or bulk staging (workerguard.go)
 	if IsSentTurn(task) {
 		fenv = append(fenv, SentTurnEnv+"=1", SentDirEnv+"="+dir) // the PreToolUse hook applies the sent-turn policy (sentpolicy.go)
 	}
@@ -2600,6 +2606,7 @@ func runCursorModel(dir, task, model string) (string, error) {
 	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, perms...)...)
 	cmd.Stdin = strings.NewReader(task)
 	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), GateWorkerEnv(LegCursor, task, "")...), WorkerGuardEnv(task)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -2658,9 +2665,14 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, cursorPermissionArgs()...)...)
+	perms := cursorPermissionArgs()
+	if IsSentTurn(task) {
+		perms = []string{"--trust", "--sandbox", "enabled"} // as runCursorModel: no --force on a sent turn
+	}
+	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, perms...)...)
 	cmd.Stdin = strings.NewReader(task)
 	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), GateWorkerEnv(LegCursor, task, steer.Task())...), WorkerGuardEnv(task)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()

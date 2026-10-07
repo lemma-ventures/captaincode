@@ -78,6 +78,10 @@ type LegSpec struct {
 	// quantization. A band left out uses quality's; no entry leaves
 	// OpenRouter's default, price-weighted across every host, 4-bit included.
 	Hosts map[Tier]map[string]any `json:"hosts,omitempty"`
+	// MaxClass caps the work routing gives this leg ("trivial" or "medium"):
+	// a task classed above it never reaches the leg unless the user forces
+	// it by name (ClassCap).
+	MaxClass Class `json:"max_class,omitempty"`
 }
 
 // EnvPrefix returns the env prefix for this leg's provider/model overrides.
@@ -343,6 +347,9 @@ func validateSpec(s LegSpec) error {
 	if id == "" || strings.ContainsAny(id, " /\\\t\n") || strings.ToLower(id) != id {
 		return errors.New("id must be a lowercase word (letters, digits, '-')")
 	}
+	if s.MaxClass != "" && s.MaxClass != ClassTrivial && s.MaxClass != ClassMedium {
+		return fmt.Errorf("max_class is %q or %q", ClassTrivial, ClassMedium)
+	}
 	if reservedLegName(id) {
 		return fmt.Errorf("/%s is a reserved word of the command language (docs/LANGUAGE.md §9)", id)
 	}
@@ -433,6 +440,9 @@ func mergeSpec(base, o LegSpec) LegSpec {
 	}
 	if len(o.Hosts) > 0 {
 		out.Hosts = o.Hosts
+	}
+	if o.MaxClass != "" {
+		out.MaxClass = o.MaxClass
 	}
 	if len(o.Tiers) > 0 {
 		merged := map[Tier]string{}
@@ -616,4 +626,24 @@ func RemoveLeg(path string, id Leg) error {
 func init() {
 	resetRegistry()
 	applyRegistry()
+}
+
+// classRank orders classes; an unknown class ranks as high.
+func classRank(c Class) int {
+	switch c {
+	case ClassTrivial:
+		return 0
+	case ClassMedium:
+		return 1
+	}
+	return 2
+}
+
+// ClassCap says why routing may not give a task of class c to leg l, or "".
+func ClassCap(l Leg, c Class) string {
+	sp, ok := specs[l]
+	if !ok || sp.MaxClass == "" || classRank(c) <= classRank(sp.MaxClass) {
+		return ""
+	}
+	return fmt.Sprintf("capped at %s work (legs.json max_class)", sp.MaxClass)
 }

@@ -247,6 +247,7 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 	defer detachStop()
 	cmd := exec.CommandContext(ctx, "codex", codexCLICmdArgs(dir, task, effort)...)
 	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), GateWorkerEnv(LegCodexCLI, task, steer.Task())...), WorkerGuardEnv(task)...) // workerguard.go
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()

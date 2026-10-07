@@ -1074,6 +1074,19 @@ Cheap work goes to the cheapest host, 4-bit included. `require_parameters`
 keeps out hosts that do not support tool calls. A leg that runs one model in
 every band (`kimi`) is routed by its quality hosts.
 
+An overlay entry can also cap the work routing gives a leg with
+`"max_class"` (`"trivial"` or `"medium"`). A task classed above the cap never
+reaches that leg, in the value ranking or a lane, unless you force the leg by
+name:
+
+```json
+{"id": "ds4-flash", "max_class": "medium"}
+```
+
+`CAPTAIN_AUDIT_EVERY` (default `30m`, `0` turns it off) is how often the
+brain audits what workers did and penalizes misconduct (SECURITY.md, the
+worker guard and the audit). `captain audit --since 24h` runs a pass now.
+
 `CAPTAIN_CHEAP_TIER=0` keeps every leg on its own model at low effort.
 `captain upgrade --check` prints the resolved table.
 

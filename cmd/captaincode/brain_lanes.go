@@ -174,6 +174,9 @@ func (b *brain) pickLane(lane captaincode.Lane, task string, order []captaincode
 			d = captaincode.TriageTask(task).Domain
 		}
 		for _, l := range withoutFrontierClass(order) {
+			if captaincode.ClassCap(l, class) != "" {
+				continue
+			}
 			cands = append(cands, captaincode.LaneCandidate{Leg: l, Score: captaincode.BlendedQualityFor(l, stats[l], d)})
 		}
 		cands = reliableLane(cands, stats)

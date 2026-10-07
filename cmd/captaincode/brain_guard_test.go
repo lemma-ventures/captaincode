@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 	"github.com/stretchr/testify/assert"
@@ -176,4 +177,52 @@ func TestHandoffAndSharedContextAreScreened(t *testing.T) {
 	require.Len(t, lines, 2, "the high line is dropped")
 	assert.Equal(t, "decided: the cache key includes the leg", lines[0])
 	assert.True(t, strings.HasPrefix(lines[1], "[flagged: hidden from the user]"))
+}
+
+// Every opencode worker: no unrequested release, no bulk staging over a dirty
+// checkout; each refusal is a conduct line for the audit.
+func TestGateAppliesTheWorkerGuardToEverySession(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := teamBrain()
+	sentSessionCache = &sentSessions{}
+	prompts := map[string]string{
+		"plain":   "[user]\nbuild it" + captaincode.GuardContract(false, false),
+		"granted": "[user]\nrelease v2" + captaincode.GuardContract(true, false),
+		"dirty":   "[user]\nfix it" + captaincode.GuardContract(false, true),
+	}
+	b.sessionPromptFn = func(s string) (string, error) { return prompts[s], nil }
+	ask := func(session, command string) bool {
+		body, _ := json.Marshal(map[string]any{"session": session, "tool": "bash", "args": map[string]any{"command": command}, "cwd": "/w"})
+		rec := httptest.NewRecorder()
+		b.gateSentHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/gate/sent", bytes.NewReader(body)))
+		var out struct {
+			Allow bool `json:"allow"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+		return out.Allow
+	}
+	assert.False(t, ask("plain", "gh release create v0.3.11"))
+	assert.False(t, ask("plain", "git tag -a v1 -m x && git push origin v1"))
+	assert.True(t, ask("plain", "git push origin main"))
+	assert.True(t, ask("plain", "git add -A"), "a clean checkout")
+	assert.True(t, ask("granted", "gh release create v2"))
+	assert.False(t, ask("dirty", "git add -A"))
+	assert.True(t, ask("dirty", "git add pkg/a.go"))
+	events := captaincode.ReadConduct(time.Time{})
+	require.Len(t, events, 3)
+	assert.Equal(t, "plain", events[0].Session)
+}
+
+// The brain decides the guard's facts from the user's own turn.
+func TestWorkerPromptCarriesThePublishDecision(t *testing.T) {
+	b, prompts, _ := compactBrain(t)
+	for _, turn := range []string{"build it", "release v0.4.0 when the tests pass"} {
+		rec := httptest.NewRecorder()
+		b.chatCompletions(rec, wfReq(false, turn))
+		require.Equal(t, 200, rec.Code)
+	}
+	require.Len(t, *prompts, 2)
+	assert.Contains(t, (*prompts)[0], "Publishing: not requested")
+	assert.NotContains(t, (*prompts)[0], captaincode.PublishGrantMarker)
+	assert.Contains(t, (*prompts)[1], captaincode.PublishGrantMarker)
 }

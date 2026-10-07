@@ -178,6 +178,9 @@ func ValueRank(c Class, d Domain, candidates []Leg, stats map[Leg]LegStats, estT
 		if q < tau {
 			row.Excluded = fmt.Sprintf("quality %.1f below the %s good-enough bar %.1f", q, c, tau)
 		}
+		if why := ClassCap(l, c); why != "" {
+			row.Excluded = why
+		}
 		if sp, ok := specs[l]; ok && sp.Subscription && pressure != nil {
 			row.Pressure = pressure(l)
 		}

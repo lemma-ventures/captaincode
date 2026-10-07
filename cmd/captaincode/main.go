@@ -136,6 +136,12 @@ func main() {
 		case "redact":
 			cmdRedact(args[1:])
 			return
+		case "audit": // workers' misconduct, penalized (brain_audit.go)
+			cmdAudit(args[1:])
+			return
+		case "guard-exec": // a CLI worker's git/gh/package-tool shim (guard_cmd.go)
+			cmdGuardExec(args[1:])
+			return
 		case "jail": // a sent turn's shell command, in the OS sandbox (jail_cmd.go)
 			cmdJail(args[1:])
 			return

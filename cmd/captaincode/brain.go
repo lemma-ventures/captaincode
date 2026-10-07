@@ -210,6 +210,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/handoff", b.handoffHTTP)
 	// M5.1: task-wide outcome evidence (review, correction, regression).
 	mux.HandleFunc("/v1/outcome", b.outcomeHTTP)
+	mux.HandleFunc("/v1/audit", b.auditHTTP)
 	// M4.1: versioned task API. One endpoint, seven operations in a stamped envelope.
 	mux.HandleFunc("/v1/task", b.taskAPIHTTP)
 	// Director control: get/set the active director at runtime.
@@ -253,6 +254,7 @@ func cmdBrain(args []string) {
 	b.life = life
 	go b.watchLock(life.Done(), os.Stdout)
 	go b.startEuclidReconciler(life.Done())
+	go b.auditLoop(life.Done()) // workers' misconduct, penalized (brain_audit.go)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -448,6 +450,8 @@ type brain struct {
 	// sessionDirFn reads an opencode session's folder (brain_sentgate.go);
 	// a test seam.
 	sessionDirFn func(session string) (string, error)
+	// auditRunFn runs the audit's read-only git and gh commands; a test seam.
+	auditRunFn func(dir string, args ...string) (string, error)
 	// sessionPromptFn stubs reading an opencode session's prompt in tests
 	// (brain_sentgate.go).
 	sessionPromptFn func(session string) (string, error)
@@ -1836,9 +1840,9 @@ func sentTurnContract(ws captaincode.Workspace) string {
 // instead of promising. CAPTAIN_WORKER_CALLBACK=0 drops it.
 func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
 	if os.Getenv("CAPTAIN_WORKER_CALLBACK") == "0" {
-		return sentTurnContract(ws)
+		return sentTurnContract(ws) + captaincode.GuardContract(ws.MayPublish, ws.DirtyBefore)
 	}
-	return sentTurnContract(ws) + fmt.Sprintf("\n\n[captain] Work that outlives this turn: you are one turn, so nothing you leave running can report to the user by itself."+
+	return sentTurnContract(ws) + captaincode.GuardContract(ws.MayPublish, ws.DirtyBefore) + fmt.Sprintf("\n\n[captain] Work that outlives this turn: you are one turn, so nothing you leave running can report to the user by itself."+
 		" If you background anything (a watcher, a test gate, a long benchmark), make its LAST step deliver the result:"+
 		" `captain send --reply %s --from %s \"<what landed, and what it means>\"` - that queues it into the session this turn came from, as if the user had typed it, labelled with where it came from."+
 		" Use that exact command; do not replace --reply with a folder. To reach a captain in another folder on purpose, `captain send --cwd <folder>` does that."+

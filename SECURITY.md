@@ -79,6 +79,34 @@ Its limits, stated so nobody over-trusts it:
 - It is a classifier. It will be wrong in both directions, and it is not a
   substitute for a container, a VM, or a machine without the credentials.
 
+### The worker guard and the audit
+
+Two things no worker does unless your typed request asks for it, on any leg
+(`pkg/captaincode/workerguard.go`):
+
+- **Publishing.** Creating or pushing tags, creating or editing releases, and
+  publishing packages or images are refused unless your turn asks for a
+  release or a publish. Pushing commits is not publishing.
+- **Bulk staging over others' work.** In a checkout that had uncommitted
+  changes when the turn started, `git add -A`, `git add .` and
+  `git commit -a` are refused. The worker stages its own files by name.
+
+The brain decides both from the turn and states them in the worker prompt.
+opencode workers are checked through the brain at the tool boundary. claude,
+codex and cursor run with shims for `git`, `gh` and the package tools first
+on their PATH (`captain guard-exec`). The guard stops accidents, not a worker
+that calls `/usr/bin/git` on purpose. It was added after a cheap leg, asked
+to "build it", committed other sessions' work, pushed a main that failed CI
+and published a public release (v0.3.11, retracted).
+
+Every refusal is logged (`~/.captaincode/conduct.jsonl`). The **audit**
+(`captain audit`, and every `CAPTAIN_AUDIT_EVERY`, 30 minutes) reads those
+refusals, the releases published in a run's last minutes, and the commits a
+run made whose CI failed on GitHub. It penalizes each finding once: the run
+is reviewed `reject` by `audit` (or marked regressed if you had accepted it),
+so the ranking counts it against the leg. A leg can also be capped with
+`max_class` in `legs.json`, so routing never gives it work above that class.
+
 ## Messages between captains and prompt injection
 
 Captains message each other on purpose: a worker or watcher in one folder can

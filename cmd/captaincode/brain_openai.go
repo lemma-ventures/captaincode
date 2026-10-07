@@ -13,11 +13,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -395,6 +397,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			req.ws.SentBy = by
 		}
 	}
+	// The worker guard's two facts for this turn (pkg workerguard.go): a
+	// release only when the user's own turn asks for one, and no bulk
+	// staging over changes that were there before the turn.
+	req.ws.MayPublish = req.ws.SentBy == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
+	req.ws.DirtyBefore = checkoutDirty(req.ws.Dir)
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
 		b.markHandled(promptKey(req.ws.Dir, req.Messages, i))
 	}
@@ -1277,4 +1284,16 @@ func (b *brain) models(w http.ResponseWriter, _ *http.Request) {
 	// terminal should send when the user did not name a leg.
 	data = append(data, map[string]any{"id": "auto", "object": "model", "owned_by": "captain"})
 	writeJSON(w, 200, map[string]any{"object": "list", "data": data})
+}
+
+// checkoutDirty reports whether dir is a git checkout with uncommitted
+// changes, untracked files included.
+func checkoutDirty(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain").Output()
+	return err == nil && strings.TrimSpace(string(out)) != ""
 }

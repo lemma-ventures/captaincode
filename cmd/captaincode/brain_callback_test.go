@@ -26,7 +26,9 @@ func TestWorkerPromptArmsTheCallbackInsteadOfPromisingToReport(t *testing.T) {
 	assert.Contains(t, c, "Never end a turn promising to report later")
 
 	t.Setenv("CAPTAIN_WORKER_CALLBACK", "0")
-	assert.Empty(t, callbackContract(ws, captaincode.LegClaude))
+	off := callbackContract(ws, captaincode.LegClaude)
+	assert.NotContains(t, off, "captain send --reply", "the switch drops the callback")
+	assert.Contains(t, off, "Publishing: not requested", "but never the worker guard")
 }
 
 // …on every path that dispatches a worker: solo, team and workflow.
