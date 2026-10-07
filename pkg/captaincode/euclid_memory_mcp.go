@@ -23,18 +23,25 @@ func memoryMCPEnabled() bool {
 	return os.Getenv("CAPTAIN_EUCLID_MEMORY_CONFIG") != "" || os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG") != ""
 }
 
-func memoryMCPConfig(brain EuclidBrain) (string, error) {
+// memoryConn is one MCP server for one brain: its config, and the
+// environment that points the server at that brain.
+type memoryConn struct {
+	Config string
+	Env    map[string]string
+}
+
+func memoryMCPConfig(brain EuclidBrain) (memoryConn, error) {
 	if path := os.Getenv("CAPTAIN_EUCLID_MEMORY_CONFIG"); path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return "", err
+			return memoryConn{}, err
 		}
 		if len(data) > 65536 {
-			return "", fmt.Errorf("memory connection map exceeds 64 KiB")
+			return memoryConn{}, fmt.Errorf("memory connection map exceeds 64 KiB")
 		}
 		var configs map[string]string
 		if err := json.Unmarshal(data, &configs); err != nil {
-			return "", err
+			return memoryConn{}, err
 		}
 		config := configs[filepath.Clean(brain.Root)]
 		if config == "" && brain.Label != "" {
@@ -44,21 +51,56 @@ func memoryMCPConfig(brain EuclidBrain) (string, error) {
 			config = configs[brain.Kind]
 		}
 		if !filepath.IsAbs(config) {
-			return "", fmt.Errorf("no pinned MCP connection for brain %s", brain.Label)
+			return memoryConn{}, fmt.Errorf("no pinned MCP connection for brain %s", brain.Label)
 		}
-		return config, nil
+		return memoryConn{Config: config}, nil // a pinned server knows its brain
 	}
 	config := os.Getenv("CAPTAIN_EUCLID_MCP_CONFIG")
 	if config == "" {
-		return "", fmt.Errorf("memory MCP is not configured")
+		return memoryConn{}, fmt.Errorf("memory MCP is not configured")
 	}
-	return config, nil
+	env, err := brainServerEnv(brain)
+	if err != nil {
+		return memoryConn{}, err
+	}
+	return memoryConn{Config: config, Env: env}, nil
 }
 
-func memoryCall(ctx context.Context, config, tool string, args any, out any) error {
+// brainServerEnv points the one shared Euclid server config at this brain.
+// Without it the server serves the project brain of whatever folder it was
+// started in, and every other brain - main, the other repositories, a
+// developer's own - failed its identity check ("bound to a different
+// brain") on every turn, so workers started without their memory.
+func brainServerEnv(brain EuclidBrain) (map[string]string, error) {
+	switch brain.Kind {
+	case "main":
+		return map[string]string{"EUCLID_BRAIN_SCOPE": "main", "EUCLID_ROOT": brain.Root}, nil
+	case "repo", "linked":
+		return map[string]string{"EUCLID_BRAIN_SCOPE": "shared", "EUCLID_ROOT": repoOfBrain(brain.Root)}, nil
+	case "developer", "developer-other":
+		// <repo>/.euclid/developers/<handle>
+		devs := filepath.Dir(brain.Root)
+		if filepath.Base(devs) != "developers" || filepath.Base(filepath.Dir(devs)) != ".euclid" {
+			return nil, fmt.Errorf("developer brain %s is not under .euclid/developers", brain.Root)
+		}
+		return map[string]string{"EUCLID_BRAIN_SCOPE": "developer", "EUCLID_ROOT": filepath.Dir(filepath.Dir(devs)),
+			"EUCLID_HANDLE": filepath.Base(brain.Root)}, nil
+	}
+	return nil, fmt.Errorf("no Euclid server scope for brain kind %q (%s)", brain.Kind, brain.Label)
+}
+
+// repoOfBrain is the repository a <repo>/.euclid brain belongs to.
+func repoOfBrain(root string) string {
+	if filepath.Base(root) == ".euclid" {
+		return filepath.Dir(root)
+	}
+	return root
+}
+
+func memoryCall(ctx context.Context, conn memoryConn, tool string, args any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, err := mcpclient.Call(ctx, config, tool, args, nil)
+	result, err := mcpclient.Call(ctx, conn.Config, tool, args, conn.Env)
 	if err != nil {
 		return err
 	}
@@ -72,10 +114,13 @@ func memoryCall(ctx context.Context, config, tool string, args any, out any) err
 	return json.Unmarshal(data, out)
 }
 
-func memoryConnection(brain EuclidBrain, write bool) (string, error) {
+func memoryConnection(brain EuclidBrain, write bool) (memoryConn, error) {
 	config, err := memoryMCPConfig(brain)
 	if err != nil {
-		return "", err
+		return memoryConn{}, err
+	}
+	if config.Env != nil {
+		config.Env["EUCLID_ALLOW_WRITES"] = map[bool]string{true: "1", false: "0"}[write]
 	}
 	var status struct {
 		Brain    string `json:"brain"`
@@ -84,7 +129,7 @@ func memoryConnection(brain EuclidBrain, write bool) (string, error) {
 		Writable bool   `json:"writable"`
 	}
 	if err := memoryCall(context.Background(), config, "euclid_status", map[string]any{}, &status); err != nil {
-		return "", err
+		return memoryConn{}, err
 	}
 	match := filepath.Clean(status.Brain) == filepath.Clean(brain.Root)
 	if !match {
@@ -101,10 +146,10 @@ func memoryConnection(brain EuclidBrain, write bool) (string, error) {
 		match = true
 	}
 	if !match {
-		return "", fmt.Errorf("MCP connection is bound to a different brain")
+		return memoryConn{}, fmt.Errorf("MCP connection is bound to a different brain")
 	}
 	if write && (!brain.Writable || !status.Writable) {
-		return "", fmt.Errorf("MCP brain is read-only")
+		return memoryConn{}, fmt.Errorf("MCP brain is read-only")
 	}
 	return config, nil
 }

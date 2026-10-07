@@ -237,6 +237,14 @@ from the active repository and calls `euclid_search`, `euclid_ask`, and
 `euclid_git_recall`. It does not fall back to private scripts after an MCP call
 fails. Register search can still provide local fallback results.
 
+The same file serves every brain for memory (orientation, events, learning).
+For each brain, Captain sets `EUCLID_BRAIN_SCOPE` (`main`, `shared` or
+`developer`), `EUCLID_ROOT` and, for a developer brain, `EUCLID_HANDLE`, and
+checks with `euclid_status` that the server answers for that brain. Do not pin
+`--root`, `--scope` or `--handle` in `args`: the server would then answer for
+one brain only, and every other brain is refused ("bound to a different
+brain"). To pin one server per brain, use `CAPTAIN_EUCLID_MEMORY_CONFIG`.
+
 The legacy engine requires explicit `CAPTAIN_EUCLID_ENGINE` configuration or a
 vendored install. Sibling checkout discovery is disabled. The register learning
 commands remain local until scoped memory operations move to MCP. Their new

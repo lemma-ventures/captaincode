@@ -146,8 +146,8 @@ func TestMemoryMCPLiveLifecycle(t *testing.T) {
 	var recorded struct {
 		Revision string `json:"revision"`
 	}
-	require.NoError(t, memoryCall(context.Background(), config, "euclid_record_event", map[string]any{"event": event}, &recorded))
-	require.NoError(t, memoryCall(context.Background(), config, "euclid_review_lesson", map[string]any{"lesson_id": "lesson:batch", "status": "accepted", "evidence_id": "outcome:later", "expected_revision": recorded.Revision}, nil))
+	require.NoError(t, memoryCall(context.Background(), memoryConn{Config: config}, "euclid_record_event", map[string]any{"event": event}, &recorded))
+	require.NoError(t, memoryCall(context.Background(), memoryConn{Config: config}, "euclid_review_lesson", map[string]any{"lesson_id": "lesson:batch", "status": "accepted", "evidence_id": "outcome:later", "expected_revision": recorded.Revision}, nil))
 	require.Contains(t, memoryOrientation([]EuclidBrain{brain}, 2500), "Preserve unread events.")
 }
 
@@ -167,11 +167,60 @@ func TestMemoryMCPBrainAliasAndScopeMapping(t *testing.T) {
 
 	resolved, err := memoryMCPConfig(brain)
 	require.NoError(t, err)
-	require.Equal(t, config, resolved)
+	require.Equal(t, memoryConn{Config: config}, resolved)
 
 	conn, err := memoryConnection(brain, false)
 	require.NoError(t, err)
-	require.Equal(t, config, conn)
+	require.Equal(t, memoryConn{Config: config}, conn)
+}
+
+// One shared server config serves every brain: main, a repository's shared
+// brain and a developer's own. The fake server resolves its brain from the
+// environment the way Euclid's does (EUCLID_BRAIN_SCOPE, EUCLID_ROOT,
+// EUCLID_HANDLE), and from its working folder when nothing is set - which is
+// how every brain but one failed "bound to a different brain".
+func TestMemoryMCPSharedConfigServesEveryBrain(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "server.py")
+	require.NoError(t, os.WriteFile(script, []byte(`import json,sys,os,pathlib
+scope=os.environ.get('EUCLID_BRAIN_SCOPE','project'); root=os.environ.get('EUCLID_ROOT') or os.getcwd()
+brain=root if scope=='main' else os.path.join(root,'.euclid')
+if scope=='developer': brain=os.path.join(brain,'developers',os.environ.get('EUCLID_HANDLE','me'))
+for line in sys.stdin:
+ req=json.loads(line); mid=req.get('id')
+ if mid is None: continue
+ if req['method']=='initialize': result={'protocolVersion':'2025-06-18','capabilities':{'tools':{}}}
+ elif req['method']=='tools/list': result={'tools':[{'name':'euclid_status'},{'name':'euclid_orientation'}]}
+ else:
+  name=req['params']['name']
+  value={'brain':brain,'writable':os.environ.get('EUCLID_ALLOW_WRITES')=='1'} if name=='euclid_status' else {'items':[{'source':'lesson:x','text':'from '+brain}]}
+  result={'structuredContent':value,'content':[{'type':'text','text':json.dumps(value)}]}
+ print(json.dumps({'jsonrpc':'2.0','id':mid,'result':result}),flush=True)
+`), 0o600))
+	config := filepath.Join(dir, "config.json")
+	data, _ := json.Marshal(map[string]any{"command": "/usr/bin/python3", "args": []string{script}})
+	require.NoError(t, os.WriteFile(config, data, 0o600))
+	t.Setenv("CAPTAIN_EUCLID_MCP_CONFIG", config)
+	t.Setenv("CAPTAIN_EUCLID_MEMORY_CONFIG", "")
+
+	repo := t.TempDir()
+	brains := []EuclidBrain{
+		{Root: t.TempDir(), Kind: "main", Label: "main"},
+		{Root: filepath.Join(repo, ".euclid"), Kind: "repo", Label: "repo:x"},
+		{Root: filepath.Join(repo, ".euclid", "developers", "dev-a"), Kind: "developer", Label: "me@x", Writable: true},
+		{Root: filepath.Join(t.TempDir(), ".euclid"), Kind: "linked", Label: "repo:y"},
+	}
+	for _, b := range brains {
+		_, err := memoryConnection(b, false)
+		require.NoError(t, err, b.Label)
+	}
+	_, err := memoryConnection(brains[2], true)
+	require.NoError(t, err, "the write brain gets a writable server")
+	for _, b := range brains {
+		require.Contains(t, memoryOrientation([]EuclidBrain{b}, 2500), "from "+b.Root, b.Label)
+	}
+	_, err = brainServerEnv(EuclidBrain{Root: "/x/notes", Kind: "developer"})
+	require.Error(t, err)
 }
 
 func TestJournalRunWithMemoryMCPRecordsEventAndAppendsJournalPage(t *testing.T) {
