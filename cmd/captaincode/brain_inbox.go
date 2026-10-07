@@ -253,14 +253,21 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			dir, session, origin = filepath.Clean(t.Dir), t.Session, t.label(req.From)
 		} else if s := strings.TrimSpace(req.SenderDir); s != "" && filepath.Clean(s) != dir {
-			origin = strings.TrimSpace(orDash(req.From) + " in " + filepath.Base(s) + " (another folder)")
+			// Only a reply token proves where a message came from; a name
+			// and a folder are what the sender says about itself.
+			origin = strings.TrimSpace(orDash(req.From) + " in " + filepath.Base(s) + " (another folder, unverified)")
 		}
 		// The injection screen (captaincode/injection.go) reads the text as
 		// sent; what is delivered has hidden characters removed and forged
 		// captain markers neutralized. A high finding holds the message for
 		// the user; a medium one is delivered with the warning attached.
 		findings := captaincode.ScanInjection(req.Text)
-		req.Text, _, _ = captaincode.SanitizeSent(req.Text)
+		var removed, forged int
+		req.Text, removed, forged = captaincode.SanitizeSent(req.Text)
+		if removed+forged > 0 {
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "sanitized", From: orDash(origin), Dir: dir,
+				Detail: fmt.Sprintf("%d hidden characters removed, %d forged markers neutralized", removed, forged)})
+		}
 		if captaincode.MaxSeverity(findings) == captaincode.SevHigh && os.Getenv("CAPTAIN_INBOX_HOLD") != "0" {
 			b.inbox.mu.Lock()
 			b.inbox.seq++
@@ -269,6 +276,7 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			it := inboxItem{ID: id, Text: req.Text, Leg: leg, From: strings.TrimSpace(req.From), At: time.Now(),
 				Session: session, Origin: origin, Findings: findings, Dir: dir}
 			b.inbox.hold(it)
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "held", From: orDash(origin), Dir: dir, Findings: findings, Detail: promptPeek(req.Text)})
 			fmt.Printf("captain brain: inbox - HELD %s for %s (%s): %s\n", id, filepath.Base(dir), captaincode.FindingsLine(findings), promptPeek(req.Text))
 			b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: "held",
 				Text: "held a sent prompt (possible prompt injection: " + captaincode.FindingsLine(findings) + ") - `captain inbox` to review"})
@@ -285,6 +293,7 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 				kinds = append(kinds, f.Kind)
 			}
 			origin = strings.TrimSpace(orDash(origin) + " · flagged: " + strings.Join(kinds, ", "))
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "flagged", From: origin, Dir: dir, Findings: findings, Detail: promptPeek(req.Text)})
 		}
 		if origin != "" {
 			req.Text += "\n\n- sent by " + origin
@@ -335,6 +344,7 @@ func (b *brain) inboxHeldHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 404, "no held message "+req.ID)
 			return
 		}
+		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: req.Action + "d", From: it.Origin, Dir: it.Dir, Findings: it.Findings, Detail: it.ID})
 		if req.Action == "drop" {
 			fmt.Printf("captain brain: inbox - dropped held %s\n", it.ID)
 			writeJSON(w, 200, map[string]any{"ok": true, "dropped": it.ID})

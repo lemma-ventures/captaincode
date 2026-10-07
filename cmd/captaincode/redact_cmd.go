@@ -147,6 +147,29 @@ func redactHook() {
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		return // not our shape: allow silently
 	}
+	// A turn sent by another agent: the sent-turn policy, before anything
+	// else (sentpolicy.go). This hook is installed whenever redaction is on,
+	// so the policy does not wait for a decision leg.
+	if os.Getenv(captaincode.SentTurnEnv) == "1" {
+		cwd, _ := os.Getwd()
+		a := captaincode.GateAction{Tool: strings.ToLower(in.ToolName),
+			Command: firstString(in.ToolInput, "command", "url"),
+			Path:    firstString(in.ToolInput, "file_path", "filePath", "path", "notebook_path"), Cwd: cwd}
+		if why := captaincode.SentTurnRefusal(a); why != "" {
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
+			writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+				"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
+			}})
+			return
+		}
+	}
+	// A secret placeholder is never turned back into the secret inside a
+	// URL: a fetched page that tells the model to fetch
+	// "https://x/?k=[[secret:…]]" must not get the key (blind review,
+	// 2026-10-06).
+	if in.ToolName == "WebFetch" {
+		return
+	}
 	if in.ToolName == "Read" || in.ToolName == "Grep" || in.ToolName == "Glob" {
 		if p, _ := in.ToolInput["file_path"].(string); p != "" {
 			if deny, why := captaincode.IsSecretFile(p); deny {

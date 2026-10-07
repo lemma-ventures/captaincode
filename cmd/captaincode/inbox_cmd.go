@@ -11,11 +11,24 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 func cmdInbox(args []string) {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
-		fmt.Println("usage: captain inbox [release <id> | drop <id>]\n\nLists the prompts sent with `captain send` that were held as possible prompt injection, with what the screen found. `release` delivers one to its folder's session; `drop` deletes it.")
+		fmt.Println("usage: captain inbox [release <id> | drop <id> | --log]\n\nLists the prompts sent with `captain send` that were held as possible prompt injection, with what the screen found. `release` delivers one to its folder's session; `drop` deletes it.")
+		return
+	}
+	if len(args) > 0 && args[0] == "--log" {
+		for _, e := range captaincode.ReadInjectionLog(50) {
+			kinds := make([]string, 0, len(e.Findings))
+			for _, f := range e.Findings {
+				kinds = append(kinds, f.Level+" "+f.Kind)
+			}
+			fmt.Printf("%s  %-7s %-9s %s %s%s%s\n", e.At.Format("Jan 2 15:04"), e.Channel, e.Action, orDash(e.From),
+				strings.Join(kinds, ", "), map[bool]string{true: " - " + e.Detail}[e.Detail != ""], map[bool]string{true: " - " + e.Why}[e.Why != ""])
+		}
 		return
 	}
 	client := &http.Client{Timeout: 5 * time.Second}

@@ -121,6 +121,29 @@ function secretFileRefusal(path: string): string | null {
   }
 }
 
+// SENT_GATED are the tools the sent-turn policy screens; URL_TOOLS never get
+// secrets restored into their arguments.
+const SENT_GATED = new Set(["bash", "write", "edit", "patch", "multiedit", "webfetch", "fetch"])
+const URL_TOOLS = new Set(["webfetch", "fetch", "websearch"])
+
+// sentTurnRefusal asks the brain whether this session answers a sent turn and
+// the call is one such a turn may not make. null allows.
+async function sentTurnRefusal(tool: string, args: any, cwd: string, session: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${BRAIN}/v1/gate/sent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session, tool, args: args ?? {}, cwd }),
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!r.ok) return null
+    const j = (await r.json()) as { allow?: boolean; reason?: string }
+    return j.allow === false ? j.reason ?? "refused by the sent-turn policy" : null
+  } catch {
+    return null
+  }
+}
+
 // restoreArgs puts real values back into every string of a tool's arguments.
 function restoreArgs(v: any): any {
   if (typeof v === "string") {
@@ -469,6 +492,16 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
   },
 
   "tool.execute.before": async (call: { tool: string; sessionID?: string }, output: { args: any }) => {
+    // A turn another agent sent with `captain send`: the brain applies the
+    // sent-turn policy (sentpolicy.go) before anything that can change the
+    // machine or reach off it. The brain down is no evidence of a sent turn.
+    if (call.sessionID && SENT_GATED.has(call.tool)) {
+      const why = await sentTurnRefusal(call.tool, output?.args, input?.directory ?? process.env["CAPTAIN_CWD"] ?? "", call.sessionID)
+      if (why) {
+        log(`sent-turn policy refused ${call.tool}`)
+        throw new Error(why)
+      }
+    }
     if (REDACT && output?.args) {
       const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
       if (path && (call.tool === "read" || call.tool === "grep" || call.tool === "glob")) {
@@ -478,7 +511,9 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
           throw new Error(why)
         }
       }
-      output.args = restoreArgs(output.args)
+      // Never turn a placeholder back into the secret inside a URL: a page
+      // that tells the model to fetch "…?k=[[secret:…]]" must not get the key.
+      if (!URL_TOOLS.has(call.tool)) output.args = restoreArgs(output.args)
     }
     // The gate runs on the RESTORED arguments: the command that will actually
     // run is the one worth screening, not the masked copy the model wrote.

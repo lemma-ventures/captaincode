@@ -155,6 +155,15 @@ func gateHook() {
 		Path:    firstString(in.ToolInput, "file_path", "filePath", "path", "notebook_path"),
 		Cwd:     gateCwd(in.Cwd),
 	})
+	if os.Getenv(captaincode.SentTurnEnv) == "1" {
+		if why := captaincode.SentTurnRefusal(a); why != "" {
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
+			writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+				"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
+			}})
+			return
+		}
+	}
 	v := screenAndLog(a)
 	if v.Allow {
 		return

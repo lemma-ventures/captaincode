@@ -20,6 +20,8 @@ package captaincode
 // layer that does not depend on catching the wording.
 
 import (
+	"encoding/base64"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -104,8 +106,71 @@ func SanitizeSent(text string) (clean string, removed int, forged int) {
 	return clean, removed, forged
 }
 
+// confusables folds letters that look like Latin ones (Cyrillic, Greek,
+// fullwidth) to Latin, so "іgnore previous instructions" written with a
+// Cyrillic і is read as what it shows. Only for scanning: the delivered text
+// keeps its letters.
+var confusables = map[rune]rune{
+	'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's',
+	'ԁ': 'd', 'һ': 'h', 'ӏ': 'l', 'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O',
+	'Р': 'P', 'С': 'C', 'Т': 'T', 'Х': 'X', 'І': 'I', 'α': 'a', 'ε': 'e', 'ο': 'o', 'ρ': 'p', 'ι': 'i',
+	'κ': 'k', 'ν': 'v', 'τ': 't', 'υ': 'u', 'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M',
+	'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Χ': 'X',
+}
+
+func foldConfusables(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		if r >= 0xFF01 && r <= 0xFF5E { // fullwidth ASCII
+			r -= 0xFEE0
+		}
+		if l, ok := confusables[r]; ok {
+			r = l
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// decodedViews are the encodings an instruction can hide in, decoded: base64
+// blobs and percent-encoding. Each view is scanned like the text itself.
+var base64BlobRe = regexp.MustCompile(`[A-Za-z0-9+/_-]{40,}={0,2}`)
+
+func decodedViews(text string) []string {
+	var out []string
+	for _, blob := range base64BlobRe.FindAllString(text, 8) {
+		for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+			if raw, err := enc.DecodeString(blob); err == nil && printableShare(raw) > 0.9 {
+				out = append(out, string(raw))
+				break
+			}
+		}
+	}
+	if strings.Contains(text, "%") {
+		if u, err := url.QueryUnescape(text); err == nil && u != text {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func printableShare(b []byte) float64 {
+	if len(b) == 0 {
+		return 0
+	}
+	n := 0
+	for _, c := range b {
+		if c == '\n' || c == '\t' || (c >= 32 && c < 127) {
+			n++
+		}
+	}
+	return float64(n) / float64(len(b))
+}
+
 // ScanInjection lists the suspicious patterns in text, the most severe first.
 // Run it on the raw text: hidden characters and forged markers count too.
+// Lookalike letters are folded and encoded payloads decoded before the
+// patterns run, so neither hides an instruction.
 func ScanInjection(text string) []Finding {
 	var out []Finding
 	if _, removed, forged := SanitizeSent(text); removed > 0 || forged > 0 {
@@ -116,9 +181,32 @@ func ScanInjection(text string) []Finding {
 			out = append(out, Finding{Kind: "forged captain marker", Severity: SevHigh, Excerpt: captainMarkerRe.FindString(text)})
 		}
 	}
-	for _, r := range injectionRules {
-		if m := r.re.FindString(text); m != "" {
-			out = append(out, Finding{Kind: r.kind, Severity: r.sev, Excerpt: CutHead(strings.Join(strings.Fields(m), " "), 80)})
+	seen := map[string]bool{}
+	views := append([]string{text, foldConfusables(text)}, decodedViews(text)...)
+	for i, view := range views {
+		for _, r := range injectionRules {
+			if seen[r.kind] {
+				continue
+			}
+			if loc := r.re.FindStringIndex(view); loc != nil {
+				m := view[loc[0]:loc[1]]
+				seen[r.kind] = true
+				sev := r.sev
+				// Inside backtick code a pattern is usually discussed, not
+				// commanded ("add a test that refuses `git push --force`"):
+				// flagged and delivered, not held.
+				if i == 0 && insideCode(view, loc[0]) && sev == SevHigh {
+					sev = SevMedium
+				}
+				excerpt := CutHead(strings.Join(strings.Fields(m), " "), 80)
+				switch {
+				case i == 1 && view != text:
+					excerpt += " (written with lookalike letters)"
+				case i >= 2:
+					excerpt += " (inside an encoded payload)"
+				}
+				out = append(out, Finding{Kind: r.kind, Severity: sev, Excerpt: excerpt})
+			}
 		}
 	}
 	for i := range out {
@@ -151,4 +239,9 @@ func FindingsLine(fs []Finding) string {
 		parts = append(parts, f.Kind+" ("+f.Excerpt+")")
 	}
 	return strings.Join(parts, "; ")
+}
+
+// insideCode reports whether position i of text falls inside a backtick span.
+func insideCode(text string, i int) bool {
+	return strings.Count(text[:i], "`")%2 == 1
 }

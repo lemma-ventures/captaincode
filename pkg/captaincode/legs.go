@@ -2332,6 +2332,9 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	// screening can judge an action against the work it was given rather than
 	// against the working directory alone (gate.go).
 	fenv = append(fenv, GateWorkerEnv(LegClaude, task, steer.Task())...)
+	if IsSentTurn(task) {
+		fenv = append(fenv, SentTurnEnv+"=1") // the PreToolUse hook applies the sent-turn policy (sentpolicy.go)
+	}
 	if len(fenv) > 0 {
 		cmd.Env = append(os.Environ(), fenv...)
 	}
@@ -2580,7 +2583,13 @@ func runCursorModel(dir, task, model string) (string, error) {
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, cursorPermissionArgs()...)...)
+	perms := cursorPermissionArgs()
+	if IsSentTurn(task) {
+		// A sent turn runs without --force: commands that need approval are
+		// refused, since nobody can approve them (sentpolicy.go).
+		perms = []string{"--trust"}
+	}
+	cmd := exec.CommandContext(ctx, "cursor-agent", append(args, perms...)...)
 	cmd.Stdin = strings.NewReader(task)
 	cmd.Dir = dir
 	var stderr strings.Builder

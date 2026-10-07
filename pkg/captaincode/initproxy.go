@@ -212,8 +212,8 @@ const gateHookCommand = "captain gate --hook"
 // EnsureClaudeRedactHook installs (on) or removes (off) the PreToolUse hook
 // in Claude Code's user settings. Idempotent; other hooks are kept.
 func EnsureClaudeRedactHook(on bool) (bool, string, error) {
-	return ensureClaudePreToolUseHook(on, redactHookCommand, "Read|Grep|Glob|Write|Edit|MultiEdit|Bash", 10,
-		"placeholders restored in tool input, secret files refused")
+	return ensureClaudePreToolUseHook(on, redactHookCommand, "Read|Grep|Glob|Write|Edit|MultiEdit|Bash|WebFetch", 10,
+		"placeholders restored in tool input, secret files refused, the sent-turn policy applied")
 }
 
 // EnsureClaudeGateHook installs (on) or removes (off) the action gate's
@@ -260,6 +260,12 @@ func ensureClaudePreToolUseHook(on bool, command, matcher string, timeout int, n
 			"hooks":   []any{map[string]any{"type": "command", "command": command, "timeout": timeout}},
 		})
 		hooks["PreToolUse"] = pre
+	case on && has >= 0 && entryMatcher(pre[has]) != matcher:
+		// An older install with a narrower matcher: widen it in place.
+		if m, ok := pre[has].(map[string]any); ok {
+			m["matcher"] = matcher
+		}
+		hooks["PreToolUse"] = pre
 	case !on && has >= 0:
 		pre = append(pre[:has], pre[has+1:]...)
 		if len(pre) == 0 {
@@ -293,4 +299,13 @@ func entryRunsCommand(e any, cmd string) bool {
 		}
 	}
 	return false
+}
+
+// entryMatcher is a PreToolUse entry's matcher, or "".
+func entryMatcher(e any) string {
+	if m, ok := e.(map[string]any); ok {
+		s, _ := m["matcher"].(string)
+		return s
+	}
+	return ""
 }

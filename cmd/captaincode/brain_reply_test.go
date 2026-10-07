@@ -99,7 +99,7 @@ func TestSendToAnotherFolderSaysWhereItCameFrom(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	items := takeInbox(b, target, "")
 	require.Len(t, items, 1)
-	assert.Equal(t, "claude in "+filepath.Base(sender)+" (another folder)", items[0].Origin)
+	assert.Equal(t, "claude in "+filepath.Base(sender)+" (another folder, unverified)", items[0].Origin, "only a reply token proves the sender")
 
 	rec = postInbox(b, target, map[string]string{"text": "same folder", "from": "claude", "sender_dir": target})
 	require.Equal(t, 200, rec.Code)

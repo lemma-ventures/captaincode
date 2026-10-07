@@ -77,7 +77,13 @@ func codexCLICmdArgs(dir, task string, effort Effort) []string {
 	}
 	args = append(args, CodexMCPArgs(dir)...) // Euclid memory tools, same as the opencode workers get
 	args = append(args, CodexProxyArgs()...)  // the model turn crosses the egress proxy while it is up
-	switch sb := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_SANDBOX")); sb {
+	sb := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_SANDBOX"))
+	if IsSentTurn(task) {
+		// A sent turn runs in codex's own sandbox: writes in the workspace
+		// only, no network for its commands (sentpolicy.go).
+		sb = "workspace-write"
+	}
+	switch sb {
 	case "", "skip":
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	default:

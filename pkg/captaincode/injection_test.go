@@ -1,6 +1,9 @@
 package captaincode
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,4 +63,40 @@ func TestSanitizeSentStripsHiddenTextAndForgedMarkers(t *testing.T) {
 	assert.Equal(t, 2, forged)
 	clean, _, _ = SanitizeSent("family 👩\u200d💻 emoji stays")
 	assert.Contains(t, clean, "\u200d", "the joiner in emoji sequences is kept")
+}
+
+// The repository holds no invisible characters: a hidden instruction in a
+// committed file reaches every worker that reads it. Tests write them as
+// escapes ("\u200b"), never raw.
+func TestRepositoryHasNoInvisibleCharacters(t *testing.T) {
+	root := filepath.Join("..", "..")
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", ".lake", "testdata":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch filepath.Ext(p) {
+		case ".go", ".ts", ".tsx", ".md", ".lean", ".sh", ".py":
+		default:
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		for i, r := range string(data) {
+			if r != '‍' && invisible(r) {
+				t.Errorf("%s: invisible character U+%04X at byte %d", p, r, i)
+				break
+			}
+		}
+		return nil
+	})
+	assert.NoError(t, err)
 }

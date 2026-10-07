@@ -95,8 +95,8 @@ injection from one project into another.
 | shared context (`/context consume`) | another project's digest | memory | medium |
 | a task that names another repository | the user, in another TUI | the user's own turn | low |
 
-What the brain does with a sent prompt (`brain_inbox.go`,
-`pkg/captaincode/injection.go`):
+What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
+`pkg/captaincode/sentpolicy.go`):
 
 - **Filter.** Invisible and direction-changing characters and Unicode tag
   characters are removed, and lines that forge captain's own markers
@@ -104,24 +104,52 @@ What the brain does with a sent prompt (`brain_inbox.go`,
 - **Detect.** The text is screened for instruction overrides, role spoofing,
   sending secrets out, reading secret files, running fetched code
   (`curl … | sh`), switching off a safety check, and hiding work from the
-  user. No model is called.
+  user. Lookalike letters (Cyrillic, Greek, fullwidth) are folded to Latin
+  and base64 or percent-encoded payloads are decoded before the patterns
+  run. A pattern inside backtick code counts as medium: it is usually being
+  discussed, not commanded. No model is called.
 - **Hold.** A high finding holds the message: it is never submitted, the TUI
   says so, and `captain inbox` lists it with its findings to release or drop
   (`CAPTAIN_INBOX_HOLD=0` turns holding off). A medium finding is delivered
   with the finding named on its "sent by" line.
 - **Provenance.** Every delivered sent prompt ends with who sent it and from
-  where, and the worker that answers it is told the turn was not typed by
-  the user: it may not reveal or send out secrets, push, delete, publish,
-  spend money, switch off a safety check, or message other captains on that
-  request alone.
+  where. Only a reply token proves the sender; a name and a folder are the
+  sender's own claim, and the label says "unverified". The worker that
+  answers is told the turn was not typed by the user.
+- **Enforce.** While a worker answers a sent turn, a deterministic policy
+  refuses, at the tool boundary and without a decision leg: publishing or
+  pushing, deleting or rewriting history, sending data off the machine
+  (uploads, `scp`, `ssh`, `nc`), reading secrets (`~/.ssh`, `~/.aws`,
+  `printenv`, `gh auth token`), relaying to other captains, switching off a
+  safety check, writing outside the workspace or into `.git`, hooks or CI,
+  and fetching a URL that carries a credential-like value. opencode workers
+  are checked by the plugin through the brain (`/v1/gate/sent`), claude
+  workers by the redaction hook, codex runs a sent turn in its own sandbox
+  (workspace writes only, no network) and cursor without `--force`.
+- **No secrets in URLs.** A secret placeholder is never turned back into the
+  secret inside a fetched URL, sent turn or not.
 - **Bounds.** A sent prompt cannot start a loop or a program, and at most
   `CAPTAIN_INBOX_QUOTA` (5) are accepted between two turns the user types
   (proved in `formal/`).
+- **Other channels.** A program step reads the earlier steps' answers cleaned,
+  with a note when they hold text that reads as instructions. Shared context
+  from other projects stays fenced as data, and a line the screen rates high
+  is dropped.
+- **Web pages.** A request that changes something is refused when a browser
+  sent it from anywhere but this machine (`Origin`, `Sec-Fetch-Site`), so a
+  page the user opens cannot queue a prompt or start a turn.
+- **Audit.** Every hold, flag, cleaning, release, drop and refusal is a line
+  in `~/.captaincode/injection.jsonl`; `captain inbox --log` prints the last
+  ones.
 
-The screen is a heuristic: it misses attacks worded in ways it does not
-know, and it can hold a harmless message that quotes an attack. The
-provenance line is the layer that does not depend on recognizing the
-wording. Program step handoffs and shared context are not screened yet.
+A regression corpus (`pkg/captaincode/injection_corpus_test.go`) holds 25
+attacks, four of them disguised, and 20 benign messages between captains,
+several about security; the screen catches all 25 and would hold none of the
+benign ones (one is flagged). The screen is still a heuristic: an attack
+worded in a way it does not know gets through, and the provenance line and
+the tool-level policy are the layers that do not depend on the wording.
+Without the redaction hook (`CAPTAIN_REDACT=off`), claude workers are not
+checked at the tool boundary.
 
 A task typed in one TUI that names another repository runs there. If that
 repository already has a worker, loop or program running, the moved worker

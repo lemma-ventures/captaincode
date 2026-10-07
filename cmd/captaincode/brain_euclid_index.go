@@ -27,8 +27,7 @@ import (
 // itself comes from 127.0.0.1. Nothing else is answered.
 func corsForDashboard(w http.ResponseWriter, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	ok := origin == "" || origin == "null" ||
-		strings.HasPrefix(origin, "http://127.0.0.1") || strings.HasPrefix(origin, "http://localhost")
+	ok := origin == "" || origin == "null" || localOrigin(origin)
 	if !ok {
 		writeErr(w, 403, "origin not allowed")
 		return false
