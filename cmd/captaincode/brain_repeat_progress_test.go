@@ -88,3 +88,25 @@ func TestRepeatKeepsGoingWhileRoundsDiffer(t *testing.T) {
 
 	require.Equal(t, 4, rounds, "real progress must not trip the guard")
 }
+
+// formal/CommandSafety/Execution.lean: a /repeat thread and the loops its
+// rounds start share one run budget (brain_budget.go).
+func TestRepeatStopsWhenTheRunBudgetIsSpent(t *testing.T) {
+	b := teamBrain()
+	b.roundSummaryFn = func(string) string { return "did it" }
+	work := []string{
+		"Fixed the failing auth test: the token clock was compared before refresh, so it expired mid-request.",
+		"Migrated the storage callers to the new interface and deleted the compatibility shim.",
+		"Found the flaky watcher: fsevents coalesces two writes, and the test asserted on the first.",
+		"Backfilled the missing migration for the priors table and re-ran the importer end to end.",
+	}
+	rounds := 0
+	b.chatFn = func(w *captureWriter) {
+		fmt.Fprint(w, work[rounds%len(work)])
+		rounds++
+	}
+	th := &repeatThread{id: "rp_budget", task: "work the backlog", target: 10, budget: &runBudget{left: 3, total: 3}}
+	b.runRepeat(context.Background(), th, oaiChatReq{Model: "free"})
+	assert.Equal(t, 3, rounds)
+	assert.Contains(t, th.stopReason, "run budget spent")
+}

@@ -1,7 +1,8 @@
 package main
 
-// `captain parse "<line>"` prints how the brain will read a line - its
-// parse tree (docs/WORKFLOW_LANGUAGE.md) - without sending it.
+// `captain parse "<line>"` prints how the brain will read a line - its parse
+// tree in the command language (docs/LANGUAGE.md) - without sending it. The
+// same tree is what the conformance suite checks.
 
 import (
 	"fmt"
@@ -12,18 +13,14 @@ import (
 
 func cmdParse(args []string) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Printf("usage: captain parse \"<line>\"\n\nPrints how captain reads a line (WORKFLOW_LANGUAGE.md) without sending it.\n")
+		fmt.Printf("usage: captain parse \"<line>\"\n\nPrints how captain reads a line (command language %s, docs/LANGUAGE.md) without sending it.\n", captaincode.LanguageVersion)
 		return
 	}
 	captaincode.LoadRegistry("")
-	p, ok, err := captaincode.ParseProgram(strings.Join(args, " "))
-	if err != nil {
-		fmt.Println(err)
-		return
+	line := strings.Join(args, " ")
+	fmt.Println(captaincode.ParseTurn(line).String())
+	// A program also prints the plan the runner shows before it starts.
+	if p, ok, err := captaincode.ParseProgram(captaincode.HoistLeading(strings.TrimSpace(line))); ok && err == nil {
+		fmt.Printf("\nprogram, at most %d turns:\n%s\n", p.MaxTurns(100), p.Outline())
 	}
-	if !ok {
-		fmt.Println("(no program syntax - routes as plain text)")
-		return
-	}
-	fmt.Println(p.String())
 }
