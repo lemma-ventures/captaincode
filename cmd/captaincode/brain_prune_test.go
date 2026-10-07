@@ -41,6 +41,7 @@ func TestFirstUserTurnPreservesOriginalIntent(t *testing.T) {
 // Staged compaction: when the deterministic snip alone fits the budget, the
 // turn must skip the LLM entirely - that is where the latency was going.
 func TestFitPromptSkipsLLMWhenPruneIsEnough(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	b := teamBrain()
 	called := 0
 	b.summarizeFn = func(span, prev string) (string, error) { called++; return "SUM", nil }
@@ -62,6 +63,7 @@ func TestFitPromptSkipsLLMWhenPruneIsEnough(t *testing.T) {
 
 // When pruning is not enough, the LLM stage still runs - on the pruned text.
 func TestFitPromptSummarizesWhatSurvivesPruning(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	b := teamBrain()
 	var sawLen int
 	b.summarizeFn = func(span, prev string) (string, error) { sawLen += len(span); return "SUM", nil }

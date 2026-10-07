@@ -1009,7 +1009,9 @@ See the [pilot setup and limits](../examples/openshell-pilot/README.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CAPTAIN_COMPACT` | on (`0` disables) | Prune-then-summarise long sessions. |
+| `CAPTAIN_COMPACT` | on (`0` disables) | Prune-then-summarise long sessions. Off, an over-budget replay is cut: the framing, the opening request, the live turn and the newest whole turns are kept; the oldest middle turns go, replaced by the session's last summary and a one-line index of the requests left out. |
+| `CAPTAIN_COMPACT_SKIP_PCT` | `15` | A replay at most this many percent over budget after pruning is cut, with no summary call. |
+| `CAPTAIN_COMPACT_WAIT` | `20s` | How long a worker waits for a summary. Past it the turn starts on the cut; the summary finishes in the background and the next turn uses it. Summaries are saved per session under `~/.captaincode/compact/`, and reused only while the history they cover is unchanged. |
 | `CAPTAIN_COMPACT_LEG` | a fast cheap leg | Which leg summarises. Benchmark candidates on *distinct* prose - repetitive filler makes a slow model look fast. |
 | `CAPTAIN_REPLAY_BUDGETS` | on (`0` disables) | Per-leg prompt budgets derived from context windows. |
 | `CAPTAIN_WRAPPER_MAX_PROMPT` | derived | Hard character ceiling on a worker prompt. |

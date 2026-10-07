@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +31,7 @@ func longConvo(turns int) []string {
 
 func compactBrain(t *testing.T) (*brain, *[]string, *int) {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir()) // summaries are saved under ~/.captaincode/compact
 	b := teamBrain()
 	var prompts []string
 	calls := 0
@@ -114,7 +118,20 @@ func TestCompactionFailsOpenToWindowing(t *testing.T) {
 	b.chatCompletions(rec, wfReq(false, append(longConvo(30), "fix typo in README")...))
 	require.Equal(t, 200, rec.Code)
 	require.Len(t, *prompts, 1)
-	assert.Contains(t, (*prompts)[0], "conversation truncated", "summarizer failure → the old lossy window, never a dead turn")
+	assertCutOldestFirst(t, (*prompts)[0], "summarizer failure → the cut, never a dead turn")
+}
+
+// assertCutOldestFirst: the cut kept the opening request and the live turn,
+// left out the oldest middle turns whole, and named what it left out.
+func assertCutOldestFirst(t *testing.T, p, msg string) {
+	t.Helper()
+	assert.Contains(t, p, "were left out to fit", msg)
+	assert.Contains(t, p, "user turn 0: we decided", "the opening request is kept")
+	assert.Contains(t, p, "fix typo in README", "the live turn is kept")
+	assert.Contains(t, p, "user turn 29:", "the newest history is kept")
+	assert.Regexp(t, `\n- user turn \d+: we decided`, p, "left-out requests are indexed, newest first while they fit")
+	assert.NotContains(t, p, "[user]\nuser turn 1:", "the oldest middle turn is left out")
+	assert.NotContains(t, p, "conversation truncated", "no mid-turn window")
 }
 
 func TestCompactionKillSwitch(t *testing.T) {
@@ -124,7 +141,83 @@ func TestCompactionKillSwitch(t *testing.T) {
 	b.chatCompletions(rec, wfReq(false, append(longConvo(30), "fix typo in README")...))
 	require.Equal(t, 200, rec.Code)
 	assert.Equal(t, 0, *calls)
-	assert.Contains(t, (*prompts)[0], "conversation truncated")
+	assertCutOldestFirst(t, (*prompts)[0], "compaction off → the cut")
+}
+
+// A replay only a little over budget is cut, with no summary call: 1m43s was
+// spent to save 3k of 403k chars (live 2026-10-08).
+func TestSlightOverflowIsCutWithoutASummary(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := teamBrain()
+	calls := 0
+	b.summarizeFn = func(span, prev string) (string, error) { calls++; return "SUM", nil }
+	var sb strings.Builder
+	sb.WriteString("[system]\nframing\n\n[user]\nthe original ask\n\n")
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&sb, "[user]\nturn %d %s\n\n[assistant]\nreply %d %s\n\n", i, strings.Repeat("prose ", 150), i, strings.Repeat("words ", 100))
+	}
+	sb.WriteString("[user]\nthe live ask\n\n")
+	in := sb.String()
+	budget := len(in) * 100 / 110 // 10% over
+	out := b.fitPrompt(defaultWorkspace(), captaincode.LegFree, in, budget)
+	assert.Equal(t, 0, calls, "no summary for a 10% overflow")
+	assert.LessOrEqual(t, len(out), budget)
+	assert.True(t, strings.HasPrefix(out, "[system]\nframing"), "the framing leads")
+	assert.Contains(t, out, "the original ask")
+	assert.Contains(t, out, "the live ask")
+	assert.Contains(t, out, "turn 39 ", "the newest turns stay")
+	assert.NotContains(t, out, "[user]\nturn 0 ", "the oldest turn goes first")
+}
+
+// A summary that outlasts the wait does not hold the worker: the turn is cut,
+// the summary finishes in the background, is saved, and the next turn - or a
+// restarted brain - uses it without another call.
+func TestSlowSummaryGivesWayAndServesTheNextTurn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAPTAIN_COMPACT_WAIT", "50ms")
+	b := teamBrain()
+	release := make(chan struct{})
+	calls := 0
+	b.summarizeFn = func(span, prev string) (string, error) {
+		calls++
+		<-release
+		return "THE-SUMMARY", nil
+	}
+	var sb strings.Builder
+	sb.WriteString("[user]\nthe original ask\n\n")
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&sb, "[user]\nturn %d %s\n\n[assistant]\nreply %d\n\n", i, strings.Repeat("prose ", 900), i)
+	}
+	in := sb.String()
+	ws := defaultWorkspace()
+	start := time.Now()
+	out := b.fitPrompt(ws, captaincode.LegFree, in, 60_000)
+	assert.Less(t, time.Since(start), 2*time.Second, "the worker did not wait for the summary")
+	assert.Contains(t, out, "were left out to fit")
+	assert.NotContains(t, out, "THE-SUMMARY")
+	// A second turn while the fold runs joins it rather than starting another.
+	b.fitPrompt(ws, captaincode.LegFree, in, 60_000)
+	close(release)
+	require.Eventually(t, func() bool {
+		s, _ := b.cachedSummary(ws, in)
+		return s != ""
+	}, 5*time.Second, 10*time.Millisecond)
+	foldCalls := calls
+	out = b.fitPrompt(ws, captaincode.LegFree, in, 60_000)
+	assert.Contains(t, out, "THE-SUMMARY", "the next turn gets the summary")
+	assert.Equal(t, foldCalls, calls, "without another call")
+	files, _ := filepath.Glob(filepath.Join(os.Getenv("HOME"), ".captaincode", "compact", "*.json"))
+	assert.Len(t, files, 1, "saved")
+
+	fresh := teamBrain() // a restarted brain
+	fresh.summarizeFn = func(span, prev string) (string, error) { t.Error("resummarized after a restart"); return "", nil }
+	assert.Contains(t, fresh.fitPrompt(ws, captaincode.LegFree, in, 60_000), "THE-SUMMARY")
+
+	// A history that changed under the summary invalidates it.
+	changed := strings.Replace(in, "turn 3 ", "turn three ", 1)
+	s, covered := fresh.cachedSummary(ws, changed)
+	assert.Empty(t, s)
+	assert.Zero(t, covered)
 }
 
 // A giant span must be folded in BOUNDED slices: one 700k-char call blew the
