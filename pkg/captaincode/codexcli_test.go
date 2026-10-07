@@ -216,7 +216,7 @@ func TestCodexCLITimeoutWithNoOutputStaysAnError(t *testing.T) {
 // Through the one choke point every path crosses: codex-cli runs with the
 // frontier time budget (2×) and an empty answer is a failure like any leg.
 func TestRunWorkerStreamHooksDispatchesCodexCLI(t *testing.T) {
-	fakeBin(t, "codex", codexCLIProbeEvents)
+	fakeBin(t, "codex", "#!/bin/sh\nprintf '%s' '"+strings.ReplaceAll(codexCLIProbeEvents, "'", "'\"'\"'")+"'\n")
 	res, err := RunWorkerStreamHooks(LegCodexCLI, "task", 0, nil, nil)
 	require.NoError(t, err)
 	assert.Contains(t, res.Text, "hello")

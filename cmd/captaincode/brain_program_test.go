@@ -395,10 +395,10 @@ func TestInboxRefusesLoopsAndPrograms(t *testing.T) {
 		b.inboxHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/inbox?cwd="+dir, bytes.NewReader(body)))
 		return rec.Code
 	}
-	assert.Equal(t, 400, post("/repeat 5 /codex fix it"))
-	assert.Equal(t, 400, post("/oss /repeat 5 fix it"))
-	assert.Equal(t, 400, post("/team research it > /codex implement it"))
-	assert.Equal(t, 400, post("(/codex fix it) || /claude explain"))
+	assert.Equal(t, 403, post("/repeat 5 /codex fix it"))
+	assert.Equal(t, 403, post("/oss /repeat 5 fix it"))
+	assert.Equal(t, 403, post("/team research it > /codex implement it"))
+	assert.Equal(t, 403, post("(/codex fix it) || /claude explain"))
 	assert.Equal(t, 200, post("/repeat status"), "a control word starts nothing")
 	assert.Equal(t, 200, post("the GPU is free - start the benchmark"))
 	assert.Equal(t, 200, post("/grok draft it > /claude review it"), "a workflow is one turn")

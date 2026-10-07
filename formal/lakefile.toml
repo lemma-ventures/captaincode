@@ -1,0 +1,5 @@
+name = "captain-command-safety"
+defaultTargets = ["CommandSafety"]
+
+[[lean_lib]]
+name = "CommandSafety"

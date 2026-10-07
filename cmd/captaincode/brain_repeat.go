@@ -555,7 +555,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			if s == "" || strings.HasPrefix(s, "**captain") || strings.HasPrefix(s, "captain ·") {
 				continue
 			}
-status(fmt.Sprintf("%s %d · %s\n", th.unit(), done+1, s)) // one line each: the TUI concatenates deltas
+			status(fmt.Sprintf("%s %d · %s\n", th.unit(), done+1, s)) // one line each: the TUI concatenates deltas
 		}
 
 		// rounds is a sliding window; index by round number, not position.
@@ -565,7 +565,7 @@ status(fmt.Sprintf("%s %d · %s\n", th.unit(), done+1, s)) // one line each: the
 			}
 			sent = r.n
 			if r.err != "" {
-emit(fmt.Sprintf("\n---\n\n**%s** ✗ failed after %s\n\n%s\n",
+				emit(fmt.Sprintf("\n---\n\n**%s** ✗ failed after %s\n\n%s\n",
 					r.title(), r.dur.Round(time.Second), promptPeek(r.err)))
 				continue
 			}
@@ -574,7 +574,7 @@ emit(fmt.Sprintf("\n---\n\n**%s** ✗ failed after %s\n\n%s\n",
 					r.title(), r.dur.Round(time.Second), r.summary))
 				continue
 			}
-emit(fmt.Sprintf("\n---\n\n**%s** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
+			emit(fmt.Sprintf("\n---\n\n**%s** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat show`)_\n",
 				r.title(), r.at.Format("15:04:05"), r.dur.Round(time.Second), r.summary))
 		}
 		if finished {
@@ -587,7 +587,7 @@ emit(fmt.Sprintf("\n---\n\n**%s** ✓ %s · %s\n\n%s\n\n_(full output: `/repeat 
 				final = th.final
 			}
 			b.rmu.Unlock()
-emit(fmt.Sprintf("\n---\n\n**%s finished** - %d %s(s) total%s.\n", th.id, done, th.unit(), why))
+			emit(fmt.Sprintf("\n---\n\n**%s finished** - %d %s(s) total%s.\n", th.id, done, th.unit(), why))
 			if strings.TrimSpace(final) != "" {
 				if len(final) > programFinalChars {
 					final = captaincode.CutHead(final, programFinalChars) + "\n…[truncated - full text in `captain show`]"

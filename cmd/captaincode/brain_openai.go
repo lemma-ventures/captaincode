@@ -450,7 +450,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.Model = string(leg)
 	}
 
-// A typed program (CWL level 2: groups, chains of whole turns, loops with
+	// A typed program (CWL level 2: groups, chains of whole turns, loops with
 	// until:, fallbacks) runs as a detached thread on the /repeat machinery,
 	// before any head below reads the turn: "/team research > /codex
 	// implement" is two steps, not a team task that mentions /codex.

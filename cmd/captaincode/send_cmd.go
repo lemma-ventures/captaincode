@@ -82,7 +82,7 @@ func cmdSend(args []string) {
 		fmt.Fprintf(os.Stderr, "captain send: HTTP %d %s\n", resp.StatusCode, brainErrorText(resp.StatusCode, raw))
 		os.Exit(1)
 	}
-var out struct {
+	var out struct {
 		OK      bool `json:"ok"`
 		Pending int  `json:"pending"`
 	}

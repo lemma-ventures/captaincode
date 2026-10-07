@@ -84,7 +84,7 @@ func workspaceOf(r *http.Request) captaincode.Workspace {
 	}
 	if dir != "" && filepath.IsAbs(dir) {
 		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-clean := filepath.Clean(dir)
+			clean := filepath.Clean(dir)
 			noteTUIActivity(clean)
 			return captaincode.Workspace{Dir: clean, Origin: clean}
 		}
