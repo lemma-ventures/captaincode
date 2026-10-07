@@ -19,6 +19,8 @@ package captaincode
 // in the workspace, building and testing.
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -30,6 +32,28 @@ const SentTurnMarker = "[captain] Provenance: the last user turn was not typed b
 
 // SentTurnEnv is set in a CLI worker's environment for a sent turn.
 const SentTurnEnv = "CAPTAIN_SENT_TURN"
+
+// SentTurnClaudeSettings is the --settings JSON a claude worker answering a
+// sent turn runs with: one PreToolUse hook on every tool, `captain gate
+// --sent-hook`, by the absolute path of this binary when it can be found.
+func SentTurnClaudeSettings() string {
+	bin := "captain"
+	if exe, err := os.Executable(); err == nil && filepath.Base(exe) == "captain" {
+		bin = exe
+	}
+	b, _ := json.Marshal(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{
+		"matcher": "*",
+		"hooks":   []any{map[string]any{"type": "command", "command": shellQuote(bin) + " gate --sent-hook", "timeout": 10}},
+	}}}})
+	return string(b)
+}
+
+func shellQuote(s string) string {
+	if !strings.ContainsAny(s, " '\"$`\\") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // IsSentTurn reports whether a worker prompt answers a sent turn.
 func IsSentTurn(prompt string) bool { return strings.Contains(prompt, SentTurnMarker) }
@@ -47,6 +71,9 @@ var sentShellRules = []sentRule{
 	{"relay to other captains", regexp.MustCompile(`(?i)\bcaptain\s+send\b|/v1/inbox\b`)},
 	{"switch off a safety check", regexp.MustCompile(`(?i)--no-verify\b|CAPTAIN_(ACTION_GATE|REDACT|INBOX_HOLD|ISOLATE_MOVED)\s*=\s*(0|off)|git\s+config\s+[^|;&]*core\.hooksPath|chmod\s+-?R?\s*777`)},
 }
+
+// secretPathRe is a path into a credential store.
+var secretPathRe = regexp.MustCompile(`(^|/)\.(ssh|aws|gnupg|netrc|docker/config\.json|config/gh|kube)(/|$)|\.(pem|p12|keychain)$|(^|/)\.env(\.|$)`)
 
 // longTokenRe is a value that looks like a credential in a URL: a long run of
 // letters and digits, or a captain secret placeholder.
@@ -70,6 +97,10 @@ func SentTurnRefusal(a GateAction) string {
 			if why := sentPathRefusal(p, a.Cwd); why != "" {
 				return refuse(why)
 			}
+		}
+	case "read", "grep", "glob", "notebookread":
+		if secretPathRe.MatchString(a.Path) {
+			return refuse("read secrets (" + a.Path + ")")
 		}
 	case "webfetch", "fetch", "curl":
 		if i := strings.Index(a.Command, "?"); i >= 0 && longTokenRe.MatchString(a.Command[i:]) {

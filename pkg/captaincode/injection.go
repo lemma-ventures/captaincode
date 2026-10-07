@@ -48,6 +48,19 @@ type Finding struct {
 	Severity Severity `json:"-"`
 	Level    string   `json:"severity"`
 	Excerpt  string   `json:"excerpt"`
+	// Quoted: a high pattern inside backtick code, rated medium until a
+	// judge reads the context (brain_inbox.go).
+	Quoted bool `json:"quoted,omitempty"`
+}
+
+// HasQuotedHigh reports a high pattern that only appeared inside code.
+func HasQuotedHigh(fs []Finding) bool {
+	for _, f := range fs {
+		if f.Quoted {
+			return true
+		}
+	}
+	return false
 }
 
 type injectionRule struct {
@@ -192,11 +205,12 @@ func ScanInjection(text string) []Finding {
 				m := view[loc[0]:loc[1]]
 				seen[r.kind] = true
 				sev := r.sev
+				quoted := false
 				// Inside backtick code a pattern is usually discussed, not
 				// commanded ("add a test that refuses `git push --force`"):
-				// flagged and delivered, not held.
+				// medium, and the judge decides from the context.
 				if i == 0 && insideCode(view, loc[0]) && sev == SevHigh {
-					sev = SevMedium
+					sev, quoted = SevMedium, true
 				}
 				excerpt := CutHead(strings.Join(strings.Fields(m), " "), 80)
 				switch {
@@ -205,7 +219,7 @@ func ScanInjection(text string) []Finding {
 				case i >= 2:
 					excerpt += " (inside an encoded payload)"
 				}
-				out = append(out, Finding{Kind: r.kind, Severity: sev, Excerpt: excerpt})
+				out = append(out, Finding{Kind: r.kind, Severity: sev, Excerpt: excerpt, Quoted: quoted})
 			}
 		}
 	}

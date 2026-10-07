@@ -43,6 +43,7 @@ var gateTimeout = 3 * time.Second
 func cmdGate(args []string) {
 	fs := flag.NewFlagSet("gate", flag.ExitOnError)
 	hook := fs.Bool("hook", false, "Claude Code PreToolUse hook: hook JSON on stdin, hook JSON on stdout")
+	sentHook := fs.Bool("sent-hook", false, "Claude Code PreToolUse hook for a sent turn: the sent-turn policy alone (sentpolicy.go)")
 	tool := fs.String("tool", "", "screen this tool's call; its arguments are JSON on stdin")
 	cwd := fs.String("cwd", "", "the worker's working directory (default: this process's)")
 	session := fs.String("session", "", "the opencode session the tool runs in, so the screening can be joined to its task")
@@ -58,6 +59,8 @@ func cmdGate(args []string) {
 		gateStatus()
 	case *report:
 		gateReport(*target, *minN)
+	case *sentHook:
+		sentTurnHook()
 	case *hook:
 		gateHook()
 	case *check != "":
@@ -172,6 +175,30 @@ func gateHook() {
 		"hookEventName": "PreToolUse", "permissionDecision": "deny",
 		"permissionDecisionReason": v.Reason,
 	}})
+}
+
+// sentTurnHook is the PreToolUse hook a claude worker answering a sent turn
+// runs with (legs.go passes it with --settings for that run only): the
+// sent-turn policy, whether or not redaction or a decision leg is on.
+func sentTurnHook() {
+	var in struct {
+		ToolName  string         `json:"tool_name"`
+		ToolInput map[string]any `json:"tool_input"`
+		Cwd       string         `json:"cwd"`
+	}
+	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
+		return
+	}
+	a := captaincode.GateAction{Tool: strings.ToLower(in.ToolName),
+		Command: firstString(in.ToolInput, "command", "url"),
+		Path:    firstString(in.ToolInput, "file_path", "filePath", "path", "notebook_path"),
+		Cwd:     gateCwd(in.Cwd)}
+	if why := captaincode.SentTurnRefusal(a); why != "" {
+		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
+		writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
+		}})
+	}
 }
 
 func firstString(m map[string]any, keys ...string) string {

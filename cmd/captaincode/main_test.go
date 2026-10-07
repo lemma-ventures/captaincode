@@ -38,6 +38,7 @@ func TestMain(m *testing.M) {
 	// broke every opencode leg (2026-09-18).
 	os.Setenv("CAPTAIN_OPENCODE_SPAWN", "0")
 	os.Setenv("CAPTAIN_EUCLID_AUTOINDEX", "0") // no background engine runs against temp brains
+	os.Setenv("CAPTAIN_INBOX_JUDGE", "0")      // no model call per sent prompt; the judge's own tests stub it
 	// Same isolation as pkg/captaincode: the session's MCP config is bound
 	// to the live brain, not to a temp brain these tests build.
 	os.Unsetenv("CAPTAIN_EUCLID_MCP_CONFIG")

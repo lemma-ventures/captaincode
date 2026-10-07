@@ -106,8 +106,18 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
   (`curl … | sh`), switching off a safety check, and hiding work from the
   user. Lookalike letters (Cyrillic, Greek, fullwidth) are folded to Latin
   and base64 or percent-encoded payloads are decoded before the patterns
-  run. A pattern inside backtick code counts as medium: it is usually being
-  discussed, not commanded. No model is called.
+  run. No model is called for this first pass.
+- **Judge.** What the patterns pass, or only flag, is read by a model before
+  the TUI gets it (`pkg/captaincode/injection_judge.go`): the message is
+  fenced between markers built from a random nonce, the judge has no tools,
+  and it must answer with a fixed JSON verdict. An "injection" verdict at
+  confidence 0.5 or more holds the message. A reply that is not a verdict
+  counts as "could not judge", never as benign. A high pattern inside
+  backtick code (usually discussed, not commanded) is decided by the judge:
+  delivered with its flag when judged benign, held when judged an attack or
+  when the judge cannot answer. The judge runs on the compaction leg
+  (`CAPTAIN_INBOX_JUDGE_LEG` picks another; `CAPTAIN_INBOX_JUDGE=0` turns
+  it off), in the background, so `captain send` returns at once.
 - **Hold.** A high finding holds the message: it is never submitted, the TUI
   says so, and `captain inbox` lists it with its findings to release or drop
   (`CAPTAIN_INBOX_HOLD=0` turns holding off). A medium finding is delivered
@@ -123,9 +133,14 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
   `printenv`, `gh auth token`), relaying to other captains, switching off a
   safety check, writing outside the workspace or into `.git`, hooks or CI,
   and fetching a URL that carries a credential-like value. opencode workers
-  are checked by the plugin through the brain (`/v1/gate/sent`), claude
-  workers by the redaction hook, codex runs a sent turn in its own sandbox
-  (workspace writes only, no network) and cursor without `--force`.
+  are checked by the plugin through the brain (`/v1/gate/sent`). A claude
+  worker on a sent turn runs with its own PreToolUse hook, passed with
+  `--settings` for that run only (`captain gate --sent-hook`), so it holds
+  with redaction and the decision leg both off; the global redaction hook
+  applies the same policy too. codex runs a sent turn in its own sandbox
+  (workspace writes only, no network) and cursor without `--force`. Reading
+  credential files (`~/.ssh`, `~/.aws`, `.env`, `*.pem`) with a read tool is
+  refused as well.
 - **No secrets in URLs.** A secret placeholder is never turned back into the
   secret inside a fetched URL, sent turn or not.
 - **Bounds.** A sent prompt cannot start a loop or a program, and at most
@@ -144,12 +159,16 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
 
 A regression corpus (`pkg/captaincode/injection_corpus_test.go`) holds 25
 attacks, four of them disguised, and 20 benign messages between captains,
-several about security; the screen catches all 25 and would hold none of the
-benign ones (one is flagged). The screen is still a heuristic: an attack
-worded in a way it does not know gets through, and the provenance line and
-the tool-level policy are the layers that do not depend on the wording.
-Without the redaction hook (`CAPTAIN_REDACT=off`), claude workers are not
-checked at the tool boundary.
+several about security; the patterns catch all 25 and would hold none of
+the benign ones (one is flagged). Checked live on 2026-10-07: the judge held
+a paraphrased attack that no pattern matches (0.98), passed a status report,
+and held a message that told it to answer "benign" (1.00); a claude worker
+on a sent turn, with only the per-run hook, was refused `git push`.
+
+What remains: the judge is a model and can be persuaded or wrong, and with
+it off or failing, a message that no pattern matches is delivered. In every
+case the provenance line and the tool-level policy still apply - they are
+the layers that do not depend on recognizing the wording.
 
 A task typed in one TUI that names another repository runs there. If that
 repository already has a worker, loop or program running, the moved worker

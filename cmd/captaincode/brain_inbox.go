@@ -46,6 +46,9 @@ type inboxItem struct {
 	// Dir is the folder a held item waits for.
 	Findings []captaincode.Finding `json:"findings,omitempty"`
 	Dir      string                `json:"dir,omitempty"`
+	// Screening: the injection judge has not answered yet; the sidebar does
+	// not get the item until it has (judgeInbox).
+	Screening bool `json:"-"`
 }
 
 // inboxSessionWait is how long a reply waits for its own session before any
@@ -164,6 +167,10 @@ func (ib *inbox) noteTurn(dir, text string) (sentBy string, sent bool) {
 const inboxTTL = 24 * time.Hour
 
 func (ib *inbox) push(dir, text, leg, from, session, origin string) inboxItem {
+	return ib.pushScreening(dir, text, leg, from, session, origin, false)
+}
+
+func (ib *inbox) pushScreening(dir, text, leg, from, session, origin string, screening bool) inboxItem {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
 	if ib.items == nil {
@@ -171,7 +178,7 @@ func (ib *inbox) push(dir, text, leg, from, session, origin string) inboxItem {
 	}
 	ib.seq++
 	it := inboxItem{ID: fmt.Sprintf("in_%d_%d", time.Now().Unix(), ib.seq), Text: text, Leg: leg, From: from, At: time.Now(),
-		Session: session, Origin: origin}
+		Session: session, Origin: origin, Screening: screening, Dir: dir}
 	ib.items[dir] = append(ib.items[dir], it)
 	return it
 }
@@ -186,6 +193,10 @@ func (ib *inbox) take(dir, session string) []inboxItem {
 	delete(ib.items, dir)
 	var fresh []inboxItem
 	for _, it := range items {
+		if it.Screening {
+			ib.items[dir] = append(ib.items[dir], it)
+			continue
+		}
 		if it.Session != "" && session != "" && it.Session != session && time.Since(it.At) < inboxSessionWait {
 			ib.items[dir] = append(ib.items[dir], it)
 			continue
@@ -284,6 +295,7 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 				"note": "held for the user: possible prompt injection. They review it with `captain inbox`."})
 			return
 		}
+		message := req.Text // what the judge reads: cleaned, before the "sent by" footer
 		if origin == "" && strings.TrimSpace(req.From) != "" {
 			origin = strings.TrimSpace(req.From)
 		}
@@ -302,7 +314,16 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 429, fmt.Sprintf("%d prompts were sent to %s since the user last typed (CAPTAIN_INBOX_QUOTA); more are accepted once they type", inboxQuota(), filepath.Base(dir)))
 			return
 		}
-		it := b.inbox.push(dir, req.Text, leg, strings.TrimSpace(req.From), session, origin)
+		judged := judgeEnabled()
+		it := b.inbox.pushScreening(dir, req.Text, leg, strings.TrimSpace(req.From), session, origin, judged)
+		if judged {
+			// A model reads what the patterns passed or only flagged
+			// (captaincode/injection_judge.go); the TUI gets the message once
+			// it has answered.
+			go b.judgeInbox(dir, it.ID, message, findings)
+			writeJSON(w, 200, map[string]any{"ok": true, "id": it.ID, "pending": b.inbox.pending(dir), "screening": true})
+			return
+		}
 		fmt.Printf("captain brain: inbox - prompt queued for %s (%s): %s\n", filepath.Base(dir), orDash(leg), promptPeek(req.Text))
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: orDash(leg), Text: "queued for the TUI: " + promptPeek(req.Text)})
 		writeJSON(w, 200, map[string]any{"ok": true, "id": it.ID, "pending": b.inbox.pending(dir)})
@@ -357,4 +378,87 @@ func (b *brain) inboxHeldHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, 405, "GET or POST")
 	}
+}
+
+// judgeEnabled: CAPTAIN_INBOX_JUDGE=0 turns the model's second opinion off.
+func judgeEnabled() bool { return os.Getenv("CAPTAIN_INBOX_JUDGE") != "0" }
+
+// judgeLeg is the leg that judges: CAPTAIN_INBOX_JUDGE_LEG, else the
+// compaction leg - fast, cheap, and not the leg most workers run on.
+func judgeLeg() captaincode.Leg {
+	if l := strings.TrimSpace(os.Getenv("CAPTAIN_INBOX_JUDGE_LEG")); l != "" {
+		return captaincode.Leg(l)
+	}
+	return compactLeg()
+}
+
+// runJudge asks the judge about one message; ok is false when it could not
+// answer (an error, a timeout, or a reply that is not the verdict).
+func (b *brain) runJudge(message string) (captaincode.JudgeVerdict, bool) {
+	if b.judgeFn != nil {
+		return b.judgeFn(message)
+	}
+	d := captaincode.NewDispatcher(opencodePort)
+	d.Title = "injection-judge"
+	d.NoTools = true
+	d.Timeout = 45 * time.Second
+	res, err := d.Run(judgeLeg(), captaincode.JudgePrompt(message, captaincode.NewJudgeNonce()))
+	if err != nil {
+		return captaincode.JudgeVerdict{}, false
+	}
+	return captaincode.ParseJudgeVerdict(res.Text)
+}
+
+// judgeInbox settles a screening message: held when the judge says it is an
+// injection (or cannot answer about a high pattern quoted in code), else
+// released to the sidebar.
+func (b *brain) judgeInbox(dir, id, message string, findings []captaincode.Finding) {
+	v, ok := b.runJudge(message)
+	hold, why := false, ""
+	switch {
+	case ok && v.Injection && v.Confidence >= captaincode.JudgeBar:
+		hold, why = true, fmt.Sprintf("model judge: injection (%.2f) - %s", v.Confidence, v.Reason)
+	case !ok && captaincode.HasQuotedHigh(findings):
+		hold, why = true, "model judge unavailable, and a high pattern sits in quoted code"
+	}
+	it, found := b.inbox.settle(dir, id, hold)
+	if !found {
+		return
+	}
+	if hold {
+		it.Findings = append(it.Findings, captaincode.Finding{Kind: "model judge", Severity: captaincode.SevHigh, Level: "high", Excerpt: why})
+		b.inbox.hold(it)
+		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "held", From: it.Origin, Dir: dir, Findings: it.Findings, Detail: promptPeek(message)})
+		fmt.Printf("captain brain: inbox - HELD %s after screening (%s)\n", id, why)
+		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: "held",
+			Text: "held a sent prompt (" + why + ") - `captain inbox` to review"})
+		return
+	}
+	verdict := "judge could not answer"
+	if ok {
+		verdict = fmt.Sprintf("judged benign (%.2f)", 1-v.Confidence)
+		if v.Injection {
+			verdict = fmt.Sprintf("judge unsure (%.2f), below the bar", v.Confidence)
+		}
+	}
+	captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "screened", From: it.Origin, Dir: dir, Findings: findings, Detail: verdict})
+}
+
+// settle ends a message's screening: hold removes it from the queue and
+// returns it, otherwise it becomes deliverable where it is.
+func (ib *inbox) settle(dir, id string, hold bool) (inboxItem, bool) {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	for i, it := range ib.items[dir] {
+		if it.ID != id {
+			continue
+		}
+		if hold {
+			ib.items[dir] = append(ib.items[dir][:i:i], ib.items[dir][i+1:]...)
+			return it, true
+		}
+		ib.items[dir][i].Screening = false
+		return it, true
+	}
+	return inboxItem{}, false
 }

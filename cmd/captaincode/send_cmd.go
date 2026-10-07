@@ -100,10 +100,15 @@ func cmdSend(args []string) {
 		os.Exit(1)
 	}
 	var out struct {
-		OK      bool `json:"ok"`
-		Pending int  `json:"pending"`
+		OK        bool `json:"ok"`
+		Pending   int  `json:"pending"`
+		Screening bool `json:"screening"`
 	}
 	_ = json.Unmarshal(raw, &out)
+	if out.Screening {
+		fmt.Printf("queued for %s (%d pending) - an injection screen reads it first; it is delivered unless the screen holds it for the user\n", cwd, out.Pending)
+		return
+	}
 	if reply != "" {
 		fmt.Printf("queued as a reply (%s, %d pending) - it is submitted into the session that turn came from\n", reply, out.Pending)
 		return

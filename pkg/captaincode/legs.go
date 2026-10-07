@@ -2322,6 +2322,12 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 			args = append(args, "--effort", effort.ClaudeFlag())
 		}
 	}
+	if IsSentTurn(task) {
+		// The sent-turn policy as this run's own PreToolUse hook, loaded with
+		// --settings for this run only: it holds whether or not the global
+		// redaction or gate hooks are installed (sentpolicy.go).
+		args = append(args, "--settings", SentTurnClaudeSettings())
+	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	// Through the egress proxy while it listens (ANTHROPIC_BASE_URL): the
 	// Max login is unaffected, the bearer rides through (verified live
