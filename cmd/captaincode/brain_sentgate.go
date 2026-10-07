@@ -36,7 +36,10 @@ func (s *sentSessions) isSent(session string, fetch func(string) (string, error)
 	}
 	prompt, err := fetch(session)
 	if err != nil {
-		return false // the serve did not answer: no evidence the turn was sent
+		// The serve did not answer: no evidence the turn was typed by the
+		// user either. Fail closed for this call, and ask again next time.
+		fmt.Printf("captain brain: sent-turn gate - could not read session %s (%v); applying the sent-turn policy to this call\n", session, err)
+		return true
 	}
 	v = captaincode.IsSentTurn(prompt)
 	s.mu.Lock()
@@ -86,8 +89,27 @@ func firstUserPrompt(session string) (string, error) {
 	return "", nil
 }
 
+// sessionDirectory reads the folder an opencode session works in.
+func sessionDirectory(session string) (string, error) {
+	c := &http.Client{Timeout: 3 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/session/%s", opencodePort, session))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var s struct {
+		Directory string `json:"directory"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
+		return "", err
+	}
+	return s.Directory, nil
+}
+
 // gateSentHTTP: POST /v1/gate/sent {"session":"…","tool":"bash","args":{…},"cwd":"…"}
-// → {"allow":true} or {"allow":false,"reason":"…"}.
+// → {"allow":true}, {"allow":true,"jail":[…prefix]} (run the shell command
+// as prefix + one quoted argument, pkg jail.go), or {"allow":false,"reason":"…"}.
+// A refusal also closes the folder's inbox (tripwire).
 func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "POST")
@@ -111,10 +133,23 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 	a := captaincode.GateAction{Tool: strings.ToLower(req.Tool),
 		Command: firstString(req.Args, "command", "cmd", "url", "script"),
 		Path:    firstString(req.Args, "filePath", "file_path", "path"), Cwd: req.Cwd, SessionID: req.Session}
-	if why := captaincode.SentTurnRefusal(a); why != "" {
+	dirFn := sessionDirectory
+	if b.sessionDirFn != nil {
+		dirFn = b.sessionDirFn
+	}
+	if d, err := dirFn(req.Session); err == nil && d != "" {
+		a.Cwd = d
+	}
+	why, jail := captaincode.SentTurnDecision(a)
+	if why != "" {
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
 		fmt.Printf("captain brain: sent turn %s - %s refused: %s\n", req.Session, a.Tool, why)
+		b.tripInbox(a.Cwd, a.Tool, why)
 		writeJSON(w, 200, map[string]any{"allow": false, "reason": why})
+		return
+	}
+	if jail {
+		writeJSON(w, 200, map[string]any{"allow": true, "jail": captaincode.JailPrefix(a.Cwd)})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"allow": true})

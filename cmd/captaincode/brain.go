@@ -194,6 +194,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/interrupt", b.interruptHTTP)
 	mux.HandleFunc("/v1/inbox", b.inboxHTTP)
 	mux.HandleFunc("/v1/inbox/held", b.inboxHeldHTTP)
+	mux.HandleFunc("/v1/inbox/trip", b.inboxTripHTTP)
 	mux.HandleFunc("/v1/gate/sent", b.gateSentHTTP)
 	mux.HandleFunc("/v1/session/seen", b.sessionSeenHTTP)
 	mux.HandleFunc("/v1/euclid/status", b.euclidStatusHTTP)
@@ -444,6 +445,9 @@ type brain struct {
 	chatFn func(w *captureWriter)
 	// judgeFn stubs the injection judge in tests (brain_inbox.go).
 	judgeFn func(leg captaincode.Leg, message string) (captaincode.JudgeVerdict, bool)
+	// sessionDirFn reads an opencode session's folder (brain_sentgate.go);
+	// a test seam.
+	sessionDirFn func(session string) (string, error)
 	// sessionPromptFn stubs reading an opencode session's prompt in tests
 	// (brain_sentgate.go).
 	sessionPromptFn func(session string) (string, error)

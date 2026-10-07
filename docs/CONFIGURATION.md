@@ -1189,7 +1189,12 @@ is delivered, and holds it when any judge calls it an injection, when a
 judge fails its known-answer check, or when no judge answers (fail-closed);
 `0` delivers without it and marks each message "not screened by a model".
 `CAPTAIN_INBOX_JUDGE_LEG` picks the first judge (default: the compaction
-leg), `CAPTAIN_INBOX_JUDGE_LEGS` (comma-separated) the whole panel. `CAPTAIN_INBOX_HOLD` (default on): a sent prompt the injection screen rates
+leg), `CAPTAIN_INBOX_JUDGE_LEGS` (comma-separated) the whole panel.
+`CAPTAIN_SENT_JAIL` (default on): a sent turn's shell commands run in the OS
+sandbox, with no network, writes in the workspace only and no credentials,
+and they are refused where no sandbox exists. `0` runs them unjailed; the
+tool allowlist and the named rules still apply. A refused action on a sent
+turn closes the folder's inbox until `captain inbox open`. `CAPTAIN_INBOX_HOLD` (default on): a sent prompt the injection screen rates
 high is held for `captain inbox` instead of delivered; `0` delivers it with
 the finding named. `CAPTAIN_ISOLATE_MOVED` (default on): a worker moved into a
 repository that has work in flight runs in its own worktree and returns a

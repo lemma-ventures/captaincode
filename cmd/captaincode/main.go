@@ -136,6 +136,9 @@ func main() {
 		case "redact":
 			cmdRedact(args[1:])
 			return
+		case "jail": // a sent turn's shell command, in the OS sandbox (jail_cmd.go)
+			cmdJail(args[1:])
+			return
 		case "inbox": // sent prompts the injection screen held (inbox_cmd.go)
 			cmdInbox(args[1:])
 			return

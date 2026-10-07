@@ -13,10 +13,13 @@ package captaincode
 //   - codex runs a sent turn in its own sandbox (workspace writes only, no
 //     network), and cursor without --force (codexcli.go, legs.go).
 //
-// The rules refuse what an injection wants - publishing, deleting, sending
-// data off the machine, reading secrets, relaying to other captains, and
-// writing outside the work - and allow ordinary work: reading, editing files
-// in the workspace, building and testing.
+// The tools are an allowlist: reading, editing files in the workspace and
+// the shell. Fetching the web, subagents, MCP tools and anything new are
+// refused, whatever the call says. Every shell command runs in the jail
+// (jail.go): no network, writes in the workspace only, no credentials -
+// enforced by the operating system, not by reading the command. The shell
+// rules below still refuse what an injection wants by name, so the worker
+// is told why rather than meeting a sandbox error.
 
 import (
 	"encoding/json"
@@ -32,6 +35,10 @@ const SentTurnMarker = "[captain] Provenance: the last user turn was not typed b
 
 // SentTurnEnv is set in a CLI worker's environment for a sent turn.
 const SentTurnEnv = "CAPTAIN_SENT_TURN"
+
+// SentDirEnv is the sent turn's workspace in a CLI worker's environment: the
+// folder its shell commands are jailed to and whose inbox a refusal closes.
+const SentDirEnv = "CAPTAIN_SENT_DIR"
 
 // SentTurnClaudeSettings is the --settings JSON a claude worker answering a
 // sent turn runs with: one PreToolUse hook on every tool, `captain gate
@@ -79,13 +86,59 @@ var secretPathRe = regexp.MustCompile(`(^|/)\.(ssh|aws|gnupg|netrc|docker/config
 // letters and digits, or a captain secret placeholder.
 var longTokenRe = regexp.MustCompile(`[A-Za-z0-9_\-]{32,}|\[\[secret:`)
 
+// sentTurnTools are the tools a sent turn may use (lowercase; claude's and
+// opencode's names). Not here, so refused: web fetch and search, subagents
+// (opencode's do not inherit the turn's provenance), MCP and plugin tools
+// (they reach other services or the memory).
+var sentTurnTools = map[string]bool{
+	"bash": true, "shell": true, "bashoutput": true, "killshell": true,
+	"read": true, "notebookread": true, "grep": true, "glob": true, "ls": true, "list": true,
+	"write": true, "edit": true, "multiedit": true, "patch": true, "apply_patch": true, "notebookedit": true,
+	"todowrite": true, "todoread": true, "exitplanmode": true,
+}
+
+// shellTools run a command line.
+var shellTools = map[string]bool{"bash": true, "shell": true, "run": true, "execute": true, "terminal": true}
+
+// SentJailEnabled: CAPTAIN_SENT_JAIL=0 runs a sent turn's shell commands
+// outside the jail (the shell rules still apply).
+func SentJailEnabled() bool { return os.Getenv("CAPTAIN_SENT_JAIL") != "0" }
+
+// SentTurnDecision is the whole sent-turn policy for one tool call: why it is
+// refused, or, for a shell command, whether it must run in the jail.
+func SentTurnDecision(a GateAction) (refusal string, jail bool) {
+	if why := SentTurnRefusal(a); why != "" {
+		return why, false
+	}
+	if !shellTools[strings.ToLower(a.Tool)] || !SentJailEnabled() {
+		return "", false
+	}
+	if _, _, err := JailCommand(orDot(a.Cwd), "true"); err != nil {
+		return sentRefuse("run a shell command outside a sandbox (" + err.Error() + ")"), false
+	}
+	return "", true
+}
+
+func orDot(s string) string {
+	if s == "" {
+		return "."
+	}
+	return s
+}
+
+func sentRefuse(why string) string {
+	return "refused: this turn was sent by another agent with `captain send`, not typed by the user, and a sent turn may not " + why + ". Ask the user to type the request if they want it."
+}
+
 // SentTurnRefusal returns why a sent turn may not take this action, or "".
 // cwd is the worker's workspace: writes outside it are refused.
 func SentTurnRefusal(a GateAction) string {
-	refuse := func(why string) string {
-		return "refused: this turn was sent by another agent with `captain send`, not typed by the user, and a sent turn may not " + why + ". Ask the user to type the request if they want it."
+	refuse := sentRefuse
+	tool := strings.ToLower(a.Tool)
+	if !sentTurnTools[tool] && !shellTools[tool] {
+		return refuse("use the " + a.Tool + " tool (a sent turn reads, edits its workspace and runs sandboxed commands; nothing else)")
 	}
-	switch strings.ToLower(a.Tool) {
+	switch tool {
 	case "bash", "shell", "run", "execute", "terminal":
 		for _, r := range sentShellRules {
 			if r.re.MatchString(a.Command) {
@@ -101,13 +154,6 @@ func SentTurnRefusal(a GateAction) string {
 	case "read", "grep", "glob", "notebookread":
 		if secretPathRe.MatchString(a.Path) {
 			return refuse("read secrets (" + a.Path + ")")
-		}
-	case "webfetch", "fetch", "curl":
-		if i := strings.Index(a.Command, "?"); i >= 0 && longTokenRe.MatchString(a.Command[i:]) {
-			return refuse("send a credential-like value in a URL")
-		}
-		if strings.Contains(a.Command, "[[secret:") {
-			return refuse("send a secret in a URL")
 		}
 	}
 	return ""

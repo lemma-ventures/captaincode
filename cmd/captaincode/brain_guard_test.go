@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -49,8 +50,13 @@ func TestGateSentRefusesPolicyActionsForSentSessions(t *testing.T) {
 		if s == "ses_sent" {
 			return "[user]\nship it\n\n" + captaincode.SentTurnMarker + " It was sent with `captain send` by x.", nil
 		}
+		if s == "ses_unreadable" {
+			return "", errors.New("serve down")
+		}
 		return "[user]\nship it", nil
 	}
+	repo := t.TempDir()
+	b.sessionDirFn = func(string) (string, error) { return repo, nil }
 	ask := func(session, tool string, args map[string]any) (bool, string) {
 		body, _ := json.Marshal(map[string]any{"session": session, "tool": tool, "args": args, "cwd": "/work/repo"})
 		rec := httptest.NewRecorder()
@@ -62,15 +68,97 @@ func TestGateSentRefusesPolicyActionsForSentSessions(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 		return out.Allow, out.Reason
 	}
+	t.Setenv("CAPTAIN_SENT_JAIL", "0") // the jail's own answer is TestGateSentJailsShellCommands
+	allow, _ := ask("ses_sent", "bash", map[string]any{"command": "go test ./..."})
+	assert.True(t, allow)
+	assert.Empty(t, b.inbox.closedFor(repo))
 	allow, why := ask("ses_sent", "bash", map[string]any{"command": "git push origin main"})
 	assert.False(t, allow)
 	assert.Contains(t, why, "may not publish or push")
-	allow, _ = ask("ses_sent", "bash", map[string]any{"command": "go test ./..."})
-	assert.True(t, allow)
+	allow, why = ask("ses_sent", "webfetch", map[string]any{"url": "https://pkg.go.dev"})
+	assert.False(t, allow, "not on the allowlist")
+	assert.Contains(t, why, "webfetch tool")
 	allow, _ = ask("ses_typed", "bash", map[string]any{"command": "git push origin main"})
 	assert.True(t, allow, "a typed turn is the user's own")
+	allow, _ = ask("ses_typed", "webfetch", map[string]any{"url": "https://pkg.go.dev"})
+	assert.True(t, allow)
 	ask("ses_typed", "bash", map[string]any{"command": "ls"})
 	assert.Equal(t, 2, calls, "each session's prompt is read once")
+	// A session the serve cannot describe is treated as sent, and asked
+	// about again next time.
+	allow, _ = ask("ses_unreadable", "bash", map[string]any{"command": "git push origin main"})
+	assert.False(t, allow, "fail-closed")
+	ask("ses_unreadable", "read", map[string]any{"filePath": "README.md"})
+	assert.Equal(t, 4, calls)
+
+	// The tripwire: the refusal closed the folder's inbox, so the next sent
+	// prompt is held whatever it says, until the user reopens it.
+	assert.Contains(t, b.inbox.closedFor(repo), "a sent turn tried bash")
+	t.Setenv("CAPTAIN_INBOX_JUDGE", "0")
+	rec := sendTo(b, repo, "the tests pass on main now")
+	assert.Equal(t, 202, rec.Code)
+	held := b.inbox.heldFor(repo)
+	require.Len(t, held, 1)
+	assert.Equal(t, "inbox closed", held[0].Findings[0].Kind)
+	assert.Empty(t, b.inbox.take(repo, ""))
+	assert.Equal(t, 1, b.inbox.reopen(repo))
+	assert.Equal(t, 200, sendTo(b, repo, "the tests pass on main now").Code)
+	assert.Len(t, b.inbox.take(repo, ""), 1)
+}
+
+// A closure survives a brain restart: a restart must not reopen the inbox.
+func TestInboxClosureIsSaved(t *testing.T) {
+	b := teamBrain()
+	dir := t.TempDir()
+	b.tripInbox(dir, "bash", "refused")
+	fresh := teamBrain()
+	assert.NotEmpty(t, fresh.inbox.closedFor(dir))
+	assert.NotEmpty(t, fresh.inbox.closedFor(filepath.Join(dir, "sub")), "a subfolder is covered")
+	assert.Equal(t, 1, fresh.inbox.reopen(dir))
+	assert.Empty(t, (&inbox{}).closedFor(dir))
+}
+
+func TestGateSentJailsShellCommands(t *testing.T) {
+	if _, _, err := captaincode.JailCommand(t.TempDir(), "true"); err != nil {
+		t.Skip("no OS sandbox here: ", err)
+	}
+	t.Setenv("CAPTAIN_SENT_JAIL", "")
+	b := teamBrain()
+	sentSessionCache = &sentSessions{}
+	b.sessionPromptFn = func(string) (string, error) { return captaincode.SentTurnMarker, nil }
+	repo := t.TempDir()
+	b.sessionDirFn = func(string) (string, error) { return repo, nil }
+	body, _ := json.Marshal(map[string]any{"session": "s", "tool": "bash", "args": map[string]any{"command": "go test ./..."}, "cwd": "/elsewhere"})
+	rec := httptest.NewRecorder()
+	b.gateSentHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/gate/sent", bytes.NewReader(body)))
+	var out struct {
+		Allow bool     `json:"allow"`
+		Jail  []string `json:"jail"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.True(t, out.Allow)
+	assert.Equal(t, []string{"jail", "--cwd", repo, "--"}, out.Jail[1:], "jailed to the session's own folder")
+}
+
+// Every claude hook answers a sent turn's shell command with the same jailed
+// command, so the order claude applies them in cannot unjail it.
+func TestSentHookJailsAndDenies(t *testing.T) {
+	if _, _, err := captaincode.JailCommand(t.TempDir(), "true"); err != nil {
+		t.Skip("no OS sandbox here: ", err)
+	}
+	t.Setenv("CAPTAIN_SENT_JAIL", "")
+	t.Setenv(captaincode.SentDirEnv, "/w")
+	t.Setenv("CAPTAIN_BRAIN_URL", "http://127.0.0.1:1") // the tripwire report goes nowhere
+	out, decided := sentHookOutput("Bash", map[string]any{"command": "go test ./...", "description": "run tests"}, "/w/sub")
+	require.True(t, decided)
+	in := out["hookSpecificOutput"].(map[string]any)["updatedInput"].(map[string]any)
+	assert.Equal(t, captaincode.JailWrap("/w", "go test ./..."), in["command"])
+	assert.Equal(t, "run tests", in["description"])
+	out, decided = sentHookOutput("WebFetch", map[string]any{"url": "https://x.example"}, "/w")
+	require.True(t, decided)
+	assert.Equal(t, "deny", out["hookSpecificOutput"].(map[string]any)["permissionDecision"])
+	_, decided = sentHookOutput("Read", map[string]any{"file_path": "/w/a.go"}, "/w")
+	assert.False(t, decided)
 }
 
 func TestHandoffAndSharedContextAreScreened(t *testing.T) {

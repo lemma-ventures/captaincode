@@ -134,21 +134,40 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
   where. Only a reply token proves the sender; a name and a folder are the
   sender's own claim, and the label says "unverified". The worker that
   answers is told the turn was not typed by the user.
-- **Enforce.** While a worker answers a sent turn, a deterministic policy
-  refuses, at the tool boundary and without a decision leg: publishing or
-  pushing, deleting or rewriting history, sending data off the machine
-  (uploads, `scp`, `ssh`, `nc`), reading secrets (`~/.ssh`, `~/.aws`,
-  `printenv`, `gh auth token`), relaying to other captains, switching off a
-  safety check, writing outside the workspace or into `.git`, hooks or CI,
-  and fetching a URL that carries a credential-like value. opencode workers
-  are checked by the plugin through the brain (`/v1/gate/sent`). A claude
-  worker on a sent turn runs with its own PreToolUse hook, passed with
-  `--settings` for that run only (`captain gate --sent-hook`), so it holds
-  with redaction and the decision leg both off; the global redaction hook
-  applies the same policy too. codex runs a sent turn in its own sandbox
-  (workspace writes only, no network) and cursor without `--force`. Reading
-  credential files (`~/.ssh`, `~/.aws`, `.env`, `*.pem`) with a read tool is
-  refused as well.
+- **Enforce.** While a worker answers a sent turn, the tool boundary applies
+  a deterministic policy, without a decision leg and without reading the
+  message (`pkg/captaincode/sentpolicy.go`):
+  - *An allowlist of tools.* Reading, editing files in the workspace and the
+    shell. Web fetch and search, subagents, MCP and plugin tools (memory
+    included) and any tool not on the list are refused.
+  - *The jail* (`pkg/captaincode/jail.go`, `captain jail`). Every shell
+    command runs inside the operating system's sandbox: sandbox-exec on
+    macOS, bubblewrap on Linux. Whatever the command says, it has no
+    network (localhost, DNS and unix sockets included, so it cannot reach
+    the brain or the opencode serve), writes only in the workspace, the
+    temporary directories and the build caches, never into `.git/hooks`,
+    `.git/config` or CI, cannot read credential stores (`~/.ssh`, `~/.aws`,
+    `~/.config/captain`, `~/.captaincode`, the CLIs' own logins, the
+    keychain), and runs without any environment variable that looks like a
+    credential. Where no sandbox exists the command is refused, never run
+    bare. `CAPTAIN_SENT_JAIL=0` runs sent-turn commands unjailed.
+  - *Named rules.* Pushing, publishing, deleting, uploading, reading secrets,
+    relaying to other captains and switching off a check are still refused
+    by name first, so the worker is told why. Writes outside the workspace
+    or into `.git`, hooks or CI are refused for the edit tools.
+
+  opencode workers are checked by the plugin through the brain
+  (`/v1/gate/sent`), which rewrites a shell command into its jailed form. A
+  session the brain cannot read is treated as sent. A claude worker on a
+  sent turn runs with its own PreToolUse hook, passed with `--settings` for
+  that run only (`captain gate --sent-hook`). Its gate and redaction hooks
+  give the same answer, so no hook order unjails a command. codex runs a
+  sent turn in its own sandbox (workspace writes only, no network), and
+  cursor runs in its sandbox without `--force`.
+- **Tripwire.** A refused action means the message got past the patterns
+  and the judges. The folder's inbox closes: every later sent prompt there
+  is held for the user, whatever it says, until `captain inbox open`. The
+  closure survives a brain restart.
 - **No secrets in URLs.** A secret placeholder is never turned back into the
   secret inside a fetched URL, sent turn or not.
 - **Bounds.** A sent prompt cannot start a loop or a program, and at most
@@ -171,16 +190,21 @@ several about security; the patterns catch all 25 and would hold none of
 the benign ones (one is flagged). Checked live on 2026-10-07: the judge held
 a paraphrased attack that no pattern matches (0.98), passed a status report,
 and held a message that told it to answer "benign" (1.00); a claude worker
-on a sent turn, with only the per-run hook, was refused `git push`.
+on a sent turn, with only the per-run hook, was refused `git push`. A claude
+worker on a sent turn ran its commands in the jail: no DNS, no write to
+`$HOME`, and WebFetch refused.
 
-What remains: a judge is a model and can still be wrong, or persuaded in a
-way that keeps its key and its format; the panel makes that harder (every
-answering judge, of two families, must agree the message is benign) but
-not impossible. A judge that is down no longer lets a message through: with
-no answer the message is held. Only `CAPTAIN_INBOX_JUDGE=0` delivers
-unjudged text, and then the TUI says so. In every case the provenance line
-and the tool-level policy still apply - they are the layers that do not
-depend on recognizing the wording.
+What remains: a judge can be wrong or persuaded, and then a hostile
+message is delivered. What it can do from there is bounded by the tool
+boundary, which does not read the message: a sent turn's worker can read
+the machine (outside credential stores) and change files in its workspace.
+It cannot reach the network, publish, touch credentials or the repository's
+hooks, or pass the message on, and its first refused attempt closes the
+inbox. A hostile edit in the workspace stays for the user to review like
+any other uncommitted change. The answer the worker writes reaches the
+TUI's transcript, where the user reads it. The plugin allows a call when
+the brain itself does not answer (a brain that is restarting). On codex
+and cursor the limits are those CLIs' own sandboxes.
 
 A task typed in one TUI that names another repository runs there. If that
 repository already has a worker, loop or program running, the moved worker

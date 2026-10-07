@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 
 func cmdInbox(args []string) {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
-		fmt.Println("usage: captain inbox [release <id> | drop <id> | --log]\n\nLists the prompts sent with `captain send` that were held as possible prompt injection, with what the screen found. `release` delivers one to its folder's session; `drop` deletes it.")
+		fmt.Println("usage: captain inbox [release <id> | drop <id> | open [folder|--all] | --log]\n\nLists the prompts sent with `captain send` that were held as possible prompt injection, with what the screen found, and the folders whose inbox is closed. `release` delivers one to its folder's session; `drop` deletes it. A sent turn that tries something the sent-turn policy refuses closes its folder's inbox: later sent prompts are held until `open` (default: this folder).")
 		return
 	}
 	if len(args) > 0 && args[0] == "--log" {
@@ -32,6 +33,33 @@ func cmdInbox(args []string) {
 		return
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
+	if len(args) > 0 && args[0] == "open" {
+		dir, _ := os.Getwd()
+		if len(args) > 1 {
+			dir = args[1]
+		}
+		if dir == "--all" {
+			dir = ""
+		} else if abs, err := filepath.Abs(dir); err == nil {
+			dir = abs
+		}
+		body, _ := json.Marshal(map[string]string{"action": "open", "dir": dir})
+		resp, err := client.Post(brainURL()+"/v1/inbox/held", "application/json", bytes.NewReader(body))
+		if err != nil {
+			fatal(fmt.Errorf("the brain is not running (%v)", err))
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Reopened int `json:"reopened"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		if out.Reopened == 0 {
+			fmt.Println("no closed inbox there")
+			return
+		}
+		fmt.Printf("reopened %d inbox(es); held messages stay held - release them one by one\n", out.Reopened)
+		return
+	}
 	if len(args) == 2 && (args[0] == "release" || args[0] == "drop") {
 		body, _ := json.Marshal(map[string]string{"id": args[1], "action": args[0]})
 		resp, err := client.Post(brainURL()+"/v1/inbox/held", "application/json", bytes.NewReader(body))
@@ -58,10 +86,14 @@ func cmdInbox(args []string) {
 	}
 	defer resp.Body.Close()
 	var out struct {
-		Held []inboxItem `json:"held"`
+		Held   []inboxItem       `json:"held"`
+		Closed map[string]string `json:"closed"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		fatal(fmt.Errorf("captain inbox: %v", err))
+	}
+	for d, why := range out.Closed {
+		fmt.Printf("CLOSED %s - %s\n    captain inbox open %s\n\n", d, why, d)
 	}
 	if len(out.Held) == 0 {
 		fmt.Println("no held messages")

@@ -152,14 +152,8 @@ func redactHook() {
 	// so the policy does not wait for a decision leg.
 	if os.Getenv(captaincode.SentTurnEnv) == "1" {
 		cwd, _ := os.Getwd()
-		a := captaincode.GateAction{Tool: strings.ToLower(in.ToolName),
-			Command: firstString(in.ToolInput, "command", "url"),
-			Path:    firstString(in.ToolInput, "file_path", "filePath", "path", "notebook_path"), Cwd: cwd}
-		if why := captaincode.SentTurnRefusal(a); why != "" {
-			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
-			writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
-				"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
-			}})
+		if out, decided := sentHookOutput(in.ToolName, in.ToolInput, cwd); decided {
+			writeStdoutJSON(out)
 			return
 		}
 	}
@@ -181,6 +175,18 @@ func redactHook() {
 			}
 		}
 	}
+	changed := restoreInput(in.ToolInput)
+	if changed == 0 {
+		return
+	}
+	writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "PreToolUse", "updatedInput": in.ToolInput,
+	}})
+}
+
+// restoreInput puts real values back into every string of a tool input, in
+// place, and counts the placeholders and stand-ins it restored.
+func restoreInput(input map[string]any) int {
 	changed := 0
 	var walk func(v any) any
 	walk = func(v any) any {
@@ -202,11 +208,6 @@ func redactHook() {
 		}
 		return v
 	}
-	walk(in.ToolInput)
-	if changed == 0 {
-		return
-	}
-	writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName": "PreToolUse", "updatedInput": in.ToolInput,
-	}})
+	walk(input)
+	return changed
 }

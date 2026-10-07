@@ -18,6 +18,7 @@
 
 import { appendFileSync } from "node:fs"
 import { customCommands, unknownCommand } from "./commands"
+import { jailCommand } from "./jail"
 import { spawnSync } from "node:child_process"
 
 const BRAIN = process.env["CAPTAIN_BRAIN_URL"] ?? "http://127.0.0.1:14097"
@@ -121,14 +122,15 @@ function secretFileRefusal(path: string): string | null {
   }
 }
 
-// SENT_GATED are the tools the sent-turn policy screens; URL_TOOLS never get
-// secrets restored into their arguments.
-const SENT_GATED = new Set(["bash", "write", "edit", "patch", "multiedit", "webfetch", "fetch"])
+// URL_TOOLS never get secrets restored into their arguments.
 const URL_TOOLS = new Set(["webfetch", "fetch", "websearch"])
 
-// sentTurnRefusal asks the brain whether this session answers a sent turn and
-// the call is one such a turn may not make. null allows.
-async function sentTurnRefusal(tool: string, args: any, cwd: string, session: string): Promise<string | null> {
+// sentTurnPolicy asks the brain whether this session answers a sent turn
+// and, if so, what the policy says about this call (sentpolicy.go): refused
+// with a reason, or allowed - a shell command then runs as `jail` + the
+// command as one quoted argument (jail.go). Every tool is asked about: the
+// policy is an allowlist.
+async function sentTurnPolicy(tool: string, args: any, cwd: string, session: string): Promise<{ refusal?: string; jail?: string[] }> {
   try {
     const r = await fetch(`${BRAIN}/v1/gate/sent`, {
       method: "POST",
@@ -136,11 +138,12 @@ async function sentTurnRefusal(tool: string, args: any, cwd: string, session: st
       body: JSON.stringify({ session, tool, args: args ?? {}, cwd }),
       signal: AbortSignal.timeout(4000),
     })
-    if (!r.ok) return null
-    const j = (await r.json()) as { allow?: boolean; reason?: string }
-    return j.allow === false ? j.reason ?? "refused by the sent-turn policy" : null
+    if (!r.ok) return {}
+    const j = (await r.json()) as { allow?: boolean; reason?: string; jail?: string[] }
+    if (j.allow === false) return { refusal: j.reason ?? "refused by the sent-turn policy" }
+    return Array.isArray(j.jail) && j.jail.length > 0 ? { jail: j.jail } : {}
   } catch {
-    return null
+    return {}
   }
 }
 
@@ -495,12 +498,10 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     // A turn another agent sent with `captain send`: the brain applies the
     // sent-turn policy (sentpolicy.go) before anything that can change the
     // machine or reach off it. The brain down is no evidence of a sent turn.
-    if (call.sessionID && SENT_GATED.has(call.tool)) {
-      const why = await sentTurnRefusal(call.tool, output?.args, input?.directory ?? process.env["CAPTAIN_CWD"] ?? "", call.sessionID)
-      if (why) {
-        log(`sent-turn policy refused ${call.tool}`)
-        throw new Error(why)
-      }
+    const sent = call.sessionID ? await sentTurnPolicy(call.tool, output?.args, input?.directory ?? process.env["CAPTAIN_CWD"] ?? "", call.sessionID) : {}
+    if (sent.refusal) {
+      log(`sent-turn policy refused ${call.tool}`)
+      throw new Error(sent.refusal)
     }
     if (REDACT && output?.args) {
       const path = typeof output.args.filePath === "string" ? output.args.filePath : typeof output.args.path === "string" ? output.args.path : ""
@@ -523,6 +524,12 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
         log(`gate refused ${call.tool}`)
         throw new Error(why)
       }
+    }
+    // Last, on the command that will actually run: a sent turn's shell
+    // command runs inside the jail.
+    if (sent.jail && typeof output?.args?.command === "string") {
+      output.args.command = jailCommand(sent.jail, output.args.command)
+      log(`sent turn: ${call.tool} runs in the jail`)
     }
   },
 

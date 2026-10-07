@@ -72,6 +72,110 @@ type inbox struct {
 	// been told about yet.
 	held   []inboxItem
 	notify map[string][]inboxItem
+	// closed are the folders whose inbox a sent turn's refused action shut
+	// (tripInbox): every later sent prompt there is held until the user
+	// reopens it with `captain inbox open`.
+	closed       map[string]string
+	closedLoaded bool
+}
+
+// closedPath keeps the closures across brain restarts: a restart must not
+// reopen an inbox the tripwire shut.
+func closedPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".captaincode", "inbox-closed.json")
+}
+
+// loadClosed reads the saved closures once; call with ib.mu held.
+func (ib *inbox) loadClosed() {
+	if ib.closedLoaded {
+		return
+	}
+	ib.closedLoaded = true
+	if raw, err := os.ReadFile(closedPath()); err == nil {
+		_ = json.Unmarshal(raw, &ib.closed)
+	}
+	if ib.closed == nil {
+		ib.closed = map[string]string{}
+	}
+}
+
+// saveClosed writes the closures; call with ib.mu held.
+func (ib *inbox) saveClosed() {
+	raw, _ := json.Marshal(ib.closed)
+	_ = os.MkdirAll(filepath.Dir(closedPath()), 0o700)
+	_ = os.WriteFile(closedPath(), raw, 0o600)
+}
+
+// closedFor reports why dir's inbox is closed, or "". A folder inside a
+// closed one, or holding one, counts: a worker may have run in a subfolder.
+func (ib *inbox) closedFor(dir string) string {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	ib.loadClosed()
+	for d, why := range ib.closed {
+		if d == dir || strings.HasPrefix(dir, d+string(filepath.Separator)) || strings.HasPrefix(d, dir+string(filepath.Separator)) {
+			return why
+		}
+	}
+	return ""
+}
+
+// reopen clears the closures that cover dir and returns how many.
+func (ib *inbox) reopen(dir string) int {
+	ib.mu.Lock()
+	defer ib.mu.Unlock()
+	ib.loadClosed()
+	defer ib.saveClosed()
+	n := 0
+	for d := range ib.closed {
+		if dir == "" || d == dir || strings.HasPrefix(dir, d+string(filepath.Separator)) || strings.HasPrefix(d, dir+string(filepath.Separator)) {
+			delete(ib.closed, d)
+			n++
+		}
+	}
+	return n
+}
+
+// tripInbox is the tripwire: a sent turn tried something the policy refuses,
+// so whatever sent it got past the screen and the judges. The folder's inbox
+// closes - later sent prompts are held for the user - until they reopen it.
+func (b *brain) tripInbox(dir, tool, why string) {
+	if dir = strings.TrimSpace(dir); dir == "" {
+		return
+	}
+	dir = filepath.Clean(dir)
+	reason := "a sent turn tried " + tool + " and was refused (" + time.Now().Format("Jan 2 15:04") + ")"
+	b.inbox.mu.Lock()
+	b.inbox.loadClosed()
+	_, already := b.inbox.closed[dir]
+	b.inbox.closed[dir] = reason
+	b.inbox.saveClosed()
+	b.inbox.mu.Unlock()
+	if already {
+		return
+	}
+	captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "closed", Dir: dir, Detail: reason, Why: why})
+	fmt.Printf("captain brain: inbox - CLOSED %s: %s\n", filepath.Base(dir), reason)
+	b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "inbox", Model: "closed",
+		Text: "closed this folder's inbox: " + reason + " - later sent prompts are held; `captain inbox open` reopens it"})
+}
+
+// inboxTripHTTP: POST /v1/inbox/trip {"dir","tool","why"} - a claude worker's
+// sent-turn hook reports a refusal (gate_cmd.go).
+func (b *brain) inboxTripHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "POST")
+		return
+	}
+	var req struct {
+		Dir  string `json:"dir"`
+		Tool string `json:"tool"`
+		Why  string `json:"why"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	b.tripInbox(req.Dir, orDash(req.Tool), req.Why)
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // hold keeps a flagged message for the user instead of delivering it.
@@ -279,7 +383,11 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "sanitized", From: orDash(origin), Dir: dir,
 				Detail: fmt.Sprintf("%d hidden characters removed, %d forged markers neutralized", removed, forged)})
 		}
-		if captaincode.MaxSeverity(findings) == captaincode.SevHigh && os.Getenv("CAPTAIN_INBOX_HOLD") != "0" {
+		closed := b.inbox.closedFor(dir)
+		if closed != "" {
+			findings = append([]captaincode.Finding{{Kind: "inbox closed", Severity: captaincode.SevHigh, Level: "high", Excerpt: closed}}, findings...)
+		}
+		if captaincode.MaxSeverity(findings) == captaincode.SevHigh && (os.Getenv("CAPTAIN_INBOX_HOLD") != "0" || closed != "") {
 			b.inbox.mu.Lock()
 			b.inbox.seq++
 			id := fmt.Sprintf("in_%d_%d", time.Now().Unix(), b.inbox.seq)
@@ -358,15 +466,33 @@ func (b *brain) inboxHeldHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		dir, _ := workspaceFilter(r)
-		writeJSON(w, 200, map[string]any{"held": b.inbox.heldFor(dir)})
+		b.inbox.mu.Lock()
+		b.inbox.loadClosed()
+		closed := map[string]string{}
+		for d, why := range b.inbox.closed {
+			closed[d] = why
+		}
+		b.inbox.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"held": b.inbox.heldFor(dir), "closed": closed})
 	case http.MethodPost:
 		var req struct {
 			ID     string `json:"id"`
 			Action string `json:"action"`
+			Dir    string `json:"dir"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Action == "open" {
+			dir := strings.TrimSpace(req.Dir)
+			if dir != "" {
+				dir = filepath.Clean(dir)
+			}
+			n := b.inbox.reopen(dir)
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "reopened", Dir: orDash(dir), Detail: fmt.Sprintf("%d closure(s)", n)})
+			writeJSON(w, 200, map[string]any{"ok": true, "reopened": n})
+			return
+		}
 		if req.Action != "release" && req.Action != "drop" {
-			writeErr(w, 400, `action is "release" or "drop"`)
+			writeErr(w, 400, `action is "release", "drop" or "open"`)
 			return
 		}
 		it, ok := b.inbox.unhold(strings.TrimSpace(req.ID))

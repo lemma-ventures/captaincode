@@ -22,10 +22,12 @@ package main
 // of those would race the ledger.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -159,11 +161,8 @@ func gateHook() {
 		Cwd:     gateCwd(in.Cwd),
 	})
 	if os.Getenv(captaincode.SentTurnEnv) == "1" {
-		if why := captaincode.SentTurnRefusal(a); why != "" {
-			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
-			writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
-				"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
-			}})
+		if out, decided := sentHookOutput(in.ToolName, in.ToolInput, a.Cwd); decided {
+			writeStdoutJSON(out)
 			return
 		}
 	}
@@ -189,15 +188,53 @@ func sentTurnHook() {
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		return
 	}
-	a := captaincode.GateAction{Tool: strings.ToLower(in.ToolName),
-		Command: firstString(in.ToolInput, "command", "url"),
-		Path:    firstString(in.ToolInput, "file_path", "filePath", "path", "notebook_path"),
-		Cwd:     gateCwd(in.Cwd)}
-	if why := captaincode.SentTurnRefusal(a); why != "" {
+	if out, decided := sentHookOutput(in.ToolName, in.ToolInput, gateCwd(in.Cwd)); decided {
+		writeStdoutJSON(out)
+	}
+}
+
+// sentHookOutput is the sent-turn policy as a claude PreToolUse answer: a
+// deny, or a shell command rewritten to run in the jail. Every claude hook
+// that sees a sent turn (this one, the gate's, redaction's) answers with it,
+// so whichever answer claude applies last, the command is still jailed.
+// decided is false when the call may run as it is.
+func sentHookOutput(toolName string, input map[string]any, cwd string) (map[string]any, bool) {
+	if d := os.Getenv(captaincode.SentDirEnv); d != "" {
+		cwd = d
+	}
+	a := captaincode.GateAction{Tool: strings.ToLower(toolName),
+		Command: firstString(input, "command", "url"),
+		Path:    firstString(input, "file_path", "filePath", "path", "notebook_path"), Cwd: cwd}
+	why, jail := captaincode.SentTurnDecision(a)
+	if why != "" {
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
-		writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+		tripBrainInbox(cwd, a.Tool, why)
+		return map[string]any{"hookSpecificOutput": map[string]any{
 			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": why,
-		}})
+		}}, true
+	}
+	if !jail {
+		return nil, false
+	}
+	if input == nil {
+		input = map[string]any{}
+	}
+	restoreInput(input)
+	cmd, _ := input["command"].(string)
+	input["command"] = captaincode.JailWrap(cwd, cmd)
+	return map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "PreToolUse", "updatedInput": input,
+	}}, true
+}
+
+// tripBrainInbox tells the brain a sent turn was refused, so it closes the
+// folder's inbox (brain_inbox.go tripInbox). Best effort: the refusal stands
+// whether or not the brain hears of it.
+func tripBrainInbox(dir, tool, why string) {
+	body, _ := json.Marshal(map[string]string{"dir": dir, "tool": tool, "why": why})
+	c := &http.Client{Timeout: 2 * time.Second}
+	if resp, err := c.Post(brainURL()+"/v1/inbox/trip", "application/json", bytes.NewReader(body)); err == nil {
+		resp.Body.Close()
 	}
 }
 
