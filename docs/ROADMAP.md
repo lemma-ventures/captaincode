@@ -57,6 +57,10 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | P1 | Trailing time window for the statistics that rank legs | M2 | proposed |
 | P2 | `captain task explain <id> --html` | M2.1 | proposed |
 | P3 | `captain wf import` for LangGraph graph exports | Workflows | proposed |
+| P4 | A "needs you" inbox: surface only the turns that wait on the user | TUI | proposed |
+| P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
+| P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
+| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | proposed |
 
 **Rules for a `/repeat` round.**
 
@@ -3562,6 +3566,88 @@ topology (`get_graph().to_json()`) and a node map, and print a Captain program
 without running it. Refuse stages wider than 4 legs and graphs that are not
 series-parallel. This needs your go.
 
+
+#### P4. A "needs you" inbox (proposed)
+
+Source: Agentbox (`agentbox.ac`, GPL-3.0), a Mac app that collects the chats
+of several coding agents into one inbox. An agent stays quiet until it needs
+a decision. Do not copy its code: the license is GPL-3.0.
+
+Today the TUI shows every turn and every `/repeat` round. The dashboard has a
+"Needs you" list, but it is rebuilt every 5 minutes and holds suggestions,
+not waiting turns. Proposal:
+
+- A turn is "waiting" when it ends on a confirm line (OpenShell `confirm`), a
+  refused gate after its repair, a conflict with no usable ruling, a guard
+  refusal, or a round that `/repeat` stopped for the user.
+- `GET /v1/inbox` lists waiting turns across folders, oldest first, with the
+  task id and one line. A TUI panel shows the count. `captain inbox` prints it.
+- A macOS notification is opt-in (`CAPTAIN_NOTIFY=1`), says only the folder
+  and the reason, and never includes model output.
+
+Test: each waiting reason adds one entry; an ended or answered turn removes
+it; a second TUI in another folder sees the same list. This needs your go.
+
+#### P5. An optional tool-marketplace MCP (proposed)
+
+Source: Monid (`monid.ai`), one MCP server, CLI or skill that finds and runs
+third-party tools (search, scraping, voice, email) and bills one balance. The
+tool count on its site was not checked against a live account.
+
+Today a worker gets only the MCP servers in its config. Captain writes the
+Euclid entry itself (`pkg/captaincode/euclid_engine.go:320`). Each other
+server is set up by hand. Proposal, opt-in only:
+
+- `captain tools add monid` writes the server entry. The key lives in
+  `~/.config/captain/env`, never in a repository.
+- Each call is charged to the task budget through the ledger, at the price
+  the server reports. A call with no price is unknown, never zero.
+- Tool arguments leave the machine. Shield masks secrets in them before the
+  call. A strict privacy setting refuses the server.
+- Workers in OpenShell do not get it.
+
+Before the build: test 10 tools on a live account for price, latency and
+errors, and read the terms for data retention. This needs your go and an
+account.
+
+#### P6. Fine-tuning as a delegated task (proposed)
+
+Source: Brewery AI (`github.com/empero-org/brewery-ai`), a console agent that
+guides a fine-tune: goal, hardware, base model, data, settings, training,
+test, publish. Its settings come from tested recipes, not from the model. It
+asks before it spends, installs or publishes. The license is a custom MIT
+variant with a revenue limit. Read it before any packaging.
+
+Proposal: no new leg. A `/team` or program step can start Brewery as an
+external command in a scratch folder, with its own confirm steps intact. The
+worker guard already refuses a publish the user did not ask for. Captain
+records the run, its spend and the output path. Captain does not run the
+training on a remote GPU by itself.
+
+Use case: train the P7 router, or a small-call helper for Q17. This needs
+your go, and a hardware or GPU budget.
+
+#### P7. A routing dataset and an offline router evaluation (proposed)
+
+Source: the multi-harness reinforcement-learning talk (Hugging Face, Kernel
+Panic Madrid, October 2026): run one task through several harnesses, keep the
+preference, train a router on it.
+
+Today `routing.jsonl` (`pkg/captaincode/journal_routing.go`) records each
+decision and its candidates. Verdicts are in the outcome records
+(`pkg/captaincode/outcome.go`), and conflict rulings name a winner per group
+(Q7). Nothing joins them. Proposal:
+
+1. `captain why --export dataset.jsonl` joins decision, task class, leg,
+   gate result, repair count, billed cost and verdict per attempt. Prompt
+   text is not exported; a hash and the class stand in for it.
+2. A held-out split by date. Score the current hand priors and director on
+   it first: acceptance rate and cost per accepted task.
+3. A trained router runs only in shadow, beside the director, until it beats
+   that baseline on the held-out split and on 7 days of shadow turns. It
+   never changes a route the user typed.
+
+Step 1 needs no model and can start after Q8. Steps 2 and 3 need your go.
 
 ## First ten working days
 
