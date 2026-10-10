@@ -118,8 +118,18 @@ func TestAbandonedTurnIsMarkedInHistory(t *testing.T) {
 	rec := httptest.NewRecorder()
 	b.chatCompletions(rec, wfReq(false, "address the improvements").WithContext(ctx))
 
-	got, ok := findRun("last")
-	require.True(t, ok)
+	// This turn's record by its task, not "the last run": another test's
+	// run finishing late can land in this HOME after it (CI, 2026-10-10).
+	recs, err := readHistory(0)
+	require.NoError(t, err)
+	var got runRecord
+	for _, r := range recs {
+		if r.Task == "address the improvements" {
+			got = r
+			break
+		}
+	}
+	require.NotEmpty(t, got.ID, "the turn is in the history")
 	assert.True(t, got.Abandoned, "a client-gone turn is marked so a resend can recover it")
 	assert.Equal(t, "the answer nobody received", got.Output)
 }
