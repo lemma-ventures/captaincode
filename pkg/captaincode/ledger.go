@@ -49,6 +49,7 @@ type Ledger struct {
 	// BenchedHosts: a host that stalled three runs in a row, and when its
 	// legs open again (routes.go).
 	BenchedHosts map[string]time.Time `json:"benched_hosts,omitempty"`
+	history      *historyCache        // the journal's events, read for the scorecards (journal_history.go)
 	// MemoryExposure is the lesson arms assigned to each task (P2). Capped
 	// like the lifecycle log. Not a second learning store: Euclid keeps the
 	// events; this map is what Captain sends when the task settles.
@@ -284,10 +285,6 @@ func (l *Ledger) TeamStats() map[string]TeamStat {
 }
 
 func (l *Ledger) Stats() map[Leg]LegStats { return statsOf(l.statsEvents()) }
-
-// statsEvents is what the scorecards learn from: the ledger's ring buffer,
-// widened by the journal (journal_history.go) when one is on disk.
-func (l *Ledger) statsEvents() []Event { return l.Events }
 
 func statsOf(events []Event) map[Leg]LegStats {
 	// A leg's current host: speed and reliability count only its runs there
@@ -715,6 +712,9 @@ func (l *Ledger) Record(e Event) {
 		}
 		if e.Route == "" {
 			e.Route = RouteOf(e.Leg)
+		}
+		if e.Effort == "" {
+			e.Effort = EffortDefault // the transport chose: say so, so the run's tier is never a guess
 		}
 	}
 	l.Events = append(l.Events, e)

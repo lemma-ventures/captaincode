@@ -50,8 +50,8 @@ func RoutingLogPath() string {
 	return filepath.Join(home, ".captaincode", "routing.jsonl")
 }
 
-// routingLogMaxBytes bounds the file: past it the newest half is kept. Sixty
-// four megabytes is on the order of a hundred thousand lines - years of use.
+// routingLogMaxBytes bounds the live file: past it, it moves to a numbered
+// archive for its month (journal_history.go rotateJournal).
 func routingLogMaxBytes() int64 {
 	if v, err := strconv.Atoi(os.Getenv("CAPTAIN_ROUTING_LOG_MAX_MB")); err == nil && v > 0 {
 		return int64(v) << 20
@@ -94,31 +94,13 @@ func (l *Ledger) journal(r RoutingRecord) {
 	if os.MkdirAll(filepath.Dir(p), 0o700) != nil {
 		return
 	}
-	if st, err := os.Stat(p); err == nil && st.Size() > routingLogMaxBytes() {
-		trimRoutingLog(p)
-	}
+	rotateJournal(p, time.Now()) // a month's archive, never a dropped half (journal_history.go)
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	_, _ = f.Write(append(line, '\n'))
-}
-
-// trimRoutingLog keeps the newest half of an oversized journal.
-func trimRoutingLog(p string) {
-	raw, err := os.ReadFile(p)
-	if err != nil {
-		return
-	}
-	cut := len(raw) / 2
-	if i := strings.IndexByte(string(raw[cut:]), '\n'); i >= 0 {
-		cut += i + 1
-	}
-	tmp := p + ".tmp"
-	if os.WriteFile(tmp, raw[cut:], 0o600) == nil {
-		_ = os.Rename(tmp, p)
-	}
 }
 
 // ReadRoutingLog reads a journal, newest last. max > 0 keeps only the newest
@@ -249,7 +231,11 @@ func RoutingHistory(l *Ledger) []RoutingSample {
 	seen := map[string]bool{}
 	var out []RoutingSample
 	if path != "" {
-		for _, s := range JoinRouting(ReadRoutingLog(path, 0)) {
+		var recs []RoutingRecord
+		for _, f := range journalFiles(path) { // the monthly archives, then the live file
+			recs = append(recs, ReadRoutingLog(f, 0)...)
+		}
+		for _, s := range JoinRouting(recs) {
 			if s.Decision.TaskID != "" {
 				seen[s.Decision.TaskID] = true
 			}

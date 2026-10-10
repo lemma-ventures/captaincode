@@ -655,3 +655,27 @@ func TestRunsAreJudgedByAnotherVendor(t *testing.T) {
 	assert.True(t, ev.JudgePass)
 	assert.Contains(t, objective, "Rubric")
 }
+
+// Time to first output was recorded for 8% of runs: only codex-cli, claude
+// and the opencode transport measured their own. The runner measures it for
+// any leg that streams and did not.
+func TestEveryStreamingRunGetsATimeToFirstOutput(t *testing.T) {
+	b := teamBrain()
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		time.Sleep(20 * time.Millisecond)
+		onDelta("first words")
+		return leg, captaincode.Result{Text: "first words", DurationMs: 30}, nil
+	}
+	_, res, err := b.runWorkerRerouted(captaincode.Workspace{}, captaincode.LegCursor, "say something", func(string) {}, nil, "")
+	require.NoError(t, err)
+	require.NotNil(t, res.TTFTMs)
+	assert.GreaterOrEqual(t, *res.TTFTMs, int64(20))
+
+	own := int64(7)
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		onDelta("x")
+		return leg, captaincode.Result{Text: "x", TTFTMs: &own}, nil
+	}
+	_, res, _ = b.runWorkerRerouted(captaincode.Workspace{}, captaincode.LegClaude, "say something", func(string) {}, nil, "")
+	assert.Equal(t, int64(7), *res.TTFTMs, "a transport's own measure wins")
+}

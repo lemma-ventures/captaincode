@@ -162,6 +162,7 @@ after the task (a session title gets none of them):
 | `captain outcome <task-id> review <accept\|reject> --reviewer <name> [--note …] [--amend]` | Record a human verdict |
 | `captain outcome <task-id> correction <minutes> [--reason …]` / `regression <reason> [--source …]` | Record the fix-up time, or a regression found later |
 | `captain calibrate [--domain code\|editorial\|research\|general] [--json] [<leg>…]` | Quality/reliability estimates with uncertainty |
+| `captain journal import <state.json>…` | Add the run events of older state files (`~/.captaincode/backups`) that the routing journal lacks |
 | `captain roles` | Role economics roll-up |
 | `captain policy [--json]` / `policy show <id>` | Policy snapshots and one in full |
 | `captain policy snapshot [name]` / `activate <id>` / `accept <id>` | Capture the current policy; make a snapshot active; accept it (what `rollback` returns to) |

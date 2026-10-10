@@ -1610,7 +1610,24 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 		// when no decision leg is configured.
 		sup := b.superviseStart(ws, l, prompt)
 		os_ = sup.wrap(os_)
+		// Time to first output, for every leg: only codex-cli, claude and the
+		// opencode legs measured their own, and 8% of runs carried one
+		// ("Twelve Weeks of Routing", 2026-10-10).
+		start := time.Now()
+		var firstMs atomic.Int64
+		if od != nil {
+			inner := od
+			od = func(d string) {
+				if d != "" {
+					firstMs.CompareAndSwap(0, max(1, time.Since(start).Milliseconds()))
+				}
+				inner(d)
+			}
+		}
 		ran, res, err := runOneRaw(l, od, os_)
+		if ms := firstMs.Load(); ms > 0 && res.TTFTMs == nil {
+			res.TTFTMs = &ms
+		}
 		sup.close(res, err)
 		if wl != nil {
 			res.Log = wl.close(res, err)

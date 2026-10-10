@@ -452,8 +452,14 @@ which is what a sidebar needs and less than what learning needs. Every
 decision that reached a task, every run event and every outcome that
 settled is therefore also appended, one line each, to
 `~/.captaincode/routing.jsonl` (`CAPTAIN_ROUTING_LOG=0` turns it off; a
-path names another file; `CAPTAIN_ROUTING_LOG_MAX_MB`, default 64, keeps
-the newest half past the cap). Each event now records the class that
+path names another file). At the start of a month, or past
+`CAPTAIN_ROUTING_LOG_MAX_MB` (default 64), the file moves to a monthly
+archive beside it (`routing-2026-10.jsonl`); nothing is dropped. The
+scorecards (speed, reliability, quality per leg) read the last
+`CAPTAIN_STATS_DAYS` (default 90) of the journal, not only the 500 events
+in `state.json`. `captain journal import <state.json>…` adds the events of
+older state files (the backups in `~/.captaincode/backups`) that the
+journal lacks. Each event now records the class that
 routed, who settled it (`heuristic`, `classify`, `jev`, `director`) and
 how sure, the effort, the model the leg ran as, the decision path, and the
 attempt number - the attribution the scorecards were missing.

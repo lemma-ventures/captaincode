@@ -111,6 +111,10 @@ func DecideEffort(prefer string, class Class, leg Leg, irreversible bool, attemp
 	return e
 }
 
+// EffortDefault records a run whose transport chose its own effort: no
+// knob was turned. It reads as the leg's own band (TierOf), like "".
+const EffortDefault Effort = "default"
+
 // TierEffort is a tier's effort for a task of this class. The tier names
 // the model; the class says how hard it thinks. /frontier on a one-line fix
 // ran Opus 5.5 at max for minutes (2026-10-10): the same model at high does
