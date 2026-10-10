@@ -108,6 +108,16 @@ var ErrOpencodeStoreBusy = errors.New("opencode's session database was locked")
 // storeBusyBackoff is the wait before retrying a run opencode could not save.
 var storeBusyBackoff = 3 * time.Second
 
+// localServeUnreachable: the dial to captain's own opencode serve failed or
+// timed out - a connection never made, so the run never started.
+func localServeUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := err.Error()
+	return strings.Contains(m, "dial tcp 127.0.0.1:") && (strings.Contains(m, "timed out") || strings.Contains(m, "connection refused"))
+}
+
 // opencodeStoreBusy spots the SQLite lock timeout in an opencode error.
 func opencodeStoreBusy(s string) bool {
 	s = strings.ToLower(s)
@@ -2054,11 +2064,13 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		d.StallTimeout = workerStallTimeout()
 		res, err = d.Run(leg, task)
 	}
-	if errors.Is(err, ErrOpencodeStoreBusy) && res.Text == "" {
-		// opencode could not save its session: a lock held by another
-		// opencode process, not the model. Nothing was answered yet, so one
-		// retry on a fresh session after the lock has had time to clear.
-		fmt.Fprintf(os.Stderr, "captain: %s - opencode's database was locked; retrying once in %s\n", leg, storeBusyBackoff)
+	if (errors.Is(err, ErrOpencodeStoreBusy) || localServeUnreachable(err)) && res.Text == "" {
+		// opencode could not save its session (a lock held by another
+		// opencode process), or the serve did not accept the connection in
+		// time (a burst of hundreds of clients, 2026-10-10): neither is the
+		// model. Nothing was answered yet, so one retry on a fresh session
+		// once the burst has had time to clear.
+		fmt.Fprintf(os.Stderr, "captain: %s - %v; retrying once in %s\n", leg, err, storeBusyBackoff)
 		time.Sleep(storeBusyBackoff)
 		d = NewDispatcher(port)
 		d.Dir = ws.Dir

@@ -1077,3 +1077,10 @@ func TestALockedOpencodeDatabaseIsRetriedOnce(t *testing.T) {
 	assert.ErrorIs(t, err, ErrOpencodeStoreBusy)
 	assert.Equal(t, CauseHarness, FailCause(err.Error()), "opencode's own database, not the model")
 }
+
+func TestALocalServeThatDoesNotAnswerIsRetryable(t *testing.T) {
+	err := errors.New(`Post "http://127.0.0.1:14096/session/ses_x/message": dial tcp 127.0.0.1:14096: connect: operation timed out`)
+	assert.True(t, localServeUnreachable(err))
+	assert.Equal(t, CauseHarness, FailCause(err.Error()), "captain's own serve, not deepseek")
+	assert.False(t, localServeUnreachable(errors.New("dial tcp 203.0.113.9:443: connect: operation timed out")), "a provider's host is not ours")
+}
