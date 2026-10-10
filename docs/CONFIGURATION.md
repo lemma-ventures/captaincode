@@ -1116,8 +1116,17 @@ account"), while opencode, which the `codex` leg runs through, served it.
 ### Effort
 
 How hard a worker thinks is decided per task, not per leg. A stated
-preference wins outright: `/frontier` → max, `/quality` → high, `/speed`
-and `/save` → low. A bare prompt gets the **per-task decision**
+preference names the tier, and the tier names the model; the task's class
+then sets the effort that model runs at (`TierEffort`):
+
+| Tier | trivial | medium | high |
+|---|---|---|---|
+| `/frontier` | high | xhigh | max |
+| `/quality` | medium | high | high |
+
+Irreversible work and later attempts climb a rung, up to max on `/frontier`
+and high on `/quality`. `CAPTAIN_TIER_EFFORT=0` keeps the fixed settings
+(`/frontier` max, `/quality` high). `/speed` and `/save` run low. A bare prompt gets the **per-task decision**
 (`DecideEffort`): the class sets the rung (trivial → low, medium → medium,
 high → high), **frontier-class work defaults to medium** on claude or a
 frontier-class leg (the published curve: medium gives up about two points
@@ -1161,6 +1170,8 @@ settings.
 |---|---|---|
 | `CAPTAIN_FRONTIER_EFFORT` | unset | Pin claude's `/frontier` effort (`xhigh` to get the pre-2026-09-13 second-to-best) |
 | `CAPTAIN_EFFORT_CEILING` | `xhigh` | The strongest rung a bare prompt may climb to (irreversible work, later attempts). |
+| `CAPTAIN_TIER_EFFORT` | on | `0`: `/frontier` always max and `/quality` always high, whatever the task's class. |
+| `CAPTAIN_HOST_BENCH` | `30m` | How long every leg on a host cools after three host stalls in a row there from two legs or more. `0` turns it off. |
 | `CAPTAIN_EFFORT_COST` | `0.6,1,1.6,2.2,3` | Cost multiplier per rung (low…max) the expected-cost ranking prices reasoning with. |
 | `CAPTAIN_CURSOR_MODEL` | `grok-4.7` | cursor-agent's family (rung chosen by effort), a full model name, or `auto` for Cursor's own router. |
 | `CAPTAIN_CURSOR_FRONTIER_MODEL` | `grok-4.7-xhigh` | cursor-agent `--model` when the request is `/frontier` |

@@ -78,9 +78,9 @@ func EffortCeiling() Effort {
 func DecideEffort(prefer string, class Class, leg Leg, irreversible bool, attempt int) Effort {
 	switch prefer {
 	case "frontier":
-		return EffortMax
+		return climb(TierEffort(prefer, class), irreversible, attempt, EffortMax)
 	case "quality", "q", "best":
-		return EffortHigh
+		return climb(TierEffort(prefer, class), irreversible, attempt, EffortHigh)
 	case "save", "cheap":
 		if LanesEnabled() && OpenWeights(leg) {
 			return EffortMedium
@@ -111,15 +111,54 @@ func DecideEffort(prefer string, class Class, leg Leg, irreversible bool, attemp
 	return e
 }
 
+// TierEffort is a tier's effort for a task of this class. The tier names
+// the model; the class says how hard it thinks. /frontier on a one-line fix
+// ran Opus 5.5 at max for minutes (2026-10-10): the same model at high does
+// that work. /frontier: trivial high, medium xhigh, high max. /quality:
+// trivial medium, else high - xhigh is frontier settings. CAPTAIN_TIER_EFFORT=0
+// keeps the fixed max and high.
+func TierEffort(prefer string, class Class) Effort {
+	fixed := os.Getenv("CAPTAIN_TIER_EFFORT") == "0"
+	switch prefer {
+	case "frontier":
+		if fixed || class == ClassHigh {
+			return EffortMax
+		}
+		if class == ClassTrivial {
+			return EffortHigh
+		}
+		return EffortXHigh
+	case "quality", "q", "best":
+		if !fixed && class == ClassTrivial {
+			return EffortMedium
+		}
+		return EffortHigh
+	}
+	return ""
+}
+
+// climb raises e one rung for irreversible work and one per attempt after
+// the first, up to ceil.
+func climb(e Effort, irreversible bool, attempt int, ceil Effort) Effort {
+	if irreversible {
+		e = NextEffort(e)
+	}
+	for i := 1; i < attempt; i++ {
+		e = NextEffort(e)
+	}
+	if EffortRank(e) > EffortRank(ceil) {
+		e = ceil
+	}
+	return e
+}
+
 // EffortFor maps the request to an effort: an explicit preference first
-// (/frontier → max, /quality → high, /speed and /save → low), else the
+// (/frontier and /quality by class, TierEffort; /speed and /save → low), else the
 // difficulty rating (high → high, medium → medium, trivial → low).
 func EffortFor(prefer string, class Class) Effort {
 	switch prefer {
-	case "frontier":
-		return EffortMax
-	case "quality", "q", "best":
-		return EffortHigh
+	case "frontier", "quality", "q", "best":
+		return TierEffort(prefer, class)
 	case "speed", "fast", "save", "cheap":
 		return EffortLow
 	}

@@ -2171,7 +2171,11 @@ func RunClaudeFrontierStream(task string, onDelta, onStatus func(string)) (Resul
 
 // RunClaudeFrontierStream is RunClaudeFrontierStream in this workspace.
 func (ws Workspace) RunClaudeFrontierStream(task string, onDelta, onStatus func(string)) (Result, error) {
-	return runClaudeStreamOpts(ws.Dir, task, 2*workerTimeout(), 2*workerCeiling(), onDelta, onStatus, true, EffortMax, ws.Steer)
+	effort := ws.Effort // the turn's effort for its class (TierEffort); max when unset
+	if effort == "" {
+		effort = EffortMax
+	}
+	return runClaudeStreamOpts(ws.Dir, task, 2*workerTimeout(), 2*workerCeiling(), onDelta, onStatus, true, effort, ws.Steer)
 }
 
 // claudeStreamLine is one newline-delimited JSON event from `claude -p

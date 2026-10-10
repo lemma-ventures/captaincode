@@ -631,8 +631,9 @@ func TestBrainRoute_CarriesTheEffort(t *testing.T) {
 		return resp
 	}
 	assert.Equal(t, "low", route("fix typo in README", "codex", "").Effort, "a trivial task thinks little")
-	assert.Equal(t, "high", route("fix typo in README", "codex", "quality").Effort, "/quality outranks the rating")
-	assert.Equal(t, "high", route("/quality fix typo in README", "codex", "").Effort, "…also mid-prompt")
+	assert.Equal(t, "medium", route("fix typo in README", "codex", "quality").Effort, "/quality raises the rating's effort: a typo at medium (TierEffort)")
+	assert.Equal(t, "medium", route("/quality fix typo in README", "codex", "").Effort, "…also mid-prompt")
+	assert.Equal(t, "high", route("refactor the concurrency architecture across the codebase", "codex", "quality").Effort, "/quality on hard work: high")
 	assert.Equal(t, "low", route("refactor the concurrency architecture /speed", "codex", "").Effort, "/speed outranks the rating")
 	assert.Equal(t, "high", route("refactor the concurrency architecture across the codebase", "codex", "").Effort, "a hard task thinks hard")
 }

@@ -570,14 +570,14 @@ func displayLeg(ran, picked captaincode.Leg) captaincode.Leg {
 }
 
 // frontierActivity is one Last Runs row for a frontier turn. The label is
-// harness:model@effort for the leg that ran, at max effort.
-func frontierActivity(dir, kind string, leg captaincode.Leg, text string, ms int64) activity {
+// harness:model@effort for the leg that ran, at the turn's effort.
+func frontierActivity(dir, kind string, leg captaincode.Leg, effort captaincode.Effort, text string, ms int64) activity {
 	shown := displayLeg(leg, captaincode.LegClaude)
 	return activity{
 		Dir: dir, Kind: kind, Leg: string(shown),
 		Model:  captaincode.ModelIDAt(shown, captaincode.EffortMax),
-		Effort: string(captaincode.EffortMax),
-		Label:  captaincode.RunLabel(shown, captaincode.EffortMax),
+		Effort: string(effort),
+		Label:  captaincode.RunLabel(shown, effort),
 		Text:   text, Ms: ms,
 	}
 }
@@ -595,7 +595,11 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// lane evens out its recent turns (140 on claude, 13 on codex-cli, 12-23
 	// September, every one of the 13 a reroute), and says so on the turn.
 	pick := b.frontierLead(lastUserTurn(prompt))
-	lead, ws := captaincode.LegFrontier, req.ws.WithEffort(captaincode.EffortMax)
+	// The frontier model at the effort the task's class needs (TierEffort):
+	// a one-line fix does not need max.
+	tr := captaincode.TriageTask(lastUserTurn(prompt))
+	effort := captaincode.DecideEffort("frontier", tr.Class, pick.Leg, tr.Irreversible, 1)
+	lead, ws := captaincode.LegFrontier, req.ws.WithEffort(effort)
 	if pick.Leg != captaincode.LegClaude {
 		lead = pick.Leg
 	}
@@ -609,9 +613,9 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 		b.recordDecision(task, frontierDecision(task, pick))
 		taskID = b.openTask(task)
 	}
-	b.pushActivity(frontierActivity(req.ws.Dir, "route", pick.Leg, pick.Reason, 0))
+	b.pushActivity(frontierActivity(req.ws.Dir, "route", pick.Leg, effort, pick.Reason, 0))
 	status(pick.Reason + "\n")
-	b.pushActivity(frontierActivity(req.ws.Dir, "run", pick.Leg, promptPeek(lastUserTurn(prompt)), 0))
+	b.pushActivity(frontierActivity(req.ws.Dir, "run", pick.Leg, effort, promptPeek(lastUserTurn(prompt)), 0))
 	t0 := time.Now()
 	// Fit the replay before the contracts go on, like every other path. The
 	// frontier path replayed the whole conversation untouched: after a
@@ -635,7 +639,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	stocked := shelf.Refs()
 	// Frontier thinks for minutes before its first token - the progress feed is
 	// the only thing standing between the user and an apparently dead turn.
-	feed := newProgressFeed(captaincode.RunLabel(pick.Leg, captaincode.EffortMax), status)
+	feed := newProgressFeed(captaincode.RunLabel(pick.Leg, effort), status)
 	defer feed.close()
 	feed.narrate(req.ws.Steer, lastUserTurn(prompt), b.narrateSteps)
 	// Through the reroute net like every other leg: a rate-limited claude
@@ -647,17 +651,17 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	feed.close()
 	if err != nil {
 		fmt.Printf("captain brain: frontier error in %s - %v\n", time.Since(t0).Round(time.Millisecond), err)
-		b.pushActivity(frontierActivity(req.ws.Dir, "done", displayLeg(ranLeg, pick.Leg), "error: "+promptPeek(err.Error()), time.Since(t0).Milliseconds()))
+		b.pushActivity(frontierActivity(req.ws.Dir, "done", displayLeg(ranLeg, pick.Leg), effort, "error: "+promptPeek(err.Error()), time.Since(t0).Milliseconds()))
 		writeWorkerError(w, ranLeg, err)
 		return
 	}
 	shown := displayLeg(ranLeg, pick.Leg)
-	label := captaincode.RunLabel(shown, captaincode.EffortMax)
+	label := captaincode.RunLabel(shown, effort)
 	recordRunHistory(runRecord{Kind: "frontier", Model: captaincode.ModelIDAt(shown, captaincode.EffortMax),
-		Legs: []string{string(shown)}, Effort: string(captaincode.EffortMax), Label: label,
+		Legs: []string{string(shown)}, Effort: string(effort), Label: label,
 		Task: lastUserTurn(prompt), Output: res.Text, DurationMs: time.Since(t0).Milliseconds()})
 	fmt.Printf("captain brain: frontier done on %s in %s (%d chars)\n", shown, time.Since(t0).Round(time.Millisecond), len(res.Text))
-	b.pushActivity(frontierActivity(req.ws.Dir, "done", shown, promptPeek(res.Text), time.Since(t0).Milliseconds()))
+	b.pushActivity(frontierActivity(req.ws.Dir, "done", shown, effort, promptPeek(res.Text), time.Since(t0).Milliseconds()))
 	go b.recordRunAt(ranLeg, prompt, res, ws, taskID, 1, "", "", stocked...)
 	if !req.Stream || !res.Streamed {
 		emit(res.Text)

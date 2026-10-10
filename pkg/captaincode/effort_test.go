@@ -9,8 +9,9 @@ import (
 )
 
 func TestEffortFollowsThePreferenceThenTheDifficulty(t *testing.T) {
-	assert.Equal(t, EffortMax, EffortFor("frontier", ClassTrivial), "/frontier is max whatever the task")
-	assert.Equal(t, EffortHigh, EffortFor("quality", ClassTrivial))
+	assert.Equal(t, EffortHigh, EffortFor("frontier", ClassTrivial), "/frontier: the frontier model, at the effort the task needs")
+	assert.Equal(t, EffortMax, EffortFor("frontier", ClassHigh))
+	assert.Equal(t, EffortMedium, EffortFor("quality", ClassTrivial))
 	assert.Equal(t, EffortLow, EffortFor("speed", ClassHigh))
 	assert.Equal(t, EffortLow, EffortFor("save", ClassHigh))
 	assert.Equal(t, EffortHigh, EffortFor("", ClassHigh), "a bare prompt: the difficulty rating decides")

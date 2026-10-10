@@ -680,7 +680,7 @@ func TestWorkflowFrontierStageReroutesWhenTheTierIsClosed(t *testing.T) {
 // model=frontier - runs claude, grok and codex-cli, each at max effort; it
 // does not run the frontier pseudo-leg with "/claude X" as its text (live
 // 2026-09-21).
-func TestFrontierBeforeLegsRunsEachLegAtMaxEffort(t *testing.T) {
+func TestFrontierBeforeLegsRunsEachLegAtTheFrontierEffort(t *testing.T) {
 	b := teamBrain()
 	var mu sync.Mutex
 	var seen []string
@@ -707,14 +707,15 @@ func TestFrontierBeforeLegsRunsEachLegAtMaxEffort(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	mu.Lock()
 	defer mu.Unlock()
-	assert.Equal(t, []string{"claude@max", "grok@max", "codex-cli@max"}, seen)
-	assert.Equal(t, 0, frontierCalls, "no pseudo-leg run: claude at max effort IS the frontier configuration")
+	assert.Equal(t, []string{"claude@high", "grok@high", "codex-cli@high"}, seen, "a short opinion: each leg at high, the frontier effort for a trivial task (TierEffort)")
+	assert.Equal(t, 0, frontierCalls, "no pseudo-leg run: a named leg runs as itself")
 	assert.Contains(t, rec.Body.String(), "AGG")
 }
 
 // Claude at max effort refused by the frontier tier's own limit benches the
 // tier, not claude, and reruns claude at standard settings in the same turn.
 func TestClaudeAtMaxEffortFallsToStandardWhenTheTierIsClosed(t *testing.T) {
+	t.Setenv("CAPTAIN_TIER_EFFORT", "0") // /frontier at max whatever the class: this test is about the tier's window
 	b := teamBrain()
 	var mu sync.Mutex
 	var seen []string

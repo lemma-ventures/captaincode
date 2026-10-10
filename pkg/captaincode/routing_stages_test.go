@@ -19,7 +19,8 @@ import (
 // the typed director pick and the solo verification helpers.
 
 func TestDecideEffortRungs(t *testing.T) {
-	assert.Equal(t, EffortMax, DecideEffort("frontier", ClassTrivial, LegClaude, false, 1), "a stated /frontier is max whatever the class")
+	assert.Equal(t, EffortHigh, DecideEffort("frontier", ClassTrivial, LegClaude, false, 1), "/frontier on a trivial task: the frontier model at high")
+	assert.Equal(t, EffortMax, DecideEffort("frontier", ClassHigh, LegClaude, false, 1))
 	assert.Equal(t, EffortLow, DecideEffort("", ClassTrivial, LegGLM, false, 1))
 	assert.Equal(t, EffortMedium, DecideEffort("", ClassMedium, LegGLM, false, 1))
 	assert.Equal(t, EffortHigh, DecideEffort("", ClassHigh, LegGLM, false, 1), "high on a mid-tier leg thinks hard")
@@ -376,4 +377,25 @@ func TestABadQueueOrderFallsBackOnTheTypedOrder(t *testing.T) {
 	assert.Equal(t, 2, CheckQueueOrder(QueueOrder{Order: []int{2, 0}, Notes: map[int]int{1: 1}}, items).Notes[1], "a note joined to a note falls back")
 	assert.True(t, IsQueueNote("/btw x"))
 	assert.False(t, IsQueueNote("/btwx"))
+}
+
+// The tier names the model; the task's class sets how hard it thinks
+// (2026-10-10: /frontier on a one-line fix ran Opus 5.5 at max).
+func TestTierEffortFollowsTheClass(t *testing.T) {
+	assert.Equal(t, EffortHigh, TierEffort("frontier", ClassTrivial))
+	assert.Equal(t, EffortXHigh, TierEffort("frontier", ClassMedium))
+	assert.Equal(t, EffortMax, TierEffort("frontier", ClassHigh))
+	assert.Equal(t, EffortMedium, TierEffort("quality", ClassTrivial))
+	assert.Equal(t, EffortHigh, TierEffort("quality", ClassMedium))
+	assert.Equal(t, EffortHigh, TierEffort("quality", ClassHigh), "/quality never reaches frontier settings")
+	assert.Equal(t, EffortMax, DecideEffort("frontier", ClassMedium, LegClaude, true, 1), "irreversible work climbs a rung")
+	assert.Equal(t, EffortHigh, DecideEffort("quality", ClassTrivial, LegCursor, false, 2), "a retry climbs, up to high")
+	assert.Equal(t, EffortHigh, DecideEffort("quality", ClassHigh, LegCursor, true, 3), "capped at high")
+	for _, l := range []Leg{LegCodexCLI, LegGrokMax} {
+		assert.Equal(t, ModelIDAt(l, EffortMax), ModelIDAt(l, TierEffort("frontier", ClassTrivial)), "%s keeps its frontier model", l)
+	}
+	assert.Equal(t, ModelIDAt(LegCursor, EffortHigh), ModelIDAt(LegCursor, TierEffort("quality", ClassMedium)))
+	t.Setenv("CAPTAIN_TIER_EFFORT", "0")
+	assert.Equal(t, EffortMax, TierEffort("frontier", ClassTrivial), "the fixed settings come back")
+	assert.Equal(t, EffortHigh, TierEffort("quality", ClassTrivial))
 }

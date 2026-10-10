@@ -26,7 +26,7 @@ func TestFrontierBeforeALegIsAModifier(t *testing.T) {
 	assert.Equal(t, "what's your opinion about route A B and C", wf.Stages[0].Legs[0].Prompt, "the modifier is the turn's, not the stage's text")
 	assert.Equal(t, LegGrok, wf.Stages[1].Legs[0].Leg)
 	assert.Equal(t, LegCodexCLI, wf.Stages[2].Legs[0].Leg)
-	assert.Equal(t, EffortMax, EffortFor("frontier", ClassMedium))
+	assert.Equal(t, EffortXHigh, EffortFor("frontier", ClassMedium), "the frontier model at the class's effort (TierEffort)")
 
 	// Alone it is still the pseudo-leg, and its head is not "mid-prompt".
 	assert.Equal(t, "/frontier what's your opinion", HoistLeading("/frontier what's your opinion"))
