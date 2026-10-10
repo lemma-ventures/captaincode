@@ -66,7 +66,15 @@ func rotateJournal(p string, now time.Time) {
 // journalEvents reads the run events of every journal file written since
 // cutoff.
 func journalEvents(live string, since time.Time) []Event {
+	ev, _ := journalRecords(live, since)
+	return ev
+}
+
+// journalRecords reads the run events and the outcomes of every journal
+// file written since cutoff.
+func journalRecords(live string, since time.Time) ([]Event, []OutcomeEvidence) {
 	var out []Event
+	var outs []OutcomeEvidence
 	for _, f := range journalFiles(live) {
 		if st, err := os.Stat(f); err != nil || st.ModTime().Before(since) {
 			continue // an archive last written before the window holds nothing in it
@@ -79,45 +87,41 @@ func journalEvents(live string, since time.Time) []Event {
 		sc.Buffer(make([]byte, 1<<20), 8<<20)
 		for sc.Scan() {
 			line := sc.Bytes()
-			// Skip decisions and outcomes before decoding them: they are most
-			// of the bytes.
-			if !strings.Contains(string(line[:min(len(line), 40)]), `"kind":"event"`) {
+			// Skip decisions before decoding them: they are most of the bytes.
+			head := string(line[:min(len(line), 40)])
+			if !strings.Contains(head, `"kind":"event"`) && !strings.Contains(head, `"kind":"outcome"`) {
 				continue
 			}
 			var r RoutingRecord
-			if json.Unmarshal(line, &r) == nil && r.Event != nil && !r.Event.At.Before(since) {
+			if json.Unmarshal(line, &r) != nil || r.At.Before(since) {
+				continue
+			}
+			if r.Event != nil {
 				out = append(out, *r.Event)
+			}
+			if r.Outcome != nil {
+				outs = append(outs, *r.Outcome)
 			}
 		}
 		fh.Close()
 	}
-	return out
+	return out, outs
 }
 
 // historyCache holds the journal's events between reads: Stats runs on every
 // route, and the journal changes only when a run ends.
 type historyCache struct {
-	key    string
-	events []Event
+	key      string
+	events   []Event
+	outcomes []OutcomeEvidence
 }
 
 // statsEvents is what the scorecards learn from: the journal's last
 // statsWindow of events, with the ring buffer's own on top (an in-memory or
 // fresh ledger has only those). One event appears in both; it counts once.
 func (l *Ledger) statsEvents() []Event {
-	live := l.journalPath()
-	if live == "" {
+	if !l.loadHistory() {
 		return l.Events
-	}
-	window := statsWindow()
-	key := window.String() + ";"
-	for _, f := range journalFiles(live) {
-		if st, err := os.Stat(f); err == nil {
-			key += fmt.Sprintf("%s:%d:%d;", f, st.Size(), st.ModTime().UnixNano())
-		}
-	}
-	if l.history == nil || l.history.key != key {
-		l.history = &historyCache{key: key, events: journalEvents(live, time.Now().Add(-window))}
 	}
 	type id struct {
 		at       int64
@@ -138,6 +142,36 @@ func (l *Ledger) statsEvents() []Event {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out
+}
+
+// loadHistory refreshes the journal cache when a journal file changed.
+// false when this ledger has no journal.
+func (l *Ledger) loadHistory() bool {
+	live := l.journalPath()
+	if live == "" {
+		return false
+	}
+	window := statsWindow()
+	key := window.String() + ";"
+	for _, f := range journalFiles(live) {
+		if st, err := os.Stat(f); err == nil {
+			key += fmt.Sprintf("%s:%d:%d;", f, st.Size(), st.ModTime().UnixNano())
+		}
+	}
+	if l.history == nil || l.history.key != key {
+		ev, outs := journalRecords(live, time.Now().Add(-window))
+		l.history = &historyCache{key: key, events: ev, outcomes: outs}
+	}
+	return true
+}
+
+// statsOutcomes is the outcomes the scorecards read: the journal's, then
+// the ring buffer's (the later state of a task wins in foldOutcomes).
+func (l *Ledger) statsOutcomes() []OutcomeEvidence {
+	if !l.loadHistory() {
+		return l.Outcomes
+	}
+	return append(append([]OutcomeEvidence(nil), l.history.outcomes...), l.Outcomes...)
 }
 
 // ImportEvents appends to the journal the run events of older state files

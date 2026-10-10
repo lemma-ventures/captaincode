@@ -72,6 +72,14 @@ func fetchAAModels(url, key string) ([]captaincode.AAModel, error) {
 }
 
 func cmdPriors(args []string) {
+	if len(args) > 0 && args[0] == "refit" {
+		l, err := captaincode.LoadLedger()
+		if err != nil {
+			fatal(err)
+		}
+		cmdPriorsRefit(l, len(args) > 1 && args[1] == "--apply")
+		return
+	}
 	if len(args) > 0 && args[0] == "sync" {
 		apply := len(args) > 1 && args[1] == "--apply"
 		cmdPriorsSync(apply)
@@ -85,6 +93,7 @@ func cmdPriors(args []string) {
 		fmt.Printf("  %-8s %.1f\n", l, captaincode.QualityPrior(l))
 	}
 	fmt.Println("\nrefresh from the Artificial Analysis coding index: captain priors sync [--apply]")
+	fmt.Println("move toward the judges' measure here:            captain priors refit [--apply]")
 }
 
 func cmdPriorsSync(apply bool) {

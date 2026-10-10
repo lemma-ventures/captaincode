@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -291,8 +292,12 @@ func TestRecordRun_AssessFailureStillRecords(t *testing.T) {
 // converged, only an occasional refresh keeps the estimate honest.
 
 func seedScored(b *brain, leg captaincode.Leg, n int) {
+	judge := captaincode.LegClaude // a cross-vendor judge: a score that counts in full
+	if captaincode.VendorOf(leg) == captaincode.VendorOf(judge) {
+		judge = captaincode.LegGLM
+	}
 	for i := 0; i < n; i++ {
-		b.ledger.Record(captaincode.Event{Task: "seed", Leg: leg, Outcome: "ok", Quality: 8, Verdict: "good"})
+		b.ledger.Record(captaincode.Event{Task: "seed", Leg: leg, Outcome: "ok", Quality: 8, Verdict: "good", Judge: judge})
 	}
 }
 
@@ -305,6 +310,7 @@ func bigResult() captaincode.Result {
 }
 
 func TestAssessPolicy_SparseLegIsAlwaysScored(t *testing.T) {
+	t.Setenv("CAPTAIN_JUDGES", "1") // when to judge, not how many
 	calls := 0
 	b := newRecordBrain(8.0, nil)
 	base := b.assessFn
@@ -318,6 +324,7 @@ func TestAssessPolicy_SparseLegIsAlwaysScored(t *testing.T) {
 }
 
 func TestAssessPolicy_ConvergedLegIsNotScoredEveryRun(t *testing.T) {
+	t.Setenv("CAPTAIN_JUDGES", "1") // when to judge, not how many
 	calls := 0
 	b := newRecordBrain(8.0, nil)
 	base := b.assessFn
@@ -350,6 +357,7 @@ func TestAssessPolicy_ConvergedLegIsNotScoredEveryRun(t *testing.T) {
 }
 
 func TestAssessPolicy_ConvergedLegGetsPeriodicRefresh(t *testing.T) {
+	t.Setenv("CAPTAIN_JUDGES", "1") // when to judge, not how many
 	calls := 0
 	b := newRecordBrain(8.0, nil)
 	base := b.assessFn
@@ -678,4 +686,30 @@ func TestEveryStreamingRunGetsATimeToFirstOutput(t *testing.T) {
 	}
 	_, res, _ = b.runWorkerRerouted(captaincode.Workspace{}, captaincode.LegClaude, "say something", func(string) {}, nil, "")
 	assert.Equal(t, int64(7), *res.TTFTMs, "a transport's own measure wins")
+}
+
+// A run is judged by a panel of two vendors, neither the worker's: the
+// quality is their mean, the verdict the harsher one.
+func TestRunIsJudgedByTwoOtherVendors(t *testing.T) {
+	b := newRecordBrain(0, nil)
+	var mu sync.Mutex
+	grades := []captaincode.Assessment{{Quality: 9, Verdict: "good"}, {Quality: 5, Verdict: "poor"}}
+	b.assessFn = func(task, output, objective string) (captaincode.Assessment, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		a := grades[0]
+		grades = grades[1:]
+		return a, nil
+	}
+	b.recordRun(captaincode.LegClaude, "[user]\nreal task\n\n", bigResult(), "")
+	require.Len(t, b.ledger.Events, 1)
+	ev := b.ledger.Events[0]
+	require.Len(t, ev.Judges, 2)
+	for _, j := range ev.Judges {
+		assert.NotEqual(t, captaincode.VendorOf(captaincode.LegClaude), captaincode.VendorOf(j), "no Anthropic judge for Claude's work")
+	}
+	assert.NotEqual(t, captaincode.VendorOf(ev.Judges[0]), captaincode.VendorOf(ev.Judges[1]))
+	assert.Equal(t, 7.0, ev.Quality)
+	assert.Equal(t, "poor", ev.Verdict)
+	assert.False(t, ev.JudgePass)
 }

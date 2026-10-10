@@ -139,9 +139,11 @@ type RoutingSample struct {
 	Events   []Event
 }
 
-// Labeled says the outcome settled one way or the other.
+// Labeled says the outcome settled one way or the other, on evidence.
 func (s RoutingSample) Labeled() bool {
-	return s.Outcome != nil && s.Outcome.Settled()
+	// Silence is not a label: every busy leg was "accepted" 96-99% of the
+	// time, mostly because nobody objected (quality_evidence.go).
+	return s.Outcome != nil && s.Outcome.Settled() && s.Outcome.DecidedBy != DecidedBySilence
 }
 
 // Success is the label: accepted is a success, rejected or regressed a

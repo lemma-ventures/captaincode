@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -21,27 +22,85 @@ func (b *brain) modelEstimator() *captaincode.ModelEstimator {
 	return b.modelEst
 }
 
-// judgeFor decides whether a run is judged and by which leg. Only first
-// attempts with a real answer are; a repair is graded by the check that
-// gated it. The judge is called where the model's estimate is uncertain,
-// and on one run in ten otherwise to keep measuring.
-func (b *brain) judgeFor(leg captaincode.Leg, ev captaincode.Event, label string, res captaincode.Result) (captaincode.Leg, bool) {
+// judgeFor decides whether a run is judged and by which legs: a panel of
+// two from two vendors, neither the worker's, when two are open (one
+// otherwise). Only first attempts with a real answer are judged; a repair is
+// graded by the check that gated it. The panel is called where the model's
+// estimate is uncertain, and on one run in ten otherwise to keep measuring.
+func (b *brain) judgeFor(leg captaincode.Leg, ev captaincode.Event, label string, res captaincode.Result) ([]captaincode.Leg, bool) {
 	if label != "" || len(res.Text) < 200 || res.DurationMs < 5000 || !judgingEnabled() {
-		return "", false
+		return nil, false
 	}
 	b.mu.Lock()
 	est := b.modelEstimator().Estimate(leg, ev.Model, ev.Effort, captaincode.Domain(ev.Domain))
 	now := time.Now()
 	open := func(l captaincode.Leg) bool { return b.laneOpen(l, now) }
-	judge, ok := captaincode.PickJudge(leg, open)
+	judges := captaincode.PickJudges(leg, open, judgePanelSize())
 	b.mu.Unlock()
-	if !ok {
-		return "", false
+	if len(judges) == 0 {
+		return nil, false
 	}
 	if !est.Uncertain() && !b.shouldAssess(leg) {
-		return "", false
+		return nil, false
 	}
-	return judge, true
+	return judges, true
+}
+
+// judgePanelSize: CAPTAIN_JUDGES, default 2 (1 halves the judging spend).
+func judgePanelSize() int {
+	if n := envInt("CAPTAIN_JUDGES", 2); n >= 1 {
+		return n
+	}
+	return 2
+}
+
+// gradePanel asks every judge at once and combines their grades: the mean
+// quality, the harshest verdict, a pass only when every judge passed. ok is
+// false when no judge answered.
+func (b *brain) gradePanel(judges []captaincode.Leg, taskID, task, output, objective string, skills []captaincode.SkillRef) (captaincode.Assessment, []captaincode.Leg, bool) {
+	type graded struct {
+		judge captaincode.Leg
+		a     captaincode.Assessment
+		err   error
+	}
+	res := make([]graded, len(judges))
+	var wg sync.WaitGroup
+	for i, j := range judges {
+		wg.Add(1)
+		go func(i int, j captaincode.Leg) {
+			defer wg.Done()
+			a, err := b.doJudge(j, taskID, task, output, objective, skills)
+			res[i] = graded{j, a, err}
+		}(i, j)
+	}
+	wg.Wait()
+	var out captaincode.Assessment
+	var who []captaincode.Leg
+	sum := 0.0
+	rank := map[string]int{"good": 0, "acceptable": 1, "poor": 2}
+	for _, g := range res {
+		if g.err != nil {
+			continue
+		}
+		if len(who) == 0 {
+			out = g.a
+		} else {
+			if rank[g.a.Verdict] > rank[out.Verdict] {
+				out.Verdict = g.a.Verdict
+			}
+			if g.a.Notes != "" {
+				out.Notes += "\n" + string(g.judge) + ": " + g.a.Notes
+			}
+			out.Skills = append(out.Skills, g.a.Skills...)
+		}
+		sum += g.a.Quality
+		who = append(who, g.judge)
+	}
+	if len(who) == 0 {
+		return captaincode.Assessment{}, nil, false
+	}
+	out.Quality = sum / float64(len(who))
+	return out, who, true
 }
 
 // doJudge asks judge to grade output on the rubric. The judge is never told

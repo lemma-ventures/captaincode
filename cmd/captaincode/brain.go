@@ -254,7 +254,8 @@ func cmdBrain(args []string) {
 	b.life = life
 	go b.watchLock(life.Done(), os.Stdout)
 	go b.startEuclidReconciler(life.Done())
-	go b.auditLoop(life.Done()) // workers' misconduct, penalized (brain_audit.go)
+	go b.auditLoop(life.Done())      // workers' misconduct, penalized (brain_audit.go)
+	go b.priorRefitLoop(life.Done()) // priors toward the judges' measure, weekly (brain_refit.go)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -2120,12 +2121,15 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	// uncertain (and one run in ten otherwise), on a rubric with the test
 	// result beside it (SCORING.md Phase 2). The director used to grade
 	// every sampled run, its own leg's included.
-	if judge, ok := b.judgeFor(leg, ev, label, res); ok {
-		if a, err := b.doJudge(judge, ev.TaskID, task, res.Text, b.judgeObjective(ev.TaskID), stocked); err == nil {
+	if judges, ok := b.judgeFor(leg, ev, label, res); ok {
+		if a, who, ok := b.gradePanel(judges, ev.TaskID, task, res.Text, b.judgeObjective(ev.TaskID), stocked); ok {
 			ev.Quality, ev.Verdict, grades = a.Quality, a.Verdict, a.Skills
-			ev.Judge, ev.JudgePass = judge, a.Verdict != "poor"
+			ev.Judge, ev.JudgePass = who[0], a.Verdict != "poor"
+			if len(who) > 1 {
+				ev.Judges = who
+			}
 			if wsDir != "" { // the grade and its reasoning go to memory too (brain_euclid.go)
-				journalReview(captaincode.Workspace{Dir: wsDir}, leg, judge, task, a.Quality, a.Verdict, a.Notes)
+				journalReview(captaincode.Workspace{Dir: wsDir}, leg, who[0], task, a.Quality, a.Verdict, a.Notes)
 			}
 			// The grade is no longer recorded as a check (it was, as
 			// director:assess, until 2026-10-02): a judge's opinion that
@@ -3151,7 +3155,7 @@ func (b *brain) assess(w http.ResponseWriter, r *http.Request) {
 	// talks to a provider, a disk or a socket may hold the global lock.
 	var out assessResp
 	if a, err := b.mgr.Assess(req.Task, req.Output, obj); err == nil {
-		ev.Quality, ev.Verdict = a.Quality, a.Verdict
+		ev.Quality, ev.Verdict, ev.Judge = a.Quality, a.Verdict, b.mgr.Director // the grader, for the vendor rule
 		out = assessResp{Quality: a.Quality, Verdict: a.Verdict, Notes: a.Notes}
 	}
 	b.mu.Lock()

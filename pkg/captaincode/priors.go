@@ -63,12 +63,18 @@ func QualityPriorFor(l Leg, d Domain) float64 {
 func BlendedQualityFor(l Leg, s LegStats, d Domain) float64 {
 	p := QualityPriorFor(l, d)
 	if ds, ok := s.ByDomain[d]; ok && ds.Scored > 0 {
-		return (p*priorWeight + ds.AvgQuality*float64(ds.Scored)) / float64(priorWeight+ds.Scored)
+		return withOutcomes((p*priorWeight+ds.AvgQuality*float64(ds.Scored))/float64(priorWeight+ds.Scored), s)
 	}
 	if s.Scored == 0 {
-		return p
+		return withOutcomes(p, s)
 	}
-	return (p*priorWeight + s.AvgQuality*float64(s.Scored)) / float64(priorWeight+s.Scored)
+	return withOutcomes((p*priorWeight+s.AvgQuality*float64(s.Scored))/float64(priorWeight+s.Scored), s)
+}
+
+// withOutcomes takes the leg's rejected outcomes off a blended quality
+// (quality_evidence.go OutcomePenalty).
+func withOutcomes(q float64, s LegStats) float64 {
+	return max(0, q-OutcomePenalty(s))
 }
 
 // priorWeight is how many pseudo-observations the benchmark prior counts as:
@@ -81,9 +87,9 @@ const priorWeight = 5
 func BlendedQuality(l Leg, s LegStats) float64 {
 	p := QualityPrior(l)
 	if s.Scored == 0 {
-		return p
+		return withOutcomes(p, s)
 	}
-	return (p*priorWeight + s.AvgQuality*float64(s.Scored)) / float64(priorWeight+s.Scored)
+	return withOutcomes((p*priorWeight+s.AvgQuality*float64(s.Scored))/float64(priorWeight+s.Scored), s)
 }
 
 // TopQuality returns the n strongest legs from order by blended quality

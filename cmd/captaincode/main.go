@@ -519,7 +519,7 @@ func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer
 		if !noManager && forced == "" {
 			fmt.Println("captain: manager assessing…")
 			if a, err := mgr.Assess(task, res.Text, objective); err == nil {
-				ev.Quality, ev.Verdict = a.Quality, a.Verdict
+				ev.Quality, ev.Verdict, ev.Judge = a.Quality, a.Verdict, mgr.Director
 				fmt.Printf("captain: assessed %s → %.1f/10 (%s) %s\n", leg, a.Quality, a.Verdict, a.Notes)
 				captainNote(ledger, "**assessed %s** `%s` → %.1f/10 (%s) %s - objective: %s", leg, disp.Title, a.Quality, a.Verdict, a.Notes, objective)
 			} else {
@@ -655,7 +655,7 @@ func runFanOut(ledger *captaincode.Ledger, mgr captaincode.Manager, task string,
 		fmt.Println(ma.Synthesis)
 		for _, s := range ma.Scores {
 			if ev, ok := events[s.Worker]; ok {
-				ev.Quality, ev.Verdict = s.Quality, s.Verdict
+				ev.Quality, ev.Verdict, ev.Judge = s.Quality, s.Verdict, mgr.Director
 			}
 			fmt.Printf("captain: assessed %s → %.1f/10 (%s) %s\n", s.Worker, s.Quality, s.Verdict, s.Notes)
 		}

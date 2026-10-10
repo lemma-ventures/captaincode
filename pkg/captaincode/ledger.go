@@ -2,6 +2,7 @@ package captaincode
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -144,8 +145,11 @@ type Event struct {
 	// vendor than the worker, and JudgePass its verdict (SCORING.md Phase
 	// 2). A weak observation: it counts by how often that judge agreed with
 	// tests it could be checked against.
-	Judge         Leg    `json:"judge,omitempty"`
-	JudgePass     bool   `json:"judge_pass,omitempty"`
+	Judge     Leg  `json:"judge,omitempty"`
+	JudgePass bool `json:"judge_pass,omitempty"`
+	// Judges is the panel when more than one leg judged the run (two
+	// vendors, neither the worker's); Judge is its first.
+	Judges        []Leg  `json:"judges,omitempty"`
 	Path          string `json:"path,omitempty"`
 	Attempt       int    `json:"attempt,omitempty"`
 	EscalatedFrom Leg    `json:"escalated_from,omitempty"`
@@ -174,6 +178,11 @@ type LegStats struct {
 	HostSince     time.Time
 	OtherHostRuns int
 	FailCauses    map[string]int // every failure by cause (routes.go FailCause), all hosts
+	// Decided and Rejected count the leg's informative outcomes (checks,
+	// commits, re-prompts, reviews, regressions - not silence) and how many
+	// turned the work down (quality_evidence.go).
+	Decided  int
+	Rejected int
 	// Speed is the median time of the leg's ok runs on its current host, per
 	// class ("" = all classes): what the /speed lane ranks by (speed.go).
 	Speed map[Class]SpeedStat
@@ -195,7 +204,7 @@ type ClassStat struct {
 // classAgg accumulates ClassStat buckets.
 type classAgg map[Class]*struct {
 	n, scored int
-	q         float64
+	q, w      float64
 }
 
 func (c classAgg) add(e Event) {
@@ -203,14 +212,15 @@ func (c classAgg) add(e Event) {
 	if !ok {
 		b = &struct {
 			n, scored int
-			q         float64
+			q, w      float64
 		}{}
 		c[e.Class] = b
 	}
 	b.n++
-	if e.Quality > 0 {
+	if w := qualityWeight(e); w > 0 {
 		b.scored++
-		b.q += e.Quality
+		b.w += w
+		b.q += w * e.Quality
 	}
 }
 
@@ -221,8 +231,8 @@ func (c classAgg) finish() map[Class]ClassStat {
 	out := map[Class]ClassStat{}
 	for cl, b := range c {
 		st := ClassStat{N: b.n, Scored: b.scored}
-		if b.scored > 0 {
-			st.AvgQuality = b.q / float64(b.scored)
+		if b.w > 0 {
+			st.AvgQuality = b.q / b.w
 		}
 		out[cl] = st
 	}
@@ -293,7 +303,11 @@ func (l *Ledger) TeamStats() map[string]TeamStat {
 	return out
 }
 
-func (l *Ledger) Stats() map[Leg]LegStats { return statsOf(l.statsEvents()) }
+func (l *Ledger) Stats() map[Leg]LegStats {
+	st := statsOf(l.statsEvents())
+	foldOutcomes(st, l.statsOutcomes())
+	return st
+}
 
 func statsOf(events []Event) map[Leg]LegStats {
 	// A leg's current host: speed and reliability count only its runs there
@@ -322,14 +336,14 @@ func statsOf(events []Event) map[Leg]LegStats {
 	durs := map[Leg]map[Class][]int64{}
 	sum := map[Leg]*struct {
 		n, scored     int
-		q, cost       float64
+		q, cost, w    float64
 		durMs, tokens int64
 		durN          int
 	}{}
 	byClass := map[Leg]classAgg{}
 	byDomain := map[Leg]map[Domain]*struct {
 		n, scored int
-		q         float64
+		q, w      float64
 	}{}
 	fails := map[Leg]int{}
 	harness := map[Leg]int{}
@@ -376,28 +390,29 @@ func statsOf(events []Event) map[Leg]LegStats {
 			if byDomain[e.Leg] == nil {
 				byDomain[e.Leg] = map[Domain]*struct {
 					n, scored int
-					q         float64
+					q, w      float64
 				}{}
 			}
 			b := byDomain[e.Leg][Domain(e.Domain)]
 			if b == nil {
 				b = &struct {
 					n, scored int
-					q         float64
+					q, w      float64
 				}{}
 				byDomain[e.Leg][Domain(e.Domain)] = b
 			}
 			b.n++
-			if e.Quality > 0 {
+			if w := qualityWeight(e); w > 0 {
 				b.scored++
-				b.q += e.Quality
+				b.w += w
+				b.q += w * e.Quality
 			}
 		}
 		s, ok := sum[e.Leg]
 		if !ok {
 			s = &struct {
 				n, scored     int
-				q, cost       float64
+				q, cost, w    float64
 				durMs, tokens int64
 				durN          int
 			}{}
@@ -417,9 +432,9 @@ func statsOf(events []Event) map[Leg]LegStats {
 		}
 		s.tokens += int64(e.Tokens)
 		s.cost += e.CostUSD
-		if e.Quality > 0 {
-			s.scored++
-			s.q += e.Quality
+		if w := qualityWeight(e); w > 0 {
+			s.w += w
+			s.q += w * e.Quality
 		}
 	}
 	out := map[Leg]LegStats{}
@@ -437,6 +452,12 @@ func statsOf(events []Event) map[Leg]LegStats {
 		}
 	}
 	for leg, s := range sum {
+		// Scored is the weighted evidence: a cross-vendor judge's score
+		// counts one, an unattributed one half (quality_evidence.go).
+		s.scored = int(math.Round(s.w))
+		if s.w > 0 && s.scored == 0 {
+			s.scored = 1
+		}
 		st := LegStats{N: s.n, Scored: s.scored, AvgTokens: int(s.tokens / int64(s.n)), TotalCostUSD: s.cost, Fails: fails[leg], HarnessFails: harness[leg], ByClass: byClass[leg].finish()}
 		if s.durN > 0 {
 			st.AvgDurationMs = s.durMs / int64(s.durN)
@@ -447,15 +468,15 @@ func statsOf(events []Event) map[Leg]LegStats {
 				st.Speed[c] = SpeedStat{N: len(v), MedianMs: medianMs(v)}
 			}
 		}
-		if s.scored > 0 {
-			st.AvgQuality = s.q / float64(s.scored)
+		if s.w > 0 {
+			st.AvgQuality = s.q / s.w
 		}
 		if bd := byDomain[leg]; len(bd) > 0 {
 			st.ByDomain = map[Domain]ClassStat{}
 			for d, b := range bd {
 				cs := ClassStat{N: b.n, Scored: b.scored}
-				if b.scored > 0 {
-					cs.AvgQuality = b.q / float64(b.scored)
+				if b.w > 0 {
+					cs.AvgQuality = b.q / b.w
 				}
 				st.ByDomain[d] = cs
 			}

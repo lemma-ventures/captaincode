@@ -400,6 +400,29 @@ report` and the dashboard's skills panel can show "stocked forty times, used
 twice", which is selection's failure rather than the skill's. Only the runs
 the director scores carry a grade (`CAPTAIN_ASSESS_MIN_SCORED`).
 
+### What a leg's quality is made of
+
+Three rules, from what twelve weeks of logs showed:
+
+- **Who graded it.** A run is judged by a panel of two legs from two vendors,
+  neither the worker's (`CAPTAIN_JUDGES`, default 2; 1 keeps one judge). A
+  score counts in full when a judge from another vendor gave it, half when no
+  grader was recorded (the director, and every score from before judges),
+  and not at all when the grader shares the worker's vendor - a Claude
+  director grading Claude's work in a team.
+- **What the user did.** Every busy leg was "accepted" 96-99% of the time,
+  mostly because the user committed or said nothing. The outcomes that turn
+  work down - a failed check, a corrective re-prompt, a reviewer's
+  rejection, a regression - are the ones that separate legs: with five
+  informative outcomes or more, a leg loses 4 quality points per unit of
+  rejected share (3 of 10 rejected: 1.2 points). Silence is neither
+  evidence here nor a label for the learners.
+- **Priors follow the evidence.** Once a week the brain moves each leg's
+  benchmark prior 30% of the way toward its judges' mean, at most 0.5 a
+  week, once the leg has 20 weighted scores (`CAPTAIN_PRIOR_REFIT`, a
+  duration, `0` off). `captain priors refit` shows the proposal; `--apply`
+  writes it into `priors.json`, and `priors-refit.jsonl` keeps each one.
+
 ### Acceptance evidence: what settles an outcome
 
 Every completed task opens an `OutcomeEvidence` row, and for a long time only

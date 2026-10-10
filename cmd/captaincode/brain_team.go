@@ -504,7 +504,9 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		b.mu.Unlock()
 		for _, s := range ma.Scores {
 			if ev, ok := events[s.Worker]; ok {
-				ev.Quality, ev.Verdict = s.Quality, s.Verdict
+				// The director graded it: recorded as its judge, so a grade from
+				// the worker's own vendor does not count (quality_evidence.go).
+				ev.Quality, ev.Verdict, ev.Judge = s.Quality, s.Verdict, reviewer
 				journalReview(req.ws, ev.Leg, reviewer, task, s.Quality, s.Verdict, s.Notes)
 			}
 			if s.Quality > 0 {

@@ -31,6 +31,7 @@ The TUI is the everyday surface; its `/…` words are in [TUI.md](TUI.md).
 | `captain legs remove <id>` | Drop an overlay leg, or disable a compiled one |
 | `captain legs reopen <id>` | Lift a leg's cooldown now (credits topped up, an outage over) - no restart |
 | `captain priors` / `priors sync [--apply]` | Active quality priors and their source; propose refreshed priors from the Artificial Analysis coding index, `--apply` writes `priors.json` |
+| `captain priors refit [--apply]` | Move each prior toward the cross-vendor judges' mean measured here (30% of the gap, at most 0.5); the brain does it weekly |
 | `captain adi` / `adi refresh` | ADI standing per leg (green, red, not measured) and green tuples no leg serves; `refresh` fetches the feed now |
 | `captain state [--last] [<folder>]` | The per-folder TUI state directory (history, model, preferences); `--last` prints the newest session id |
 
