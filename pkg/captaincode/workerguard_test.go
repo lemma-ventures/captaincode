@@ -2,6 +2,8 @@ package captaincode
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -60,6 +62,8 @@ func TestGuardContractCarriesTheTurnsFacts(t *testing.T) {
 	assert.NotContains(t, no, PublishGrantMarker)
 	assert.Contains(t, no, "Publishing: not requested")
 	assert.Contains(t, no, DirtyCheckoutMarker)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(GuardBinaryEnv, "/opt/captain/captain")
 	env := strings.Join(WorkerGuardEnv("x"+GuardContract(false, true)), "\n")
 	assert.Contains(t, env, MayPublishEnv+"=0")
 	assert.Contains(t, env, DirtyBeforeEnv+"=1")
@@ -82,4 +86,44 @@ func TestMaxClassCapsWhatRoutingGivesALeg(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"legs":[{"id":"ds4-flash","max_class":"huge"}]}`), 0o600))
 	_, err = LoadRegistry(path)
 	assert.Error(t, err)
+}
+
+// A process that is not a captain build (a test binary, a renamed build)
+// writes no shims: a bare `captain` from PATH may be an older build that
+// takes `guard-exec git …` for a task (2026-10-10).
+func TestNoShimsWithoutACaptainBinary(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(GuardBinaryEnv, "")
+	assert.Empty(t, guardBinary(), "a go test binary is not captain")
+	assert.Nil(t, WorkerGuardEnv("task"), "no captain to point the shims at: no shims")
+	t.Setenv(GuardBinaryEnv, "/a/captain")
+	a := ShimDir()
+	t.Setenv(GuardBinaryEnv, "/b/captain")
+	assert.NotEqual(t, a, ShimDir(), "each binary has its own shims")
+}
+
+// The loop of 2026-10-10: the captain a shim runs calls git itself. That
+// inner git must reach the real git, not the shim again.
+func TestAShimNeverRunsItself(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	log := filepath.Join(home, "calls")
+	fake := filepath.Join(home, "captain")
+	// A captain that records its call, then runs git through PATH as the
+	// old binary did.
+	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\necho \"$@\" >> "+log+"\ngit --version\n"), 0o755))
+	t.Setenv(GuardBinaryEnv, fake)
+	env := WorkerGuardEnv("task")
+	require.NotNil(t, env)
+	cmd := exec.Command("/bin/sh", "-c", "git --version") // the shell resolves git on the worker's PATH, as a worker does
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	assert.Contains(t, string(out), "git version", "the real git answered")
+	calls, _ := os.ReadFile(log)
+	assert.Equal(t, 1, strings.Count(string(calls), "guard-exec"), "captain ran once: %s", calls)
+
+	real, err := RealBinary("git")
+	require.NoError(t, err)
+	assert.NotContains(t, real, ".captaincode/shims")
 }

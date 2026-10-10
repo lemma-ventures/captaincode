@@ -33,6 +33,8 @@ var causePatterns = []struct {
 	{CauseHarness, []string{
 		"exited but did not release its output pipes", "invalid utf-8", "chdir ", "create opencode session",
 		"invalid project config", "no such file or directory", "secitemcopymatching", "keychain",
+		// captain's own opencode serve, not the provider behind it
+		"opencode serve not running", `post "http://127.0.0.1:`,
 	}},
 	{CauseCredential, []string{
 		"not logged in", "please run /login", "codex login", "401 unauthorized", "missing bearer",

@@ -22,6 +22,8 @@ package captaincode
 // ~/.captaincode/conduct.jsonl, which the audit reads (audit.go).
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -152,21 +154,80 @@ func ReadConduct(since time.Time) []ConductEvent {
 // guardedTools are the programs the CLI shims stand in for.
 var guardedTools = []string{"git", "gh", "npm", "pnpm", "yarn", "bun", "cargo", "twine", "docker", "goreleaser", "gem", "poetry"}
 
-// ShimDir is where the shims live.
-func ShimDir() string {
+// GuardShimEnv marks a process started by a shim: a shim run inside it goes
+// straight to the real tool. Without it a captain that did not know
+// guard-exec took `guard-exec git …` for a task, its own git call went
+// through the same shim, and the loop dispatched 635 workers in 40 minutes
+// (2026-10-10).
+const GuardShimEnv = "CAPTAIN_GUARD_SHIM"
+
+// GuardBinaryEnv names the captain binary the shims run, for a process that
+// is not one (a test binary).
+const GuardBinaryEnv = "CAPTAIN_GUARD_BINARY"
+
+// guardBinary is the captain the shims run: this process when it is a
+// captain build, CAPTAIN_GUARD_BINARY otherwise, else "" - and then no shims,
+// rather than a bare `captain` resolved from PATH, which may be an older
+// build that does not know guard-exec.
+func guardBinary() string {
+	if v := strings.TrimSpace(os.Getenv(GuardBinaryEnv)); v != "" && filepath.IsAbs(v) {
+		return v
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	b := filepath.Base(exe)
+	if strings.HasPrefix(b, "captain") && !strings.HasSuffix(b, ".test") {
+		return exe
+	}
+	return ""
+}
+
+// shimRoot holds one shim folder per captain binary, so two builds never
+// rewrite each other's shims.
+func shimRoot() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".captaincode", "shims")
 }
 
-// EnsureShims writes the shims, each a two-line script that hands its
-// command to `captain guard-exec`, and returns their folder.
+// ShimDir is where this binary's shims live ("" when there is no captain
+// binary to point them at).
+func ShimDir() string {
+	bin := guardBinary()
+	if bin == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(bin))
+	return filepath.Join(shimRoot(), hex.EncodeToString(sum[:])[:12])
+}
+
+// shimBody is one tool's shim: inside another shim, the real tool; else
+// captain's guard, then the real tool.
+func shimBody(bin, tool string) string {
+	return fmt.Sprintf(`#!/bin/sh
+if [ -n "$%[1]s" ]; then
+  PATH=$(printf '%%s' "$PATH" | tr ':' '\n' | grep -v '/.captaincode/shims' | paste -sd: -)
+  export PATH
+  exec %[3]s "$@"
+fi
+%[1]s=1 exec %[2]s guard-exec %[3]s "$@"
+`, GuardShimEnv, shellQuote(bin), tool)
+}
+
+// EnsureShims writes this binary's shims and returns their folder ("" with
+// no error when this process is not a captain build).
 func EnsureShims() (string, error) {
 	dir := ShimDir()
+	if dir == "" {
+		return "", nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	bin := guardBinary()
 	for _, t := range guardedTools {
-		body := fmt.Sprintf("#!/bin/sh\nexec %s guard-exec %s \"$@\"\n", shellQuote(CaptainBinary()), t)
+		body := shimBody(bin, t)
 		p := filepath.Join(dir, t)
 		if old, err := os.ReadFile(p); err == nil && string(old) == body {
 			continue
@@ -179,10 +240,12 @@ func EnsureShims() (string, error) {
 }
 
 // WorkerGuardEnv is the environment a CLI worker runs the task with: the
-// shims first on PATH, and the turn's decisions read from its prompt.
+// shims first on PATH, and the turn's decisions read from its prompt. nil
+// when there is no captain binary for the shims: the worker then runs
+// unguarded rather than through a captain that may not know guard-exec.
 func WorkerGuardEnv(task string) []string {
 	dir, err := EnsureShims()
-	if err != nil {
+	if err != nil || dir == "" {
 		return nil
 	}
 	flag := func(b bool) string {
@@ -199,11 +262,14 @@ func WorkerGuardEnv(task string) []string {
 	}
 }
 
-// RealBinary finds name on PATH, skipping the shim folder.
+// RealBinary finds name on PATH, skipping every shim folder.
 func RealBinary(name string) (string, error) {
-	shims := filepath.Clean(ShimDir())
+	root := filepath.Clean(shimRoot())
 	for _, d := range filepath.SplitList(os.Getenv("PATH")) {
-		if d == "" || filepath.Clean(d) == shims {
+		if d == "" {
+			continue
+		}
+		if c := filepath.Clean(d); c == root || strings.HasPrefix(c, root+string(filepath.Separator)) {
 			continue
 		}
 		p := filepath.Join(d, name)

@@ -133,7 +133,7 @@ func (l *Ledger) statsEvents() []Event {
 	for _, set := range [][]Event{l.history.events, l.Events} {
 		for _, e := range set {
 			k := id{e.At.UnixNano(), e.Leg, e.TaskID, e.Task}
-			if seen[k] {
+			if seen[k] || notATask(e) {
 				continue
 			}
 			seen[k] = true
@@ -229,3 +229,10 @@ func (l *Ledger) ImportEvents(states ...string) (int, error) {
 	l.history = nil
 	return len(add), nil
 }
+
+// notATask: a run whose "task" was a shim's command line. A captain that did
+// not know guard-exec took every `captain guard-exec git …` a worker ran for
+// a prompt and dispatched it: 635 such runs in 40 minutes, nearly all
+// failing, on 2026-10-10 (workerguard.go GuardShimEnv). They say nothing
+// about any leg.
+func notATask(e Event) bool { return strings.HasPrefix(strings.TrimSpace(e.Task), "guard-exec ") }

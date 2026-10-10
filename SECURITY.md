@@ -94,8 +94,13 @@ Two things no worker does unless your typed request asks for it, on any leg
 The brain decides both from the turn and states them in the worker prompt.
 opencode workers are checked through the brain at the tool boundary. claude,
 codex and cursor run with shims for `git`, `gh` and the package tools first
-on their PATH (`captain guard-exec`). The guard stops accidents, not a worker
-that calls `/usr/bin/git` on purpose. It was added after a cheap leg, asked
+on their PATH (`captain guard-exec`). Each captain binary writes its own
+shims (`~/.captaincode/shims/<binary>/`) pointing at itself by absolute
+path, and a process that is not a captain build writes none, so a shim never
+reaches an older `captain` that does not know `guard-exec` - one did, took
+each `git` call for a prompt, and dispatched 635 workers in 40 minutes
+(2026-10-10). A shim run inside another goes straight to the real tool. The
+guard stops accidents, not a worker that calls `/usr/bin/git` on purpose. It was added after a cheap leg, asked
 to "build it", committed other sessions' work, pushed a main that failed CI
 and published a public release (v0.3.11, retracted).
 

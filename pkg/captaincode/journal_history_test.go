@@ -84,3 +84,14 @@ func appendRecord(t *testing.T, p string, e Event) {
 	_, _ = f.Write(append(line, '\n'))
 	require.NoError(t, f.Close())
 }
+
+func TestShimCommandLinesAreNotRuns(t *testing.T) {
+	l := NewLedger(filepath.Join(t.TempDir(), "state.json"))
+	for i := 0; i < 5; i++ {
+		l.Record(Event{Leg: LegLuna, Task: "guard-exec git rev-parse --show-toplevel", Outcome: "fail", Error: "opencode serve not running at http://127.0.0.1:14096"})
+	}
+	l.Record(Event{Leg: LegLuna, Task: "fix the typo", Outcome: "fail", Error: "opencode serve not running at http://127.0.0.1:14096"})
+	st := l.Stats()[LegLuna]
+	assert.Zero(t, st.Fails, "captain's own serve being down is not luna's failure")
+	assert.Equal(t, 1, st.HarnessFails, "the shim's command lines are not runs at all")
+}
