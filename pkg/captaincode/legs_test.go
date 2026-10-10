@@ -1039,3 +1039,41 @@ func TestPastTheBudgetQuietFollowsHowLongTheModelThinks(t *testing.T) {
 	require.NoError(t, err, "a think as long as the model's earlier gaps is not quiet")
 	assert.Equal(t, "DONE", res.Text)
 }
+
+// opencode could not save its session: another opencode process held the
+// SQLite lock past its 5 s timeout (2026-10-10). Not the model's failure:
+// classified, kept off the scorecard, and retried once on a fresh session.
+func TestALockedOpencodeDatabaseIsRetriedOnce(t *testing.T) {
+	old := storeBusyBackoff
+	storeBusyBackoff = 10 * time.Millisecond
+	t.Cleanup(func() { storeBusyBackoff = old })
+	locked := `{"name":"UnknownError","data":{"message":"effect/sql/SqlError: Failed to execute statement (cause: effect/sql/SqlError/LockTimeoutError: Failed to execute statement (cause: SQLiteError: database is locked))"}}`
+	var sessions atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/session", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`[]`))
+			return
+		}
+		fmt.Fprintf(w, `{"id":"ses_%d"}`, sessions.Add(1))
+	})
+	mux.HandleFunc("/event", sseHandler("ses_none", 0))
+	mux.HandleFunc("/session/ses_2/message", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(locked))
+	})
+	mux.HandleFunc("/session/ses_3/message", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"info":{"tokens":{"total":3}},"parts":[{"type":"text","text":"SAVED"}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	port, err := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	require.NoError(t, err)
+	res, err := RunWorkerStream(LegFree, "task", port, func(string) {})
+	require.NoError(t, err, "one locked save heals on the retry")
+	assert.Equal(t, "SAVED", res.Text)
+
+	err = classifyOpencodeError("openrouter", "m", json.RawMessage(locked), "")
+	assert.ErrorIs(t, err, ErrOpencodeStoreBusy)
+	assert.Equal(t, CauseHarness, FailCause(err.Error()), "opencode's own database, not the model")
+}

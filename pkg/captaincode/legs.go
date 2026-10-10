@@ -97,6 +97,23 @@ func workerTimeout() time.Duration {
 // manual recovery that fixed the incident.
 var ErrWorkerStalled = errors.New("worker stalled")
 
+// ErrOpencodeStoreBusy: opencode could not write its own session database -
+// another opencode process held the SQLite lock past opencode's 5 s busy
+// timeout ("database is locked"). Every opencode process on the machine (the
+// TUIs, the brain's serve, its workers) shares ~/.local/share/opencode/
+// opencode.db; it happened only under a burst of hundreds of processes
+// (2026-10-10). Not the model's failure, and worth one retry.
+var ErrOpencodeStoreBusy = errors.New("opencode's session database was locked")
+
+// storeBusyBackoff is the wait before retrying a run opencode could not save.
+var storeBusyBackoff = 3 * time.Second
+
+// opencodeStoreBusy spots the SQLite lock timeout in an opencode error.
+func opencodeStoreBusy(s string) bool {
+	s = strings.ToLower(s)
+	return strings.Contains(s, "database is locked") || strings.Contains(s, "locktimeouterror") || strings.Contains(s, "sqlite_busy")
+}
+
 // ErrContextOverflow signals the task/conversation exceeds the worker model's
 // context window (opencode: ContextOverflowError, "too large to compact").
 // Non-retryable - the same input will overflow again; the caller must shrink
@@ -1392,6 +1409,8 @@ func classifyOpencodeError(provider, model string, raw json.RawMessage, detail s
 	// the rest against the classify-safe text.
 	full := string(raw) + " " + detail
 	switch {
+	case opencodeStoreBusy(full):
+		return fmt.Errorf("%s/%s: %w (another opencode process held it past the 5 s lock timeout)", provider, model, ErrOpencodeStoreBusy)
 	// Provider-down BEFORE rate-limit: xAI's capacity errors ("currently at
 	// capacity due to high demand") ship with HTTP 429, and matching "429"
 	// first would bench the leg for the 30m quota window instead of the
@@ -2032,6 +2051,24 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		d.OnDelta = onDelta
 		d.OnStatus = onStatus
 		d.Timeout = workerTimeout()
+		d.StallTimeout = workerStallTimeout()
+		res, err = d.Run(leg, task)
+	}
+	if errors.Is(err, ErrOpencodeStoreBusy) && res.Text == "" {
+		// opencode could not save its session: a lock held by another
+		// opencode process, not the model. Nothing was answered yet, so one
+		// retry on a fresh session after the lock has had time to clear.
+		fmt.Fprintf(os.Stderr, "captain: %s - opencode's database was locked; retrying once in %s\n", leg, storeBusyBackoff)
+		time.Sleep(storeBusyBackoff)
+		d = NewDispatcher(port)
+		d.Dir = ws.Dir
+		d.Effort = ws.Effort
+		d.Steer = ws.Steer
+		d.Title = "captain-" + string(leg)
+		d.OnDelta = onDelta
+		d.OnStatus = onStatus
+		d.Timeout = base
+		d.Ceiling = ceil
 		d.StallTimeout = workerStallTimeout()
 		res, err = d.Run(leg, task)
 	}

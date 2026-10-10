@@ -35,6 +35,8 @@ var causePatterns = []struct {
 		"invalid project config", "no such file or directory", "secitemcopymatching", "keychain",
 		// captain's own opencode serve, not the provider behind it
 		"opencode serve not running", `post "http://127.0.0.1:`,
+		// opencode's own session database, locked by another opencode process
+		"database is locked", "session database was locked", "locktimeouterror", "sqlite_busy",
 	}},
 	{CauseCredential, []string{
 		"not logged in", "please run /login", "codex login", "401 unauthorized", "missing bearer",
