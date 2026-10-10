@@ -88,18 +88,21 @@ func Toolchain() []ToolPin {
 		{
 			Bin: "claude", Transport: TransportClaudeCLI, VersionArgs: []string{"--version"}, Expect: "claude",
 			// 2.1.280: the `opus` alias resolves to Claude Opus 5.5, the /frontier
-			// model; an older CLI resolves it to Opus 5 (2026-09-22).
-			Tested: "2.1.280", Min: "2.0.0",
+			// model; an older CLI resolves it to Opus 5 (2026-09-22). 2.1.287
+			// passed TestLiveCLILegs (2026-10-10): `sonnet` is Sonnet 5.5.
+			Tested: "2.1.287", Min: "2.0.0",
 			Install:  "npm i -g @anthropic-ai/claude-code",
 			Upgrade:  "npm i -g @anthropic-ai/claude-code@latest",
-			Rollback: "npm i -g @anthropic-ai/claude-code@2.1.280",
+			Rollback: "npm i -g @anthropic-ai/claude-code@2.1.287",
 		},
 		{
 			Bin: "codex", Transport: TransportCodexCLI, VersionArgs: []string{"--version"}, Expect: "codex",
-			Tested: "0.153.4", Min: "0.100.0",
+			// 0.156.0 passed TestLiveCLILegs (2026-10-10); --json is listed
+			// only under `codex exec --help` from 0.156.
+			Tested: "0.156.0", Min: "0.100.0",
 			Install:  "npm i -g @openai/codex",
 			Upgrade:  "npm i -g @openai/codex@latest",
-			Rollback: "npm i -g @openai/codex@0.153.4",
+			Rollback: "npm i -g @openai/codex@0.156.0",
 		},
 		{
 			Bin: "cursor-agent", Transport: TransportCursorCLI, VersionArgs: []string{"--version"},

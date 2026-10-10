@@ -204,6 +204,19 @@ Rollback pins the tested version back; `captain doctor` prints the exact string
 for each adapter, so a machine that has drifted can be returned to the version a
 report was produced against without consulting this file.
 
+When `captain doctor` reports a CLI newer than tested, run the live check before
+raising the pin. It sends one tiny task through each CLI leg's own runner (claude
+at low, high and `/frontier`; codex-cli at low and high) and checks that captain
+still reads the answer, the stream, the model the CLI reports, the usage and the
+time to first output. It spends a few calls of the logins on the machine:
+
+```bash
+CAPTAIN_LIVE_CLI=1 REAL_HOME=$HOME go test ./pkg/captaincode -run TestLiveCLILegs -v
+```
+
+If it passes, raise `Tested` and `Rollback` for that CLI in
+`pkg/captaincode/toolchain.go`.
+
 Deploy the brain atomically. Never `cp` over the running binary - write beside
 it and `mv` into place, or the running process is corrupted mid-run.
 

@@ -92,7 +92,7 @@ func codexCLICmdArgs(dir, task string, effort Effort) []string {
 	return append(args, task)
 }
 
-// codexEvent is one JSONL line from `codex exec --json` (codex-cli 0.153.4).
+// codexEvent is one JSONL line from `codex exec --json` (codex-cli 0.153.4, 0.156.0).
 // Shapes captured live 2026-09-09:
 //
 //	{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"…"}}
