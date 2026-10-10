@@ -264,7 +264,7 @@ func StartRung(c Class, prefer string) int {
 	case "quality":
 		return len(Rungs) - 1
 	case "speed":
-		return 1 // grok leg: fast models, daily-reset subscription capacity
+		return 0 // the whole ladder: the speed lane picks by measured time (speed.go)
 	}
 	switch c {
 	case ClassTrivial:

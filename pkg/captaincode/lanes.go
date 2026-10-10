@@ -64,10 +64,11 @@ const (
 	LaneFrontier Lane = "frontier"
 	LaneQuality  Lane = "quality"
 	LaneCheap    Lane = "cheap"
+	LaneSpeed    Lane = "speed"
 )
 
 // LaneFor maps a stated preference to its lane; "" when the preference has
-// none. /speed has no lane: the fastest leg is one leg.
+// none. /speed is the fastest measured leg (speed.go), not a rotation.
 func LaneFor(prefer string) Lane {
 	switch strings.ToLower(strings.TrimSpace(prefer)) {
 	case "frontier":
@@ -76,6 +77,8 @@ func LaneFor(prefer string) Lane {
 		return LaneQuality
 	case "save", "cheap":
 		return LaneCheap
+	case "speed", "fast":
+		return LaneSpeed
 	}
 	return ""
 }

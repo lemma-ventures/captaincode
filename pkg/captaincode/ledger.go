@@ -174,6 +174,15 @@ type LegStats struct {
 	HostSince     time.Time
 	OtherHostRuns int
 	FailCauses    map[string]int // every failure by cause (routes.go FailCause), all hosts
+	// Speed is the median time of the leg's ok runs on its current host, per
+	// class ("" = all classes): what the /speed lane ranks by (speed.go).
+	Speed map[Class]SpeedStat
+}
+
+// SpeedStat is a median run time over N ok runs.
+type SpeedStat struct {
+	N        int
+	MedianMs int64
 }
 
 // ClassStat is one (leg-or-team, class) quality bucket.
@@ -310,6 +319,7 @@ func statsOf(events []Event) map[Leg]LegStats {
 	onCur := func(e Event) bool { return !hasCur[e.Leg] || HostOf(e) == curHost[e.Leg] }
 	other := map[Leg]int{}
 	causes := map[Leg]map[string]int{}
+	durs := map[Leg]map[Class][]int64{}
 	sum := map[Leg]*struct {
 		n, scored     int
 		q, cost       float64
@@ -397,6 +407,13 @@ func statsOf(events []Event) map[Leg]LegStats {
 		if onCur(e) {
 			s.durN++
 			s.durMs += e.Duration
+			if e.Duration > 0 {
+				if durs[e.Leg] == nil {
+					durs[e.Leg] = map[Class][]int64{}
+				}
+				durs[e.Leg][e.Class] = append(durs[e.Leg][e.Class], e.Duration)
+				durs[e.Leg][""] = append(durs[e.Leg][""], e.Duration)
+			}
 		}
 		s.tokens += int64(e.Tokens)
 		s.cost += e.CostUSD
@@ -423,6 +440,12 @@ func statsOf(events []Event) map[Leg]LegStats {
 		st := LegStats{N: s.n, Scored: s.scored, AvgTokens: int(s.tokens / int64(s.n)), TotalCostUSD: s.cost, Fails: fails[leg], HarnessFails: harness[leg], ByClass: byClass[leg].finish()}
 		if s.durN > 0 {
 			st.AvgDurationMs = s.durMs / int64(s.durN)
+		}
+		if d := durs[leg]; len(d) > 0 {
+			st.Speed = map[Class]SpeedStat{}
+			for c, v := range d {
+				st.Speed[c] = SpeedStat{N: len(v), MedianMs: medianMs(v)}
+			}
 		}
 		if s.scored > 0 {
 			st.AvgQuality = s.q / float64(s.scored)

@@ -177,7 +177,7 @@ func TestLaneWindowAndFloorEnv(t *testing.T) {
 func TestLaneFor(t *testing.T) {
 	for in, want := range map[string]Lane{
 		"frontier": LaneFrontier, "quality": LaneQuality, "q": LaneQuality, "best": LaneQuality,
-		"save": LaneCheap, "cheap": LaneCheap, " Save ": LaneCheap, "speed": "", "fast": "", "": "",
+		"save": LaneCheap, "cheap": LaneCheap, " Save ": LaneCheap, "speed": LaneSpeed, "fast": LaneSpeed, "": "",
 	} {
 		assert.Equal(t, want, LaneFor(in), in)
 	}

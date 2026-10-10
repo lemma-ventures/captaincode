@@ -113,7 +113,7 @@ func TestStartRung(t *testing.T) {
 	assert.Equal(t, len(Rungs)-1, StartRung(ClassHigh, ""))
 	assert.Equal(t, 0, StartRung(ClassHigh, "save"))
 	assert.Equal(t, len(Rungs)-1, StartRung(ClassTrivial, "quality"))
-	assert.Equal(t, 1, StartRung(ClassTrivial, "speed"))
+	assert.Equal(t, 0, StartRung(ClassTrivial, "speed"), "the speed lane chooses over the whole ladder")
 }
 
 func TestDirectorExcludedFromWorkerLadder(t *testing.T) {

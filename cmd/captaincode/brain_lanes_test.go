@@ -353,3 +353,24 @@ func TestFrontierTurnIsOnTheRecord(t *testing.T) {
 	assert.NotEmpty(t, d.TaskID, "attached to the turn's task")
 	assert.Equal(t, 1.0, d.Propensities[captaincode.LegClaude])
 }
+
+// /speed went to Cursor (53 s on a one-line task) while luna answered in
+// 2.7 s. The speed lane picks the fastest measured leg, without the director.
+func TestSpeedLanePicksTheFastestMeasuredLeg(t *testing.T) {
+	b := teamBrain()
+	noDirector(t, b)
+	add := func(leg captaincode.Leg, ms int64, n int) {
+		for i := 0; i < n; i++ {
+			b.ledger.Events = append(b.ledger.Events, captaincode.Event{Leg: leg, Class: captaincode.ClassTrivial, Outcome: "ok", Duration: ms})
+		}
+	}
+	add(captaincode.LegLuna, 2_700, 21)
+	add(captaincode.LegStep, 16_000, 46)
+	add(captaincode.LegCursor, 53_000, 12)
+	resp := routeBody(t, b, "fix the typo in the README", map[string]any{"prefer": "speed"})
+	assert.Equal(t, "luna", resp["leg"])
+	assert.Contains(t, resp["rationale"], "speed lane: luna")
+	assert.Equal(t, "low", resp["effort"])
+	resp = routeBody(t, b, "/speed fix the typo in the README", nil)
+	assert.Equal(t, "luna", resp["leg"], "…also as a word in the prompt")
+}

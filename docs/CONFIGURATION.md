@@ -71,15 +71,16 @@ Until one is set, the mix is `frontier=quality=cheap=fast=oss=20%`, `determinist
 
 The director then prefers legs that close the gap between recent routes and the target (open-weight for oss, ADI-green for deterministic, frontier-class for frontier, and the cheap / fast / quality bands for the rest). An explicit `/quality`, `/speed`, `/save`, `/frontier`, `/oss` or `/deterministic` on a turn still wins. `CAPTAIN_STEER=0` keeps a saved mix from moving the ranking.
 
-### Lanes: /frontier, /quality, /save
+### Lanes: /frontier, /quality, /save, /speed
 
 A stated preference names a lane, not a leg. Each lane counts where its last `CAPTAIN_LANE_WINDOW` turns went (`lane_runs` in `state.json`, noted when the turn is dispatched) and sends the next to the leg furthest behind an equal share. Only legs scoring within `CAPTAIN_LANE_FLOOR` of the lane's best take part. A lower-ranked leg goes next only once it is a full run behind, so the best leg runs a lane's first turns and wins ties, and over a full window each leg has its share. A leg that keeps failing (two or more provider faults, a third of its runs) sits out unless every leg in the lane does.
 
 | Lane | Legs | Runs at |
 |---|---|---|
-| `frontier` | The frontier-class legs and claude, ranked by perf index (claude and codex-cli today; grok-max sits below the floor) | claude as the frontier pseudo-leg (pinned strongest model, max thinking); any other leg at max effort (codex-cli: its frontier model at `xhigh`) |
-| `quality` | The legs within 85% of the best by blended quality, the director's own leg included when it is open. Frontier-class legs (`codex-cli`, `grok-max`) stay out: they run on `/frontier` | high effort |
+| `frontier` | The frontier-class legs and claude, ranked by perf index (claude and codex-cli today; grok-max sits below the floor) | claude as the frontier pseudo-leg (pinned strongest model); any other leg on its frontier model. Effort by the task's class: high, xhigh or max (see *Effort*) |
+| `quality` | The legs within 85% of the best by blended quality. Legs that run a frontier model at this effort stay out: `codex-cli`, `grok-max`, and claude while it runs Opus (`CAPTAIN_CLAUDE_MODEL=sonnet` brings it back) | medium on trivial work, else high |
 | `cheap` (`/save`) | Open-weight legs that clear the class's quality bar (`CAPTAIN_VALUE_TAU`) | medium effort: the leg's own model, not its flash sibling |
+| `speed` (`/speed`) | Not balanced: the fastest leg, by the median time of its own runs of the task's class on the host it runs on now (all its runs when it has fewer than three of that class). It must clear the class's quality bar and not keep failing. On trivial work the agent CLIs (claude, codex-cli, cursor) stay out: they start an agent before they answer. One turn in ten tries a leg with no timing yet | low effort |
 
 With no open-weight leg open, `/save` routes over the whole ladder at low effort, as before lanes, and the feed says so. A forced leg (`/glm …`), legs named in the prompt, and a task-API plan that sends nothing are not counted or balanced. `/team`, workflows and a `/frontier` stage inside a workflow keep their own leg choice. The route's rationale names the lane, the leg and the tally (`frontier lane: codex-cli (under-used: 3 of the last 8, share 4.0; claude 5 · codex-cli 3)`).
 

@@ -23,7 +23,7 @@ func routeLane(req routeReq) captaincode.Lane {
 	switch lane := captaincode.LaneFor(req.Prefer); {
 	case req.Prefer == "quality":
 		return captaincode.LaneQuality // the menu below is narrowed only on the canonical word
-	case lane == captaincode.LaneCheap:
+	case lane == captaincode.LaneCheap, lane == captaincode.LaneSpeed:
 		return lane
 	}
 	return ""
@@ -197,6 +197,26 @@ func (b *brain) pickLane(lane captaincode.Lane, task string, order []captaincode
 				cands = append(cands, captaincode.LaneCandidate{Leg: r.Leg, Score: r.Quality})
 			}
 		}
+	case captaincode.LaneSpeed:
+		// The fastest measured leg that clears the class's good-enough bar
+		// and does not keep failing (speed.go).
+		if d == "" {
+			d = captaincode.TriageTask(task).Domain
+		}
+		for _, r := range captaincode.ValueRank(class, d, order, stats, estTokensFor(class), b.pressure) {
+			if r.Eligible() {
+				cands = append(cands, captaincode.LaneCandidate{Leg: r.Leg, Score: r.Quality})
+			}
+		}
+		var legs []captaincode.Leg
+		for _, c := range reliableLane(cands, stats) {
+			legs = append(legs, c.Leg)
+		}
+		turns := 0
+		for _, n := range b.ledger.LaneCounts(lane, captaincode.LaneWindow()) {
+			turns += n
+		}
+		return captaincode.SpeedPick(legs, stats, class, turns)
 	default:
 		return captaincode.LanePick{}, false
 	}
