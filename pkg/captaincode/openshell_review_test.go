@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -384,9 +383,7 @@ func TestAdvisoryHostReviewWithEmptyDiff(t *testing.T) {
 }
 
 func TestAdvisoryHostReviewRunsInSafeMode(t *testing.T) {
-	if out, err := exec.Command("claude", "--version").CombinedOutput(); err != nil || !strings.Contains(string(out), "Claude") {
-		t.Skip("claude not installed")
-	}
+	logs := fakeClaude(t, "ok")
 	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
 	task := "fix the parser bug in src/parser.go"
 	diff := []byte("diff --git a/src/parser.go b/src/parser.go\n--- a/src/parser.go\n+++ b/src/parser.go\n@@ -10,6 +10,7 @@\n package parser\n+// Fix: handle nil input cleanly.\n func Parse(input string) (*AST, error) {\n+	if input == \"\" {\n+\t\treturn nil, fmt.Errorf(\"empty input\")\n+\t}\n\treturn parseInternal(input)\n }")
@@ -396,12 +393,20 @@ func TestAdvisoryHostReviewRunsInSafeMode(t *testing.T) {
 	assert.Contains(t, review, "[advisory host review]")
 	assert.NotContains(t, review, "apply with:")
 	assert.NotContains(t, review, "captain apply")
+	call, err := os.ReadFile(filepath.Join(logs, "call1"))
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(call)), "\n")
+	require.GreaterOrEqual(t, len(lines), 12)
+	assert.Equal(t, []string{"-p", "--output-format", "json", "--tools", "", "--safe-mode", "--strict-mcp-config", "--permission-mode", "dontAsk", "--no-session-persistence"}, lines[:10])
+	assert.Equal(t, "entries=0", lines[11])
+	assert.NoDirExists(t, strings.TrimPrefix(lines[10], "cwd="))
+	input, err := os.ReadFile(filepath.Join(logs, "stdin1"))
+	require.NoError(t, err)
+	assert.Contains(t, string(input), string(diff))
 }
 
-func TestAdvisoryHostReviewRejectsHostilePatch(t *testing.T) {
-	if out, err := exec.Command("claude", "--version").CombinedOutput(); err != nil || !strings.Contains(string(out), "Claude") {
-		t.Skip("claude not installed")
-	}
+func TestAdvisoryHostReviewKeepsHostilePatchAsData(t *testing.T) {
+	logs := fakeClaude(t, "ok")
 	t.Setenv("CAPTAIN_OPENSHELL_ADVISORY_REVIEW", "1")
 	task := "add error handling to parser.go"
 	diff := []byte(`diff --git a/.claude/settings.json b/.claude/settings.json
@@ -438,14 +443,21 @@ diff --git a/src/parser.go b/src/parser.go
  	return parseInternal(input)
 }`)
 	review, err := advisoryHostReview(context.Background(), task, diff)
-	if err != nil {
-		assert.Empty(t, review)
-		return
-	}
+	require.NoError(t, err)
 	require.NotEmpty(t, review)
 	assert.Contains(t, review, "[advisory host review]")
 	assert.NotContains(t, review, "apply with:")
 	assert.NotContains(t, review, "captain apply")
+	call, err := os.ReadFile(filepath.Join(logs, "call1"))
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(call)), "\n")
+	require.GreaterOrEqual(t, len(lines), 12)
+	assert.Equal(t, []string{"-p", "--output-format", "json", "--tools", "", "--safe-mode", "--strict-mcp-config", "--permission-mode", "dontAsk", "--no-session-persistence"}, lines[:10])
+	assert.Equal(t, "entries=0", lines[11])
+	assert.NoDirExists(t, strings.TrimPrefix(lines[10], "cwd="))
+	input, err := os.ReadFile(filepath.Join(logs, "stdin1"))
+	require.NoError(t, err)
+	assert.Contains(t, string(input), string(diff))
 }
 
 func TestAdvisoryHostReviewDoesNotBlockWorkflow(t *testing.T) {
