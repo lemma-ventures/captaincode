@@ -424,9 +424,12 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 	if envDir == "" {
 		envDir = string(captaincode.Director)
 	}
+	// CAPTAIN_DIRECTOR is a ladder ("claude,codex,grok"): its first entry
+	// directs. Matching the whole list against a leg warned on every run.
+	first := strings.TrimSpace(strings.Split(envDir, ",")[0])
 	dirReady := false
 	for _, s := range specs {
-		if string(s.ID) == envDir && !s.Disabled {
+		if string(s.ID) == first && !s.Disabled {
 			bin, _ := legTool(s.Transport)
 			if st, ok := probed[bin]; ok && st.Blocked() {
 				break

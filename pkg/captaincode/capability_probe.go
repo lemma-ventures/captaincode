@@ -57,7 +57,9 @@ func capProbesFor(t Transport) []CapProbe {
 		return []CapProbe{
 			{Cap: CapTools, Args: []string{"--help"}, Expect: "exec"},
 			{Cap: CapPermissions, Args: []string{"--help"}, Expect: "--sandbox"},
-			{Cap: CapUsage, Args: []string{"--help"}, Expect: "json"},
+			// --json is an `exec` flag: codex 0.156 stopped listing it in the
+			// top-level help, and doctor marked a working leg ✗ (2026-10-10).
+			{Cap: CapUsage, Args: []string{"exec", "--help"}, Expect: "--json"},
 		}
 	case TransportCursorCLI:
 		return []CapProbe{

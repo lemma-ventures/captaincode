@@ -445,3 +445,26 @@ func TestDoctorReportsTheRankingsAgeAndFlaggedLegs(t *testing.T) {
 	})
 	assert.Contains(t, sb.String(), "the brain refreshes it every 6h0m0s")
 }
+
+// CAPTAIN_DIRECTOR is a ladder: its first entry directs. Doctor compared the
+// whole list against one leg and warned on every run (2026-10-10).
+func TestDoctorReadsTheDirectorLadderByItsFirstEntry(t *testing.T) {
+	dir := t.TempDir()
+	fakeBin(t, dir, "opencode")
+	fakeBin(t, dir, "claude")
+	t.Setenv("PATH", dir)
+	t.Setenv("CAPTAIN_LEGS", "")
+	clearProviderKeys(t)
+	run := func(director string) string {
+		t.Setenv("CAPTAIN_DIRECTOR", director)
+		var sb strings.Builder
+		runDoctor(&sb, doctorOpts{
+			opencodeConfig: opencodeConfigWith(t, "xai"),
+			brain:          func() (string, error) { return "ok · idle", nil },
+			serve:          noServe(),
+		})
+		return sb.String()
+	}
+	assert.NotContains(t, run("claude,codex,grok"), "is not ready", "claude is on PATH: the ladder's head is ready")
+	assert.Contains(t, run("codex-cli,claude"), "is not ready", "no codex binary: the head is not")
+}
