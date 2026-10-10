@@ -1200,6 +1200,10 @@ settings.
 |---|---|---|
 | `CAPTAIN_FRONTIER_EFFORT` | unset | Pin claude's `/frontier` effort (`xhigh` to get the pre-2026-09-13 second-to-best) |
 | `CAPTAIN_EFFORT_CEILING` | `xhigh` | The strongest rung a bare prompt may climb to (irreversible work, later attempts). |
+| `CAPTAIN_REPORT_EVERY` | `50` | Runs between two behaviour reports (`~/.captaincode/behaviour.json`, `reports/behaviour-latest.md`); a new leg or host rewrites it at once. `0`: only on a new leg or host. |
+| `CAPTAIN_STATS_DAYS` | `90` | How far back the scorecards read the routing journal. |
+| `CAPTAIN_JUDGES` | `2` | Judges per judged run, each from a vendor other than the worker's and each other's. |
+| `CAPTAIN_PRIOR_REFIT` | `168h` | How often the brain moves the priors toward the judges' measure. `0` turns it off. |
 | `CAPTAIN_TIER_EFFORT` | on | `0`: `/frontier` always max and `/quality` always high, whatever the task's class. |
 | `CAPTAIN_HOST_BENCH` | `30m` | How long every leg on a host cools after three host stalls in a row there from two legs or more. `0` turns it off. |
 | `CAPTAIN_EFFORT_COST` | `0.6,1,1.6,2.2,3` | Cost multiplier per rung (low…max) the expected-cost ranking prices reasoning with. |

@@ -103,6 +103,9 @@ func main() {
 		case "calibrate":
 			cmdCalibrate(ledger, args[1:])
 			return
+		case "behaviour", "behavior": // how each leg behaves here (behaviour.go)
+			cmdBehaviour(ledger, args[1:])
+			return
 		case "journal": // the routing journal's history (journal_history.go)
 			cmdJournal(ledger, args[1:])
 			return

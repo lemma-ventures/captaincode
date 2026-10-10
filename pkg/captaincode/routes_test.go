@@ -35,8 +35,8 @@ func TestHostOf(t *testing.T) {
 	assert.Equal(t, "claude-cli", HostOf(Event{Leg: LegClaude}), "a CLI leg has one host")
 }
 
-// Step moved to Hugging Face and got twelve times slower: its speed must be
-// the new host's, not an average over both.
+// Step took 2.3 times as long on medium tasks through the Hugging Face route:
+// its speed must be the current host's, not an average over both.
 func TestStatsRestartSpeedAndReliabilityOnANewHost(t *testing.T) {
 	require.Equal(t, "huggingface", HostOfLeg(LegStep))
 	t0 := time.Now().Add(-48 * time.Hour)
@@ -95,4 +95,24 @@ func TestOneModelStallingDoesNotBenchItsHost(t *testing.T) {
 	l.Record(Event{Leg: LegGemini, Route: "opencode:openrouter", Outcome: "ok"})
 	t.Setenv("CAPTAIN_HOST_BENCH", "0")
 	l.Record(Event{Leg: LegGLM, Route: "opencode:nim", Outcome: "fail", Error: "stalled"})
+}
+
+// Runs from before hosts were recorded are not a move: grok-max always ran
+// on xAI. A known earlier host is.
+func TestAMoveNeedsAKnownEarlierHost(t *testing.T) {
+	st := statsOf([]Event{
+		{Leg: LegGrokMax, Model: "grok-4.7", Outcome: "ok", Duration: 1000},
+		{Leg: LegGrokMax, Route: "opencode:xai", Outcome: "ok", Duration: 2000},
+	})[LegGrokMax]
+	assert.Empty(t, st.MovedFrom)
+	assert.Equal(t, "unknown", HostOf(Event{Leg: LegDeepSeek, Model: "deepseek/deepseek-v4-pro"}), "a vendor's name is not a host")
+
+	st = statsOf([]Event{
+		{Leg: LegGLM, Route: "opencode:nim", Outcome: "fail", Error: "worker stalled"},
+		{Leg: LegGLM, Route: "opencode:nim", Outcome: "fail", Error: "worker stalled"},
+	})[LegGLM]
+	if HostOfLeg(LegGLM) != "nim" {
+		assert.Equal(t, "nim", st.MovedFrom)
+		assert.Zero(t, st.Fails, "the old host's stalls are not the new host's")
+	}
 }

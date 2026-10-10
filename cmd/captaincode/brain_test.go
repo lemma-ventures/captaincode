@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -712,4 +713,16 @@ func TestRunIsJudgedByTwoOtherVendors(t *testing.T) {
 	assert.Equal(t, 7.0, ev.Quality)
 	assert.Equal(t, "poor", ev.Verdict)
 	assert.False(t, ev.JudgePass)
+}
+
+// The brain rewrites the behaviour report when one is due, and only then.
+func TestBrainRewritesTheBehaviourReportWhenDue(t *testing.T) {
+	b := teamBrain()
+	path := filepath.Join(t.TempDir(), "behaviour.json")
+	assert.Equal(t, "first report", b.refreshBehaviour(path, time.Now()))
+	assert.Empty(t, b.refreshBehaviour(path, time.Now()), "nothing new since")
+	t.Setenv("CAPTAIN_REPORT_EVERY", "2")
+	b.ledger.Record(captaincode.Event{Leg: captaincode.LegStep, Outcome: "ok", Duration: 1000})
+	b.ledger.Record(captaincode.Event{Leg: captaincode.LegStep, Outcome: "ok", Duration: 1000})
+	assert.Contains(t, b.refreshBehaviour(path, time.Now()), "2 runs since")
 }

@@ -163,6 +163,7 @@ after the task (a session title gets none of them):
 | `captain outcome <task-id> review <accept\|reject> --reviewer <name> [--note …] [--amend]` | Record a human verdict |
 | `captain outcome <task-id> correction <minutes> [--reason …]` / `regression <reason> [--source …]` | Record the fix-up time, or a regression found later |
 | `captain calibrate [--domain code\|editorial\|research\|general] [--json] [<leg>…]` | Quality/reliability estimates with uncertainty |
+| `captain behaviour [--json]` | How each leg behaves here: host, speed per class, failures by cause, judges, rejected outcomes, the model each tier runs, and what needs a change. The brain rewrites `~/.captaincode/behaviour.json` and `reports/behaviour-latest.md` every `CAPTAIN_REPORT_EVERY` runs (50) and when a leg or host appears |
 | `captain journal import <state.json>…` | Add the run events of older state files (`~/.captaincode/backups`) that the routing journal lacks |
 | `captain roles` | Role economics roll-up |
 | `captain policy [--json]` / `policy show <id>` | Policy snapshots and one in full |

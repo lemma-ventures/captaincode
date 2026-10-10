@@ -256,6 +256,7 @@ func cmdBrain(args []string) {
 	go b.startEuclidReconciler(life.Done())
 	go b.auditLoop(life.Done())      // workers' misconduct, penalized (brain_audit.go)
 	go b.priorRefitLoop(life.Done()) // priors toward the judges' measure, weekly (brain_refit.go)
+	go b.behaviourLoop(life.Done())  // the behaviour report, every 50 runs or new leg (brain_behaviour.go)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)

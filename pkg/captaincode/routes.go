@@ -1,13 +1,13 @@
 package captaincode
 
 // Hosts and failure causes. A leg is a model behind a login, but the same
-// model is served by different hosts, and the host decides its speed and its
-// stalls as much as the model does: Step 3.5 Flash went from 31 s to 395 s
-// when it moved to Hugging Face, and the NIM host stalled DeepSeek V4.1
-// Flash, GLM 5.3 and Kimi K3 the same week (2026-10, "Twelve Weeks of
+// model is served by different hosts, and the host shapes its speed and its
+// stalls: the NIM host stalled DeepSeek V4.1 Flash, GLM 5.3 and Kimi K3 the
+// same week, and Step 3.5 Flash took 2.3 times as long on medium tasks once
+// it ran through the Hugging Face route (2026-10, "Twelve Weeks of
 // Routing"). So the scorecards keep a leg's speed and reliability for the
-// host it runs on now, and three stalls in a row on one host bench every leg
-// it serves.
+// host it runs on now, and three stalls in a row on one host, from two legs,
+// bench every leg it serves.
 
 import (
 	"fmt"
@@ -64,8 +64,11 @@ func FailCause(msg string) string {
 // leg's reliability. Our bugs, a user's stop and a dead login do not.
 func countsAgainstModel(cause string) bool { return cause == CauseHost || cause == CauseModel }
 
-// knownHosts are the provider prefixes a model id can carry.
-var knownHosts = []string{"openrouter", "huggingface", "nim", "xai", "openai", "google", "deepseek", "anthropic", "fireworks", "together", "groq"}
+// knownHosts are the host prefixes a model id can carry. A vendor's name
+// is not one: "google/gemini-3.8-flash" and "deepseek/deepseek-v4-pro" are
+// OpenRouter ids, and reading them as hosts invented moves that never
+// happened.
+var knownHosts = []string{"openrouter", "huggingface", "nim", "fireworks", "together", "groq"}
 
 // HostOf is the host that served a run: the provider half of its route
 // ("opencode:nim" → nim), the transport for a CLI leg that has one host
@@ -173,5 +176,9 @@ func HostNote(s LegStats) string {
 	if !s.HostSince.IsZero() {
 		at = " since " + s.HostSince.Format("Jan 02")
 	}
-	return fmt.Sprintf("on %s%s; speed and reliability restarted there (%d runs elsewhere set aside)", s.Host, at, s.OtherHostRuns)
+	from := ""
+	if s.MovedFrom != "" {
+		from = " (moved from " + s.MovedFrom + ")"
+	}
+	return fmt.Sprintf("on %s%s%s; speed and reliability restarted there (%d earlier runs set aside)", s.Host, at, from, s.OtherHostRuns)
 }

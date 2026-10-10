@@ -177,6 +177,7 @@ type LegStats struct {
 	Host          string
 	HostSince     time.Time
 	OtherHostRuns int
+	MovedFrom     string         // the known host it ran on before ("" when the earlier runs carry no host)
 	FailCauses    map[string]int // every failure by cause (routes.go FailCause), all hosts
 	// Decided and Rejected count the leg's informative outcomes (checks,
 	// commits, re-prompts, reviews, regressions - not silence) and how many
@@ -330,7 +331,14 @@ func statsOf(events []Event) map[Leg]LegStats {
 			hasCur[e.Leg] = true
 		}
 	}
-	onCur := func(e Event) bool { return !hasCur[e.Leg] || HostOf(e) == curHost[e.Leg] }
+	// A run on another known host never counts for speed and reliability; a
+	// run whose host was not recorded counts until the current host has runs
+	// of its own.
+	onCur := func(e Event) bool {
+		h := HostOf(e)
+		return h == curHost[e.Leg] || (h == "unknown" && !hasCur[e.Leg])
+	}
+	movedFrom := map[Leg]string{}
 	other := map[Leg]int{}
 	causes := map[Leg]map[string]int{}
 	durs := map[Leg]map[Class][]int64{}
@@ -354,6 +362,9 @@ func statsOf(events []Event) map[Leg]LegStats {
 		}
 		if e.Leg != "" && !onCur(e) {
 			other[e.Leg]++
+			if h := HostOf(e); h != "unknown" {
+				movedFrom[e.Leg] = h // the latest known host before this one
+			}
 		}
 		if e.Leg != "" && e.Outcome != "ok" {
 			cause := FailCause(e.Error)
@@ -489,7 +500,7 @@ func statsOf(events []Event) map[Leg]LegStats {
 			continue // a leg with neither ok runs nor failures has no stats row
 		}
 		st.LastAt = at
-		st.Host, st.OtherHostRuns, st.FailCauses = curHost[leg], other[leg], causes[leg]
+		st.Host, st.OtherHostRuns, st.FailCauses, st.MovedFrom = curHost[leg], other[leg], causes[leg], movedFrom[leg]
 		if hasCur[leg] {
 			st.HostSince = since[leg]
 		}
