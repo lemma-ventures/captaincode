@@ -23,3 +23,5 @@ __pycache__/
 
 # Lean build output for the formal model (formal/README.md).
 formal/.lake/
+
+.validation/

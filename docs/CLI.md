@@ -16,6 +16,14 @@ the shell CLI; the TUI's `/…` control words are in [TUI.md](TUI.md).
 
 The TUI is the everyday surface; its `/…` words are in [TUI.md](TUI.md).
 
+## Private source review
+
+`captain review capture` reads a bounded source archive without extracting it.
+`captain review run` calls an explicitly allowed model without tools. It supports
+local loopback model servers and HTTPS providers from local or cloud hosts.
+Use `captain review --help` and [the runner contract](REVIEW-RUNNER.md).
+This command uses a separate profile and does not start or restart the brain.
+
 ## Setup & health
 
 | Command | What it does |

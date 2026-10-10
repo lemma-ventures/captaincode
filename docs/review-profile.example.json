@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "legs": [
+    {
+      "id": "review-opus",
+      "tier": "frontier",
+      "vendor": "anthropic",
+      "model": "anthropic/claude-opus-5.5",
+      "transport": "chat-completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "auth_env": "OPENROUTER_API_KEY",
+      "terms": "https://openrouter.ai/terms",
+      "retention": "https://openrouter.ai/docs/guides/features/zdr",
+      "zdr": true
+    },
+    {
+      "id": "review-astra",
+      "tier": "frontier",
+      "vendor": "openai",
+      "model": "openai/gpt-6-astra",
+      "transport": "chat-completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "auth_env": "OPENROUTER_API_KEY",
+      "terms": "https://openrouter.ai/terms",
+      "retention": "https://openrouter.ai/docs/guides/features/zdr",
+      "zdr": true
+    },
+    {
+      "id": "review-gemini",
+      "tier": "quality",
+      "vendor": "google",
+      "model": "google/gemini-3.8-flash",
+      "transport": "chat-completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "auth_env": "OPENROUTER_API_KEY",
+      "terms": "https://openrouter.ai/terms",
+      "retention": "https://openrouter.ai/docs/guides/features/zdr",
+      "zdr": true
+    },
+    {
+      "id": "review-deepseek",
+      "tier": "quality",
+      "vendor": "deepseek",
+      "model": "deepseek/deepseek-v4-pro",
+      "transport": "chat-completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "auth_env": "OPENROUTER_API_KEY",
+      "terms": "https://openrouter.ai/terms",
+      "retention": "https://openrouter.ai/docs/guides/features/zdr",
+      "zdr": true
+    }
+  ]
+}

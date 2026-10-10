@@ -41,6 +41,10 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "review" {
+		cmdReview(os.Args[2:])
+		return
+	}
 	// The provider keys live in ~/.config/captain/env. A process that was not
 	// given them already loads the file itself (envfile.go).
 	captaincode.LoadCaptainEnv()

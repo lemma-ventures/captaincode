@@ -63,3 +63,15 @@ recursive.
 - **Settings.** The bounds hold for whatever values `CAPTAIN_REPEAT_MAX`,
   `CAPTAIN_RUN_BUDGET` and `CAPTAIN_INBOX_QUOTA` have. Raising them raises the
   bound.
+
+## Review dispatch policy
+
+`CommandSafety/Review.lean` proves that each planned attempt belongs to the
+profile, passes the allow-list and eligibility predicate, and stays within the
+attempt budget. Dropping failed candidates preserves eligibility. The five
+theorems depend only on `propext`. The Go review tests check all 16 combinations
+of allow-list, tier, vendor, and transport eligibility, plus capacity fallback.
+This is finite conformance testing, not a proof of Go refinement.
+
+The model excludes HTTP, archive decoding, keys, runtime isolation, provider
+behavior, billing, and review correctness. See [the contract](../docs/REVIEW-RUNNER.md).
