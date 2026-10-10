@@ -130,6 +130,7 @@ type Scored struct {
 	Prior      float64   // the benchmark prior Quality was blended from
 	LastRun    time.Time // freshness of the evidence; zero when the leg has never run here
 	Excluded   string    // why this candidate is not eligible; empty when it is
+	HostNote   string    `json:",omitempty"` // the leg moved host: its speed and reliability restarted there (routes.go)
 
 	Calibration Calibration // M5.2: calibrated quality/reliability with uncertainty and ageing
 }
@@ -170,7 +171,7 @@ func ValueRank(c Class, d Domain, candidates []Leg, stats map[Leg]LegStats, estT
 		s := stats[l]
 		q := BlendedQualityFor(l, s, d)
 		row := Scored{Leg: l, Quality: q, CostUSD: EstimateCost(l, estTokens), LatencyMs: s.AvgDurationMs, Unreliable: Unreliable(s),
-			Samples: s.N, ScoredRuns: s.Scored, Prior: QualityPriorFor(l, d), LastRun: s.LastAt}
+			Samples: s.N, ScoredRuns: s.Scored, Prior: QualityPriorFor(l, d), LastRun: s.LastAt, HostNote: HostNote(s)}
 		// Below τ is an exclusion, not an absence: the row is kept, marked and
 		// sorted last, so `captain why` can say which legs were considered and
 		// on what number they were ruled out (M2.1). Legs() drops them, so the

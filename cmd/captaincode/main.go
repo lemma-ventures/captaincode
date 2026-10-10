@@ -741,6 +741,9 @@ func printDecision(l *captaincode.Ledger, taskID string) {
 		}
 		fmt.Printf("    %s #%d %-8s value=%+.3f  q=%.1f %s  $%.4f  %s  %s\n",
 			mark, i+1, c.Leg, c.Value, c.Quality, calibOf(c), c.CostUSD, latencyOf(c), freshnessOf(c))
+		if c.HostNote != "" {
+			fmt.Printf("        host: %s\n", c.HostNote)
+		}
 	}
 	for _, c := range d.Excluded() {
 		fmt.Printf("      ✗ %-8s %s\n", c.Leg, c.Excluded)

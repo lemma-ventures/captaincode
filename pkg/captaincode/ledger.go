@@ -46,6 +46,9 @@ type Ledger struct {
 	// turns (lanes.go): the count the balancer evens out. Capped at
 	// maxLaneRuns, merged across processes like the other logs.
 	LaneRuns []LaneRun `json:"lane_runs,omitempty"`
+	// BenchedHosts: a host that stalled three runs in a row, and when its
+	// legs open again (routes.go).
+	BenchedHosts map[string]time.Time `json:"benched_hosts,omitempty"`
 	// MemoryExposure is the lesson arms assigned to each task (P2). Capped
 	// like the lifecycle log. Not a second learning store: Euclid keeps the
 	// events; this map is what Captain sends when the task settles.
@@ -162,6 +165,14 @@ type LegStats struct {
 	ByClass       map[Class]ClassStat  // quality broken down per task class - a leg strong on medium can be weak on high
 	ByDomain      map[Domain]ClassStat // quality per work domain (code/editorial/research/general)
 	LastAt        time.Time            // most recent run of any outcome; the freshness of everything above (M2.1)
+	// Host is where the leg runs now (routes.go). Duration and Fails count
+	// only runs on it: a move to another host starts speed and reliability
+	// over. HostSince dates its first run there; OtherHostRuns counts the
+	// runs left out.
+	Host          string
+	HostSince     time.Time
+	OtherHostRuns int
+	FailCauses    map[string]int // every failure by cause (routes.go FailCause), all hosts
 }
 
 // ClassStat is one (leg-or-team, class) quality bucket.
@@ -272,11 +283,41 @@ func (l *Ledger) TeamStats() map[string]TeamStat {
 	return out
 }
 
-func (l *Ledger) Stats() map[Leg]LegStats {
+func (l *Ledger) Stats() map[Leg]LegStats { return statsOf(l.statsEvents()) }
+
+// statsEvents is what the scorecards learn from: the ledger's ring buffer,
+// widened by the journal (journal_history.go) when one is on disk.
+func (l *Ledger) statsEvents() []Event { return l.Events }
+
+func statsOf(events []Event) map[Leg]LegStats {
+	// A leg's current host: speed and reliability count only its runs there
+	// once it has any (routes.go). Runs from before routes were recorded
+	// ("unknown") belong to another host as soon as the current one has a run.
+	curHost := map[Leg]string{}
+	hasCur := map[Leg]bool{}
+	since := map[Leg]time.Time{}
+	for _, e := range events {
+		if e.Leg == "" {
+			continue
+		}
+		if _, ok := curHost[e.Leg]; !ok {
+			curHost[e.Leg] = HostOfLeg(e.Leg)
+		}
+		if HostOf(e) == curHost[e.Leg] {
+			if !hasCur[e.Leg] || e.At.Before(since[e.Leg]) {
+				since[e.Leg] = e.At
+			}
+			hasCur[e.Leg] = true
+		}
+	}
+	onCur := func(e Event) bool { return !hasCur[e.Leg] || HostOf(e) == curHost[e.Leg] }
+	other := map[Leg]int{}
+	causes := map[Leg]map[string]int{}
 	sum := map[Leg]*struct {
 		n, scored     int
 		q, cost       float64
 		durMs, tokens int64
+		durN          int
 	}{}
 	byClass := map[Leg]classAgg{}
 	byDomain := map[Leg]map[Domain]*struct {
@@ -286,17 +327,27 @@ func (l *Ledger) Stats() map[Leg]LegStats {
 	fails := map[Leg]int{}
 	harness := map[Leg]int{}
 	last := map[Leg]time.Time{}
-	for _, e := range l.Events {
+	for _, e := range events {
 		if e.Leg != "" && e.At.After(last[e.Leg]) {
 			last[e.Leg] = e.At // a failed run still dates the evidence
 		}
+		if e.Leg != "" && !onCur(e) {
+			other[e.Leg]++
+		}
 		if e.Leg != "" && e.Outcome != "ok" {
-			// Harness faults (our bugs: auth/keychain/crash) must not read as
-			// model unreliability - claude "failed" 15× during the keychain
-			// incident while being the best-rated leg (usage analysis F1/I4).
-			if harnessFault(e.Error) {
+			cause := FailCause(e.Error)
+			if causes[e.Leg] == nil {
+				causes[e.Leg] = map[string]int{}
+			}
+			causes[e.Leg][cause]++
+			// Harness faults (our bugs, a dead login, a user's stop) must not
+			// read as model unreliability - claude "failed" 15× during the
+			// keychain incident while being the best-rated leg (usage
+			// analysis F1/I4). A host failure counts only on the current host.
+			switch {
+			case !countsAgainstModel(cause):
 				harness[e.Leg]++
-			} else {
+			case onCur(e):
 				fails[e.Leg]++
 			}
 		}
@@ -341,11 +392,15 @@ func (l *Ledger) Stats() map[Leg]LegStats {
 				n, scored     int
 				q, cost       float64
 				durMs, tokens int64
+				durN          int
 			}{}
 			sum[e.Leg] = s
 		}
 		s.n++
-		s.durMs += e.Duration
+		if onCur(e) {
+			s.durN++
+			s.durMs += e.Duration
+		}
 		s.tokens += int64(e.Tokens)
 		s.cost += e.CostUSD
 		if e.Quality > 0 {
@@ -368,7 +423,10 @@ func (l *Ledger) Stats() map[Leg]LegStats {
 		}
 	}
 	for leg, s := range sum {
-		st := LegStats{N: s.n, Scored: s.scored, AvgDurationMs: s.durMs / int64(s.n), AvgTokens: int(s.tokens / int64(s.n)), TotalCostUSD: s.cost, Fails: fails[leg], HarnessFails: harness[leg], ByClass: byClass[leg].finish()}
+		st := LegStats{N: s.n, Scored: s.scored, AvgTokens: int(s.tokens / int64(s.n)), TotalCostUSD: s.cost, Fails: fails[leg], HarnessFails: harness[leg], ByClass: byClass[leg].finish()}
+		if s.durN > 0 {
+			st.AvgDurationMs = s.durMs / int64(s.durN)
+		}
 		if s.scored > 0 {
 			st.AvgQuality = s.q / float64(s.scored)
 		}
@@ -390,6 +448,10 @@ func (l *Ledger) Stats() map[Leg]LegStats {
 			continue // a leg with neither ok runs nor failures has no stats row
 		}
 		st.LastAt = at
+		st.Host, st.OtherHostRuns, st.FailCauses = curHost[leg], other[leg], causes[leg]
+		if hasCur[leg] {
+			st.HostSince = since[leg]
+		}
 		out[leg] = st
 	}
 	return out
@@ -657,6 +719,7 @@ func (l *Ledger) Record(e Event) {
 	}
 	l.Events = append(l.Events, e)
 	l.journal(RoutingRecord{Kind: RoutingKindEvent, TaskID: e.TaskID, Event: &e})
+	l.benchHostAfter(e)
 }
 
 // Cooldown marks a leg rate-limited. Windows differ per provider (Claude 5h,
@@ -669,25 +732,7 @@ func (l *Ledger) Cooldown(leg Leg, d time.Duration) {
 // harnessFault classifies a failure as OURS (auth, keychain, crash residue)
 // rather than the provider's. These patterns come from real incidents - keep
 // them narrow: an unknown error is the provider's until proven otherwise.
-func harnessFault(msg string) bool {
-	m := strings.ToLower(msg)
-	for _, p := range []string{
-		"not logged in", "please run /login", "secitemcopymatching", "keychain",
-		"exited but did not release its output pipes",
-		// Codex CLI (codex-cli leg): its own credential store, 401 when dead.
-		"codex login", "401 unauthorized", "missing bearer",
-		// A provider rejecting a leg's key (ErrProviderAuth): the operator's
-		// key, not the model.
-		"credentials rejected",
-		// cursor-agent's dead login.
-		"authentication required", "agent login",
-	} {
-		if strings.Contains(m, p) {
-			return true
-		}
-	}
-	return false
-}
+func harnessFault(msg string) bool { return !countsAgainstModel(FailCause(msg)) }
 
 // stampDomain fills Event.Domain from triage when the caller didn't.
 func stampDomain(e *Event) {
