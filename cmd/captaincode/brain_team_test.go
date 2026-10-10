@@ -334,7 +334,7 @@ func TestTeamQualityBindsMenuToTopLegs(t *testing.T) {
 	assert.Equal(t, "quality", gotPrefer, "preference reaches the director")
 	require.NotEmpty(t, gotOpen)
 	assert.LessOrEqual(t, len(gotOpen), 4, "menu bound to the top-quality legs")
-	assert.Contains(t, gotOpen, captaincode.LegClaude, "the best-rated leg is on the menu")
+	assert.NotContains(t, gotOpen, captaincode.LegClaude, "claude runs Opus, a frontier model: /frontier's, not /quality's")
 }
 
 func TestTeamPrefer(t *testing.T) {

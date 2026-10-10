@@ -190,6 +190,7 @@ func TestSaveLaneWithNoOpenWeightLegFallsBack(t *testing.T) {
 // every time. The lane spreads its turns over the top legs by blended
 // quality and settles the leg without an LLM call.
 func TestQualityLaneSpreadsOverTheTopLegs(t *testing.T) {
+	t.Setenv("CAPTAIN_CLAUDE_MODEL", "sonnet") // claude on Opus is /frontier's (withoutFrontierClass)
 	b := teamBrain()
 	noDirector(t, b)
 	seen := map[string]int{}
@@ -229,13 +230,18 @@ func TestQualityLaneLeavesFrontierLegsToFrontier(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, len(seen), 2, "still a rotation: %v", seen)
 	assert.Empty(t, withoutFrontierClass([]captaincode.Leg{captaincode.LegCodexCLI, captaincode.LegGrokMax, captaincode.LegFrontier}))
-	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude}, withoutFrontierClass([]captaincode.Leg{captaincode.LegClaude, captaincode.LegCodexCLI}))
+	assert.Equal(t, []captaincode.Leg{captaincode.LegCursor}, withoutFrontierClass([]captaincode.Leg{captaincode.LegClaude, captaincode.LegCursor, captaincode.LegCodexCLI}),
+		"claude runs Opus at /quality's effort: a frontier model")
+	t.Setenv("CAPTAIN_CLAUDE_MODEL", "sonnet")
+	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude}, withoutFrontierClass([]captaincode.Leg{captaincode.LegClaude, captaincode.LegCodexCLI}),
+		"pinned to Sonnet, claude is back on the menu")
 }
 
 // A high-class /quality turn had the director's leg on its menu twice: the
 // high-class ladder adds it, and /quality added it again, so the top two by
 // quality were "claude, claude" - a lane of one.
 func TestQualityLaneHoldsTheDirectorsLegOnce(t *testing.T) {
+	t.Setenv("CAPTAIN_CLAUDE_MODEL", "sonnet") // claude on Opus is /frontier's (withoutFrontierClass)
 	captaincode.SetDirector(captaincode.LegClaude)
 	t.Cleanup(func() { captaincode.SetDirector(captaincode.LegGrok) })
 	b := teamBrain()

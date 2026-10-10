@@ -587,11 +587,15 @@ func TestBrainRoute_QualityConstrainsMenu(t *testing.T) {
 	for _, l := range gotOpen {
 		assert.NotEqual(t, captaincode.LegFree, l, "/quality can never offer the free leg")
 	}
-	// The user asked for the BEST - that includes the director's own model as
-	// a worker ("director never assigns itself" yields to an explicit user
-	// quality request; claude runs via claude -p like a forced leg). Live
-	// 2026-07-25: /quality picked cursor because claude wasn't in the pool.
-	assert.Contains(t, gotOpen, captaincode.Director, "/quality menu must include the director's model")
+	// The director's leg joins the menu ("director never assigns itself"
+	// yields to /quality; live 2026-07-25) only when its model there is not a
+	// frontier one: claude on Opus belongs to /frontier (2026-10-10).
+	assert.NotContains(t, gotOpen, captaincode.Director, "claude on Opus is not a /quality leg")
+	t.Setenv("CAPTAIN_CLAUDE_MODEL", "sonnet")
+	rec = httptest.NewRecorder()
+	b.route(rec, httptest.NewRequest(http.MethodPost, "/v1/route", bytes.NewReader(body)))
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.Contains(t, gotOpen, captaincode.Director, "claude pinned to Sonnet is on the /quality menu")
 }
 
 // /team as a FORCED choice: the user explicitly wants an ensemble; the

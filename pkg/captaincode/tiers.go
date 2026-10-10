@@ -84,3 +84,19 @@ func TierModels(l Leg) map[Tier]string {
 	}
 	return out
 }
+
+// RunsFrontierModel reports whether leg l runs its login's frontier model at
+// effort e: the frontier-class legs always, and claude while its model there
+// is Claude Code's default (Opus) or a pinned Opus or Fable. /quality keeps
+// these legs off its menu - its claude turns ran Opus 5.5 at high effort,
+// the frontier model one effort rung below /frontier (2026-10-10).
+func RunsFrontierModel(l Leg, e Effort) bool {
+	if IsFrontierClass(l) {
+		return true
+	}
+	if specs[l].Transport != TransportClaudeCLI {
+		return false
+	}
+	m := strings.ToLower(claudeModel(e))
+	return m == "" || strings.Contains(m, "opus") || strings.Contains(m, "fable")
+}

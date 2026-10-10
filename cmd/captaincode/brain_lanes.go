@@ -57,14 +57,17 @@ func reliableLane(cands []captaincode.LaneCandidate, stats map[captaincode.Leg]c
 	return out
 }
 
-// withoutFrontierClass drops the frontier-class legs (codex-cli, grok-max,
-// the frontier pseudo-leg): they belong to /frontier. /quality is the best of
-// the rest, at high effort - a social post sent to /quality ran gpt-6-astra,
-// codex-cli's frontier model, because the lane rotated over it (2026-10-06).
+// withoutFrontierClass drops the legs that run a frontier model at /quality's
+// effort (tiers.go RunsFrontierModel): codex-cli, grok-max, the frontier
+// pseudo-leg, and claude while it runs Opus. They belong to /frontier.
+// /quality is the best of the rest, at high effort - a social post sent to
+// /quality ran gpt-6-astra, codex-cli's frontier model, because the lane
+// rotated over it (2026-10-06), and a review question ran Opus 5.5 on the
+// claude leg (2026-10-10).
 func withoutFrontierClass(legs []captaincode.Leg) []captaincode.Leg {
 	out := make([]captaincode.Leg, 0, len(legs))
 	for _, l := range legs {
-		if !captaincode.IsFrontierClass(l) {
+		if !captaincode.RunsFrontierModel(l, captaincode.EffortHigh) {
 			out = append(out, l)
 		}
 	}

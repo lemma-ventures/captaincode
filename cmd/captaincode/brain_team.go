@@ -145,7 +145,7 @@ func (b *brain) teamPlanFor(ws captaincode.Workspace, task, prefer string, requi
 	// "/team /quality": the ensemble menu is BOUND to the best-rated legs, the
 	// same two-layer binding /quality gives solo routes (2026-08-26).
 	if prefer == "quality" {
-		if top := captaincode.TopQuality(order, stats, 4); len(top) > 0 {
+		if top := captaincode.TopQuality(withoutFrontierClass(order), stats, 4); len(top) > 0 {
 			order = top
 		}
 	}
