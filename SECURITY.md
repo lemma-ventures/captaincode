@@ -170,8 +170,9 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
 - **Enforce.** While a worker answers a sent turn, the tool boundary applies
   a deterministic policy, without a decision leg and without reading the
   message (`pkg/captaincode/sentpolicy.go`):
-  - *An allowlist of tools.* Reading, editing files in the workspace and the
-    shell. Web fetch and search, subagents, MCP and plugin tools (memory
+  - *An allowlist of tools.* Reading, editing files in the workspace, the
+    shell, and loading a local skill (captain stages skills for every
+    worker; a skill's own requests go through this same gate). Web fetch and search, subagents, MCP and plugin tools (memory
     included) and any tool not on the list are refused.
   - *The jail* (`pkg/captaincode/jail.go`, `captain jail`). Every shell
     command runs inside the operating system's sandbox: sandbox-exec on
@@ -200,7 +201,14 @@ What the brain does (`brain_inbox.go`, `pkg/captaincode/injection.go`,
 - **Tripwire.** A refused action means the message got past the patterns
   and the judges. The folder's inbox closes: every later sent prompt there
   is held for the user, whatever it says, until `captain inbox open`. The
-  closure survives a brain restart.
+  closure survives a brain restart. Two cases pass it. A refusal on a session
+  the brain could not read is refused but does not close the inbox, because
+  it only assumed the turn was sent. The first reply on the token of a turn
+  the user typed is still delivered, after the patterns and the judges, and
+  says it passed a closed inbox. That reply is usually the benchmark or
+  watcher that turn armed. A second reply on that token is held. The TUI
+  sidebar shows how many prompts are held and why the inbox is closed
+  until the user acts.
 - **No secrets in URLs.** A secret placeholder is never turned back into the
   secret inside a fetched URL, sent turn or not.
 - **Bounds.** A sent prompt cannot start a loop or a program, and at most

@@ -24,9 +24,10 @@ type sentSessions struct {
 }
 
 // sessionFacts is what a worker session's prompt says about its turn: sent
-// by another agent, a release asked for, a checkout already dirty.
+// by another agent, a release asked for, a checkout already dirty. guessed:
+// the serve did not answer, so sent is a fail-closed assumption, not a fact.
 type sessionFacts struct {
-	sent, mayPublish, dirty bool
+	sent, mayPublish, dirty, guessed bool
 }
 
 var sentSessionCache = &sentSessions{}
@@ -45,7 +46,7 @@ func (s *sentSessions) facts(session string, fetch func(string) (string, error))
 		// The serve did not answer: no evidence the turn was typed by the
 		// user either. Fail closed for this call, and ask again next time.
 		fmt.Printf("captain brain: sent-turn gate - could not read session %s (%v); applying the sent-turn policy to this call\n", session, err)
-		return sessionFacts{sent: true, dirty: true}
+		return sessionFacts{sent: true, dirty: true, guessed: true}
 	}
 	v = sessionFacts{sent: captaincode.IsSentTurn(prompt),
 		mayPublish: strings.Contains(prompt, captaincode.PublishGrantMarker),
@@ -169,7 +170,11 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 	if why != "" {
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
 		fmt.Printf("captain brain: sent turn %s - %s refused: %s\n", req.Session, a.Tool, why)
-		b.tripInbox(a.Cwd, a.Tool, why)
+		// A refusal on a turn only assumed sent (the serve did not answer) is
+		// no sign a message got past the screen: it does not close the inbox.
+		if !f.guessed {
+			b.tripInbox(a.Cwd, a.Tool, why)
+		}
 		writeJSON(w, 200, map[string]any{"allow": false, "reason": why})
 		return
 	}

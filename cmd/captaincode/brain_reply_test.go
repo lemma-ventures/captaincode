@@ -117,3 +117,36 @@ func TestSessionSeenNamesTheTurnsSession(t *testing.T) {
 	assert.Equal(t, "ses_42", sessions.of(dir))
 	assert.Equal(t, "", sessions.of(t.TempDir()))
 }
+
+// The benchmark a typed turn armed reports back even when an unrelated sent
+// turn closed the folder's inbox (live 2026-10-11); its second report, a
+// reply to a sent turn and a plain send are still held.
+func TestFirstReplyToATypedTurnPassesAClosedInbox(t *testing.T) {
+	useReplyBook(t)
+	t.Setenv("CAPTAIN_INBOX_JUDGE", "0")
+	b := teamBrain()
+	tui := t.TempDir()
+	b.tripInbox(tui, "skill", "refused")
+	typed := replyTo(captaincode.Workspace{Dir: tui, Session: "ses_a"}, "glm")
+	sent := replyTo(captaincode.Workspace{Dir: tui, Session: "ses_a", SentBy: "a watcher"}, "glm")
+
+	rec := postInbox(b, tui, map[string]string{"text": "benchmark PASSED", "from": "glm", "reply": typed})
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	items := takeInbox(b, tui, "ses_a")
+	require.Len(t, items, 1)
+	assert.Contains(t, items[0].Text, "past the closed inbox", "the transcript says why it was let through")
+
+	assert.Equal(t, 202, postInbox(b, tui, map[string]string{"text": "and again", "reply": typed}).Code, "only the first reply")
+	assert.Equal(t, 202, postInbox(b, tui, map[string]string{"text": "from a sent turn", "reply": sent}).Code)
+	assert.Equal(t, 202, postInbox(b, tui, map[string]string{"text": "plain send"}).Code)
+
+	rec = httptest.NewRecorder()
+	b.inboxHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/inbox?cwd="+url.QueryEscape(tui)+"&session=ses_a", nil))
+	var poll struct {
+		Waiting int
+		Closed  string
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &poll))
+	assert.Equal(t, 3, poll.Waiting, "the sidebar keeps the count until the user acts")
+	assert.Contains(t, poll.Closed, "tried skill")
+}

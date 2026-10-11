@@ -36,6 +36,11 @@ type replyTarget struct {
 	Session string    `json:"session,omitempty"`
 	Leg     string    `json:"leg"`
 	At      time.Time `json:"at"`
+	// Typed: the user typed the turn this token was minted for (no `captain
+	// send` behind it). Used counts the replies sent on it. A typed turn's
+	// first reply passes a closed inbox (brain_inbox.go).
+	Typed bool `json:"typed,omitempty"`
+	Used  int  `json:"used,omitempty"`
 }
 
 type replyBook struct {
@@ -81,11 +86,34 @@ func (rb *replyBook) mint(t replyTarget) string {
 		}
 	}
 	rb.targets[id] = t
+	rb.save()
+	return id
+}
+
+// save writes the book; call with rb.mu held.
+func (rb *replyBook) save() {
 	if data, err := json.MarshalIndent(rb.targets, "", " "); err == nil {
 		_ = os.MkdirAll(filepath.Dir(rb.file()), 0o700)
 		_ = os.WriteFile(rb.file(), data, 0o600)
 	}
-	return id
+}
+
+// claim resolves a token for a reply being sent and counts the use; the
+// target returned is as it was before this use.
+func (rb *replyBook) claim(id string) (replyTarget, bool) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	rb.load()
+	id = strings.TrimSpace(id)
+	t, ok := rb.targets[id]
+	if !ok || time.Since(t.At) > replyTTL {
+		return replyTarget{}, false
+	}
+	used := t
+	used.Used++
+	rb.targets[id] = used
+	rb.save()
+	return t, true
 }
 
 func (rb *replyBook) resolve(id string) (replyTarget, bool) {
@@ -176,5 +204,5 @@ func replyTo(ws captaincode.Workspace, leg captaincode.Leg) string {
 	if dir == "" {
 		dir = ws.Dir
 	}
-	return replies.mint(replyTarget{Dir: dir, Session: ws.Session, Leg: string(leg)})
+	return replies.mint(replyTarget{Dir: dir, Session: ws.Session, Leg: string(leg), Typed: ws.SentBy == ""})
 }

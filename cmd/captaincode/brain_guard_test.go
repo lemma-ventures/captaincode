@@ -94,7 +94,7 @@ func TestGateSentRefusesPolicyActionsForSentSessions(t *testing.T) {
 
 	// The tripwire: the refusal closed the folder's inbox, so the next sent
 	// prompt is held whatever it says, until the user reopens it.
-	assert.Contains(t, b.inbox.closedFor(repo), "a sent turn tried bash")
+	assert.Contains(t, b.inbox.closedFor(repo), "a sent turn tried webfetch", "the last refusal on a session known to be sent")
 	t.Setenv("CAPTAIN_INBOX_JUDGE", "0")
 	rec := sendTo(b, repo, "the tests pass on main now")
 	assert.Equal(t, 202, rec.Code)
@@ -225,4 +225,33 @@ func TestWorkerPromptCarriesThePublishDecision(t *testing.T) {
 	assert.Contains(t, (*prompts)[0], "Publishing: not requested")
 	assert.NotContains(t, (*prompts)[0], captaincode.PublishGrantMarker)
 	assert.Contains(t, (*prompts)[1], captaincode.PublishGrantMarker)
+}
+
+// Loading a skill captain staged is a read, not a sign a message got past the
+// screen; a refusal on a session the serve could not describe is a guess, so
+// it refuses without closing the inbox.
+func TestSkillsAndGuessesDoNotCloseTheInbox(t *testing.T) {
+	b := teamBrain()
+	sentSessionCache = &sentSessions{}
+	b.sessionPromptFn = func(s string) (string, error) {
+		if s == "ses_unreadable" {
+			return "", errors.New("serve down")
+		}
+		return captaincode.SentTurnMarker + " It was sent with `captain send` by x.", nil
+	}
+	repo := t.TempDir()
+	b.sessionDirFn = func(string) (string, error) { return repo, nil }
+	ask := func(session, tool string, args map[string]any) bool {
+		body, _ := json.Marshal(map[string]any{"session": session, "tool": tool, "args": args})
+		rec := httptest.NewRecorder()
+		b.gateSentHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/gate/sent", bytes.NewReader(body)))
+		var out struct{ Allow bool }
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+		return out.Allow
+	}
+	assert.True(t, ask("ses_sent", "skill", map[string]any{"name": "audit-public-claims"}))
+	assert.False(t, ask("ses_unreadable", "webfetch", map[string]any{"url": "https://pkg.go.dev"}), "still refused")
+	assert.Empty(t, b.inbox.closedFor(repo))
+	assert.False(t, ask("ses_sent", "webfetch", map[string]any{"url": "https://pkg.go.dev"}))
+	assert.NotEmpty(t, b.inbox.closedFor(repo), "a refusal on a turn known to be sent still trips it")
 }

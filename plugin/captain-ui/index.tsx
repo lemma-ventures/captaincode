@@ -105,6 +105,9 @@ function View(props: { api: TuiPluginApi }) {
   const [workers, setWorkers] = createSignal<WorkerInfo[]>([])
   const [roster, setRoster] = createSignal<Roster | null>(null)
   const [shield, setShield] = createSignal<Shield | null>(null)
+  // This folder's held sent prompts and why its inbox is closed: kept on the
+  // panel until the user acts, since a toast is gone before they look.
+  const [inboxWait, setInboxWait] = createSignal<{ waiting: number; closed: string }>({ waiting: 0, closed: "" })
   // The last retarget's outcome, shown under Models for a few seconds.
   const [upgradeNote, setUpgradeNote] = createSignal("")
   const retarget = async (leg: string) => {
@@ -179,12 +182,19 @@ function View(props: { api: TuiPluginApi }) {
       const j = (await r.json()) as {
         items?: { id: string; text: string; leg?: string; from?: string; origin?: string }[]
         held?: { id: string; origin?: string; findings?: { kind: string; severity: string }[] }[]
+        waiting?: number
+        closed?: string
       }
+      const wait = { waiting: j.waiting ?? 0, closed: j.closed ?? "" }
+      if (wait.waiting !== inboxWait().waiting || wait.closed !== inboxWait().closed) setInboxWait(wait)
       // A sent prompt the injection screen held is never submitted: say so,
       // and how to review it (brain_inbox.go, captain inbox).
       for (const h of j.held ?? []) {
-        const why = (h.findings ?? []).map((f) => f.kind).join(", ")
-        props.api.ui.toast({ title: "captain inbox held a message", message: `from ${h.origin || "an unnamed sender"}: possible prompt injection (${why}). Review: ! captain inbox`, variant: "warning", duration: 15000 } as any)
+        const kinds = (h.findings ?? []).map((f) => f.kind)
+        const why = kinds.includes("inbox closed")
+          ? "this folder's inbox is closed, so every sent prompt waits for you"
+          : `possible prompt injection (${kinds.join(", ")})`
+        props.api.ui.toast({ title: "captain inbox held a message", message: `from ${h.origin || "an unnamed sender"}: ${why}. Review: ! captain inbox`, variant: "warning", duration: 15000 } as any)
       }
       for (const it of j.items ?? []) {
         if (!it?.text || inboxTaken.has(it.id)) continue
@@ -472,6 +482,23 @@ function View(props: { api: TuiPluginApi }) {
             {shield()!.mode === "off"
               ? "off (CAPTAIN_REDACT=off)"
               : `${shield()!.secrets + (shield()!.boundary?.secrets ?? 0)} secrets masked · ${shield()!.identity} identity · wire ${shield()!.requests}`}
+          </text>
+        </box>
+      </Show>
+
+      {/* Sent prompts held for the user, and a closed inbox. */}
+      <Show when={(inboxWait().waiting || inboxWait().closed) && !offline()}>
+        <text> </text>
+        <box flexDirection="row" gap={1}>
+          <text fg={theme().warning}>✉</text>
+          <text fg={theme().text}>inbox</text>
+          <text fg={theme().textMuted} wrapMode="word">
+            {[
+              inboxWait().waiting ? `${inboxWait().waiting} held for you · ! captain inbox` : "",
+              inboxWait().closed ? `closed: ${inboxWait().closed} · ! captain inbox open` : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </text>
         </box>
       </Show>

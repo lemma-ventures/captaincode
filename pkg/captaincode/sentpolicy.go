@@ -89,12 +89,15 @@ var longTokenRe = regexp.MustCompile(`[A-Za-z0-9_\-]{32,}|\[\[secret:`)
 // sentTurnTools are the tools a sent turn may use (lowercase; claude's and
 // opencode's names). Not here, so refused: web fetch and search, subagents
 // (opencode's do not inherit the turn's provenance), MCP and plugin tools
-// (they reach other services or the memory).
+// (they reach other services or the memory). skill loads one of the local
+// skills captain stages for every worker: it reads instructions from disk, and
+// what they then ask goes through this same gate. Refusing it closed two
+// folders' inboxes on ordinary callbacks (live, 2026-10).
 var sentTurnTools = map[string]bool{
 	"bash": true, "shell": true, "bashoutput": true, "killshell": true,
 	"read": true, "notebookread": true, "grep": true, "glob": true, "ls": true, "list": true,
 	"write": true, "edit": true, "multiedit": true, "patch": true, "apply_patch": true, "notebookedit": true,
-	"todowrite": true, "todoread": true, "exitplanmode": true,
+	"todowrite": true, "todoread": true, "exitplanmode": true, "skill": true,
 }
 
 // shellTools run a command line.

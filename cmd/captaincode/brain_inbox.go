@@ -360,13 +360,15 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 		// A reply goes to the folder and session its token names; a send
 		// to a folder says where it came from when that is another folder.
 		session, origin := "", strings.TrimSpace(req.From)
+		ownReply := false
 		if req.Reply != "" {
-			t, ok := replies.resolve(req.Reply)
+			t, ok := replies.claim(req.Reply)
 			if !ok {
 				writeErr(w, 404, "unknown or expired reply token "+req.Reply+" - send with --cwd <folder> instead")
 				return
 			}
 			dir, session, origin = filepath.Clean(t.Dir), t.Session, t.label(req.From)
+			ownReply = t.Typed && t.Used == 0
 		} else if s := strings.TrimSpace(req.SenderDir); s != "" && filepath.Clean(s) != dir {
 			// Only a reply token proves where a message came from; a name
 			// and a folder are what the sender says about itself.
@@ -384,6 +386,16 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 				Detail: fmt.Sprintf("%d hidden characters removed, %d forged markers neutralized", removed, forged)})
 		}
 		closed := b.inbox.closedFor(dir)
+		if closed != "" && ownReply {
+			// The first reply to a turn the user typed - the benchmark or
+			// watcher that turn armed - is what the user is waiting for, and
+			// the closure was about some other sent turn. It still goes
+			// through the patterns and the judges; a second reply on the
+			// same token is held like any other sent prompt.
+			captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "inbox", Action: "passed-closed", From: orDash(origin), Dir: dir, Detail: promptPeek(req.Text)})
+			origin = strings.TrimSpace(orDash(origin) + " · past the closed inbox: the first reply to a turn you typed")
+			closed = ""
+		}
 		if closed != "" {
 			findings = append([]captaincode.Finding{{Kind: "inbox closed", Severity: captaincode.SevHigh, Level: "high", Excerpt: closed}}, findings...)
 		}
@@ -452,6 +464,14 @@ func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
 		out := map[string]any{"items": items}
 		if held := b.inbox.takeNotify(dir); len(held) > 0 {
 			out["held"] = held // the sidebar says so; held items are never submitted
+		}
+		// What stays on the sidebar until the user acts: a toast is missed
+		// by whoever was away when it fired (live 2026-10-11 00:39).
+		if n := len(b.inbox.heldFor(dir)); n > 0 {
+			out["waiting"] = n
+		}
+		if why := b.inbox.closedFor(dir); why != "" {
+			out["closed"] = why
 		}
 		writeJSON(w, 200, out)
 	default:
