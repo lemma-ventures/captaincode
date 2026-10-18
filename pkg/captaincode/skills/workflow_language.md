@@ -36,6 +36,10 @@ never mistaken for topology.
 - Workers have their own file/search tools and run in the user's project
   directory. File paths in a prompt are fine; do not try to inline file content.
 
+A `gate: <command>` belongs only on the last line of the stage's first paragraph, outside
+backtick code. Earlier mentions stay text. Its first executable must be a literal shell
+builtin, an executable path or a program on PATH. Use `sh -c '…'` for shell expressions.
+
 ## Limits (hard)
 
 - at most 4 stages

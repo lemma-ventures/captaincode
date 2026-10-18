@@ -16,7 +16,7 @@ import (
 // LanguageVersion is the version of docs/LANGUAGE.md this parser implements.
 // A change that alters how an existing line is read bumps the major version;
 // a new word or form that leaves every existing line alone bumps the minor.
-const LanguageVersion = "2.0"
+const LanguageVersion = "3.0"
 
 // ownLineWords are the control words that take the rest of the line as
 // their argument: nothing after them is read as a command.

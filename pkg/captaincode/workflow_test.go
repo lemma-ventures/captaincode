@@ -194,10 +194,10 @@ func TestParseWorkflowGates(t *testing.T) {
 	assert.Equal(t, "", wf.Stages[1].Legs[0].Gate, "gates are per-leg, not inherited")
 
 	// The LAST gate: marker wins; prose before it stays in the prompt.
-	wf, err = ParseWorkflow("/grok explain the gate: mechanism gate: npm test")
+	wf, err = ParseWorkflow("/grok explain the gate: mechanism gate: make test")
 	require.NoError(t, err)
 	assert.Equal(t, "explain the gate: mechanism", wf.Stages[0].Legs[0].Prompt)
-	assert.Equal(t, "npm test", wf.Stages[0].Legs[0].Gate)
+	assert.Equal(t, "make test", wf.Stages[0].Legs[0].Gate)
 
 	// Round-trip preserves gates.
 	wf, err = ParseWorkflow("/codex fix it gate: make check + /grok fix docs")

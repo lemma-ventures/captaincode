@@ -232,3 +232,21 @@ compare /usr/bin/claude and /opt/homebrew/bin/claude
 
 /openshell scan > /repeat 2 /quality fix it
 = (error "/openshell cannot be a step of a program")
+
+/codex explain `gate: true`
+= (leg codex "explain `gate: true`")
+
+/codex delegate: true
+= (leg codex "delegate: true")
+
+/codex fix it gate: true
+= (workflow (stage (leg codex "fix it" (gate "true"))))
+
+/codex fix it gate: definitely-missing-gate-checker --all
+= (error "stage 1: gate cannot run:")
+
+/team fix it gate: definitely-missing-gate-checker --all
+= (error "gate cannot run:")
+
+/quality fix it gate: definitely-missing-gate-checker --all
+= (error "gate cannot run:")

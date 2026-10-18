@@ -13,7 +13,9 @@ package captaincode
 // explain why" therefore stays prose, and no existing prompt changes meaning.
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -181,7 +183,7 @@ func boundariesOf(s string) []boundary {
 }
 
 // blankLineRe: a paragraph break - two newlines with nothing but blanks between.
-var blankLineRe = regexp.MustCompile(`\n[ \t]*\n`)
+var blankLineRe = regexp.MustCompile(`\r?\n[ \t]*\r?\n`)
 
 // SplitGate takes a trailing "gate: <command>" off a stage's text. The last
 // marker wins, so prose may mention the word, and the command ends at the
@@ -190,20 +192,138 @@ var blankLineRe = regexp.MustCompile(`\n[ \t]*\n`)
 // line, and the gate used to swallow it: `gate: go test ./...` ran as that
 // command plus the whole contract, failed in every round, and bought a
 // repair each time (2026-10-05).
-func SplitGate(text string) (prompt, gate string) {
+//
+// The marker counts only on the last line of that first paragraph, and the
+// command must start with something /bin/sh can run. A pasted report with no
+// blank line held "Local gate: default suite 1,031 passed, …" on an earlier
+// line: the whole rest of the report ran as a shell command, failed with
+// "command not found", and bought a repair (2026-10-11). A marker on an
+// earlier line is prose. A marker on the last line whose first word does not
+// run is an error wrapping ErrGateCommand: the turn is refused, so a check
+// the user meant is never dropped without a word.
+func SplitGate(text string) (prompt, gate string, err error) {
 	head, tail := text, ""
 	if loc := blankLineRe.FindStringIndex(text); loc != nil {
 		head, tail = text[:loc[0]], text[loc[0]:]
 	}
-	i := strings.LastIndex(head, "gate:")
+	head = strings.TrimRight(head, " \t\r\n")
+	lineStart := strings.LastIndex(head, "\n") + 1
+	i := -1
+	for j := 0; j < len(head); j++ {
+		if head[j] == '`' {
+			j = skipCode(head, j) - 1
+			continue
+		}
+		if j >= lineStart && (j == 0 || strings.ContainsRune(" \t\r\n", rune(head[j-1]))) &&
+			len(head)-j >= len("gate:") && strings.EqualFold(head[j:j+len("gate:")], "gate:") {
+			i = j
+		}
+	}
 	if i < 0 {
-		return text, ""
+		return text, "", nil
 	}
 	cmd := strings.TrimSpace(head[i+len("gate:"):])
 	if cmd == "" {
-		return text, ""
+		return text, "", nil
 	}
-	return strings.TrimSpace(strings.TrimSpace(head[:i]) + tail), cmd
+	if word, ok := gateRunnable(cmd); !ok {
+		return text, "", fmt.Errorf("%w: %q - %q is not a literal shell builtin, executable path or program on PATH. Use sh -c for shell expressions. To send text that holds \"gate:\" as prose, put a blank line before that text",
+			ErrGateCommand, truncateStr(cmd, 40), truncateStr(word, 40))
+	}
+	return strings.TrimSpace(strings.TrimSpace(head[:i]) + tail), cmd, nil
+}
+
+// ErrGateCommand marks a gate whose first word /bin/sh cannot run.
+var ErrGateCommand = errors.New("gate cannot run")
+
+// gateLookPath finds a gate's program on PATH. A test replaces it.
+var gateLookPath = exec.LookPath
+
+var gateBuiltins = map[string]bool{
+	".": true, ":": true, "[": true, "cd": true, "command": true,
+	"echo": true, "eval": true, "exec": true, "exit": true, "export": true, "false": true,
+	"printf": true, "pwd": true, "read": true, "set": true,
+	"test": true, "trap": true, "true": true, "type": true, "ulimit": true, "umask": true,
+	"unset": true, "wait": true,
+}
+
+// gateAssignRe: a leading NAME=value word, which sets the command's environment.
+var gateAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+func gateRunnable(cmd string) (word string, ok bool) {
+	for rest := cmd; rest != ""; {
+		assignment := gateAssignRe.MatchString(rest)
+		word, remaining, valid := gateLiteralWord(rest)
+		if !valid || word == "" {
+			return rest, false
+		}
+		if assignment {
+			rest = strings.TrimLeft(remaining, " \t")
+			continue
+		}
+		if gateBuiltins[word] {
+			return word, true
+		}
+		_, err := gateLookPath(word)
+		return word, err == nil
+	}
+	return cmd, false
+}
+
+func gateLiteralWord(s string) (string, string, bool) {
+	var out strings.Builder
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote == '\'' {
+			if c == quote {
+				quote = 0
+			} else {
+				out.WriteByte(c)
+			}
+			continue
+		}
+		if c == '\\' {
+			if i+1 == len(s) {
+				return "", "", false
+			}
+			next := s[i+1]
+			if quote == '"' && !strings.ContainsRune("$`\"\\", rune(next)) {
+				out.WriteByte(c)
+				continue
+			}
+			i++
+			out.WriteByte(next)
+			continue
+		}
+		if c == '$' || c == '`' {
+			return "", "", false
+		}
+		if quote == '"' {
+			if c == quote {
+				quote = 0
+			} else {
+				out.WriteByte(c)
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"':
+			quote = c
+		case ' ', '\t', ';', '&', '|', '<', '>', '(', ')':
+			return out.String(), s[i:], true
+		case '[':
+			if out.Len() != 0 || (i+1 < len(s) && !strings.ContainsRune(" \t;|&<>()", rune(s[i+1]))) {
+				return "", "", false
+			}
+			out.WriteByte(c)
+		case '*', '?', '~', '\r', '\n', 0:
+			return "", "", false
+		default:
+			out.WriteByte(c)
+		}
+	}
+	return out.String(), "", quote == 0
 }
 
 // ParseWorkflow parses a CWL expression. A single-leg expression is a valid
@@ -259,9 +379,14 @@ func ParseWorkflow(s string) (Workflow, error) {
 			}
 			wl.Prompt = strings.TrimSpace(wl.Prompt[len(m):])
 		}
-		// Trailing "gate: <command>" - the LAST marker wins so prose may
-		// mention the word; everything after it is the command.
-		if prompt, gate := SplitGate(wl.Prompt); gate != "" {
+		// Trailing "gate: <command>" - the LAST marker on the stage's last
+		// line wins so prose may mention the word; the rest of that line is
+		// the command.
+		prompt, gate, err := SplitGate(wl.Prompt)
+		if err != nil {
+			return Workflow{}, fmt.Errorf("stage %d: %w", i+1, err)
+		}
+		if gate != "" {
 			wl.Gate, wl.Prompt = gate, prompt
 		}
 		// Bare leg inherits the assignment (2026-08-24): "/grok review X >

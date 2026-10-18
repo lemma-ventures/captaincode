@@ -1,6 +1,6 @@
 # The Captain command language
 
-Version **2.0** · normative · implementation: `pkg/captaincode/language.go`
+Version **3.0** · normative · implementation: `pkg/captaincode/language.go`
 
 Every line typed into a Captain session is a program in this language: a task, plus the words
 that say who runs it, how, how often, and in what order. This document defines the language.
@@ -8,7 +8,7 @@ Where the code and this document disagree, the disagreement is a bug, and the co
 (§10) exists to catch it.
 
 **Who reads it.** The brain parses every line deterministically, with no model call:
-the same line always gets the same reading. The director, a model, never interprets syntax.
+the same line, working directory and PATH get the same reading. The director, a model, never interprets syntax.
 The brain only calls it to do work a construct asks for: planning a `/team`, compiling `/wf`
 English into a workflow, and reviewing a workflow's final stage. To see how a line is read without
 sending it, run:
@@ -56,7 +56,7 @@ A line is read as a sequence of tokens. Case is ignored for every word below.
 | word connectors | `then`, `and` | Workflows only, between legs; they never join whole turns. |
 | parallel connector | `+`, `&`, or a newline | Workflows only (§6.4). |
 | group | `(` … `)` | `(` opens a group only at the start of a step and only when a slash word follows it; every parenthesis inside a group is counted. |
-| gate marker | `gate:` | The last `gate:` in a step; everything after it, up to a blank line, is a shell command. |
+| gate marker | `gate:` | The last `gate:` on the step's last line before any blank line; the rest of that line is a shell command. A `gate:` on an earlier line is text. The command's first word must be a literal shell builtin, an executable path or a program on PATH; otherwise the turn is refused and nothing runs. |
 | exit check | `until:` | Ends a `/repeat` loop in a program; the command after it runs once per round. |
 | code | `` `…` `` | A backtick span is never syntax. |
 | text | anything else | Words, paths, punctuation, numbers. |
@@ -207,6 +207,13 @@ Text with no head is routed ([ROUTING.md](ROUTING.md)). `/auto` asks for routing
 Legs in stages. `>` runs stages in sequence; `+` runs legs of a stage in parallel. Each stage
 sees the outputs of the stage before it. The director reviews the final stage and returns one
 answer. A `gate:` makes a stage count only when its command exits 0, after one repair retry.
+A marker must be a separate word outside backtick code, on the last line of the first
+paragraph. LF and CRLF blank lines both end that paragraph. A marker on an earlier line
+stays in the task. An unresolved command name is refused before any worker starts. Literal
+quotes, escapes and leading environment assignments are supported. Command names that need
+expansion, and compound shell expressions, must use an explicit `sh -c '…'` command.
+This checks the first executable, not the rest of the shell command or its safety. Relative
+paths and PATH are checked in the parser's working directory and environment.
 Design and rationale: [WORKFLOW_LANGUAGE.md](WORKFLOW_LANGUAGE.md).
 
 ### 6.5 Programs
@@ -364,6 +371,7 @@ says why and the version moves.
 
 | Version | Date | Change |
 |---|---|---|
+| 3.0 | 2026-10-11 | Gates count only as separate words outside backtick code on the last line of the first paragraph. Quoted reports on earlier lines stay text. Invalid literal command names are refused before work starts. LF and CRLF paragraph breaks have the same meaning. Use `sh -c` for shell expressions. This correction intentionally has no legacy mode: that mode would execute pasted prose as commands. It adds no turn or re-entry path; the existing turn-budget proofs still apply. |
 | 2.0 | 2026-10-07 | Programs (WORKFLOW_LANGUAGE §11) replace chains: `\|\|` fallbacks, `until:` loop checks, backtick code that is never syntax, and groups that open only at a step start. Readings that changed: `/openshell` cannot be a program step (it was a chain step); a `/team` or lane step with no text is an error; a lane step shows as `lane` and a group as `group` in parse trees. The formal model now covers the program scanner and programs' turn budget. |
 | 1.1 | 2026-10-06 | `/quality` leaves frontier-class legs (`codex-cli`, `grok-max`) to `/frontier`. Every line parses as before; the lane `/quality` names has fewer legs. Its description now matches the code: every leg within 85% of the best, not "the two best". |
 | 1.0 | 2026-10-05 | First specification of the whole line: workflows (CWL, 2026-07-30), modifiers and hoisting, chains and groups, `/repeat` control words with chain ids, the run budget and the inbox rules. Lines led by `/openshell` that are chains now run as chains. |

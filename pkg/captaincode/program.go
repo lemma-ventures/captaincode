@@ -22,6 +22,7 @@ package captaincode
 // so prose that mentions /team or /repeat never becomes topology.
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -98,7 +99,9 @@ func ParseProgram(s string) (p Program, ok bool, err error) {
 	attempt := usesProgramSyntax(s)
 	p, err = parseAlt(s, 0)
 	if err != nil {
-		if attempt {
+		// A gate that cannot run is reported even on a plain leg: run as
+		// prose, the turn would drop a check the user typed.
+		if attempt || errors.Is(err, ErrGateCommand) {
 			return Program{}, true, err
 		}
 		return Program{}, false, nil
@@ -461,7 +464,7 @@ func parseChain(s string, depth int, loopBody bool) (Program, error) {
 			}
 			text := strings.TrimSpace(s[lead:segs[j][1]])
 			if _, err := ParseWorkflow(HoistLeading(text)); err != nil {
-				return Program{}, fmt.Errorf("%v (in %q)", err, snippet(text))
+				return Program{}, fmt.Errorf("%w (in %q)", err, snippet(text))
 			}
 			steps = append(steps, Program{Kind: ProgramTurn, Turn: TurnWorkflow, Text: text})
 			i = j
@@ -473,7 +476,10 @@ func parseChain(s string, depth int, loopBody bool) (Program, error) {
 			if p := parallelInside(t); p != "" {
 				return Program{}, fmt.Errorf("%s joins legs inside one stage - it cannot join a /team or lane step (%q); use /team, or name the legs: /grok … + /codex …", p, snippet(t))
 			}
-			text, gate := SplitGate(t)
+			text, gate, err := SplitGate(t)
+			if err != nil {
+				return Program{}, fmt.Errorf("%w (in %q)", err, snippet(t))
+			}
 			if bareStep(text) {
 				return Program{}, fmt.Errorf("%q has no task - a /team or lane step needs one (a bare leg is the only step that refines the previous answer)", snippet(text))
 			}
@@ -482,7 +488,10 @@ func parseChain(s string, depth int, loopBody bool) (Program, error) {
 			if !(loopBody && i == 0) {
 				return Program{}, fmt.Errorf("a step must start with a leg, /team, /repeat, a lane word or a ( group: %q", snippet(t))
 			}
-			text, gate := SplitGate(t)
+			text, gate, err := SplitGate(t)
+			if err != nil {
+				return Program{}, fmt.Errorf("%w (in %q)", err, snippet(t))
+			}
 			steps = append(steps, Program{Kind: ProgramTurn, Turn: TurnAuto, Text: text, Gate: gate})
 		case headControl:
 			return Program{}, fmt.Errorf("/%s is a control word - it cannot be a step of a program", name)

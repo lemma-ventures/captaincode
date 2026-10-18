@@ -565,8 +565,15 @@ Rules:
 5. A gate on a `/team`, lane or plain turn (`… gate: make test`) is checked by the program
    runner, with one repair. A gate on a leg stays the workflow's: one repair, then one escalation
    to a stronger leg.
-6. Code in backticks, and text after a blank line, are never syntax. A gate command ends at the
-   first blank line.
+6. Code in backticks, and text after a blank line, are never syntax. A `gate:` counts only on
+   the last line before the first blank line, and its command is the rest of that line. On an
+   earlier line, `gate:` is text: a pasted report that mentions a gate stays a report. The
+   command's first word must be a literal shell builtin, executable path or program on PATH. Otherwise Captain
+   refuses the turn and runs nothing: `gate: is` and `gate: gotest ./...` are errors. A marker
+   must be a separate word. LF and CRLF blank lines both end the paragraph. Literal quotes,
+   escapes and leading environment assignments are supported. Use `sh -c '…'` when the
+   executable needs expansion or the check starts with a compound shell expression. This
+   validates the first executable only; it does not validate every command or make a gate safe.
 7. A lane word cannot apply to a whole group. Put it on each step.
 8. A text with no program syntax runs on the path it ran on before: a leg, a workflow, a plain
    `/repeat N <task>`.

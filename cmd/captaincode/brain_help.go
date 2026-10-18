@@ -33,7 +33,7 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/grok fix A + /cursor fix B`" + ` - ` + "`+`" + ` runs legs in parallel (max 4 per stage)
 - one task per line also fans out in parallel
 - a bare leg repeats the previous assignment: ` + "`/grok review X > /codex`" + `
-- ` + "`gate: <cmd>`" + ` on a stage must exit 0 · ` + "`/wf <english>`" + ` compiles a plan · ` + "`/run wf_x`" + ` executes it
+- ` + "`gate: <cmd>`" + ` on the last line before a blank line must exit 0; its first executable must exist (shell builtins work; use sh -c for shell expressions) · ` + "`/wf <english>`" + ` compiles a plan · ` + "`/run wf_x`" + ` executes it
 - programs chain whole turns: ` + "`/team research X > (/repeat 4 /codex build it gate: make test) > /claude review`" + ` · ` + "`/repeat N … until: <cmd>`" + ` stops when the command exits 0 · ` + "`A || B`" + ` runs B only if A failed · ` + "`/wf parse <program>`" + ` shows the plan and runs nothing
 
 **Run things in the background**

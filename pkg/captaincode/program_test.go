@@ -2,6 +2,8 @@ package captaincode
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -214,12 +216,12 @@ func TestSplitGateEndsAtTheParagraph(t *testing.T) {
 	cases := []struct{ in, prompt, gate string }{
 		{"fix the parser gate: go test ./...", "fix the parser", "go test ./..."},
 		{"fix the parser gate: true\n\n[captain] This is one round (it may take an hour).", "fix the parser\n\n[captain] This is one round (it may take an hour).", "true"},
-		{"explain what a gate: is", "explain what a", "is"},
 		{"no check here", "no check here", ""},
 		{"fix it gate:", "fix it gate:", ""},
 	}
 	for _, c := range cases {
-		p, g := SplitGate(c.in)
+		p, g, err := SplitGate(c.in)
+		require.NoError(t, err, "%q", c.in)
 		assert.Equal(t, c.prompt, p, "%q", c.in)
 		assert.Equal(t, c.gate, g, "%q", c.in)
 	}
@@ -229,6 +231,131 @@ func TestSplitGateEndsAtTheParagraph(t *testing.T) {
 	leg := wf.Stages[0].Legs[0]
 	assert.Equal(t, "go test ./...", leg.Gate, "the round contract is not part of the command")
 	assert.Contains(t, leg.Prompt, "[captain] This is one round", "the contract reaches the worker")
+}
+
+// fakeGatePath makes programs the only ones a gate finds on PATH.
+func fakeGatePath(t *testing.T, programs ...string) {
+	t.Helper()
+	old := gateLookPath
+	t.Cleanup(func() { gateLookPath = old })
+	gateLookPath = func(name string) (string, error) {
+		for _, p := range programs {
+			if p == name {
+				return "/usr/bin/" + name, nil
+			}
+		}
+		return "", exec.ErrNotFound
+	}
+}
+
+// A pasted report with no blank line held "gate:" mid-text. The rest of the
+// report ran as a shell command, failed with "command not found" and bought
+// a repair (2026-10-11). Only the last line of the first paragraph can hold
+// a gate.
+func TestSplitGateReadsOnlyTheLastLine(t *testing.T) {
+	fakeGatePath(t, "go", "make")
+	report := "/frontier make sure the benchmark uses the latest prover:\n" +
+		"Checks.\n" +
+		"- Local gate: default suite 1,031 passed, reference 250, privacy 371.\n" +
+		"- Clippy, WASM and fmt are clean; 90 Python tests pass.\n" +
+		"Item 3: the blinded profile\n" +
+		"A test run proved all six example programs in 1.0-1.6 s."
+	wf, err := ParseWorkflow(report)
+	require.NoError(t, err)
+	assert.False(t, wf.HasGate(), "a report is not routed to the gate machinery")
+	assert.Contains(t, wf.Stages[0].Legs[0].Prompt, "Local gate: default suite 1,031 passed", "the report reaches the worker whole")
+	_, ok, err := ParseProgram(report)
+	assert.False(t, ok)
+	assert.NoError(t, err)
+
+	// The next turn quoted the fix as a list. Its "Accept gate:" line ran as
+	// a command, stopped at the quote in "stage's" and failed twice with
+	// "unexpected EOF while looking for matching `''" (2026-10-11).
+	quoted := "/frontier fix this: Suggested harness fix:\n" +
+		"- Accept gate: only at the start of a line, or only on the stage's last line.\n" +
+		"- Reject a gate whose first word is not a program on the PATH.\n" +
+		"\n[captain] You are ONE worker in stage 1 of a 1-stage workflow."
+	wf, err = ParseWorkflow(quoted)
+	require.NoError(t, err)
+	assert.False(t, wf.HasGate(), "a quoted fix is not a gate")
+	assert.Contains(t, wf.Stages[0].Legs[0].Prompt, "- Accept gate: only at the start of a line", "the quoted fix reaches the worker whole")
+
+	cases := []struct{ in, prompt, gate string }{
+		{"fix the parser\nand the docs gate: go test ./...", "fix the parser\nand the docs", "go test ./..."},
+		{"fix the parser gate: go test ./...\r\n", "fix the parser", "go test ./..."},
+		{"fix it gate: go test ./...\nthen update the docs", "fix it gate: go test ./...\nthen update the docs", ""},
+		{"the old gate: make test\nfix it gate: go vet ./...", "the old gate: make test\nfix it", "go vet ./..."},
+	}
+	for _, c := range cases {
+		p, g, err := SplitGate(c.in)
+		require.NoError(t, err, "%q", c.in)
+		assert.Equal(t, c.prompt, p, "%q", c.in)
+		assert.Equal(t, c.gate, g, "%q", c.in)
+	}
+}
+
+// A gate on the last line must start with something /bin/sh can run. A word
+// that is not a builtin or a program on PATH refuses the turn: run as prose,
+// the turn would drop a check the user typed; run as a gate, it fails and
+// buys a repair.
+func TestSplitGateRefusesAWordThatCannotRun(t *testing.T) {
+	fakeGatePath(t, "go", "make", "sh", "./scripts/check.sh")
+	for _, in := range []string{
+		"explain what a gate: is",
+		"fix it gate: gotest ./...",
+		"fix it gate: FOO=1",
+		"fix it gate: ;",
+	} {
+		p, g, err := SplitGate(in)
+		require.ErrorIs(t, err, ErrGateCommand, "%q", in)
+		assert.Equal(t, in, p)
+		assert.Empty(t, g)
+	}
+	_, _, err := SplitGate("explain what a gate: is")
+	assert.ErrorContains(t, err, `"is" is not a literal shell builtin, executable path or program on PATH`)
+
+	for in, gate := range map[string]string{
+		"fix it gate: CGO_ENABLED=0 go test ./...":    "CGO_ENABLED=0 go test ./...",
+		"fix it gate: test -f marker":                 "test -f marker",
+		`fix it gate: sh -c '! grep -q TODO main.go'`: `sh -c '! grep -q TODO main.go'`,
+		"fix it gate: ./scripts/check.sh":             "./scripts/check.sh",
+		`fix it gate: sh -c '(cd sub && make)'`:       `sh -c '(cd sub && make)'`,
+		"fix it gate: make&&make test":                "make&&make test",
+		`fix it gate: sh -c '"$GO" test ./...'`:       `sh -c '"$GO" test ./...'`,
+	} {
+		_, g, err := SplitGate(in)
+		require.NoError(t, err, "%q", in)
+		assert.Equal(t, gate, g, "%q", in)
+	}
+
+	_, err = ParseWorkflow("/codex fix it gate: gotest ./... > /claude review it")
+	require.ErrorIs(t, err, ErrGateCommand)
+	assert.ErrorContains(t, err, "stage 1")
+	for _, s := range []string{
+		"/codex fix it gate: gotest ./...",
+		"/codex fix it gate: gotest ./... > /claude review it",
+		"/team fix it gate: gotest ./...",
+		"/quality fix it gate: gotest ./...",
+	} {
+		_, ok, err := ParseProgram(s)
+		assert.True(t, ok, "%q is reported, not run as prose", s)
+		assert.ErrorIs(t, err, ErrGateCommand, "%q", s)
+	}
+}
+
+// The real lookup reads PATH, as /bin/sh does when the gate runs.
+func TestGateRunnableReadsPATH(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "checkit"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	t.Setenv("PATH", dir)
+	word, ok := gateRunnable("checkit --all")
+	assert.True(t, ok)
+	assert.Equal(t, "checkit", word)
+	word, ok = gateRunnable("default suite 1,031 passed")
+	assert.False(t, ok)
+	assert.Equal(t, "default", word)
+	_, ok = gateRunnable("true")
+	assert.True(t, ok, "a builtin needs no program on PATH")
 }
 
 // Every program example in the docs parses. A previous answer described a

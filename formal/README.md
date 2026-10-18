@@ -43,6 +43,12 @@ recursive.
 | `runP` and its budget | `handleProgram` and the program runner in `cmd/captaincode/brain_program.go`: one budget of `CAPTAIN_REPEAT_MAX` turns per program, and a program's own turns never start a program. Plain `/repeat` threads share `runBudget` (`brain_budget.go`, `CAPTAIN_RUN_BUDGET`) the same way. |
 | `stepFixed` | `inboxHTTP` and `noteTurn` in `cmd/captaincode/brain_inbox.go`. A prompt that starts a loop or a program gets a 403 (`StartsLoop`); beyond the quota a prompt gets a 429; a turn the inbox did not hand over refills the quota. |
 
+Gate recognition in language 3.0 restricts which text can set `Prog.turn gated`; it adds no
+turn or re-entry path. The existing budget theorem covers both values of `gated`.
+`TestSplitGateReadsOnlyTheLastLine`, `TestSplitGateKeepsQuotedMarkersAndParagraphs`, and
+`TestSplitGateValidatesLiteralExecutable` check the Go boundary. Command lookup and shell
+execution remain outside this model; no proof of shell-command safety is claimed.
+
 ## What the model does not cover
 
 - **Fidelity.** The model is written by hand from the Go code; nothing extracts

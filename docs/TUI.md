@@ -62,7 +62,7 @@ mix command prints the targets.
 | `/grok fix A + /cursor fix B` | `+` (or `and`, `&`) runs legs in parallel inside a stage (max 4) |
 | one task per line | Also fans out in parallel |
 | `/grok review X > /codex` | A bare leg refines the previous stage's output |
-| `… gate: <cmd>` | The stage's result counts only when the command exits 0 (one repair retry) |
+| `… gate: <cmd>` | Last line of the first paragraph only; first executable must exist or be a shell builtin. Exit 0 passes (one repair retry). Use `sh -c` for shell expressions. |
 | `/wf <english>` (`/workflow`) | Compile plain English into a workflow and preview it |
 | `/run wf_x` (`/wfrun`) | Run a compiled workflow |
 | `/wf save <name> <expression>` · `/wf run <name>` · `/wf list` | Named workflows |
