@@ -90,7 +90,9 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	b.mu.Lock()
+	if !b.lockForPoll(w, r) {
+		return
+	}
 	stats := b.ledger.Stats()
 	cool := make(map[captaincode.Leg]time.Time, len(b.ledger.Cooldowns))
 	for l, t := range b.ledger.Cooldowns {

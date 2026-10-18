@@ -131,7 +131,17 @@ function View(props: { api: TuiPluginApi }) {
   const [offline, setOffline] = createSignal(false)
   const [frame, setFrame] = createSignal(0)
 
+  // One poll at a time, and a brain that stops answering is asked less
+  // often: an abandoned fetch frees the TUI's socket but not the brain's
+  // handler, so 16 TUIs polling a wedged brain every second left 116k
+  // stuck handlers on it in 70 minutes (2026-10-18). Each failure doubles
+  // the wait, up to 30s; the first answer brings back the 1s pace.
+  let polling = false
+  let fails = 0
+  let nextPoll = 0
   const poll = async () => {
+    if (polling || Date.now() < nextPoll) return
+    polling = true
     try {
       // Every poll is bounded. Without a signal these three hung forever
       // against a brain that had stopped answering, and the panel opened a
@@ -159,8 +169,13 @@ function View(props: { api: TuiPluginApi }) {
       else if (s.workers) w = s.workers
       if (w && !same(w, workers())) setWorkers(w)
       if (offline()) setOffline(false)
+      fails = 0
     } catch {
       setOffline(true)
+      fails++
+      nextPoll = Date.now() + Math.min(30_000, 1000 * 2 ** fails)
+    } finally {
+      polling = false
     }
   }
   void poll()
@@ -171,7 +186,10 @@ function View(props: { api: TuiPluginApi }) {
   // streaming - by the same SDK client the prompt box uses. Only a TUI
   // sitting in a session takes them; on the home screen they wait.
   const inboxTaken = new Set<string>()
+  let inboxPolling = false
   const pollInbox = async () => {
+    if (inboxPolling) return // its 3s timeout outlasts the 2s tick
+    inboxPolling = true
     try {
       const cur = props.api.route.current as { name: string; params?: { sessionID?: string } }
       if (cur?.name !== "session" || !cur.params?.sessionID) return
@@ -214,6 +232,8 @@ function View(props: { api: TuiPluginApi }) {
       if (!String(e).includes("abort") && !String(e).includes("fetch")) {
         props.api.ui.toast({ title: "captain inbox", message: String(e).slice(0, 160), variant: "error", duration: 8000 } as any)
       }
+    } finally {
+      inboxPolling = false
     }
   }
   const inboxTimer = setInterval(() => void pollInbox(), 2000)

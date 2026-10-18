@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 	"github.com/stretchr/testify/assert"
@@ -58,4 +61,29 @@ func TestDoctorReportsBothBrains(t *testing.T) {
 	assert.Contains(t, out, "memory  main", "doctor checks the main brain")
 	assert.Contains(t, out, "memory  local", "…and the local one")
 	assert.Contains(t, out, "captain euclid init", "a missing brain says how to create it")
+}
+
+// A slow status computation runs once per folder, however many polls ask,
+// and a poll answers within euclidStatusWait instead of waiting it out.
+func TestEuclidStatusComputesOnceAndAnswersFast(t *testing.T) {
+	prev := euclidStatusWait
+	euclidStatusWait = 20 * time.Millisecond
+	defer func() { euclidStatusWait = prev }()
+	var c euclidStatusCache
+	var runs atomic.Int32
+	release := make(chan struct{})
+	compute := func() euclidStatus { runs.Add(1); <-release; return euclidStatus{Cwd: "/x"} }
+	for i := 0; i < 5; i++ {
+		start := time.Now()
+		_, ok := c.get("/x", "k", compute, context.Background())
+		assert.False(t, ok, "nothing computed yet")
+		assert.Less(t, time.Since(start), time.Second)
+	}
+	close(release)
+	require.Eventually(t, func() bool { _, ok := c.get("/x", "k", compute, context.Background()); return ok }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, int32(1), runs.Load(), "one computation for every poll")
+	st, ok := c.get("/x", "k", compute, context.Background())
+	assert.True(t, ok)
+	assert.Equal(t, "/x", st.Cwd)
+	assert.Equal(t, int32(1), runs.Load(), "a fresh status is served from the cache")
 }

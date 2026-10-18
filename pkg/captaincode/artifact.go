@@ -845,6 +845,12 @@ func CaptureSoloArtifact(ctx context.Context, dir, diffDir, leg string) (files [
 	if len(files) == 0 {
 		return nil, "", "", nil
 	}
+	// Too many to be a turn's own edits (an untracked build or worktree
+	// folder): record the first few and skip a diff that would not finish
+	// in its 30s anyway (filecap.go).
+	if len(files) > maxRecordedFiles {
+		return capFiles(files), "", "", fmt.Errorf("solo artifact: %d changed files, kept the first %d and skipped the diff - an untracked folder is not in .gitignore?", len(files), maxRecordedFiles)
+	}
 	diff, err := diffWorktree(ctx, dir, head)
 	if err != nil {
 		return files, "", "", fmt.Errorf("solo artifact: diff: %w", err)

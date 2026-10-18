@@ -256,6 +256,8 @@ func cmdBrain(args []string) {
 	defer stopLife()
 	b.life = life
 	go b.watchLock(life.Done(), os.Stdout)
+	b.ledger.DeferSaves() // written by saveLoop, outside b.mu (brain_save.go)
+	go b.saveLoop(life.Done())
 	go b.startEuclidReconciler(life.Done())
 	go b.auditLoop(life.Done())      // workers' misconduct, penalized (brain_audit.go)
 	go b.priorRefitLoop(life.Done()) // priors toward the judges' measure, weekly (brain_refit.go)
@@ -308,6 +310,7 @@ func cmdBrain(args []string) {
 			fmt.Fprintln(os.Stderr, "captain brain: sandbox cleanup did not finish before shutdown deadline; inspect retained sandbox state")
 		}
 		time.Sleep(1500 * time.Millisecond) // let the transports reap their children
+		b.flushLedger(10 * time.Second)
 		os.Exit(0)
 	}()
 	if err := brainServer(*addr, withWriteDeadline(mux)).Serve(listener); err != nil {
@@ -3179,13 +3182,15 @@ func (b *brain) stats(w http.ResponseWriter, r *http.Request) {
 	// Built under the lock, written outside it: a write to a client that has
 	// gone away blocks until its socket buffer drains, and holding b.mu
 	// through that stops every other handler (see assess).
-	b.mu.Lock()
+	if !b.lockForPoll(w, r) {
+		return
+	}
 	last := b.last
 	if dir, ok := workspaceFilter(r); ok {
 		last = b.lastBy[dir] // the sidebar shows its own project's last route, not another TUI's
 	}
 	body := map[string]any{"director": string(captaincode.Director), "legs": b.ledger.Stats(),
-		"last": last, "skills": b.ledger.SkillStats(), "http_conns": httpConns.Load()}
+		"last": last, "skills": b.ledger.SkillStats(), "http_conns": httpConns.Load(), "busy_polls": pollBusy.Load()}
 	b.mu.Unlock()
 	writeJSON(w, 200, body)
 }

@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
+	"sync"
+	"time"
 )
 
 // euclidCwd is the folder the CLI commands work in (the brain's default
@@ -304,8 +306,98 @@ func (b *brain) handleEuclid(w http.ResponseWriter, req oaiChatReq, raw string) 
 }
 
 // HTTP: GET /v1/euclid/status, POST /v1/euclid/distill {"apply":bool}.
+//
+// Served from a per-folder cache, refreshed by at most one computation per
+// folder. euclidStatusNow probes every brain in the read set through the
+// memory MCP, one after another at up to 15s each; the sidebar and the CLI
+// give up after 2-3s. Computed per request, every abandoned poll kept its
+// probe running, and the log filled with "euclid orientation … context
+// deadline exceeded" while the brain was wedged (2026-10-18).
 func (b *brain) euclidStatusHTTP(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, b.euclidStatusNow(workspaceOf(r)))
+	ws := workspaceOf(r)
+	st, ok := euclidStatuses.get(ws.Dir, euclidStatusKey(ws.Dir), func() euclidStatus { return b.euclidStatusNow(ws) }, r.Context())
+	if !ok {
+		writeErr(w, http.StatusServiceUnavailable, "euclid status is still being computed - ask again shortly")
+		return
+	}
+	writeJSON(w, 200, st)
+}
+
+// euclidStatusFresh is how long a computed status is served as is.
+var euclidStatusFresh = time.Minute
+
+// euclidStatusWait is how long a request waits for a computation it started
+// or joined before it answers with what the cache has.
+var euclidStatusWait = 1500 * time.Millisecond
+
+// euclidStatusKey is what invalidates a cached status at once: the brains in
+// the read set and whether each launch-check brain exists. A `captain euclid
+// init` shows on the next request, not a minute later.
+func euclidStatusKey(dir string) string {
+	var sb strings.Builder
+	for _, br := range captaincode.ReadSet(dir) {
+		sb.WriteString(br.Root + "|")
+	}
+	for _, c := range captaincode.CheckBrains(dir) {
+		fmt.Fprintf(&sb, "%s=%v|", c.Root, c.Present)
+	}
+	return sb.String()
+}
+
+type euclidStatusEntry struct {
+	st      euclidStatus
+	at      time.Time
+	key     string
+	have    bool
+	running chan struct{} // non-nil while a computation is in flight
+}
+
+type euclidStatusCache struct {
+	mu sync.Mutex
+	by map[string]*euclidStatusEntry
+}
+
+var euclidStatuses euclidStatusCache
+
+// get returns the folder's status: fresh from the cache, or from a
+// computation that finishes within euclidStatusWait, or the last one known.
+// It reports false only when nothing has been computed yet.
+func (c *euclidStatusCache) get(dir, key string, compute func() euclidStatus, ctx context.Context) (euclidStatus, bool) {
+	c.mu.Lock()
+	if c.by == nil {
+		c.by = map[string]*euclidStatusEntry{}
+	}
+	e := c.by[dir]
+	if e == nil {
+		e = &euclidStatusEntry{}
+		c.by[dir] = e
+	}
+	if e.have && e.key == key && time.Since(e.at) < euclidStatusFresh {
+		st := e.st
+		c.mu.Unlock()
+		return st, true
+	}
+	if e.running == nil {
+		done := make(chan struct{})
+		e.running = done
+		go func() {
+			st := compute()
+			c.mu.Lock()
+			e.st, e.at, e.key, e.have, e.running = st, time.Now(), key, true, nil
+			c.mu.Unlock()
+			close(done)
+		}()
+	}
+	running := e.running
+	c.mu.Unlock()
+	select {
+	case <-running:
+	case <-time.After(euclidStatusWait):
+	case <-ctx.Done():
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return e.st, e.have
 }
 
 // euclidFoldHTTP answers a fold prompt (euclid_share_cmd.go) with the

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -61,6 +62,11 @@ type Ledger struct {
 	// other writer has touched the file and skip re-reading it (Save).
 	wroteSize int64
 	wroteAt   time.Time
+	// The brain defers its saves (DeferSaves): Save marks the ledger dirty
+	// and SaveDirty writes it, once, from one goroutine.
+	deferSaves bool
+	dirty      atomic.Bool
+	saveMu     sync.Mutex
 }
 
 // ThreadRef is a persisted opencode session identity for one leg in one
@@ -584,6 +590,51 @@ func (l *Ledger) Save() error {
 	if l.path == "" {
 		return nil
 	}
+	if l.deferSaves {
+		l.dirty.Store(true)
+		return nil
+	}
+	l.saveMu.Lock()
+	defer l.saveMu.Unlock()
+	data, err := l.prepareSave()
+	if err != nil {
+		return err
+	}
+	return l.writeSave(data)
+}
+
+// DeferSaves makes Save only mark the ledger dirty; SaveDirty writes it. For
+// the brain, which calls Save under its global lock on every completion,
+// route and shadow (about 45 call sites): writing the whole file there held
+// the lock through the disk write each time, and a 184 MB state.json made
+// that the queue every sidebar poll and finishing turn waited in
+// (2026-10-18). A one-shot CLI process keeps saving at once.
+func (l *Ledger) DeferSaves() { l.deferSaves = true }
+
+// SaveDirty writes a deferred ledger if a Save asked for it since the last
+// write. lock is the caller's lock over the ledger: it is held while the
+// rows are merged, trimmed and encoded, and released before the disk write.
+func (l *Ledger) SaveDirty(lock sync.Locker) error {
+	l.saveMu.Lock()
+	defer l.saveMu.Unlock()
+	if l.path == "" || !l.dirty.Swap(false) {
+		return nil
+	}
+	lock.Lock()
+	data, err := l.prepareSave()
+	lock.Unlock()
+	if err == nil {
+		err = l.writeSave(data)
+	}
+	if err != nil {
+		l.dirty.Store(true) // try again next time
+	}
+	return err
+}
+
+// prepareSave merges, trims and encodes the ledger. The caller holds
+// whatever lock guards the ledger's rows, and saveMu.
+func (l *Ledger) prepareSave() ([]byte, error) {
 	// Several processes share state.json: the long-lived brain and any CLI
 	// invocation each load it once and write back. A stale writer would drop
 	// the rows another process appended while it ran (notably the charge rows
@@ -609,6 +660,7 @@ func (l *Ledger) Save() error {
 	l.TaskStates = trimLifecycle(l.TaskStates, maxTaskStates, func(t TaskState) bool { return t.State.IsTerminal() })
 	l.Handoffs = trimLifecycle(l.Handoffs, maxHandoffs, func(HandoffBrief) bool { return true })
 	l.Outcomes = trimLifecycle(l.Outcomes, maxOutcomes, func(OutcomeEvidence) bool { return true })
+	l.capFileLists() // filecap.go
 	// The balancer reads the lane log from its tail, so rows merged in from
 	// disk (appended after this process's own) go back into time order
 	// before the oldest are dropped.
@@ -616,10 +668,12 @@ func (l *Ledger) Save() error {
 	if len(l.LaneRuns) > maxLaneRuns {
 		l.LaneRuns = l.LaneRuns[len(l.LaneRuns)-maxLaneRuns:]
 	}
-	data, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return err
-	}
+	return json.MarshalIndent(l, "", "  ")
+}
+
+// writeSave puts encoded state on disk. Only saveMu is needed: wroteSize and
+// wroteAt are read by mergeFromDisk inside prepareSave, under saveMu too.
+func (l *Ledger) writeSave(data []byte) error {
 	tmp := l.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err

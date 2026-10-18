@@ -21,6 +21,7 @@ package captaincode
 // whole `.euclid/` tree is gitignored while Euclid is not the default install.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -63,6 +64,12 @@ func MainBrainPath() string {
 
 var handleRe = regexp.MustCompile(`[^a-z0-9]+`)
 
+// euclidGitTimeout bounds the git calls behind RepoRoot and DeveloperHandle.
+// The director's plan path reaches them under the brain's lock, so a git
+// that hangs (a locked index, a network filesystem) must not hold it. A
+// timeout falls through to the .euclid/.git walk and to "me".
+const euclidGitTimeout = 5 * time.Second
+
 // DeveloperHandle identifies this developer's subtree: EUCLID_HANDLE, else
 // the `handle` file in the main brain, else the local part of git's
 // user.email slugified, else "me".
@@ -77,7 +84,9 @@ func DeveloperHandle() string {
 			}
 		}
 	}
-	if out, err := exec.Command("git", "config", "user.email").Output(); err == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), euclidGitTimeout)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "git", "config", "user.email").Output(); err == nil {
 		email := strings.TrimSpace(string(out))
 		if i := strings.IndexByte(email, '@'); i > 0 {
 			email = email[:i]
@@ -103,7 +112,9 @@ func RepoRoot(dir string) string {
 	if dir == "" {
 		return ""
 	}
-	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
+	ctx, cancel := context.WithTimeout(context.Background(), euclidGitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--show-toplevel")
 	if out, err := cmd.Output(); err == nil {
 		if top := strings.TrimSpace(string(out)); top != "" {
 			return top
