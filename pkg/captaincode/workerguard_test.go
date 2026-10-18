@@ -47,6 +47,34 @@ func TestWorkerGuardRefusesBulkStagingOverOthersWork(t *testing.T) {
 	}
 }
 
+func TestWorkerGuardRefusesACommitThatCreditsAnAgent(t *testing.T) {
+	refused := []string{
+		"git commit -m 'feat: x\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'",
+		"git commit -m feat -m 'Co-authored-by: Cursor <cursoragent@cursor.com>'",
+		"git commit --trailer 'Co-authored-by: Codex <codex@example.com>' -m x",
+		"git commit --trailer=Co-authored-by=Claude <claude@example.com> -m x",
+		"git -C /w commit -m 'fix\n\nGenerated with [Claude Code](https://claude.com/claude-code)'",
+		"git -c user.name=me commit --amend -m 'x\n\nClaude-Session: abc'",
+		"git commit --author='Claude <noreply@anthropic.com>' -m x",
+		"git commit-tree HEAD^{tree} -p HEAD -m 'x\n\nCo-authored-by: GitHub Copilot <c@example.com>'",
+		"gh pr create --title x --body 'y\n\n🤖 Generated with Claude Code'",
+	}
+	for _, c := range refused {
+		assert.NotEmpty(t, WorkerGuardRefusal(c, true, false), "refused even when the user asked to publish: %s", c)
+	}
+	allowed := []string{
+		"git commit -m 'feat(guard): refuse Co-authored-by trailers that name an agent'",
+		"git commit -m 'x\n\nCo-authored-by: Claude Martin <claude.martin@example.com>'",
+		"git commit -m 'x\n\nCo-authored-by: Alice <alice@example.com>'",
+		"git log --grep 'Co-authored-by: Claude <noreply@anthropic.com>'",
+		"echo 'Co-authored-by: Cursor <cursoragent@cursor.com>' >> notes.md",
+		"gh pr view 3 --json body",
+	}
+	for _, c := range allowed {
+		assert.Empty(t, WorkerGuardRefusal(c, false, false), c)
+	}
+}
+
 func TestAsksToPublish(t *testing.T) {
 	for _, s := range []string{"cut a release", "publish it on npm", "tag v1.2 and push", "release v0.3.12", "ship v2", "bump the version"} {
 		assert.True(t, AsksToPublish(s), s)

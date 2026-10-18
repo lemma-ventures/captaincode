@@ -12,10 +12,14 @@ package captaincode
 //   - bulk staging in a checkout that already had uncommitted changes when
 //     the turn started (`git add -A`, `git add .`, `git commit -a`): some of
 //     those changes are other sessions' work, so the worker stages its own
-//     files by name.
+//     files by name;
+//   - a commit or a pull request that credits an AI agent (a Co-authored-by
+//     trailer with an agent's name or address, an agent author, a session
+//     trailer, a "Generated with" line), on every turn: commits name the
+//     operator only. A human co-author is not touched.
 //
-// The brain decides both from the turn and writes them into the worker
-// prompt as captain markers. opencode workers are checked by the plugin
+// The brain decides the first two from the turn and writes them into the
+// worker prompt as captain markers. opencode workers are checked by the plugin
 // through the brain (/v1/gate/sent); CLI workers (claude, codex, cursor) run
 // with small shims for git, gh and the package tools first on their PATH
 // (`captain guard-exec`). Every refusal is a line in
@@ -80,8 +84,34 @@ var publishRules = []guardRule{
 
 var bulkStageRe = regexp.MustCompile(`(?i)\bgit\s+(-C\s+\S+\s+)?add\s+([^|;&]*\s)?(-A|--all|\.|:/|\*)(\s|$|[;&|])|\bgit\s+(-C\s+\S+\s+)?commit\s+([^|;&]*\s)?(-[a-zA-Z]*a[a-zA-Z]*|--all)(\s|$|[;&|])`)
 
+// commitOrPRRe finds a command that writes a commit or a pull request
+// message: `git commit`, `git commit-tree` (with -C, -c or --options before
+// the subcommand), `gh pr create` and `gh pr edit`.
+var commitOrPRRe = regexp.MustCompile(`(?i)\bgit\s+((-[cC]\s+\S+|--\S+)\s+)*commit(-tree)?\b|\bgh\s+pr\s+(create|edit)\b`)
+
+// agentCreditRe finds a line that credits an AI agent: a Co-authored-by
+// trailer whose name is exactly the tool ("Claude", "Claude Opus 5.5",
+// "Cursor Agent", "Codex"), an agent's address in any trailer or --author,
+// a Claude-Session trailer, or a "Generated with <tool>" line. Agents add
+// these to commits by default, and GitHub then lists the agent's account
+// among the repository's contributors (.githooks/commit-msg has the
+// incident). "Claude Martin <...>" is a person and does not match.
+var agentCreditRe = regexp.MustCompile(`(?i)co-authored-by\s*[:=]\s*["']?\s*(claude(\s+(code|opus|sonnet|haiku|fable)[^<\n]*)?|cursor(\s+agent)?|(openai\s+)?codex(\s+cli)?|(github\s+)?copilot|gemini(\s+cli)?|grok|opencode|chatgpt)\s*<` +
+	`|<\s*(noreply@anthropic\.com|noreply@openai\.com|cursoragent@cursor\.com|cursor@cursor\.com)\s*>` +
+	`|\bclaude-session\s*:` +
+	`|\bgenerated\s+with\s+\[?(claude|cursor|codex|copilot|gemini|grok|opencode|chatgpt)\b`)
+
+// CreditsAnAgent reports whether cmd writes a commit or a pull request whose
+// message credits an AI agent.
+func CreditsAnAgent(cmd string) bool {
+	return commitOrPRRe.MatchString(cmd) && agentCreditRe.MatchString(cmd)
+}
+
 // WorkerGuardRefusal returns why a worker may not run cmd this turn, or "".
 func WorkerGuardRefusal(cmd string, mayPublish, dirtyBefore bool) string {
+	if CreditsAnAgent(cmd) {
+		return "refused: the commit or pull request message credits an AI agent (a Co-authored-by trailer, an agent author or address, a Claude-Session trailer or a \"Generated with\" line). Commits and pull requests name the operator only: remove that line and run the command again."
+	}
 	if !mayPublish {
 		for _, r := range publishRules {
 			if r.re.MatchString(cmd) {

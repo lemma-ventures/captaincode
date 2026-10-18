@@ -81,8 +81,7 @@ Its limits, stated so nobody over-trusts it:
 
 ### The worker guard and the audit
 
-Two things no worker does unless your typed request asks for it, on any leg
-(`pkg/captaincode/workerguard.go`):
+What the worker guard refuses, on any leg (`pkg/captaincode/workerguard.go`):
 
 - **Publishing.** Creating or pushing tags, creating or editing releases, and
   publishing packages or images are refused unless your turn asks for a
@@ -90,8 +89,16 @@ Two things no worker does unless your typed request asks for it, on any leg
 - **Bulk staging over others' work.** In a checkout that had uncommitted
   changes when the turn started, `git add -A`, `git add .` and
   `git commit -a` are refused. The worker stages its own files by name.
+- **Agent credit in a commit.** On every turn, a `git commit`,
+  `git commit-tree`, `gh pr create` or `gh pr edit` whose message credits an
+  AI agent is refused: a `Co-authored-by` trailer whose name is the tool
+  (Claude, Codex, Cursor, Copilot, Gemini, Grok, opencode, ChatGPT) or whose
+  address is an agent's, an agent `--author`, a `Claude-Session` trailer, or a
+  `Generated with <tool>` line. A human co-author is not touched. The guard
+  reads the command line only: a message in a file (`-F`) is not checked.
 
-The brain decides both from the turn and states them in the worker prompt.
+The brain decides the first two from the turn and states them in the worker
+prompt.
 opencode workers are checked through the brain at the tool boundary. claude,
 codex and cursor run with shims for `git`, `gh` and the package tools first
 on their PATH (`captain guard-exec`). Each captain binary writes its own
