@@ -132,6 +132,16 @@ after the task (a session title gets none of them):
   `captain leakcheck --staged` before committing. OpenShell sandboxes get the
   same line. With the `keep-private-names-private` skill synced, the line also
   points at it. `CAPTAIN_WORKER_PRIVATE_NAMES=0` drops the line.
+- **Your standing rules.** Every Markdown file in `~/.captaincode/rules/`
+  (every folder) and in `<folder>/.captaincode/rules/` (that folder only) is
+  added after the lines above, in file-name order. A folder file with the
+  same name replaces your file. Only regular files are read: a rule that is
+  a symlink, or a rules folder that links out of the folder, is skipped, so a
+  cloned repository cannot turn a private file into prompt text. One rule is
+  cut at 8 KiB; all rules together stop at 32 KiB. OpenShell sandboxes get
+  the same text. `CAPTAIN_WORKER_RULES=0` drops the block. Example: a
+  `no-self-promotion.md` rule that keeps agents out of commit credits; the
+  worker guard refuses such a commit as well ([SECURITY](../SECURITY.md#the-worker-guard-and-the-audit)).
 
 ## Evaluation & release (M1)
 

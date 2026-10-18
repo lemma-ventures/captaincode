@@ -108,7 +108,8 @@ func (b *brain) teamWorkerPrompt(ws captaincode.Workspace, conversation, brief s
 		callbackContract(ws, leg) +
 		securityContract() +
 		clarityContract(ws) +
-		privacyContract(ws)
+		privacyContract(ws) +
+		rulesContract(ws)
 }
 
 // skills, when the stage staged a shelf, adds M3.9's second question to the
@@ -632,7 +633,7 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// the very turn that motivated it (a frontier turn, 2026-09-22), and a
 	// frontier worker - the one trusted with the largest changes - was the
 	// only one never asked to put security first.
-	prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
+	prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, captaincode.LegFrontier) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws) + rulesContract(req.ws)
 	// M3.9: the shelf a solo worker gets, staged in the user's directory for
 	// the turn. It carries the always-on security-audit skill, which a
 	// frontier worker otherwise never saw.

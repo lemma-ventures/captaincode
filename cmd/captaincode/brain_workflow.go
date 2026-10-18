@@ -356,6 +356,7 @@ func (b *brain) workflowStagePrompt(ws captaincode.Workspace, conversation strin
 	sb.WriteString(securityContract())
 	sb.WriteString(clarityContract(ws))
 	sb.WriteString(privacyContract(ws))
+	sb.WriteString(rulesContract(ws))
 	return sb.String()
 }
 

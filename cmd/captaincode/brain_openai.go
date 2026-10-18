@@ -732,7 +732,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		b.noteVerifyBase(taskID, req.ws.Dir)
 	}
 	if !titleReq {
-		prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws)
+		prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + clarityContract(req.ws) + privacyContract(req.ws) + rulesContract(req.ws)
 	}
 
 	// An answer produced for a client that had gone away (stall→reroute chains
