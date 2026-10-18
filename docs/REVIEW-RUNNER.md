@@ -65,20 +65,44 @@ Unknown cost is null, never zero. This is not a money reservation system: use a
 provider-side spend cap before live use. Treat answers and records as private,
 untrusted data. Do not render raw answers as HTML or execute their contents.
 
+`captain review check --evidence evidence.json --claims claims.json
+--out check.json` verifies draft claims against the captured evidence. It uses
+no model and no network. A claims file is version 1 JSON. It carries the
+capture commit and one to 100 claims. Each claim has an `id`, a `type`
+(`fact`, `interpretation`, or `limitation`), a `statement`, a `path`, `start`
+and `end` lines, and an exact `quote`. The file is at most 1 MiB.
+
+Every claim ends as `present` or `dropped`. Drop reasons are `invalid_claim`,
+`unknown_path`, `line_range_invalid`, and `quote_not_found`. A duplicate id or
+a commit that differs from the evidence pack stops the run. Paths match with
+or without the archive root directory. Line endings are compared as `\n`.
+Fields over their limits drop the claim instead of stopping the run.
+
+The log records the commit, the archive digest, the claims-file digest, the
+captured file count, one result per claim, and totals. The check is
+deterministic: the same inputs produce byte-identical output.
+
+`present` means only that the quoted lines exist at the cited place. It does
+not mean that the quote supports the statement. That question needs a
+separate review by a different human or model. One rehearsal checker approved
+claims whose quotes existed but whose conclusions did not follow.
+
 ## Threats and verification
 
 | Boundary | Control | Acceptance test |
 | --- | --- | --- |
 | Hostile archive to memory | No extraction; bounded decompression; path validation | Traversal, links, duplicates, binary, large entry, gzip bomb |
 | Evidence to model | HTTP-only; no tool definitions or source instructions | Inspect actual HTTP payload; reject returned tool calls |
+| Draft claims to report | Deterministic line, path, and quote check before review | Misattributed quote, path outside capture, bad line range, duplicate id |
 | Provider failure to fallback | Same allow-list, vendor constraint and tier; finite attempts | Capacity failure then success; all blocked; forced leg outside list |
 | Provider to records | Size bound; no raw error body; credential-free records | Malformed, oversized, timeout, and secret-bearing error body |
 | Host filesystem | Regular bounded inputs; exclusive private output | Symlink/FIFO rejection and output collision |
 
 The Lean model proves selection membership, preserved eligibility, and the
 attempt bound. It assumes correct profile validation and trusted provider
-adapters. Go tests cover the wire contract and archive parsing. Neither proves
-grading accuracy, provider conduct, OS isolation, or legal permission.
+adapters. Go tests cover the claim check, the wire contract and archive
+parsing. Neither proves grading accuracy, provider conduct, OS isolation, or
+legal permission. The claim check proves only that a quote exists in a range.
 
 ## Deployment and expansion
 
@@ -109,6 +133,7 @@ command does not load the normal registry, ledger, or environment file.
 captain review capture --archive source.tar.gz --commit FULL_COMMIT_SHA --out evidence.json
 captain review run --profile profile.json --prompt deep-dive.txt --tier frontier --legs review-opus,review-astra --out deep-dive.json
 captain review run --profile profile.json --prompt check.txt --tier quality --legs review-gemini,review-deepseek --exclude-vendor anthropic --out check.json
+captain review check --evidence evidence.json --claims claims.json --out claim-check.json
 ```
 
 For a local model server, make a profile leg with its literal loopback endpoint,

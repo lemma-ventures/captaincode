@@ -18,7 +18,7 @@ import (
 
 func cmdReview(args []string) {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Println("usage: captain review capture --archive source.tar.gz --commit <sha> --out evidence.json\n       captain review run --profile profile.json --prompt prompt.txt --tier frontier|quality|cheap --legs primary,backup --out run.json\nOptional capture flag: --include README.md,src/. Optional run flags: --leg <id>, --exclude-vendor <vendor>. See docs/REVIEW-RUNNER.md.")
+		fmt.Println("usage: captain review capture --archive source.tar.gz --commit <sha> --out evidence.json\n       captain review run --profile profile.json --prompt prompt.txt --tier frontier|quality|cheap --legs primary,backup --out run.json\n       captain review check --evidence evidence.json --claims claims.json --out check.json\nOptional capture flag: --include README.md,src/. Optional run flags: --leg <id>, --exclude-vendor <vendor>. See docs/REVIEW-RUNNER.md.")
 		return
 	}
 	if err := executeReview(args); err != nil {
@@ -97,6 +97,30 @@ func executeReview(args []string) error {
 			defer cancel()
 			run, err := captaincode.RunReview(ctx, p, string(text), captaincode.ReviewOptions{Tier: *tier, Allow: strings.Split(*legs, ","), Forced: *forced, ExcludeVendor: *exclude})
 			return run, err
+		}
+	case "check":
+		evidence := fs.String("evidence", "", "captured evidence pack")
+		claims := fs.String("claims", "", "claims file from the draft stage")
+		capture = func() (any, error) {
+			b, err := readReviewInput(*evidence, 128<<20)
+			if err != nil {
+				return nil, err
+			}
+			var ev captaincode.ReviewEvidence
+			d := json.NewDecoder(bytes.NewReader(b))
+			d.DisallowUnknownFields()
+			if d.Decode(&ev) != nil || d.Decode(new(any)) != io.EOF {
+				return nil, errors.New("invalid review evidence JSON")
+			}
+			raw, err := readReviewInput(*claims, 1<<20)
+			if err != nil {
+				return nil, err
+			}
+			log, err := captaincode.CheckClaims(ev, raw)
+			if err != nil {
+				return nil, err
+			}
+			return log, nil
 		}
 	default:
 		return errors.New("unknown review subcommand")
