@@ -145,7 +145,7 @@ func programBanner(id string, p captaincode.Program, target, budget int) string 
 func (b *brain) startProgram(req oaiChatReq, raw string, p captaincode.Program, target, budget int) *repeatThread {
 	ctx, cancel := context.WithCancel(context.Background())
 	th := &repeatThread{
-		id:      "rp_" + fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff),
+		id:      newRepeatID(),
 		dir:     req.ws.Dir,
 		task:    raw,
 		target:  target,

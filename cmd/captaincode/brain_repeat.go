@@ -17,10 +17,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -299,6 +304,20 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 	// ordinary task that happens to start with "watch" - would be swallowed as
 	// a command (caught by TestRepeatStopEndsTheThread, 2026-08-31).
 	word, arg, isCtl := repeatControl(restLow)
+	if isCtl && b.isScopedTurn(req.ws.Steer) && (word == "stop" || word == "finish" || word == "wrapup" || word == "abort") {
+		if !repeatThreadID.MatchString(arg) {
+			emit("Use an exact thread ID: `/repeat " + word + " rp_<id>`. `/repeat status` lists the IDs.\n")
+			return true
+		}
+		b.rmu.Lock()
+		th := b.repeatState()[arg]
+		matches := th != nil && filepath.Clean(th.dir) == filepath.Clean(req.ws.Dir)
+		b.rmu.Unlock()
+		if !matches {
+			emit("No repeat thread with that exact thread ID exists in this workspace.\n")
+			return true
+		}
+	}
 	switch {
 	case restLow == "" || (isCtl && word == "status"):
 		emit(b.repeatStatus(req.ws.Dir))
@@ -410,9 +429,37 @@ func (b *brain) repeatCtlHTTP(w http.ResponseWriter, r *http.Request) {
 		Word string `json:"word"`
 		Arg  string `json:"arg"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	dir, _ := workspaceFilter(r)
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid control request")
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		writeErr(w, http.StatusBadRequest, "expected one request object")
+		return
+	}
+	dir, mine := workspaceFilter(r)
 	arg := strings.TrimSpace(req.Arg)
+	if r.URL.Query().Has("thread") {
+		id := r.URL.Query().Get("thread")
+		if !repeatThreadID.MatchString(id) || !mine || !filepath.IsAbs(dir) || (arg != "" && arg != id) {
+			writeErr(w, http.StatusBadRequest, "exact thread and absolute workspace required")
+			return
+		}
+		b.rmu.Lock()
+		th := b.repeatState()[id]
+		matches := th != nil && filepath.Clean(th.dir) == dir
+		b.rmu.Unlock()
+		if !matches {
+			writeErr(w, http.StatusNotFound, "thread not found")
+			return
+		}
+		arg = id
+		if strings.EqualFold(strings.TrimSpace(req.Word), "status") {
+			req.Word = "show"
+		}
+	}
 	var msg string
 	switch strings.ToLower(strings.TrimSpace(req.Word)) {
 	case "show":
@@ -779,7 +826,7 @@ func (b *brain) startRepeat(req oaiChatReq, task string, count int, budget *runB
 	ctx, cancel := context.WithCancel(withBudget(context.Background(), budget))
 	th := &repeatThread{
 		budget:  budget,
-		id:      "rp_" + fmt.Sprintf("%06x", time.Now().UnixNano()&0xffffff),
+		id:      newRepeatID(),
 		dir:     req.ws.Dir,
 		task:    task,
 		target:  count,
@@ -1126,4 +1173,14 @@ func roundsAreNearIdentical(a, b string) (bool, float64) {
 		return false, score
 	}
 	return score >= threshold, score
+}
+
+var repeatThreadID = regexp.MustCompile(`^rp_[A-Za-z0-9_-]{1,128}$`)
+
+func newRepeatID() string {
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		panic(err)
+	}
+	return "rp_" + hex.EncodeToString(id[:])
 }

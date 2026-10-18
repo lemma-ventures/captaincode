@@ -154,10 +154,15 @@ func (s *Steer) AttachStop(l Leg, stop func()) func() {
 		return func() {}
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	if !s.interrupted.IsZero() {
+		s.mu.Unlock()
+		stop()
+		return func() {}
+	}
 	s.seq++
 	id := s.seq
 	s.stops[id] = steerStop{leg: l, stop: stop}
+	s.mu.Unlock()
 	return func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()

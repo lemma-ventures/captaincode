@@ -376,6 +376,17 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		finish()
 		return
 	}
+	if id := r.Header.Get(turnHeader); id != "" && !req.internal {
+		req.ws.Steer = b.steerOpen(req.ws.Dir)
+		defer b.steerClose(req.ws.Steer)
+		if !b.bindTurn(id, req.ws.Steer) {
+			writeErr(w, http.StatusConflict, "invalid or active turn identifier")
+			return
+		}
+	}
+	if r.Context().Value(queuedKey{}) != nil {
+		req.ws.Steer, _ = r.Context().Value(queuedSteerKey{}).(*captaincode.Steer)
+	}
 	req.Messages = dropDeleted(req.Messages)
 	// Several prompts queued behind the previous turn arrive as one request
 	// with several trailing user messages: each is its own turn, in order
@@ -431,8 +442,10 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	// The turn's /btw handle, keyed by the folder the TUI is open in: a note
 	// typed there while this turn runs reaches its workers (brain_btw.go).
-	req.ws.Steer = b.steerOpen(req.ws.Dir)
-	defer b.steerClose(req.ws.Steer)
+	if req.ws.Steer == nil {
+		req.ws.Steer = b.steerOpen(req.ws.Dir)
+		defer b.steerClose(req.ws.Steer)
+	}
 
 	// The fork's title generator calls the SAME model with the user's text, so a
 	// team/workflow turn fired TWICE - the real turn plus a title request, each

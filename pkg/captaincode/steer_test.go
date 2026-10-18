@@ -3,6 +3,7 @@ package captaincode
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -197,15 +198,22 @@ cat >/dev/null
 	fakeBin(t, "claude", `#!/bin/sh
 read -r first
 printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"half a report"}}}'
-sleep 30
+exec sleep 30
 `)
 	s2 := NewSteer(t.TempDir())
+	defer s2.Abort()
+	output := make(chan string, 1)
 	go func() {
-		res, err := runClaudeStreamOpts("", "the task", 60*time.Second, 0, nil, nil, false, "", s2)
+		res, err := runClaudeStreamOpts("", "the task", 60*time.Second, 0, func(delta string) { output <- delta }, nil, false, "", s2)
 		done <- out{res, err}
 	}()
 	require.Eventually(t, func() bool { return len(s2.Attached()) == 1 }, 5*time.Second, 10*time.Millisecond)
-	time.Sleep(300 * time.Millisecond) // let the delta land
+	select {
+	case delta := <-output:
+		require.Equal(t, "half a report", delta)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the worker did not stream its partial report")
+	}
 	s2.Interrupt("")
 	assert.Equal(t, []Leg{LegClaude}, s2.StopAll(), "the grace ran out: stopped")
 	select {
@@ -236,22 +244,30 @@ func TestInterruptStopsALegWithNoChannel(t *testing.T) {
 // streamed text.
 func TestOpencodeDispatcherStopKeepsTheStreamedText(t *testing.T) {
 	aborted := make(chan struct{}, 1)
+	started := make(chan struct{})
+	messageDone := make(chan struct{})
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/abort"):
 			aborted <- struct{}{}
 			w.Write([]byte(`{}`))
 		case r.URL.Path == "/session/ses_1/message":
+			defer close(messageDone)
+			_, _ = io.Copy(io.Discard, r.Body)
+			close(started)
 			select { // the turn "runs" until the client goes away
 			case <-r.Context().Done():
-			case <-time.After(20 * time.Second):
+			case <-release:
 			}
 		default:
 			w.Write([]byte(`{"id":"ses_1"}`))
 		}
 	}))
 	defer srv.Close()
+	defer close(release)
 	s := NewSteer(t.TempDir())
+	defer s.Abort()
 	d := &OpencodeDispatcher{BaseURL: srv.URL, SessionID: "ses_1", Client: srv.Client(), Spawn: false, Steer: s}
 	d.acc.WriteString("streamed so far")
 	type out struct {
@@ -261,14 +277,29 @@ func TestOpencodeDispatcherStopKeepsTheStreamedText(t *testing.T) {
 	done := make(chan out, 1)
 	go func() { res, err := d.Run(LegGLM, "the task"); done <- out{res, err} }()
 	require.Eventually(t, func() bool { return len(s.Attached()) == 1 }, 2*time.Second, 10*time.Millisecond)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the message request did not reach the server")
+	}
 	s.StopAll()
-	o := <-done
+	var o out
+	select {
+	case o = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stopped request did not return")
+	}
 	require.ErrorIs(t, o.err, ErrInterrupted)
 	assert.Equal(t, "streamed so far", o.res.Text)
 	select {
 	case <-aborted:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the server-side generation was not aborted")
+	}
+	select {
+	case <-messageDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the cancelled message handler did not return")
 	}
 }
 

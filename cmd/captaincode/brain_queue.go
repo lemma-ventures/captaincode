@@ -194,7 +194,7 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 	// earlier queued prompts each followed by the answer it got.
 	history := append([]oaiMessage(nil), req.Messages[:pending[0]]...)
 	for k, step := range steps {
-		if r.Context().Err() != nil {
+		if r.Context().Err() != nil || !req.ws.Steer.Interrupted().IsZero() {
 			fmt.Printf("captain brain: queue stopped after %d/%d - the turn went away\n", k, n)
 			break
 		}
@@ -227,7 +227,9 @@ func (b *brain) runQueued(w http.ResponseWriter, r *http.Request, req oaiChatReq
 				b.chatFn(cap)
 				return
 			}
-			b.chatCompletions(cap, chatRequestFrom(context.WithValue(r.Context(), queuedKey{}, true), sub))
+			ctx := context.WithValue(r.Context(), queuedKey{}, true)
+			ctx = context.WithValue(ctx, queuedSteerKey{}, req.ws.Steer)
+			b.chatCompletions(cap, chatRequestFrom(ctx, sub))
 		}()
 		answer, errText := cap.answer()
 		if errText != "" || cap.status >= 400 {
@@ -434,3 +436,5 @@ func handledPath() string {
 	}
 	return filepath.Join(home, ".captaincode", "handled.json")
 }
+
+type queuedSteerKey struct{}

@@ -124,3 +124,22 @@ TUI, or any terminal):
 | `captain status` / `captain watch` | What is running now |
 | `captain runs` / `captain show <id>` | Every run, with full output |
 | `captain send "<prompt>"` | Queue a prompt into this folder's session |
+
+## OpenCode 2 frontend controls
+
+The new frontend sends `/btw` and `/interrupt` only to its active session turn.
+An idle session cannot send a folder-wide interrupt.
+
+`/rename <title>` changes the current session title without a worker call.
+With no title, it uses the workspace name and a recent prompt.
+
+Repeat and program work remains detached. Esc stops watching. It does not stop
+that work. Use `/repeat status` to find the thread ID, then use
+`/repeat finish rp_<id>` to finish the current round or `/repeat abort rp_<id>`
+to cancel it. The new frontend requires an exact ID for these operations.
+The legacy CLI retains its existing folder-wide controls.
+
+The scoped HTTP operation is `POST /v1/repeat/ctl?thread=<id>&cwd=<absolute-path>`.
+Its JSON body contains `word` and optional `arg`. If supplied, `arg` must equal
+`thread`. An invalid ID, unknown thread or workspace mismatch cannot select
+another thread. New repeat and program IDs contain 128 random bits.

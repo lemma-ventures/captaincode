@@ -30,6 +30,7 @@ import (
 type steerBook struct {
 	mu         sync.Mutex
 	live       map[*captaincode.Steer]struct{}
+	turns      map[string]*captaincode.Steer
 	done       map[string][]steerDone // by origin dir
 	interrupts map[string]string      // by origin dir: the last /interrupt's outcome, for the queued copy
 }
@@ -64,6 +65,11 @@ func (b *brain) steerClose(s *captaincode.Steer) {
 	b.steers.mu.Lock()
 	defer b.steers.mu.Unlock()
 	delete(b.steers.live, s)
+	for id, turn := range b.steers.turns {
+		if turn == s {
+			delete(b.steers.turns, id)
+		}
+	}
 }
 
 // btwDeliver hands text to the workers running under dir's turns. It
@@ -80,6 +86,10 @@ func (b *brain) btwDeliver(dir, text string) (took, deaf []captaincode.Leg, msg 
 		}
 	}
 	b.steers.mu.Unlock()
+	return b.btwDeliverTurns(dir, text, turns, true)
+}
+
+func (b *brain) btwDeliverTurns(dir, text string, turns []*captaincode.Steer, record bool) (took, deaf []captaincode.Leg, msg string) {
 	seen := map[captaincode.Leg]bool{}
 	held := 0
 	var routed string // how a multi-worker turn chose its addressees
@@ -136,7 +146,9 @@ func (b *brain) btwDeliver(dir, text string) (took, deaf []captaincode.Leg, msg 
 		if b.steers.done == nil {
 			b.steers.done = map[string][]steerDone{}
 		}
-		b.steers.done[dir] = append(b.steers.done[dir], steerDone{at: time.Now(), text: text})
+		if record {
+			b.steers.done[dir] = append(b.steers.done[dir], steerDone{at: time.Now(), text: text})
+		}
 		b.steers.mu.Unlock()
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "btw", Model: "pending", Text: "btw held for the worker about to start: " + peek})
 		msg = "btw held for the worker about to start (the turn is still being prepared): " + peek
@@ -146,7 +158,9 @@ func (b *brain) btwDeliver(dir, text string) (took, deaf []captaincode.Leg, msg 
 		if b.steers.done == nil {
 			b.steers.done = map[string][]steerDone{}
 		}
-		b.steers.done[dir] = append(b.steers.done[dir], steerDone{at: time.Now(), text: text, took: took})
+		if record {
+			b.steers.done[dir] = append(b.steers.done[dir], steerDone{at: time.Now(), text: text, took: took})
+		}
 		b.steers.mu.Unlock()
 		b.pushActivity(activity{Dir: dir, Kind: "route", Leg: "btw", Model: legList(took), Text: "btw → " + legList(took) + ": " + peek})
 		msg = fmt.Sprintf("btw → %s, taken mid-run: %s", legList(took), peek)
@@ -204,6 +218,10 @@ func legList(legs []captaincode.Leg) string {
 // btwHTTP is the out-of-band entry the plugin calls the moment /btw is typed.
 // POST /v1/btw?cwd=<dir> {"text":"..."}
 func (b *brain) btwHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("turn") {
+		b.noteTurnHTTP(w, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "POST")
 		return
@@ -292,17 +310,19 @@ func (b *brain) interruptDeliverN(dir, reason string, except *captaincode.Steer)
 		if s.Dir != dir || s == except {
 			continue
 		}
-		if len(s.Running()) > 0 {
-			turns = append(turns, s)
-		} else if len(s.Attached()) == 0 {
-			// Still being prepared (compaction, routing): mark it, and the
-			// worker never starts (brain.go runOne).
-			s.Interrupt(reason)
-			withdrawn++
-		}
+		turns = append(turns, s)
 	}
 	b.steers.mu.Unlock()
+	return b.interruptDeliverTurns(dir, reason, turns, true)
+}
+
+func (b *brain) interruptDeliverTurns(dir, reason string, turns []*captaincode.Steer, record bool) (asked, stopped []captaincode.Leg, withdrawn int, msg string) {
 	for _, s := range turns {
+		if len(s.Running()) == 0 && len(s.Attached()) == 0 {
+			s.Interrupt(reason)
+			withdrawn++
+			continue
+		}
 		a, st := s.Interrupt(reason)
 		asked = append(asked, a...)
 		stopped = append(stopped, st...)
@@ -337,7 +357,9 @@ func (b *brain) interruptDeliverN(dir, reason string, except *captaincode.Steer)
 	if b.steers.interrupts == nil {
 		b.steers.interrupts = map[string]string{}
 	}
-	b.steers.interrupts[dir] = msg
+	if record {
+		b.steers.interrupts[dir] = msg
+	}
 	b.steers.mu.Unlock()
 	fmt.Printf("captain brain: /interrupt in %s - %s\n", filepath.Base(dir), msg)
 	return asked, stopped, withdrawn, msg
@@ -345,6 +367,10 @@ func (b *brain) interruptDeliverN(dir, reason string, except *captaincode.Steer)
 
 // interruptHTTP: POST /v1/interrupt?cwd=<dir> {"reason": "..."}.
 func (b *brain) interruptHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Has("turn") {
+		b.stopTurnHTTP(w, r)
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "POST")
 		return
@@ -416,6 +442,13 @@ func (b *brain) handleInterrupt(w http.ResponseWriter, req oaiChatReq, raw strin
 	defer finish()
 	dir := filepath.Clean(req.ws.Dir)
 	b.steers.mu.Lock()
+	for _, turn := range b.steers.turns {
+		if turn == req.ws.Steer {
+			b.steers.mu.Unlock()
+			emit("**/interrupt** - no active session turn accepted the handoff request\n")
+			return true
+		}
+	}
 	msg, had := b.steers.interrupts[dir]
 	delete(b.steers.interrupts, dir)
 	b.steers.mu.Unlock()
