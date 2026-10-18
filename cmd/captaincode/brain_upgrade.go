@@ -1,9 +1,11 @@
 package main
 
 // Retargeting a leg to the newer model the ranking flagged (⇡ in the
-// sidebar). Not automatic: a pin change moves cost, context and behaviour,
-// so it is one deliberate click (the ⇡ in the sidebar → POST
-// /v1/roster/upgrade) or one command (`captain upgrade --models --apply`).
+// sidebar). A pin change moves cost, context and behaviour, so the default
+// is one deliberate click (the ⇡ in the sidebar → POST /v1/roster/upgrade)
+// or one command (`captain upgrade --models --apply`). CAPTAIN_AUTO_UPGRADE
+// writes the same pin only while the brain is idle, and only when the
+// quality, coding, speed, cost and open-weights gates pass.
 // Both do the same thing: resolve the benchmark slug to the provider's model
 // id (models.dev, the catalogue opencode itself reads), write the leg's new
 // pin to the registry overlay (~/.captaincode/legs.json) and reload the
@@ -113,7 +115,7 @@ func upgradeLeg(leg captaincode.Leg, dry bool) (string, error) {
 		return "", fmt.Errorf("model catalogue: %w", err)
 	}
 	id, ok := resolveProviderModel(cat, spec.Provider, up.Slug)
-	if !ok {
+	if !ok || !safeModelID(id) {
 		return "", fmt.Errorf("%s (%s) is not served by %s yet - the ranking is ahead of the provider", up.Name, up.Slug, spec.Provider)
 	}
 	line := fmt.Sprintf("%s: %s/%s → %s/%s (index %.0f → %.0f)", leg, spec.Provider, spec.Model, spec.Provider, id, func() float64 {
@@ -170,5 +172,6 @@ func upgradeModels(apply bool) {
 		fmt.Println("  every model pin is current against the ranking")
 	} else if !apply {
 		fmt.Println("\ndry run - `captain upgrade --models --apply` writes the new pins to " + captaincode.RegistryOverlayPath() + " (a running brain reloads the registry; restart it to be sure)")
+		fmt.Println("auto-upgrade is " + captaincode.AutoUpgradeFromEnv().Label() + " (CAPTAIN_AUTO_UPGRADE=models writes these when the brain is idle)")
 	}
 }

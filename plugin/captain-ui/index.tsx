@@ -90,7 +90,7 @@ type RosterLeg = {
   models?: { model: string; efforts: string[] }[]
 }
 type CliStatus = { name: string; installed: string; latest?: string; outdated: boolean; legs: string }
-type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[]; harness?: Record<string, string> }
+type Roster = { perf_source: string; perf_as_of: string; perf_key?: boolean; legs: RosterLeg[]; cli: CliStatus[]; harness?: Record<string, string>; auto_upgrade?: string }
 // The shield (GET /v1/proxy/stats): what never left the machine - secrets
 // masked on the wire by the egress proxy and at the tool boundary.
 type Shield = { mode: string; requests: number; secrets: number; identity: number; boundary?: { secrets: number; today: number } }
@@ -414,7 +414,7 @@ function View(props: { api: TuiPluginApi }) {
           </text>
         </box>
         <Show when={upgrade()}>
-          {/* Click = retarget that leg's pin to the newer model (POST /v1/roster/upgrade); never automatic. */}
+          {/* Click retargets now. CAPTAIN_AUTO_UPGRADE writes the same pin only while idle. */}
           <text fg={theme().warning} attributes={TextAttributes.UNDERLINE} onMouseUp={() => void retarget(upgrade()!.leg)}>
             {`  ⇡ ${upgrade()!.ro!.upgrade!.slug} (${upgrade()!.ro!.upgrade!.perf.toFixed(0)})`}
           </text>
@@ -466,7 +466,7 @@ function View(props: { api: TuiPluginApi }) {
           </Show>
           <Show when={upgrades() > 0 && !upgradeNote()}>
             <text fg={theme().textMuted}>
-              <i>click a ⇡ to retarget that leg · `captain upgrade --models`</i>
+              <i>{roster()?.auto_upgrade && roster()!.auto_upgrade !== "off" ? `auto-upgrade ${roster()!.auto_upgrade} when idle · click a ⇡ to retarget now` : "click a ⇡ to retarget that leg · `captain upgrade --models`"}</i>
             </text>
           </Show>
         </box>

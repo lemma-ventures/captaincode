@@ -12,8 +12,8 @@ package main
 // restarts; without a key the ranking is the cache, then the snapshot
 // compiled into the binary. Each refresh says what changed - a model new to
 // the feed, a leg whose row moved, a leg newly flagged ⇡ - in the log and in
-// every open TUI's Last Runs, so a release is heard the day it lands and
-// retargeting stays the operator's one click (brain_upgrade.go).
+// every open TUI's Last Runs, so a release is heard the day it lands.
+// Retargeting stays a click unless CAPTAIN_AUTO_UPGRADE is set (brain_leg_upgrade.go).
 
 import (
 	"encoding/json"
@@ -96,6 +96,13 @@ type rosterState struct {
 	key       func() string                                   // stubbed in tests; nil = aaKey
 	fetch     func(key string) ([]captaincode.AAModel, error) // stubbed in tests; nil = the live feed
 	keyWarned bool                                            // the missing-key line is said once per brain
+	// catalogue resolves a benchmark slug to a provider model id. Nil uses
+	// models.dev. Tests set it so a refresh never calls the network.
+	catalogue     func() (map[string][]string, error)
+	upgradesNoted bool
+	upgradeArmed  bool
+	upgradeMu     sync.Mutex
+	cliAnnounced  map[string]string
 }
 
 func (rs *rosterState) aaKey() string {
@@ -159,6 +166,7 @@ func (b *brain) refreshPerf() time.Duration {
 	}
 	fmt.Printf("captain brain: perf ranking refreshed from the live feed (%d models; next in %s)\n", len(models), perfRefreshInterval())
 	b.announcePerfNews(news)
+	b.noteLegUpgrades(!news.Empty())
 	return perfRefreshInterval()
 }
 
@@ -260,6 +268,7 @@ func (b *brain) refreshCLI() {
 	b.roster.mu.Lock()
 	b.roster.cli, b.roster.seen = out, time.Now()
 	b.roster.mu.Unlock()
+	b.noteCLIUpgrades(out)
 	// The same pass answers "can this leg run?": a login that came back or a
 	// key that was just added should reopen the leg without a brain restart.
 	captaincode.RefreshReadiness()
@@ -344,5 +353,7 @@ func (b *brain) rosterHTTP(w http.ResponseWriter, r *http.Request) {
 		"perf_source": src, "perf_as_of": asOf, "perf_models": len(models),
 		"perf_key": b.roster.aaKey() != "", // false: the ranking cannot get fresher than its cache
 		"legs":     legs, "cli": cli, "harness": harness,
+		"auto_upgrade": captaincode.AutoUpgradeFromEnv().Label(),
+		"proposals":    upgradeProposals(),
 	})
 }

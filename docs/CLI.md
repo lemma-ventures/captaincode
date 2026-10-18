@@ -32,7 +32,7 @@ This command uses a separate profile and does not start or restart the brain.
 | `captain doctor --rehearse` | Clean-machine install/upgrade/rollback rehearsal (M1.1) |
 | `captain init [--check]` | Write opencode worker permissions, the `captain` provider, the slash commands and the `~/.config/captain/env` scaffold; `--check` reports what would change (exit 3) without writing |
 | `captain upgrade [--check] [--no-restart]` | Update claude, cursor-agent, opencode and captain with each tool's own updater; restart services only when nothing is running |
-| `captain upgrade --models [--apply]` | Model pins the ranking flagged as outdated, against today's feed; `--apply` writes them to the registry overlay |
+| `captain upgrade --models [--apply]` | Model pins the ranking flagged as outdated, against today's feed; `--apply` writes them to the registry overlay. `CAPTAIN_AUTO_UPGRADE=models` writes the same pins when the brain is idle |
 | `captain legs` / `legs list` | Active legs: transport, model, price, prior, context |
 | `captain legs caps` | Declared capabilities per leg |
 | `captain legs add <id> <provider/model> [--prior N --note … --display … --aa slug --vision --ctx N --price-in X --price-out Y --transport t --frontier --subscription]` | Add or update a leg in `~/.captaincode/legs.json` (OpenRouter price and context fetched when omitted); `captain init` then adds its TUI entries |

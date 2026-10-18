@@ -65,6 +65,7 @@ func rankingReport(keyed bool) string {
 	} else {
 		sb.WriteString(" · no Artificial Analysis key: set CAPTAIN_AA_API_KEY or API_KEY=… in ~/.config/captain/aa.env to keep it fresh\n")
 	}
+	fmt.Fprintf(&sb, "           auto-upgrade %s (CAPTAIN_AUTO_UPGRADE; off proposes only)\n", captaincode.AutoUpgradeFromEnv().Label())
 	for _, f := range captaincode.PerfFlags(models) {
 		fmt.Fprintf(&sb, "           ⇡ %-9s %s (%.0f) outscores %s (%.0f) · `captain upgrade --models`\n", f.Leg, f.Upgrade.Slug, f.Upgrade.Perf, f.Current.Slug, f.Current.Perf)
 	}

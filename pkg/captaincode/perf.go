@@ -375,8 +375,8 @@ func UpgradeIn(models []AAModel, leg Leg) (PerfRow, bool) {
 // model the feed did not list before (Grok 4.7 the day after its release), a
 // leg whose row moved (grok-max read grok-4-6 until grok-4-7 was listed under
 // its own slug), and a leg the feed now flags ⇡. The brain logs each and
-// posts it to the sidebar's activity feed; nothing retargets on its own
-// (brain_upgrade.go).
+// posts it to the sidebar's activity feed. A pin changes only on a click,
+// `captain upgrade --models --apply`, or CAPTAIN_AUTO_UPGRADE while idle.
 
 // PerfMove is a leg now reading a different row than before.
 type PerfMove struct {

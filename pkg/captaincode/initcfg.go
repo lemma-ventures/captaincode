@@ -677,6 +677,8 @@ CAPTAIN_FALLBACK_LEG=%s
 #CAPTAIN_SCALEWAY_BASE_URL=
 # Artificial Analysis key for 'captain priors sync' and the live perf ranking.
 #CAPTAIN_AA_API_KEY=
+# Retarget ranking-flagged model pins when the brain is idle. Unset proposes only.
+#CAPTAIN_AUTO_UPGRADE=models
 # Secrets on the wire (docs/SECRETS.md): on|off|secrets|strict. Default on.
 #CAPTAIN_REDACT=on
 # Free leg model - the opencode zen free catalog rotates; when the free leg
