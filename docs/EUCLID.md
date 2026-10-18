@@ -84,6 +84,13 @@ command. `captain euclid reindex` does the same on demand, the sidebar's
 `memory:` links build on click, and the dashboard's own **Regenerate** button
 asks the brain (`POST /api/regenerate?root=<brain>`) - the brain answers the
 dashboard's local-engine contract for every brain on the machine.
+The file view uses that contract for reads. The browser guard blocks its
+rebuild POST. The ping response provides `dashboard_path` and
+`regenerate_same_origin: true`; Euclid uses these to show **Open local
+dashboard**. That HTTP view serves the selected brain's dashboard under
+`/euclid/dashboard/<encoded-root>/index.html`. Relative assets stay in that
+brain, and API requests name the same root. Regeneration works from this
+same-origin view. Cross-site rebuild requests remain blocked.
 Between launches the index follows the brain: every journal write and every
 applied distillation schedules a rebuild of that brain's index a few seconds
 later (one per burst - a team turn journaling six workers rebuilds once), so a
@@ -348,3 +355,36 @@ queries found their expected paths with and without CodeIntel. Provider-enabled
 latency fell from 2.8–3.3 seconds to 0.40–0.47 seconds after candidate bounding;
 local-only queries took 0.29–0.31 seconds. This is a smoke test, not a general
 accuracy benchmark or a measured token-savings claim.
+
+
+## Automatic learning across open workspaces
+
+The brain queues learning by write-brain root after each ordinary worker task.
+It runs one learning job at a time. Repeated requests for the same root merge.
+A busy workspace does not discard another workspace's request. Ready roots run
+before roots waiting for their cooldown.
+
+The default threshold remains 5 pending events. A successful pass starts a
+30-minute cooldown for that root. Requests received during that cooldown wait
+and run when it ends; they do not require another task to finish. A backlog
+larger than one learning window queues another pass when it still meets the
+threshold. Failed calls retain their inputs and report an error. The next
+completed task can retry; failure alone does not start a success cooldown.
+`CAPTAIN_EUCLID_AUTODISTILL=0` disables automatic learning.
+
+`/euclid status` reports the learning mode, pending events, queued or running
+work, last success, and input or worker errors for the current workspace.
+The MCP worker runs in the originating workspace. Learning calls do not
+journal themselves. Successful learning invalidates cached prompt memory;
+already submitted model requests keep their original context.
+
+With MCP configured, learning adds candidate lessons through MCP. It does not
+rewrite BRAIN, WISDOM, INTUITION, or AFFECT Markdown files. Local learning can
+update those files in the designated write brain. Neither path grants write
+access to every brain visible in a TUI. Shared doctrine is not an automatic
+learning target. Dashboard regeneration only rebuilds the view; it cannot
+review lessons or update authored personality.
+
+Regression coverage: concurrent workspaces, duplicate requests, deferred work,
+failed-call retry, multi-window backlogs, and prompt-cache invalidation. These
+are scheduler and delivery checks, not evidence of personality adaptation.

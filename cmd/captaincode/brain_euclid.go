@@ -110,16 +110,27 @@ type euclidStatus struct {
 	Probe    map[string]int    `json:"orientation_items,omitempty"`
 	ProbeErr map[string]string `json:"orientation_errors,omitempty"`
 	// DroppedShown is how many shown lessons did not fit a prompt (P2).
-	DroppedShown int `json:"dropped_shown"`
+	DroppedShown   int               `json:"dropped_shown"`
+	LearningMode   string            `json:"learning_mode"`
+	Learning       map[string]string `json:"learning"`
+	LearningErrors map[string]string `json:"learning_errors,omitempty"`
 }
 
 func (b *brain) euclidStatusNow(ws captaincode.Workspace) euclidStatus {
 	cwd := ws.Dir
-	st := euclidStatus{Cwd: cwd, Handle: captaincode.DeveloperHandle(), Brains: captaincode.ReadSet(cwd), Journal: map[string]int{}}
+	st := euclidStatus{Cwd: cwd, Handle: captaincode.DeveloperHandle(), Brains: captaincode.ReadSet(cwd), Journal: map[string]int{}, Learning: map[string]string{}, LearningErrors: map[string]string{}, LearningMode: "registers"}
+	if captaincode.MemoryMCPEnabled() {
+		st.LearningMode = "mcp_candidates"
+	}
 	for _, br := range st.Brains {
 		if br.Writable {
-			entries, _ := captaincode.ReadJournal(br, captaincode.LastDistilledAt(br))
-			st.Journal[br.Label] = len(entries)
+			in := captaincode.LearnInputsOf(br)
+			if in.Err != nil {
+				st.LearningErrors[br.Label] = captaincode.Scrub(in.Err.Error())
+			} else {
+				st.Journal[br.Label] = in.PendingJournal
+			}
+			st.Learning[br.Label] = b.autoDistillStatus(br.Root)
 		}
 	}
 	st.Orient = len(captaincode.Orientation(cwd))
@@ -147,7 +158,13 @@ func renderEuclidStatus(st euclidStatus) string {
 		}
 		line := fmt.Sprintf("  %-5s %-12s %s", role, br.Kind, br.Root)
 		if n, ok := st.Journal[br.Label]; ok {
-			line += fmt.Sprintf("  · %d runs journaled since last distill", n)
+			line += fmt.Sprintf("  · %d pending learning events", n)
+		}
+		if state, ok := st.Learning[br.Label]; ok {
+			line += "  · learning " + state
+		}
+		if e, ok := st.LearningErrors[br.Label]; ok {
+			line += "  · learning inputs failed: " + e
 		}
 		if e, ok := st.ProbeErr[br.Label]; ok {
 			line += "  · orientation failed: " + e
@@ -158,6 +175,11 @@ func renderEuclidStatus(st euclidStatus) string {
 	}
 	fmt.Fprintf(&sb, "orientation injected into worker prompts: %d chars\n", st.Orient)
 	fmt.Fprintf(&sb, "shown lessons dropped for the budget: %d\n", st.DroppedShown)
+	if st.LearningMode == "mcp_candidates" {
+		sb.WriteString("MCP learning records candidate lessons. It does not rewrite the Markdown persona cards. Candidate review is separate.\n")
+	} else {
+		sb.WriteString("Local learning updates the write brain registers. Shared registers and SOUL are not automatic learning targets.\n")
+	}
 	sb.WriteString("`/euclid distill` folds the journal into your write brain; notes reach the shared repo brain as files under .euclid/notes/ and are folded on main (`captain euclid share`).\n")
 	return sb.String()
 }
@@ -190,7 +212,7 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 		return captaincode.Distillation{}, "", fmt.Errorf("no write brain for %s - run `captain euclid init`", cwd)
 	}
 	if captaincode.MemoryMCPEnabled() {
-		passes, err := b.learnBrain(wb, 4, apply, io.Discard)
+		passes, err := b.learnBrainInWorkspace(ws, wb, 4, apply, io.Discard)
 		d := captaincode.Distillation{Brain: wb}
 		var summaries []string
 		for _, pass := range passes {

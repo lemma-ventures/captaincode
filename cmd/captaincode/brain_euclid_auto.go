@@ -43,65 +43,188 @@ func autoDistillThreshold() int {
 }
 
 type autoDistillState struct {
-	mu      sync.Mutex
-	running bool
-	last    map[string]time.Time // brain root → last automatic distillation
-	wg      sync.WaitGroup
+	mu       sync.Mutex
+	running  bool
+	active   string
+	last     map[string]time.Time
+	failed   map[string]string
+	pending  map[string]captaincode.Workspace
+	order    []string
+	wake     chan struct{}
+	cooldown time.Duration
+	wg       sync.WaitGroup
 }
 
-// maybeAutoDistill is called after every journaled run. It returns at once;
-// the distillation, if any, runs in the background.
+func (st *autoDistillState) delay() time.Duration {
+	if st.cooldown > 0 {
+		return st.cooldown
+	}
+	return autoDistillCooldown
+}
+
 func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
-	n := autoDistillThreshold()
-	if n == 0 || os.Getenv("CAPTAIN_EUCLID") == "0" {
+	if autoDistillThreshold() == 0 || os.Getenv("CAPTAIN_EUCLID") == "0" {
 		return
 	}
-	cwd := ws.Dir
-	wb, ok := captaincode.WriteBrain(cwd)
+	wb, ok := captaincode.WriteBrain(ws.Dir)
 	if !ok {
 		return
 	}
 	in := captaincode.LearnInputsOf(wb)
-	entries, err := in.Journal, in.Err
-	if err != nil || in.PendingJournal < n {
+	if in.Err == nil && in.PendingJournal < autoDistillThreshold() {
 		return
 	}
 	st := &b.autoDistill
 	st.mu.Lock()
-	if st.last == nil {
+	defer st.mu.Unlock()
+	if st.pending == nil {
+		st.pending = map[string]captaincode.Workspace{}
 		st.last = map[string]time.Time{}
+		st.failed = map[string]string{}
+		st.wake = make(chan struct{}, 1)
 	}
-	if st.running || time.Since(st.last[wb.Root]) < autoDistillCooldown {
-		st.mu.Unlock()
+	if in.Err != nil {
+		st.failed[wb.Root] = captaincode.Scrub(in.Err.Error())
+		fmt.Printf("captain brain: euclid learning inputs failed: %s\n", st.failed[wb.Root])
+		return
+	}
+	if _, exists := st.pending[wb.Root]; !exists {
+		st.order = append(st.order, wb.Root)
+	}
+	st.pending[wb.Root] = ws
+	if st.running {
+		select {
+		case st.wake <- struct{}{}:
+		default:
+		}
 		return
 	}
 	st.running = true
-	st.last[wb.Root] = time.Now()
-	st.mu.Unlock()
-
 	st.wg.Add(1)
-	go func() {
-		defer st.wg.Done()
-		defer func() {
-			st.mu.Lock()
+	go b.drainAutoDistill()
+}
+
+func (b *brain) drainAutoDistill() {
+	st := &b.autoDistill
+	defer st.wg.Done()
+	for {
+		st.mu.Lock()
+		if autoDistillThreshold() == 0 || os.Getenv("CAPTAIN_EUCLID") == "0" {
+			clear(st.pending)
+			st.order = nil
+		}
+		if len(st.order) == 0 {
+			st.active = ""
 			st.running = false
 			st.mu.Unlock()
-		}()
-		d, _, err := b.distill(ws, true)
+			return
+		}
+		next, wait := -1, st.delay()
+		for i, root := range st.order {
+			delay := time.Until(st.last[root].Add(st.delay()))
+			if delay <= 0 {
+				next = i
+				break
+			}
+			if delay < wait {
+				wait = delay
+			}
+		}
+		if next == -1 {
+			st.active = ""
+			st.mu.Unlock()
+			timer := time.NewTimer(wait)
+			select {
+			case <-timer.C:
+			case <-st.wake:
+			}
+			timer.Stop()
+			continue
+		}
+		root := st.order[next]
+		ws := st.pending[root]
+		delete(st.pending, root)
+		st.order = append(st.order[:next], st.order[next+1:]...)
+		st.active = root
+		st.mu.Unlock()
+
+		changed, err := b.autoDistillWorkspace(ws, root)
+		st.mu.Lock()
+		st.active = ""
+		if changed {
+			st.last[root] = time.Now()
+		}
 		if err != nil {
-			fmt.Printf("captain brain: euclid auto-distill (%d entries) failed: %v\n", len(entries), err)
-			return
+			st.failed[root] = captaincode.Scrub(err.Error())
+		} else {
+			delete(st.failed, root)
 		}
-		fmt.Printf("captain brain: euclid auto-distill: %d entries → %d edit(s) in %s\n", d.Entries, len(d.Edits), wb.Label)
-		captaincode.ScheduleReindex(wb)
-		if captaincode.MemoryMCPEnabled() {
-			return
+		st.mu.Unlock()
+		if err != nil {
+			fmt.Printf("captain brain: euclid auto-distill failed: %s\n", captaincode.Scrub(err.Error()))
 		}
-		echoToMainBrain(cwd, wb, d)
+	}
+}
+
+func (b *brain) autoDistillWorkspace(ws captaincode.Workspace, root string) (bool, error) {
+	wb, ok := captaincode.WriteBrain(ws.Dir)
+	if !ok || wb.Root != root {
+		return false, fmt.Errorf("write brain changed before automatic learning")
+	}
+	in := captaincode.LearnInputsOf(wb)
+	if in.Err != nil {
+		return false, in.Err
+	}
+	if in.PendingJournal < autoDistillThreshold() {
+		return false, nil
+	}
+	d, _, err := b.distill(ws, true)
+	if err != nil {
+		return false, err
+	}
+	fmt.Printf("captain brain: euclid auto-distill: %d entries consumed in %s\n", d.Entries, wb.Label)
+	captaincode.ScheduleReindex(wb)
+	if !captaincode.MemoryMCPEnabled() {
+		echoToMainBrain(ws.Dir, wb, d)
 		if wb.Kind != "main" {
 			b.crystallizeMain(ws)
 		}
-	}()
+	}
+	if d.Entries > 0 {
+		remaining := captaincode.LearnInputsOf(wb)
+		if remaining.Err != nil {
+			return true, remaining.Err
+		}
+		if remaining.PendingJournal >= autoDistillThreshold() {
+			b.maybeAutoDistill(ws)
+		}
+	}
+	return d.Entries > 0, nil
+}
+
+func (b *brain) autoDistillStatus(root string) string {
+	if autoDistillThreshold() == 0 || os.Getenv("CAPTAIN_EUCLID") == "0" {
+		return "disabled"
+	}
+	st := &b.autoDistill
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.active == root {
+		return "running"
+	}
+	if _, ok := st.pending[root]; ok {
+		if due := st.last[root].Add(st.delay()); time.Now().Before(due) {
+			return "queued until " + due.UTC().Format(time.RFC3339)
+		}
+		return "queued"
+	}
+	if err := st.failed[root]; err != "" {
+		return "failed; retry on next completed task: " + err
+	}
+	if last := st.last[root]; !last.IsZero() {
+		return "last completed " + last.UTC().Format(time.RFC3339)
+	}
+	return fmt.Sprintf("waiting for %d pending events", autoDistillThreshold())
 }
 
 func crystallizeThreshold() int {

@@ -445,7 +445,7 @@ func learnMemoryMCP(brain EuclidBrain, max int, apply bool, run func(string) (st
 			break
 		}
 		data, _ := json.Marshal(batch)
-		reply, err := run("Learn candidate lessons from this exact event batch. Do not accept lessons or edit registers. Each evidence ID must name an event in this batch. Return JSON only: {\"summary\":\"...\",\"lessons\":[{\"id\":\"lesson:stable-id\",\"text\":\"...\",\"evidence\":[\"event-id\"]}]}. Use an empty lessons array if no new lesson is justified. Existing lesson IDs cannot be reused.\n" + string(data))
+		reply, err := run(learnMarker + " " + distillMarker + " Learn candidate lessons from this exact event batch. Do not accept lessons or edit registers. Each evidence ID must name an event in this batch. Return JSON only: {\"summary\":\"...\",\"lessons\":[{\"id\":\"lesson:stable-id\",\"text\":\"...\",\"evidence\":[\"event-id\"]}]}. Use an empty lessons array if no new lesson is justified. Existing lesson IDs cannot be reused.\n" + string(data))
 		if err != nil {
 			return passes, err
 		}
@@ -482,6 +482,7 @@ func learnMemoryMCP(brain EuclidBrain, max int, apply bool, run func(string) (st
 			if !result.Committed {
 				return passes, fmt.Errorf("MCP did not acknowledge the learning batch")
 			}
+			orientCache.reset()
 		}
 		pass := LearnPass{Journal: len(ids), Summary: proposal.Summary}
 		for _, lesson := range proposal.Lessons {

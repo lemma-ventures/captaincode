@@ -182,7 +182,10 @@ func indexRootOfRoot(root string) string {
 // to fold. A model call per pass on the distill leg, charged to no ledger -
 // the running brain owns its ledger, and two writers would lose rows.
 func (b *brain) learnBrain(eu captaincode.EuclidBrain, max int, apply bool, w io.Writer) ([]captaincode.LearnPass, error) {
-	ws := captaincode.Workspace{Dir: euclidCwd()}
+	return b.learnBrainInWorkspace(captaincode.Workspace{Dir: euclidCwd()}, eu, max, apply, w)
+}
+
+func (b *brain) learnBrainInWorkspace(ws captaincode.Workspace, eu captaincode.EuclidBrain, max int, apply bool, w io.Writer) ([]captaincode.LearnPass, error) {
 	leg := b.distillLeg()
 	pass := 0
 	// The reply is a JSON envelope, not prose for a human: the deltas are

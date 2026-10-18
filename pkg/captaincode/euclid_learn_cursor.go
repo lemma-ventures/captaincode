@@ -105,6 +105,7 @@ func ApplyLearnInputs(brain EuclidBrain, in LearnInputs, edits []RegisterEdit) (
 	if err := commitBrainFiles(brain.Root, in.base, writes); err != nil {
 		return nil, err
 	}
+	orientCache.reset()
 	if len(in.Journal) > 0 {
 		latest := LastDistilledAt(brain)
 		for _, e := range in.Journal {

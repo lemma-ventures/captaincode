@@ -217,6 +217,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/director", b.directorHTTP)
 	// The Euclid dashboard's Regenerate button (see brain_euclid_index.go).
 	mux.HandleFunc("/api/ping", b.euclidPing)
+	mux.HandleFunc("/euclid/dashboard/", b.euclidDashboard)
 	mux.HandleFunc("/api/regenerate", b.euclidReindex)
 	mux.HandleFunc("/api/file", b.euclidFile)
 	mux.HandleFunc("/api/search", b.euclidSearchHTTP)
@@ -1643,7 +1644,9 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 				ran, promptPeek(lastUserTurn(prompt)), captaincode.ShortErr(err), (time.Duration(res.DurationMs)*time.Millisecond).Round(time.Second)))
 		}
 		journalWorkerRun(ws, ran, prompt, res, err, "worker") // Euclid journal, when a write brain exists
-		b.maybeAutoDistill(ws)                                // …and consolidate it once enough has accumulated
+		if !titleRun && !captaincode.IsDistillRequest(prompt) {
+			b.maybeAutoDistill(ws)
+		}
 		return ran, res, err
 	}
 	_ = runOne

@@ -255,3 +255,19 @@ func TestLearnRejectsSymlinkWithoutPartialWrites(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "private\n", string(got))
 }
+
+func TestAppliedLearningRefreshesOrientationImmediately(t *testing.T) {
+	home := euclidHome(t)
+	brain := EuclidBrain{Root: filepath.Join(home, ".euclid"), Kind: "main", Writable: true, Label: "main"}
+	_, err := Scaffold(brain.Root, "main")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(brain.Root, "BRAIN.md"), []byte("# BRAIN\n\n## Current state\n\n- Previous task.\n"), 0o600))
+	before := Orientation(home)
+	require.Contains(t, before, "Previous task")
+	in := LearnInputsOf(brain)
+	_, err = ApplyLearnInputs(brain, in, []RegisterEdit{{File: "BRAIN.md", Mode: "replace_section", Anchor: "## Current state", Text: "- Updated task.", Why: "new evidence"}})
+	require.NoError(t, err)
+	after := Orientation(home)
+	assert.Contains(t, after, "Updated task")
+	assert.NotContains(t, after, "Previous task")
+}

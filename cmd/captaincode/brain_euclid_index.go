@@ -62,9 +62,10 @@ func (b *brain) euclidPing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	targets := b.reindexTargets(r)
-	res := map[string]any{"ok": true, "engine": "captain", "brains": targets}
+	res := map[string]any{"ok": len(targets) > 0, "engine": "captain", "brains": targets, "regenerate": true, "regenerate_same_origin": true}
 	root := b.apiRoot(r)
 	if root != "" {
+		res["dashboard_path"] = euclidDashboardPath(root)
 		if builtAt := brainBuiltAt(root); builtAt != "" {
 			res["built_at"] = builtAt
 		}

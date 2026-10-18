@@ -61,6 +61,7 @@ func TestMemoryMCPAuthoritativeBatchAndRetry(t *testing.T) {
 	before, err := os.ReadFile(filepath.Join(root, "WISDOM.md"))
 	require.NoError(t, err)
 	propose := func(prompt string) (string, error) {
+		require.True(t, IsDistillRequest(prompt), "learning calls must not journal themselves")
 		require.Contains(t, prompt, "captain:journal:")
 		require.Contains(t, prompt, "captain:memory:")
 		return `{"summary":"consumed","lessons":[]}`, nil
@@ -69,7 +70,10 @@ func TestMemoryMCPAuthoritativeBatchAndRetry(t *testing.T) {
 	_, err = LearnLoop(brain, 2, true, propose)
 	require.Error(t, err)
 	require.NoError(t, os.Remove(state+".fail"))
+	orientCache.put("learning-test", OrientationView{Text: "old"})
 	passes, err := LearnLoop(brain, 2, true, propose)
+	_, cached := orientCache.get("learning-test")
+	require.False(t, cached, "a successful commit invalidates prompt memory")
 	require.NoError(t, err)
 	require.Len(t, passes, 1)
 	passes, err = LearnLoop(brain, 2, true, func(string) (string, error) { t.Fatal("consumed events were replayed"); return "", nil })
