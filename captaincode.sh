@@ -161,24 +161,62 @@ reap_workers() {
 # /v1/stats. A brain that answers nothing is wedged: on 2026-10-03 its lock
 # was stuck, SIGTERM never finished, and the restart could not take the port.
 wait_brain_gone() {
-  local i
+  # Only the brains this stop signalled ($@). Waiting on "any captain brain"
+  # waited on the one launchd had already respawned in its place, then
+  # SIGKILLed that one, and launchd respawned it again (2026-10-18).
+  local i pid alive
+  alive_brains() { alive=; for pid in "$@"; do kill -0 "$pid" 2>/dev/null && alive="$alive $pid"; done; [ -n "$alive" ]; }
   for i in $(seq 1 40); do
-    pgrep -f "captain brain" >/dev/null 2>&1 || return 0
+    alive_brains "$@" || return 0
     sleep 0.5
   done
   if curl -s -m 3 -o /dev/null "$BRAIN_URL/v1/stats" 2>/dev/null; then
     echo "  brain still stopping (cleaning up) - waiting up to 4 minutes"
     for i in $(seq 1 480); do
-      pgrep -f "captain brain" >/dev/null 2>&1 || return 0
+      alive_brains "$@" || return 0
       sleep 0.5
     done
   fi
   echo "  brain did not exit - killing it"
-  pkill -9 -f "captain brain" 2>/dev/null || true
+  alive_brains "$@" && kill -9 $alive 2>/dev/null || true
   sleep 0.5
 }
 
+# launchd_brains prints the label of every loaded launchd job that runs
+# `captain brain`. Such a job (KeepAlive, started at login) is a second
+# supervisor: it respawns a brain the moment a restart frees the port, with
+# its own PATH and none of the env files sourced above - no opencode on PATH,
+# no keys. One looped 17,202 times on "opencode not found" behind the live
+# brain, then took the port during an -rr and stalled it (2026-10-18).
+launchd_brains() {
+  [ "$(uname)" = Darwin ] || return 0
+  local f args label
+  for f in "$HOME"/Library/LaunchAgents/*.plist; do
+    [ -f "$f" ] || continue
+    args=$(plutil -extract ProgramArguments json -o - "$f" 2>/dev/null) || continue
+    case "$args" in *captain*'"brain"'*) ;; *) continue ;; esac
+    label=$(plutil -extract Label raw -o - "$f" 2>/dev/null) || continue
+    launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 && echo "$label"
+  done
+  return 0
+}
+
+# unload_launchd_brains takes those jobs out for good: bootout ends the job,
+# disable keeps it from loading at the next login. The plist stays; the
+# message names the command that brings it back.
+unload_launchd_brains() {
+  local label
+  for label in $(launchd_brains); do
+    echo "  disabling launchd job $label - it respawns a brain without this launcher's PATH and env (undo: launchctl enable gui/$(id -u)/$label)"
+    launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+    launchctl disable "gui/$(id -u)/$label" 2>/dev/null || true
+  done
+}
+
 stop_brain() {
+  unload_launchd_brains
+  local brains
+  brains=$(pgrep -f "captain brain" 2>/dev/null || true)
   reap_workers
   if [ -f "$SUPERVISOR_PID_FILE" ]; then
     kill "$(cat "$SUPERVISOR_PID_FILE")" 2>/dev/null || true
@@ -205,7 +243,8 @@ stop_brain() {
   fi
   # NEVER bare 'pkill -f brain' - it matches any process mentioning "brain".
   pkill -f "captain brain" 2>/dev/null || true
-  wait_brain_gone
+  # shellcheck disable=SC2086 # one pid per word
+  wait_brain_gone $brains
   # The worker serve the brain spawned (opencode serve on 14096) goes with
   # it: a restart that kept it left the workers on a serve that had loaded
   # the config and the plugin two days earlier - no redaction hooks, no
@@ -240,6 +279,10 @@ doctor() {
 up() {
   # A running brain is reused whatever folder it was started from: this TUI
   # tells it its own folder on every request.
+  local lb
+  for lb in $(launchd_brains); do
+    echo "! launchd job $lb also runs captain brain, without this launcher's PATH and env - \`$(basename "$0") restart\` disables it"
+  done
   if [ -z "$(brain_health)" ]; then
     if ! start_brain; then
       echo "✗ brain failed to start - see $BRAIN_LOG"; exit 1

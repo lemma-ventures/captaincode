@@ -43,6 +43,14 @@ is on, and without touching it - installs the binary, and restarts the brain.
 ./captaincode.sh -rr --checkout            # the working tree, uncommitted edits included
 ```
 
+Run the brain through `captaincode.sh` only. The launcher sources
+`~/.config/captain/env`, puts `~/.opencode/bin` on PATH and supervises the
+brain. A launchd job that also runs `captain brain` would compete with it: it
+respawns a brain without that PATH and env as soon as a restart frees the port.
+`restart`, `-rr` and `down` disable any such job (`launchctl bootout` plus
+`launchctl disable`; the message names the `launchctl enable` command that
+undoes it), and a plain launch warns when one is loaded.
+
 `rebuild` takes the same options without the restart. `CAPTAIN_BUILD_REF`
 sets the same choice from the environment (`checkout`, a branch, a tag or a
 commit).
