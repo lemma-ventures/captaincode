@@ -106,7 +106,9 @@ func DirectorCandidates() []DirectorCandidate {
 	var out []DirectorCandidate
 	seen := map[string]bool{}
 	for _, l := range AllLegs {
-		if !DirectorCapable(l) {
+		// A named-only leg directs when pinned (/captain codex-openrouter),
+		// never by a mode's own choice.
+		if !DirectorCapable(l) || specs[l].NamedOnly {
 			continue
 		}
 		p, m := directorPerf(l)

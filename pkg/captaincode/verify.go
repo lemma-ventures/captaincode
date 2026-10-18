@@ -32,7 +32,7 @@ func HasEffortKnob(l Leg) bool {
 		return false
 	}
 	switch s.Transport {
-	case TransportClaudeCLI, TransportCodexCLI, TransportCursorCLI:
+	case TransportClaudeCLI, TransportCodexCLI, TransportCursorCLI, TransportGrokCLI:
 		return true
 	}
 	return true // opencode: Effort.Variant fits to what the model offers, or nothing

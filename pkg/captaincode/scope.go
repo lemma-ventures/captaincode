@@ -119,6 +119,13 @@ var transportScopes = map[Transport]map[ScopeDimension]ScopeFact{
 		ScopeDimSubprocess: {Enforcement: ScopeEnfNo, Note: "--force auto-allows commands but does not restrict them"},
 		ScopeDimToolSet:    {Enforcement: ScopeEnfNo},
 	},
+	TransportGrokCLI: {
+		ScopeDimWritePaths: {Enforcement: ScopeEnfNo, Note: "--always-approve and --permission-mode control approval, not path scope"},
+		ScopeDimReadPaths:  {Enforcement: ScopeEnfNo},
+		ScopeDimNetwork:    {Enforcement: ScopeEnfNo, Note: "--sandbox profiles exist but captain passes none"},
+		ScopeDimSubprocess: {Enforcement: ScopeEnfNo, Note: "--always-approve auto-allows commands but does not restrict them"},
+		ScopeDimToolSet:    {Enforcement: ScopeEnfNo, Note: "--tools / --disallowed-tools exist but captain passes none"},
+	},
 	TransportOpencode: {
 		ScopeDimWritePaths: {Enforcement: ScopeEnfNo, Note: "tool policy is the fork's session config, not a per-run argument"},
 		ScopeDimReadPaths:  {Enforcement: ScopeEnfNo},

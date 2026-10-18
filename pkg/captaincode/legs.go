@@ -627,6 +627,8 @@ func ModelIDAt(l Leg, effort Effort) string {
 		}
 	case TransportCodexCLI:
 		return codexCLIModel(effort)
+	case TransportGrokCLI:
+		return grokCLIModel()
 	}
 	if mm, ok := modelForEffort(l, false, effort); ok {
 		return mm.Model
@@ -678,6 +680,8 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		// failures (classifyCodexCLIFailure), so a dead `codex login` arrives
 		// as a typed provider fault instead of an opaque dead end.
 		return runCodexCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
+	case TransportGrokCLI:
+		return runGrokCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Steer)
 	case TransportOpencodeShell:
 		base := d.Timeout
 		if base <= 0 {
@@ -2025,6 +2029,9 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		return emptyIsFailure(leg, res, err)
 	case TransportCodexCLI:
 		res, err := runCodexCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
+		return emptyIsFailure(leg, res, err)
+	case TransportGrokCLI:
+		res, err := runGrokCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer)
 		return emptyIsFailure(leg, res, err)
 	case TransportOpencodeShell:
 		res, err := runOpenShell(ws.Dir, task, base, ceil, ws.Steer)

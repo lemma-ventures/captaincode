@@ -133,6 +133,14 @@ var transportCaps = map[Transport]map[Capability]CapabilityFact{
 		CapCost:         {Support: SupportNo, Note: "ChatGPT-subscription quota, not a per-turn price"},
 		CapPermissions:  {Support: SupportYes, Note: "--sandbox with approval_policy=never"},
 	},
+	TransportGrokCLI: {
+		CapTools:        {Support: SupportYes},
+		CapSessionReuse: {Support: SupportNo, Note: "each turn is a fresh `grok -p`; captain does not pass --resume"},
+		CapCancel:       {Support: SupportYes, Note: "the process is killed - a stop, but not a cooperative one: partial work is whatever reached the disk"},
+		CapUsage:        {Support: SupportYes, Note: "the streaming-json end event carries uncached input, cache and output tokens"},
+		CapCost:         {Support: SupportUnknown, Note: "total_cost_usd only when the server stamps a complete cost (API-key traffic); OAuth runs often omit it"},
+		CapPermissions:  {Support: SupportYes, Note: "--permission-mode per run; --always-approve for a typed turn, dontAsk for a sent one"},
+	},
 	TransportSystemOne: {
 		CapTools:        {Support: SupportNo, Note: "answers typed questions (choice/score/noul); it never reads or writes the repo - a decision leg, not a worker"},
 		CapSessionReuse: {Support: SupportNo, Note: "one HTTP request per decision, no session"},

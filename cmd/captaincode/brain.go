@@ -229,7 +229,9 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/models", b.models)
 	// Every /word a turn may start with, for the plugin's unknown-command check.
 	mux.HandleFunc("/v1/commands", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, 200, map[string]any{"commands": captaincode.SlashCommands()})
+		// words: each route word and the leg it forces (legwords.go), so the
+		// plugin forces /grok-opencode as grok.
+		writeJSON(w, 200, map[string]any{"commands": captaincode.SlashCommands(), "words": captaincode.RouteWords()})
 	})
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		// cwd is the brain's own folder. It no longer pins anything: every

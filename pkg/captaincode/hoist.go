@@ -10,6 +10,7 @@ package captaincode
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -142,12 +143,17 @@ var slashControlWords = []string{
 	"btw", "interrupt", "rename", "captain", "help", "init", "euclid", "context", "private",
 }
 
-// SlashCommands is every /word a turn may start with: the control words and
-// every active leg.
+// SlashCommands is every /word a turn may start with: the control words,
+// every active leg and every route word (legwords.go).
 func SlashCommands() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, w := range append(append([]string{"auto"}, slashControlWords...), LegIDs()...) {
+	words := make([]string, 0, len(RouteWords()))
+	for w := range RouteWords() {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+	for _, w := range append(append(append([]string{"auto"}, slashControlWords...), LegIDs()...), words...) {
 		if w = strings.ToLower(w); w != "" && !seen[w] {
 			seen[w] = true
 			out = append(out, w)

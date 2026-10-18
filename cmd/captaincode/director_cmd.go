@@ -95,26 +95,58 @@ func (b *brain) switchDirector(word string) (captaincode.DirectorPick, string, e
 			fmt.Printf("captain brain: director mode %s → %s - %s\n", mode, pick.Leg, pick.Reason)
 			return pick, string(mode), nil
 		}
-		leg := captaincode.Leg(word)
-		if !captaincode.KnownLeg(leg) {
+		leg, note, ok := directorLegFor(word)
+		if !ok {
 			return captaincode.DirectorPick{}, "", fmt.Errorf("%q is neither a leg (%s) nor a mode (frontier|quality|auto|reset)", word, strings.Join(captaincode.LegIDs(), ", "))
 		}
 		if !captaincode.DirectorCapable(leg) {
-			// Say what the helm still is and what the nearest judge would
-			// be: a bare refusal left the user unsure whether anything had
-			// changed ("it doesn't say codex-cli is now used as director",
-			// 2026-09-22).
-			msg := fmt.Sprintf("%s cannot direct: it runs as an agent with tools (codex exec / cursor-agent), and the director is a judge without them.\nThe helm is unchanged: %s (%s).",
-				leg, b.effectiveDirector(), b.directorModeName())
-			if twin, ok := captaincode.JudgeTwin(leg); ok {
-				msg += fmt.Sprintf("\nNearest judge on the same credential: `/captain %s` - it directs as %s.", twin, captaincode.DirectorModelOf(twin))
+			// An agent leg with a judge on the same credential pins that
+			// judge: refusing "/captain codex-cli" and naming /captain codex
+			// only made the user type it again (2026-10-13). The answer says
+			// which leg took the helm, so nobody reads codex-cli as directing.
+			twin, ok := captaincode.JudgeTwin(leg)
+			if !ok {
+				// Say what the helm still is: a bare refusal left the user
+				// unsure whether anything had changed (2026-09-22).
+				return captaincode.DirectorPick{}, "", fmt.Errorf("%s cannot direct: it runs as an agent with tools (codex exec / cursor-agent), and the director is a judge without them.\nThe helm is unchanged: %s (%s).",
+					leg, b.effectiveDirector(), b.directorModeName())
 			}
-			return captaincode.DirectorPick{}, "", fmt.Errorf("%s", msg)
+			note = fmt.Sprintf("%s runs as an agent with tools and cannot direct; its judge on the same credential, %s, directs as %s", leg, twin, captaincode.DirectorModelOf(twin))
+			leg = twin
 		}
 		pick, _ := b.setDirectorMode(captaincode.DirectorFixed, leg)
+		if note != "" {
+			pick.Reason += " - " + note
+		}
 		fmt.Printf("captain brain: director switched to %s\n", leg)
 		return pick, "fixed", nil
 	}
+}
+
+// directorLegFor reads a word as a leg id or as a harness name the sidebar
+// prints (grok-xai, claude-cli). A harness name pins the best-ranked judge it
+// covers; one that covers no judge names its first leg, so the agent-leg
+// path above answers for it. The note says how the name was read.
+// isLegWord: a leg id or a route word (legwords.go).
+func isLegWord(word string) bool {
+	_, ok := captaincode.ResolveLegWord(word)
+	return ok
+}
+
+func directorLegFor(word string) (captaincode.Leg, string, bool) {
+	if leg, ok := captaincode.ResolveLegWord(word); ok {
+		return leg, "", true
+	}
+	legs := captaincode.LegsByHarness(word)
+	if len(legs) == 0 {
+		return "", "", false
+	}
+	for _, c := range captaincode.DirectorCandidates() {
+		if captaincode.Harness(c.Leg) == word {
+			return c.Leg, fmt.Sprintf("%s is the sidebar name of %s", word, c.Leg), true
+		}
+	}
+	return legs[0], fmt.Sprintf("%s is the sidebar name of %s", word, legs[0]), true
 }
 
 func (b *brain) directorModeName() string {
@@ -175,7 +207,7 @@ func cmdDirector(args []string) {
 		return
 	}
 	word := strings.TrimSpace(args[0])
-	if _, isMode := captaincode.ParseDirectorMode(word); !isMode && word != "reset" && !captaincode.KnownLeg(captaincode.Leg(word)) {
+	if _, isMode := captaincode.ParseDirectorMode(word); !isMode && word != "reset" && !isLegWord(word) && len(captaincode.LegsByHarness(word)) == 0 {
 		fatal(fmt.Errorf("%q is neither a leg (%s) nor a mode (frontier|quality|auto|reset)", word, strings.Join(captaincode.LegIDs(), ", ")))
 	}
 	body := fmt.Sprintf(`{"director":%q}`, word)

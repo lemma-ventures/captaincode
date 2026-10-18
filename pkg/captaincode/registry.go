@@ -29,6 +29,7 @@ const (
 	TransportClaudeCLI Transport = "claude-cli" // claude -p
 	TransportCursorCLI Transport = "cursor-cli" // cursor-agent -p
 	TransportCodexCLI  Transport = "codex-cli"  // codex exec
+	TransportGrokCLI   Transport = "grok-cli"   // grok -p (Grok Build)
 	// TransportSystemOne is TypeSafe's System One API (systemone.go): typed
 	// questions in, calibrated answers out. A leg on it is a DECISION leg -
 	// it can never take a task (ServesTasks), so it is no worker rung, no
@@ -82,6 +83,10 @@ type LegSpec struct {
 	// a task classed above it never reaches the leg unless the user forces
 	// it by name (ClassCap).
 	MaxClass Class `json:"max_class,omitempty"`
+	// NamedOnly keeps a leg off the router: it runs when a turn names it
+	// (/grok-cli, `captain with grok-cli`, a workflow stage), never as a
+	// rung, a failover or a lane member (AutoRoutes).
+	NamedOnly bool `json:"named_only,omitempty"`
 }
 
 // EnvPrefix returns the env prefix for this leg's provider/model overrides.
@@ -193,6 +198,16 @@ var defaultLegSpecs = []LegSpec{
 		Ctx: 1000000, Vision: true, Subscription: true, Prior: 9.5, Display: "Claude (captain · claude -p)",
 		Tiers: map[Tier]string{TierCheap: "sonnet", TierFrontier: "opus"},
 		Note:  "Claude Opus 5.5 via Max sub (the `opus` alias on Claude Code 2.1.280+; 5h+weekly windows, no extra-usage spend); Anthropic's go-to for long-running agentic coding, /frontier runs it at max effort (reads the Opus 5 AA row when the feed lacks 5.5; CAPTAIN_FRONTIER_MODEL=fable brings Fable 5.1 back); architecture, gnarly debugging, escalation apex"},
+	// The route pins (legwords.go): one model on one named route, run only
+	// when named. Like openshell they carry no worker prior: no rung needs
+	// one, and their scorecards start from their own runs.
+	{ID: LegGrokCLI, Transport: TransportGrokCLI, Model: "grok-4.7", AA: "grok-4-7",
+		Ctx: 262144, Vision: true, Subscription: true, NamedOnly: true, Display: "Grok CLI (captain · grok -p, Grok Build)",
+		Note: "xAI's own Grok Build CLI on this host (grok -p, grok-4.7 - its default once signed in, the model grok-max runs; grok-4.7-build-fast and grok-4.6 are also offered, CAPTAIN_GROK_CLI_MODEL pins one), on its own login (~/.grok/auth.json, `grok login`) or XAI_API_KEY; runs only when named (/grok-cli). The grok and grok-max legs are xAI through opencode"},
+	{ID: LegCodexOpenRouter, Transport: TransportOpencode, Provider: "openrouter", Model: "openai/gpt-6.1-sol", AA: "gpt-6-1-sol",
+		PriceIn: 2, PriceOut: 10, Ctx: 1050000, Vision: true, NamedOnly: true, Display: "Codex via OpenRouter (captain · opencode, gpt-6.1-sol)",
+		Tiers: map[Tier]string{TierCheap: "openai/gpt-6-luna", TierFrontier: "openai/gpt-6-astra"},
+		Note:  "GPT-6.1 Sol through OpenRouter, paid per token ($2/M in, $10/M out): the codex model off the ChatGPT subscription, for when its 5h or weekly window is spent; runs only when named (/codex-openrouter)"},
 	// openshell carries no prior (0): it is a sandbox around a worker, not a
 	// model, so it sits at the foot of AllLegs and AutoRoutes keeps it off the
 	// ladder and the failover chain.
@@ -230,7 +245,7 @@ func ServesTasks(l Leg) bool {
 // escalation cannot assume.
 func AutoRoutes(l Leg) bool {
 	s, ok := specs[l]
-	return ok && ServesTasks(l) && s.Transport != TransportOpencodeShell
+	return ok && ServesTasks(l) && s.Transport != TransportOpencodeShell && !s.NamedOnly
 }
 
 func boolp(b bool) *bool { return &b }
@@ -369,7 +384,7 @@ func validateSpec(s LegSpec) error {
 		if s.Provider == "" || s.Model == "" {
 			return errors.New("system-one legs need provider and model")
 		}
-	case TransportClaudeCLI, TransportCursorCLI, TransportCodexCLI:
+	case TransportClaudeCLI, TransportCursorCLI, TransportCodexCLI, TransportGrokCLI:
 	default:
 		return fmt.Errorf("unknown transport %q", s.Transport)
 	}
@@ -403,6 +418,9 @@ func mergeSpec(base, o LegSpec) LegSpec {
 	}
 	if o.Vision {
 		out.Vision = true
+	}
+	if o.NamedOnly {
+		out.NamedOnly = true
 	}
 	if o.Frontier {
 		out.Frontier = true

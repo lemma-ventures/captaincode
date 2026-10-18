@@ -178,11 +178,14 @@ let legsAt = 0
 // Every /word the brain accepts at the head of a turn (GET /v1/commands).
 // Null until the brain has answered: with no list, nothing is refused.
 let commands: Set<string> | null = null
+// Route words (/grok-opencode, /deepseek-openrouter…) and the leg each
+// forces, from the same answer (legwords.go).
+let routeWords: Record<string, string> = {}
 
 // legPattern builds the forced-prefix matcher from the legs the brain actually
 // serves, longest first so `/codex-cli` is never read as `/codex`.
 function legPattern(): RegExp {
-  const ids = legs ?? STATIC_LEGS
+  const ids = [...(legs ?? STATIC_LEGS), ...Object.keys(routeWords)]
   const sorted = [...ids].sort((a, b) => b.length - a.length).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
   return new RegExp("^\\/(" + sorted.join("|") + ")\\b[\\s:]*", "i")
 }
@@ -198,8 +201,10 @@ async function refreshLegs(): Promise<void> {
     if (ids.length) legs = ids
     const c = await fetch(`${BRAIN}/v1/commands`, { signal: AbortSignal.timeout(2000) })
     if (c.ok) {
-      const words = ((await c.json()) as { commands?: string[] }).commands ?? []
+      const body = (await c.json()) as { commands?: string[]; words?: Record<string, string> }
+      const words = body.commands ?? []
       if (words.length) commands = new Set(words.map((w) => w.toLowerCase()))
+      routeWords = body.words ?? {}
     }
   } catch {
     /* brain down: the static roster still routes forced prefixes */
@@ -452,6 +457,7 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     let leg: string | undefined
     if (forced) {
       leg = forced[1].toLowerCase()
+      leg = routeWords[leg] ?? leg
       // The stored message is NOT rewritten: it is the user's transcript, and
       // the fork never touched it either. The brain strips `/grok`, `/team`,
       // `/quality` from every user turn when it builds the worker prompt

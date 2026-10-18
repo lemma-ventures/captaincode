@@ -111,6 +111,16 @@ func Toolchain() []ToolPin {
 			Upgrade:  "cursor-agent upgrade",
 			Rollback: "curl https://cursor.com/install -fsS | bash -s -- --version 2026.09.10",
 		},
+		{
+			// Grok Build installs to ~/.grok/bin, which the installer puts on
+			// PATH. 1.0.40 is the version the headless event shapes in
+			// grokcli.go were read from (2026-10-13); not yet live-tested.
+			Bin: "grok", Transport: TransportGrokCLI, VersionArgs: []string{"--version"}, Expect: "grok",
+			Tested: "1.0.40", Min: "1.0.0",
+			Install:  "curl -fsSL https://x.ai/cli/install.sh | bash",
+			Upgrade:  "grok update",
+			Rollback: "curl -fsSL https://x.ai/cli/install.sh | bash -s 1.0.40",
+		},
 	}
 }
 

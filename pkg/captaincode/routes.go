@@ -128,7 +128,7 @@ func (l *Ledger) benchHostAfter(e Event) []Leg {
 		return nil
 	}
 	host := HostOf(e)
-	if host == "unknown" || host == string(TransportClaudeCLI) || host == string(TransportCodexCLI) || host == string(TransportCursorCLI) {
+	if host == "unknown" || host == string(TransportClaudeCLI) || host == string(TransportCodexCLI) || host == string(TransportCursorCLI) || host == string(TransportGrokCLI) {
 		return nil // a CLI's own host is its leg: the leg's cooldown already covers it
 	}
 	run := 0

@@ -117,7 +117,26 @@ func defaultCommands() map[string]any {
 			c[string(l)] = legCommandEntry(l)
 		}
 	}
+	// Route words (legwords.go): the TUI refuses a /word it has no entry for.
+	// The template keeps the word the user typed; the plugin and the brain
+	// read it as its leg.
+	for w, l := range RouteWords() {
+		if _, has := c[w]; !has {
+			c[w] = map[string]any{"description": "force " + string(l) + " - " + routeWordGloss(w), "template": "/" + w + " $ARGUMENTS"}
+		}
+	}
 	return c
+}
+
+// routeWordGloss says what a route word's suffix pins.
+func routeWordGloss(w string) string {
+	switch {
+	case strings.HasSuffix(w, "-cli"):
+		return "the vendor's own CLI on this host"
+	case strings.HasSuffix(w, "-openrouter"):
+		return "via OpenRouter"
+	}
+	return "via opencode, on the provider's own credential"
 }
 
 // legCommandEntry is the TUI slash command that forces one leg.

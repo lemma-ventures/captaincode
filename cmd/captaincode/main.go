@@ -258,7 +258,7 @@ func main() {
 
 	var forced captaincode.Leg
 	if len(args) >= 3 && args[0] == "with" {
-		forced = captaincode.Leg(args[1])
+		forced = legWord(args[1])
 		args = args[2:]
 	}
 
@@ -342,7 +342,7 @@ func repl(ledger *captaincode.Ledger, prefer, until string, maxIters int, noMana
 		var forced captaincode.Leg
 		task := line
 		if fields := strings.SplitN(line, " ", 3); len(fields) == 3 && fields[0] == "with" {
-			forced = captaincode.Leg(fields[1])
+			forced = legWord(fields[1])
 			task = fields[2]
 		}
 		run(ledger, task, forced, prefer, until, maxIters, noManager)
@@ -371,6 +371,15 @@ func cmdUI() {
 	if err := cmd.Run(); err != nil {
 		fatal(fmt.Errorf("opencode attach: %w", err))
 	}
+}
+
+// legWord reads `captain with <word>`: a leg id, or a route word
+// (codex-opencode, deepseek-openrouter) as the leg it names.
+func legWord(w string) captaincode.Leg {
+	if l, ok := captaincode.ResolveLegWord(w); ok {
+		return l
+	}
+	return captaincode.Leg(w)
 }
 
 func run(ledger *captaincode.Ledger, task string, forced captaincode.Leg, prefer, until string, maxIters int, noManager bool) {

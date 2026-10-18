@@ -8,7 +8,7 @@ the shell CLI; the TUI's `/…` control words are in [TUI.md](TUI.md).
 | Command | What it does |
 |---|---|
 | `captain "<task>"` | Route one task: triage, pick a leg, run it, assess it |
-| `captain with <leg> "<task>"` | Force one leg for this task |
+| `captain with <leg> "<task>"` | Force one leg for this task. A route word names the same leg (`with codex-opencode`, `with claude-cli`; see [TUI.md](TUI.md)) |
 | `captain --prefer quality\|speed\|save "<task>"` | A preference the director picks inside |
 | `captain --until "<cmd>" [--max-iters 5] "<task>"` | Loop until the shell command exits 0 |
 | `captain --no-manager "<task>"` | Skip the director; pure heuristic ladder |

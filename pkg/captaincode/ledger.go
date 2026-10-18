@@ -805,7 +805,7 @@ func ModelResolution(l Leg) string {
 		return "projected"
 	}
 	switch spec.Transport {
-	case TransportCodexCLI, TransportCursorCLI:
+	case TransportCodexCLI, TransportCursorCLI, TransportGrokCLI:
 		return "pinned"
 	}
 	return "projected"

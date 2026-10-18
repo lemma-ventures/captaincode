@@ -15,6 +15,8 @@ Everything below narrows or steers that.
 | Word | What it does |
 |---|---|
 | `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/mistral` `/mimo` `/kolibri` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
+| `/<leg>-cli` `/<leg>-openrouter` `/<leg>-opencode` | The same leg, named by its route: `-cli` is the vendor's own CLI on this host, `-openrouter` is opencode through OpenRouter, `-opencode` is opencode on the provider's own credential. `/claude-cli` is `/claude`, `/codex-opencode` is `/codex`, `/grok-opencode` is `/grok`, `/deepseek-openrouter` is `/deepseek`. A leg whose id already names its route (`/codex-cli`) has no second word. Words appear in the TUI after `captain init` |
+| `/grok-cli` · `/codex-openrouter` | Legs that pin a model to a route and run only when named: Grok Build, xAI's own CLI (`grok -p`, its own `grok login`; `CAPTAIN_GROK_CLI_MODEL` and `CAPTAIN_GROK_CLI_EFFORT` pin model and reasoning effort), and GPT-6.1 Sol through OpenRouter, paid per token |
 | `/frontier <task>` | The frontier lane at maximum effort: the frontier legs near the top of the perf index (claude and codex-cli today) take turns; `/frontier /codex …` runs that leg's frontier model instead |
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |

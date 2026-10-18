@@ -286,6 +286,10 @@ func CLILoginState(t Transport) (bool, string) {
 		args = []string{"auth", "status"}
 	case TransportCursorCLI:
 		args = []string{"status"}
+	case TransportGrokCLI:
+		// `grok models` prints "You are not authenticated." without a login
+		// and starts no session.
+		args = []string{"models"}
 	default:
 		// codex exec has no status subcommand that does not start a session.
 		return true, ""
@@ -309,7 +313,7 @@ func CLILoginState(t Transport) (bool, string) {
 			return false, "not logged in - run `claude /login`"
 		}
 	}
-	if strings.Contains(text, "not logged in") || strings.Contains(text, "authentication required") {
+	if strings.Contains(text, "not logged in") || strings.Contains(text, "authentication required") || strings.Contains(text, "not authenticated") {
 		return false, "not logged in - run `" + pin.Bin + " login`"
 	}
 	return true, ""

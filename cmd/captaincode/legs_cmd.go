@@ -120,7 +120,7 @@ func cmdLegs(args []string) {
 }
 
 func printLegs() {
-	fmt.Printf("%-10s %-11s %-34s %8s %8s %8s %6s  %s\n", "leg", "transport", "model", "$/M in", "$/M out", "ctx", "prior", "flags")
+	fmt.Printf("%-16s %-14s %-34s %8s %8s %8s %6s  %s\n", "leg", "transport", "model", "$/M in", "$/M out", "ctx", "prior", "flags")
 	for _, s := range captaincode.Registry() {
 		model := s.Model
 		if s.Provider != "" {
@@ -142,6 +142,9 @@ func printLegs() {
 		if !captaincode.ServesTasks(s.ID) {
 			flags = append(flags, "decision")
 		}
+		if s.NamedOnly {
+			flags = append(flags, "named-only")
+		}
 		ctx := "-"
 		if s.Ctx > 0 {
 			ctx = fmt.Sprintf("%dk", s.Ctx/1024)
@@ -152,7 +155,7 @@ func printLegs() {
 			}
 			return fmt.Sprintf("%.2f", v)
 		}
-		fmt.Printf("%-10s %-11s %-34s %8s %8s %8s %6.1f  %s\n", s.ID, s.Transport, model, price(s.PriceIn), price(s.PriceOut), ctx, captaincode.QualityPrior(s.ID), strings.Join(flags, ","))
+		fmt.Printf("%-16s %-14s %-34s %8s %8s %8s %6.1f  %s\n", s.ID, s.Transport, model, price(s.PriceIn), price(s.PriceOut), ctx, captaincode.QualityPrior(s.ID), strings.Join(flags, ","))
 	}
 	if dp := domainPriorSummary(); dp != "" {
 		fmt.Println("\nper-domain priors (synced):")

@@ -66,6 +66,12 @@ func capProbesFor(t Transport) []CapProbe {
 			{Cap: CapTools, Args: []string{"--help"}, Expect: "-p"},
 			{Cap: CapPermissions, Args: []string{"--help"}, Expect: "--trust"},
 		}
+	case TransportGrokCLI:
+		return []CapProbe{
+			{Cap: CapTools, Args: []string{"--help"}, Expect: "--single"},
+			{Cap: CapPermissions, Args: []string{"--help"}, Expect: "--permission-mode"},
+			{Cap: CapUsage, Args: []string{"--help"}, Expect: "streaming-json"},
+		}
 	case TransportOpencode:
 		return []CapProbe{
 			{Cap: CapTools, Args: []string{"--help"}, Expect: "serve"},
@@ -80,6 +86,7 @@ var skipCaps = map[Transport][]Capability{
 	TransportClaudeCLI: {CapCancel, CapSessionReuse},
 	TransportCodexCLI:  {CapCancel, CapSessionReuse, CapCost},
 	TransportCursorCLI: {CapCancel, CapSessionReuse, CapUsage, CapCost},
+	TransportGrokCLI:   {CapCancel, CapSessionReuse, CapCost},
 	TransportOpencode:  {CapCancel, CapUsage, CapCost, CapPermissions},
 }
 

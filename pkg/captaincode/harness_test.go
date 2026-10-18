@@ -47,3 +47,11 @@ func TestEffortModelsGroupTheEffortsThatPickAModel(t *testing.T) {
 	}
 	assert.Equal(t, displayEfforts, all, "every effort appears once, in order")
 }
+
+// A sidebar name reads back to its legs, in ladder order (2026-10-13).
+func TestLegsByHarnessReadsTheSidebarBack(t *testing.T) {
+	assert.ElementsMatch(t, []Leg{"grok", "grok-max"}, LegsByHarness("grok-xai"))
+	assert.ElementsMatch(t, []Leg{LegCodexCLI, "luna"}, LegsByHarness(" Codex-CLI "))
+	assert.Equal(t, []Leg{LegClaude}, LegsByHarness("claude-cli"))
+	assert.Empty(t, LegsByHarness("grok-nope"))
+}

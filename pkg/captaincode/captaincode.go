@@ -81,6 +81,14 @@ const (
 	// never applied to the checkout. Requires CAPTAIN_OPENSHELL_PREPARED,
 	// CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
 	LegOpenShell Leg = "openshell"
+	// grok-cli and codex-openrouter (2026-10-13): a model pinned to a route,
+	// named like the words that force them (<model>-<route>, legwords.go).
+	// grok-cli is Grok Build, xAI's own CLI on this host (grokcli.go), on
+	// its own credential store (~/.grok/auth.json); codex-openrouter is
+	// GPT-6.1 Sol through OpenRouter, paid per token. Both run only when
+	// named: a pin is the user's choice, not the router's.
+	LegGrokCLI         Leg = "grok-cli"         // grok -p headless (Grok Build CLI)
+	LegCodexOpenRouter Leg = "codex-openrouter" // opencode serve -> openrouter/openai/gpt-6.1-sol
 )
 
 // AllLegs is every ACTIVE leg in ascending prior order - derived from the

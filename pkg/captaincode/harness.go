@@ -37,6 +37,8 @@ func Harness(l Leg) string {
 		return "codex-cli"
 	case TransportCursorCLI:
 		return "cursor-cli"
+	case TransportGrokCLI:
+		return "grok-cli"
 	case TransportOpencode:
 		return modelFamily(spec.Model) + "-" + providerShort(spec.Provider)
 	case TransportOpencodeShell:
@@ -152,6 +154,20 @@ func EffortModels(l Leg) []EffortModel {
 			continue
 		}
 		out = append(out, EffortModel{Model: m, Efforts: []Effort{e}})
+	}
+	return out
+}
+
+// LegsByHarness lists, in ladder order, the legs the sidebar prints under a
+// harness name: grok-xai is grok and grok-max. The sidebar is what the user
+// reads, so "/captain grok-xai" has to mean something (2026-10-13).
+func LegsByHarness(name string) []Leg {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var out []Leg
+	for _, l := range AllLegs {
+		if Harness(l) == name {
+			out = append(out, l)
+		}
 	}
 	return out
 }

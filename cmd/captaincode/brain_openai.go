@@ -420,8 +420,24 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// <task>" is "/repeat 5 /oss <task>" (hoist.go). Canonicalize the last
 	// user turn before anything reads its head, and force the model the
 	// plugin would have forced had the modifiers not stood in front of it.
+	//
+	// A route word (/codex-opencode, /grok-cli…) reads as the leg it names
+	// first, so everything after - the forced head, a workflow stage, a
+	// team member - sees the leg id (legwords.go).
+	if l, ok := captaincode.ResolveLegWord(req.Model); ok && req.Model != "" {
+		req.Model = string(l)
+	}
 	if i := lastUserIndex(req.Messages); i >= 0 {
 		if raw0 := messageText(req.Messages[i].Content); raw0 != "" {
+			if canon := captaincode.CanonicalLegWords(raw0); canon != raw0 {
+				req.Messages[i].Content, _ = json.Marshal(canon)
+				if (req.Model == "" || req.Model == "auto") && !isTitleTurn(req.Messages) {
+					if f := captaincode.LeadingForced(canon); f != "" && f != "team" && f != "frontier" {
+						req.Model = f
+					}
+				}
+				raw0 = canon
+			}
 			if hoisted := captaincode.HoistLeading(raw0); hoisted != raw0 {
 				req.Messages[i].Content, _ = json.Marshal(hoisted)
 				// model=frontier is the plugin's reading of the same head; once

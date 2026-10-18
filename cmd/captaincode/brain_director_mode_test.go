@@ -52,8 +52,20 @@ func TestCaptainWordSwitchesTheDirector(t *testing.T) {
 	assert.True(t, captaincode.DirectorCapable(b.effectiveDirector()))
 
 	rec = httptest.NewRecorder()
-	b.chatCompletions(rec, captainReq("/captain codex-cli"))
+	b.chatCompletions(rec, captainReq("/captain cursor"))
 	assert.Contains(t, rec.Body.String(), "cannot direct", "an agent CLI is not a judge")
+
+	rec = httptest.NewRecorder()
+	b.chatCompletions(rec, captainReq("/captain codex-cli"))
+	assert.Contains(t, rec.Body.String(), "Director → codex", "an agent CLI with a judge twin pins the twin")
+	assert.Contains(t, rec.Body.String(), "cannot direct", "and says codex-cli is not the one directing")
+	assert.Equal(t, captaincode.LegCodex, b.effectiveDirector())
+
+	rec = httptest.NewRecorder()
+	b.chatCompletions(rec, captainReq("/captain grok-xai"))
+	assert.Contains(t, rec.Body.String(), "Director → grok", "a sidebar name pins the judge it covers")
+	assert.Contains(t, rec.Body.String(), "sidebar name of grok")
+	assert.Equal(t, captaincode.LegGrok, b.effectiveDirector())
 
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain director"))

@@ -289,6 +289,9 @@ function View(props: { api: TuiPluginApi }) {
   const runLine = (a: Activity) => {
     if (a.kind === "feed") return a.leg
     if (a.label && !isLane(a.label)) return a.label
+    // A workspace note (the task named another repo, or ran isolated) is not
+    // a run: it names the folder, never harness:model@effort.
+    if (a.leg === "workspace") return `workspace ${a.model}`
     if (a.kind === "route" || a.kind === "run" || a.kind === "done") return runLabel(a.leg, a.effort, a.model)
     return isLane(a.leg) ? "" : harnessOf(a.leg)
   }

@@ -31,7 +31,7 @@ func IsAgentCLI(l Leg) bool {
 		return false
 	}
 	switch spec.Transport {
-	case TransportClaudeCLI, TransportCodexCLI, TransportCursorCLI:
+	case TransportClaudeCLI, TransportCodexCLI, TransportCursorCLI, TransportGrokCLI:
 		return true
 	}
 	return IsFrontier(l)

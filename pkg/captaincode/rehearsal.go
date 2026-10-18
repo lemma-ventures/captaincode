@@ -96,7 +96,7 @@ func checkAdapterRecipes() RehearsalCheck {
 				continue
 			}
 		}
-		if !strings.Contains(p.Install, p.Bin) && !strings.Contains(p.Install, "opencode.ai") && !strings.Contains(p.Install, "cursor.com") && !strings.Contains(p.Install, "npm") {
+		if !strings.Contains(p.Install, p.Bin) && !strings.Contains(p.Install, "opencode.ai") && !strings.Contains(p.Install, "cursor.com") && !strings.Contains(p.Install, "x.ai/cli") && !strings.Contains(p.Install, "npm") {
 			problems = append(problems, fmt.Sprintf("%s: install recipe does not reference the binary or a known installer", p.Bin))
 		}
 	}
