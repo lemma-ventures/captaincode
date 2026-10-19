@@ -75,8 +75,9 @@ func codexCLICmdArgs(dir, task string, effort Effort) []string {
 	if dir != "" {
 		args = append(args, "-C", dir)
 	}
-	args = append(args, CodexMCPArgs(dir)...) // Euclid memory tools, same as the opencode workers get
-	args = append(args, CodexProxyArgs()...)  // the model turn crosses the egress proxy while it is up
+	args = append(args, CodexMCPArgs(dir)...)   // Euclid memory tools, same as the opencode workers get
+	args = append(args, SerenaCodexMCP(dir)...) // optional LSP code tools (CAPTAIN_SERENA_MCP=1)
+	args = append(args, CodexProxyArgs()...)    // the model turn crosses the egress proxy while it is up
 	sb := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_SANDBOX"))
 	if IsSentTurn(task) {
 		// A sent turn runs in codex's own sandbox: writes in the workspace

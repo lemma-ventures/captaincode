@@ -2368,8 +2368,9 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	// message, and so does any /btw note sent while the run lasts - claude
 	// folds it into the running turn at its next tool boundary (steer.go).
 	args := append([]string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages"}, claudePermissionArgs()...)
-	args = append(args, ClaudeMCPArgs(dir)...) // Euclid memory tools, same as the opencode workers get
-	args = append(args, ClaudeDirArgs(dir)...) // sibling repos and scratch dirs are working directories too
+	args = append(args, ClaudeMCPArgs(dir)...)   // Euclid memory tools, same as the opencode workers get
+	args = append(args, SerenaClaudeMCP(dir)...) // optional LSP code tools (CAPTAIN_SERENA_MCP=1)
+	args = append(args, ClaudeDirArgs(dir)...)   // sibling repos and scratch dirs are working directories too
 	var fenv []string
 	if frontier {
 		var fargs []string
@@ -2387,6 +2388,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		if effort != "" {
 			args = append(args, "--effort", effort.ClaudeFlag())
 		}
+		args = append(args, claudeAdvisorArg(frontier, effort)...) // CAPTAIN_CLAUDE_ADVISOR on the cheap tier
 	}
 	if IsSentTurn(task) {
 		// The sent-turn policy as this run's own PreToolUse hook, loaded with
@@ -2940,6 +2942,7 @@ func runClaudeTimeout(dir, task string, timeout time.Duration) (Result, error) {
 	claudeArgs := append([]string{"-p", "--output-format", "json"}, claudePermissionArgs()...)
 	if dir != "" { // a worker run gets the memory tools; the director (dir "") plans from the task
 		claudeArgs = append(claudeArgs, ClaudeMCPArgs(dir)...)
+		claudeArgs = append(claudeArgs, SerenaClaudeMCP(dir)...)
 		claudeArgs = append(claudeArgs, ClaudeDirArgs(dir)...)
 	}
 	claudeCmd := exec.CommandContext(ctx, "claude", claudeArgs...)

@@ -236,6 +236,12 @@ var proxyClient = &http.Client{
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	seg := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
 	upstream, ok := proxyUpstreams[seg[0]]
+	if ok && seg[0] == "openrouter" {
+		// CAPTAIN_HEADROOM_OPENROUTER_BASE (with HEADROOM_OFFLINE=1) routes
+		// /openrouter/* through Headroom's compression proxy. Off by default;
+		// the operator has to set both. Other upstreams are untouched.
+		upstream = captaincode.HeadroomOpenRouterUpstream(upstream)
+	}
 	if ok {
 		if allow := egressAllowed(); allow != nil && !allow[seg[0]] {
 			fmt.Printf("captain proxy: %s refused - not in %s\n", seg[0], EgressAllowEnv)
