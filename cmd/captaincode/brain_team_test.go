@@ -414,3 +414,31 @@ func TestFrontierTierLimitBenchesTheTierNotClaude(t *testing.T) {
 	assert.Equal(t, before, frontierCalls, "while the tier is benched /frontier does not knock again")
 	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude, captaincode.LegClaude}, ran)
 }
+
+// The OpenCode 2 frontend sends every turn as model=auto with the text as
+// typed. A leading /team must still run the director's team, not one leg.
+func TestAutoModelReadsTeamFromTheTurn(t *testing.T) {
+	b := teamBrain()
+	planned := false
+	b.planFn = func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {
+		planned = true
+		return captaincode.Plan{Class: captaincode.ClassMedium, Rationale: "split", Workers: []captaincode.Worker{
+			{Leg: captaincode.LegCodex, Brief: "part A"},
+			{Leg: captaincode.LegGLM, Brief: "part B"},
+		}}, nil
+	}
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		return leg, captaincode.Result{Text: "output of " + string(leg), Tokens: 10, DurationMs: 120}, nil
+	}
+	b.assessMultiFn = func(task string, outputs map[string]captaincode.WorkerOutput, objective string) (captaincode.MultiAssessment, error) {
+		return captaincode.MultiAssessment{Synthesis: "SYNTHESIZED-ANSWER"}, nil
+	}
+	body, _ := json.Marshal(map[string]any{"model": "auto", "stream": false,
+		"messages": []map[string]string{{"role": "user", "content": "/team compare A and B"}}})
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body)))
+
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.True(t, planned, "the director planned the team")
+	assert.Contains(t, rec.Body.String(), "SYNTHESIZED-ANSWER")
+}

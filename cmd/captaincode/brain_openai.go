@@ -449,6 +449,14 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			// A frontend that sends every turn as model=auto (the OpenCode 2
+			// port) leaves /team and /frontier in the text. Read them there,
+			// as the plugin did when it set the model from the same head.
+			if (req.Model == "" || req.Model == "auto") && !isTitleTurn(req.Messages) {
+				if f := captaincode.LeadingForced(messageText(req.Messages[i].Content)); f == "team" || f == "frontier" {
+					req.Model = f
+				}
+			}
 		}
 	}
 	prompt := promptFrom(req.Messages)
