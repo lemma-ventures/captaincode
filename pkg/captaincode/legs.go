@@ -2426,6 +2426,7 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		return Result{}, fmt.Errorf("claude -p start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "claude", onStatus)
+	defer TrackWorker(cmd.Process, "claude")()
 	in := &claudeStdin{w: stdinPipe}
 	defer in.close()
 	// The task itself, off the scan loop: a pipe takes 64K before the reader
@@ -2743,6 +2744,7 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 		return Result{}, fmt.Errorf("cursor-agent start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "cursor", onStatus)
+	defer TrackWorker(cmd.Process, "cursor")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
 	go func() { // see runClaudeStreamOpts: keep the cap authoritative

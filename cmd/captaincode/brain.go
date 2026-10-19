@@ -86,6 +86,10 @@ func cmdBrain(args []string) {
 	if b.ledger, err = captaincode.LoadLedger(); err != nil {
 		fatal(err)
 	}
+	// A brain that died without cleanup left its workers running.
+	if reaped := captaincode.ReapOrphanWorkers(); len(reaped) > 0 {
+		fmt.Printf("captain brain: stopped %d worker(s) left by a brain that died: %s\n", len(reaped), strings.Join(reaped, ", "))
+	}
 	// M3.3: on startup, mark any in-flight tasks/attempts as interrupted.
 	// The process that owned them is gone; M3.4 decides whether to resume.
 	if n := b.ledger.ReconcileOnStartup(); n > 0 {

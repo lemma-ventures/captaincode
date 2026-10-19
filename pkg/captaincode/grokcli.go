@@ -169,6 +169,7 @@ func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSta
 		return Result{}, fmt.Errorf("grok start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "grok-cli", onStatus)
+	defer TrackWorker(cmd.Process, "grok-cli")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
 	go func() { // keep the cap authoritative: a grandchild holding stdout must not outlive it

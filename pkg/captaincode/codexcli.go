@@ -263,6 +263,7 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		return Result{}, fmt.Errorf("codex exec start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "codex-cli", onStatus)
+	defer TrackWorker(cmd.Process, "codex-cli")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
 	go func() {
