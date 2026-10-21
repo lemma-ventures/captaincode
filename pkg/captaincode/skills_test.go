@@ -53,12 +53,62 @@ func TestParseSkillRefusesUnknownFrontmatterField(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "sneaky")
 	os.MkdirAll(dir, 0o755)
-	// allowed-tools is the field the spec marks experimental: honouring it
-	// would be trusting a field nobody implements the same way.
+	// A field outside the spec's set is refused, not ignored: it is either a
+	// newer spec captain has not read or a field the skill expects honoured.
 	os.WriteFile(filepath.Join(dir, "SKILL.md"),
-		[]byte("---\nname: sneaky\ndescription: does something quite ordinary\nallowed-tools: Bash(rm:*)\n---\n"), 0o644)
+		[]byte("---\nname: sneaky\ndescription: does something quite ordinary\nmood: cheerful\n---\n"), 0o644)
 	if _, err := ParseSkill(dir); err == nil {
 		t.Fatal("a frontmatter field outside the spec's set must be refused, not ignored")
+	}
+}
+
+func TestParseSkillAcceptsCompatibilityWithinTheSpecCap(t *testing.T) {
+	root := t.TempDir()
+	ok := filepath.Join(root, "compatible")
+	os.MkdirAll(ok, 0o755)
+	os.WriteFile(filepath.Join(ok, "SKILL.md"),
+		[]byte("---\nname: compatible\ndescription: does something quite ordinary here\ncompatibility: Tested with library 1.2 on Python 3.13\n---\n"), 0o644)
+	if _, err := ParseSkill(ok); err != nil {
+		t.Fatalf("a compatibility note inside the spec's 500 characters must pass: %v", err)
+	}
+	long := filepath.Join(root, "verbose")
+	os.MkdirAll(long, 0o755)
+	os.WriteFile(filepath.Join(long, "SKILL.md"),
+		[]byte("---\nname: verbose\ndescription: does something quite ordinary here\ncompatibility: "+strings.Repeat("x", 501)+"\n---\n"), 0o644)
+	if _, err := ParseSkill(long); err == nil {
+		t.Fatal("a 501-character compatibility field is over the spec's cap and must be refused")
+	}
+}
+
+func TestParseSkillReadsAllowedTools(t *testing.T) {
+	root := t.TempDir()
+	for _, tc := range []struct {
+		name, tools string
+		ok          bool
+	}{
+		{"subset", "Read Write Edit Bash", true},
+		{"all-six", "Read Write Edit Bash Glob Grep", true},
+		{"reordered", "Bash Read Write", true},
+		{"quoted", "\"Read Bash\"", true},
+		{"python", "Read Write Bash Python", false},
+		{"webfetch", "Read Write Edit Bash WebSearch WebFetch", false},
+		{"spawner", "Read Write Edit Bash Agent", false},
+		{"wildcard", "Bash(rm:*)", false},
+	} {
+		dir := filepath.Join(root, tc.name)
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "SKILL.md"),
+			[]byte("---\nname: "+tc.name+"\ndescription: does something quite ordinary here\nallowed-tools: "+tc.tools+"\n---\n"), 0o644)
+		s, err := ParseSkill(dir)
+		if tc.ok && err != nil {
+			t.Errorf("%s: expected the list to pass, got %v", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: a tool no captain worker holds must be refused", tc.name)
+		}
+		if tc.ok && err == nil && strings.Join(s.Tools, ",") != strings.ReplaceAll(strings.Trim(tc.tools, `"`), " ", ",") {
+			t.Errorf("%s: tools = %v, want the list as written", tc.name, s.Tools)
+		}
 	}
 }
 
@@ -570,5 +620,105 @@ func TestNoslopStocksThePlainWritingSkill(t *testing.T) {
 func TestNoslopHoistsPastAControlWord(t *testing.T) {
 	if got := HoistLeading("/noslop /repeat 3 tighten the README"); got != "/repeat 3 /noslop tighten the README" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A shelf is not a search result: when one skill matches the task strongly,
+// a skill sharing a single description word with it is dropped, not stocked
+// beside it.
+func TestSelectSkillsDropsPicksBelowHalfTheTopScore(t *testing.T) {
+	cat := []Skill{
+		{Name: "pdf", Description: "Read, merge, split and fill PDF documents and forms"},
+		{Name: "clinical-decision-support", Description: "Support clinicians when a PDF form describes a patient"},
+	}
+	picks := SelectSkills(cat, "merge these two PDF documents and fill the form", ClassMedium, DomainCode, 8)
+	for _, p := range picks {
+		if p.Skill.Name == "clinical-decision-support" {
+			t.Errorf("a one-word match beside a strong one is noise, not a second opinion: %+v", picks)
+		}
+	}
+	// With no strong match to measure against, the same weak pick still
+	// earns its shelf space: the rule prunes beside a winner, not in a void.
+	weak := SelectSkills(cat, "help me support a clinician filling one form", ClassMedium, DomainCode, 8)
+	if len(weak) == 0 {
+		t.Error("the threshold must not empty a shelf that has no top match to halve")
+	}
+}
+
+// /skill names the skills the turn wants stocked, whatever the task's words
+// say - and only skills the catalog holds.
+func TestSkillAskStocksNamedSkills(t *testing.T) {
+	t.Setenv(SkillsAlwaysEnv, "off")
+	cat := []Skill{
+		{Name: "pdf", Description: "Read, merge, split and fill PDF documents and forms"},
+		{Name: "rdkit", Description: "Chemistry toolkit for molecules and fingerprints"},
+		{Name: "pymc", Description: "Bayesian modelling and probabilistic programming"},
+	}
+	picks := SelectSkills(cat, "/skill rdkit,pymc fit a Bayesian model", ClassMedium, DomainCode, 8)
+	if len(picks) != 2 {
+		t.Fatalf("expected rdkit and pymc stocked by name, got %+v", picks)
+	}
+	for _, p := range picks {
+		if !p.Always || p.Why != "asked for with /skill "+p.Skill.Name {
+			t.Errorf("%s: why = %q", p.Skill.Name, p.Why)
+		}
+	}
+	if got := SelectSkills(cat, "/skill rdkit, fit a Bayesian model", ClassMedium, DomainCode, 8); len(got) != 1 || got[0].Skill.Name != "rdkit" {
+		t.Errorf("a space after the comma ends the list; got %+v", got)
+	}
+	if asks := AskedSkills("/skill rdkit, then fit the pdf export"); len(asks) != 1 || asks[0].Skill != "rdkit" {
+		t.Errorf("prose after a spaced comma must not be read as a skill name; got %+v", asks)
+	}
+	if got := SelectSkills(cat, "use the /skill/notes.md file to fit a model", ClassMedium, DomainCode, 8); got != nil {
+		t.Errorf("a path is not an ask; got %+v", got)
+	}
+	if got := SelectSkills(cat, "/skill nomatch fit a model", ClassMedium, DomainCode, 8); got != nil {
+		t.Errorf("a name the catalog does not hold stocks nothing; got %+v", got)
+	}
+	if got := SelectSkills(cat, "keep it plain /skill pymc, then fit the model", ClassMedium, DomainCode, 8); len(got) != 1 || got[0].Skill.Name != "pymc" {
+		t.Errorf("a mid-prompt ask counts; got %+v", got)
+	}
+}
+
+// A leading /skill ask is a modifier with a list attached: it hoists past a
+// control word and is stripped from the turn's text, leaving the names out
+// of the task the worker reads.
+func TestSkillAskHoistsAndStrips(t *testing.T) {
+	if got := HoistLeading("/skill rdkit,pymc /repeat 2 fit the model"); got != "/repeat 2 /skill fit the model" {
+		t.Errorf("hoist: got %q", got)
+	}
+	if rest, ok := TrimSkillAsk("/skill rdkit,pymc fit the model"); !ok || rest != "fit the model" {
+		t.Errorf("trim: got %q, %v", rest, ok)
+	}
+	if rest, ok := TrimSkillAsk("fit the model with rdkit"); ok || rest != "fit the model with rdkit" {
+		t.Errorf("trim without an ask: got %q, %v", rest, ok)
+	}
+	if got := stripLeadingModifiers("/skill rdkit,pymc fit the model"); got != "fit the model" {
+		t.Errorf("strip: got %q", got)
+	}
+	if got := stripLeadingModifiers("/skill rdkit,pymc"); got != "" {
+		t.Errorf("a turn that is only an ask has no task text: got %q", got)
+	}
+}
+
+// The catalog shows what a skill expects to be allowed, in a column that
+// stays in line whatever the longest list is.
+func TestFormatCatalogShowsTools(t *testing.T) {
+	cat := []Skill{
+		{Name: "rdkit", Source: "K-Dense-AI/scientific-agent-skills", License: "MIT", Redistribute: true,
+			Tools: []string{"Read", "Write", "Edit", "Bash"}, Description: "Chemistry toolkit."},
+		{Name: "pdf", Source: "anthropics/skills", License: "MIT", Redistribute: true, Description: "Read and write PDFs."},
+	}
+	out := FormatCatalog(cat)
+	lines := strings.Split(out, "\n")
+	col := strings.Index(lines[0], "TOOLS")
+	if col < 0 {
+		t.Fatalf("no TOOLS column:\n%s", out)
+	}
+	if got := strings.Index(lines[1], "Read Write Edit Bash"); got != col {
+		t.Errorf("TOOLS at %d, the list at %d\n%s", col, got, out)
+	}
+	if got := lines[2][col : col+len("TOOLS")]; strings.TrimSpace(got) != "-" {
+		t.Errorf("a skill that names no tools shows a dash in the TOOLS column, got %q\n%s", got, out)
 	}
 }

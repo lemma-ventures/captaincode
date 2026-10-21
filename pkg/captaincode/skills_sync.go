@@ -21,11 +21,25 @@ package captaincode
 // own skills/ directory - the procedures distilled from running captain -
 // pinned in code the same way, so a shelf names the commit it came from.
 //
-// This is NOT a marketplace and it does not read community catalogs: a 2026
-// audit found prompt injection in 36% of tested community skills, and the
-// public directories index millions scraped from GitHub. That is not a
-// supply captain can stand behind, and the standard offers no signing or
-// attestation to lean on.
+// The fifth source, [K-Dense-AI/scientific-agent-skills], is the one
+// exception to first-party-only, and it is an exception with a fence around
+// it: the repository is MIT-licensed, the pin below is a commit whose
+// frontmatter and security scan were read before it was admitted, and its
+// own scan fails 18 of its 177 skills (data exfiltration and command
+// injection findings) - so it MUST be synced with --only naming skills from
+// the reviewed shortlist, never whole. The shortlist that passed both
+// captain's vetting and the repository's own scan, ships no restrictive
+// license and needs no API key: statistical-analysis, statistical-power,
+// experimental-design, exploratory-data-analysis, statsmodels, pymc,
+// pydeseq2, scanpy, anndata, bulk-rnaseq, pathway-enrichment, rdkit,
+// datamol, uncertainty-and-units, hypothesis-generation. Most of them ship
+// scripts/, which stay quarantined until someone has read them.
+//
+// Otherwise this is NOT a marketplace and it does not read community
+// catalogs: a 2026 audit found prompt injection in 36% of tested community
+// skills, and the public directories index millions scraped from GitHub.
+// That is not a supply captain can stand behind, and the standard offers no
+// signing or attestation to lean on.
 //
 // One licensing line has to survive the fetch: Anthropic's four document
 // skills (docx, pdf, pptx, xlsx) are SOURCE-AVAILABLE, not open source. They
@@ -86,6 +100,13 @@ func SkillSources() []SkillSource {
 			Repo:    "lemma-ventures/captaincode",
 			URL:     "https://github.com/lemma-ventures/captaincode.git",
 			Commit:  "962cad906e42b1315ef04733732caf616befa8b5", // skills/ with all six skills, after the history rewrites of 2026-10-04
+			Roots:   []string{"skills"},
+			License: "MIT",
+		},
+		{
+			Repo:    "K-Dense-AI/scientific-agent-skills",
+			URL:     "https://github.com/K-Dense-AI/scientific-agent-skills.git",
+			Commit:  "a1043ef544e3a100c28e70a736b6cf32554d0677", // reviewed 2026-10-20: frontmatter, own security scan, licenses; sync with --only from the reviewed shortlist
 			Roots:   []string{"skills"},
 			License: "MIT",
 		},

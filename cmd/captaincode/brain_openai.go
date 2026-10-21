@@ -245,6 +245,15 @@ func stripCaptainDirectives(text string) string {
 	}
 	out := text
 	for {
+		// A leading /skill ask carries a name list after the word; strip the
+		// whole ask, not just the word, or the names would read as the task.
+		if rest, ok := captaincode.TrimSkillAsk(out); ok {
+			if trimmed := strings.TrimSpace(rest); trimmed != "" {
+				out = trimmed
+				continue
+			}
+			return out
+		}
 		m := captainDirective.FindString(out)
 		if m == "" {
 			return out

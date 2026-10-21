@@ -208,6 +208,12 @@ func turnModifiers(text string) []string {
 
 func stripLeadingModifiers(text string) string {
 	for {
+		// A leading /skill ask is a modifier with a list attached, so it is
+		// stripped whole before the single-word modifiers are read.
+		if m := skillAskHeadRe.FindString(text); m != "" {
+			text = text[len(m):]
+			continue
+		}
 		m := modifierWordRe.FindString(text)
 		if m == "" {
 			return strings.TrimSpace(text)

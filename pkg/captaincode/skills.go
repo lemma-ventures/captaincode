@@ -122,12 +122,28 @@ const (
 // skillNameRe is the spec's name shape: lowercase, digits, single dashes.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// allowedFrontmatter is the frontmatter captain reads. `allowed-tools` is
-// deliberately absent: the spec marks it experimental and support varies, so
-// honouring it would be trusting a field nobody implements the same way.
+// allowedFrontmatter is the frontmatter captain reads. `compatibility` is
+// the spec's free-text field (500 characters at most) and is kept as
+// documentation, never acted on. `allowed-tools` is the field the spec marks
+// experimental: it is read as a VETTING signal only - ParseSkill refuses a
+// skill whose list names a tool no captain worker has, and captain enforces
+// no tool permissions of its own on top of it.
 var allowedFrontmatter = map[string]bool{
 	"name": true, "description": true, "license": true, "version": true, "metadata": true,
+	"compatibility": true, "allowed-tools": true,
 }
+
+// workerTools are the tools a captain worker already holds: the shelf is
+// staged for the agentskills runtimes (claude-code shaped), whose plain set
+// is Read, Write, Edit, Bash, Glob and Grep. A skill that asks for anything
+// else - Python, WebFetch, an agent spawner - is asking for a tool no worker
+// on this shelf has, so it is refused whole rather than stocked half-working.
+var workerTools = map[string]bool{
+	"read": true, "write": true, "edit": true, "bash": true, "glob": true, "grep": true,
+}
+
+// maxCompatibility is the spec's cap on the free-text compatibility field.
+const maxCompatibility = 500
 
 // Skill is one skill in the catalog.
 type Skill struct {
@@ -145,6 +161,11 @@ type Skill struct {
 	Bytes        int               `json:"bytes,omitempty"`
 	HasScripts   bool              `json:"has_scripts,omitempty"` // the source shipped a scripts/ directory
 	Scripts      bool              `json:"scripts,omitempty"`     // …and it was allowlisted, so it is on disk
+	// Tools is the skill's `allowed-tools` list, kept as it was written.
+	// ParseSkill has already refused any list naming a tool outside
+	// workerTools; the field is shown in `captain skills` so a person can
+	// see what a skill expects to be allowed before it is stocked.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // SkillRef is the pair a runtime actually loads at startup, and the pair the
@@ -191,21 +212,53 @@ var SkillWords = map[string]string{
 
 var midSkillWord = regexp.MustCompile(`(?i)(?:^|\s)/(noslop)\b`)
 
+// skillAskRe is a /skill ask anywhere in a turn's text: "/skill rdkit,pymc".
+// The list is comma-separated names WITHOUT spaces - the same shape as
+// `captain skills sync --only` - so a space after a comma always ends the
+// list and the prose that follows can never be read as a skill name.
+var skillAskRe = regexp.MustCompile(`(?i)(?:^|\s)/skill\s+([a-z0-9][a-z0-9-]*(?:,[a-z0-9][a-z0-9-]*)*)`)
+
+// skillAskHeadRe is the same ask at the HEAD of the text, so the modifier
+// layers can strip it the way they strip a leading /noslop.
+var skillAskHeadRe = regexp.MustCompile(`(?i)^/skill\s+[a-z0-9][a-z0-9-]*(?:,[a-z0-9][a-z0-9-]*)*(?:\s+|$)`)
+
+// TrimSkillAsk strips one leading /skill ask from text and reports whether
+// it did. The cmd layer strips directives from a turn before the worker
+// reads it; the ask lives here with the grammar that defines it.
+func TrimSkillAsk(text string) (string, bool) {
+	m := skillAskHeadRe.FindString(text)
+	if m == "" {
+		return text, false
+	}
+	return text[len(m):], true
+}
+
 // AskedSkill is one skill a turn asked for by its word.
 type AskedSkill struct{ Word, Skill string }
 
-// AskedSkills reads the skill words stated anywhere in the task.
+// AskedSkills reads the skill words stated anywhere in the task: the fixed
+// words (/noslop) and a /skill ask naming synced skills by name.
 func AskedSkills(task string) []AskedSkill {
 	var out []AskedSkill
 	seen := map[string]bool{}
+	add := func(word, skill string) {
+		if skill == "" || seen[skill] {
+			return
+		}
+		seen[skill] = true
+		out = append(out, AskedSkill{Word: word, Skill: skill})
+	}
 	for _, m := range midSkillWord.FindAllStringSubmatchIndex(task, -1) {
 		if m[3] < len(task) && task[m[3]] == '/' {
 			continue // "/noslop/notes.md" is a path
 		}
 		word := strings.ToLower(task[m[2]:m[3]])
-		if !seen[word] {
-			seen[word] = true
-			out = append(out, AskedSkill{Word: word, Skill: SkillWords[word]})
+		add(word, SkillWords[word])
+	}
+	for _, m := range skillAskRe.FindAllStringSubmatchIndex(task, -1) {
+		for _, name := range strings.Split(task[m[2]:m[3]], ",") {
+			name = strings.ToLower(strings.TrimSpace(name))
+			add("skill "+name, name)
 		}
 	}
 	return out
@@ -423,6 +476,14 @@ func ParseSkill(dir string) (Skill, error) {
 		return Skill{}, fmt.Errorf("skills: %s: description is %d characters, outside %d-%d - it is the only thing selection reads",
 			s.Name, n, minDescription, maxDescription)
 	}
+	if n := len(fm["compatibility"]); n > maxCompatibility {
+		return Skill{}, fmt.Errorf("skills: %s: compatibility is %d characters, over the spec's %d", s.Name, n, maxCompatibility)
+	}
+	tools, terr := parseAllowedTools(fm["allowed-tools"])
+	if terr != nil {
+		return Skill{}, fmt.Errorf("skills: %s: %w", s.Name, terr)
+	}
+	s.Tools = tools
 	walked := 0
 	err = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -460,6 +521,26 @@ func ParseSkill(dir string) (Skill, error) {
 		return Skill{}, err
 	}
 	return s, nil
+}
+
+// parseAllowedTools reads the experimental `allowed-tools` field: the tools
+// the skill expects to be allowed. Captain does not enforce tool permissions
+// per skill; it reads the list as a vetting signal, so every name on it must
+// be a tool a captain worker already holds (workerTools). A skill that names
+// no tools asks for nothing and passes.
+func parseAllowedTools(v string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		if !workerTools[strings.ToLower(f)] {
+			return nil, fmt.Errorf("allowed-tools lists %q, a tool no captain worker holds (Read, Write, Edit, Bash, Glob, Grep)", f)
+		}
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out, nil
 }
 
 // parseFrontmatter reads the leading `---` block. Fields outside the spec's
@@ -597,6 +678,21 @@ func SelectSkills(catalog []Skill, task string, class Class, domain Domain, cap 
 		}
 		return picks[i].Skill.Name < picks[j].Skill.Name
 	})
+	// A shelf is not a search result. When the task's words name one skill
+	// strongly, a second skill that shares one word of its description with
+	// the task is noise, not a second opinion: every scored pick must reach
+	// half the top pick's score or it is dropped. The always-on and
+	// asked-for books are exempt - they are on the shelf by statement, not
+	// by score.
+	if len(picks) > 1 {
+		kept, top := picks[:0], picks[0].Score
+		for _, p := range picks {
+			if p.Score >= top/2 {
+				kept = append(kept, p)
+			}
+		}
+		picks = kept
+	}
 	for _, p := range picks {
 		if !fits(p.Skill) {
 			break
@@ -1102,14 +1198,17 @@ func FormatCatalog(cat []Skill) string {
 		return "no skills synced - `captain skills sync` stages a pinned set; with none, a run is byte-for-byte what it is today\n"
 	}
 	// The source column fits the longest source: a fixed width pushed every
-	// column after cloudflare/security-audit-skill out of line.
-	srcW, sourceAvailable := len("SOURCE"), false
+	// column after cloudflare/security-audit-skill out of line. The tools
+	// column fits the longest allowed-tools list - all six worker tools
+	// joined is the widest it can be, since ParseSkill refuses any other.
+	srcW, toolsW, sourceAvailable := len("SOURCE"), len("TOOLS"), false
 	for _, s := range cat {
 		srcW = max(srcW, len(s.Source))
+		toolsW = max(toolsW, len(strings.Join(s.Tools, " ")))
 		sourceAvailable = sourceAvailable || !s.Redistribute
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %s\n", "SKILL", srcW, "SOURCE", "LICENSE", "SCRIPTS", "DESCRIPTION")
+	fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %-*s %s\n", "SKILL", srcW, "SOURCE", "LICENSE", "SCRIPTS", toolsW, "TOOLS", "DESCRIPTION")
 	for _, s := range cat {
 		scripts := "-"
 		if s.HasScripts && s.Scripts {
@@ -1124,8 +1223,12 @@ func FormatCatalog(cat []Skill) string {
 		if !s.Redistribute {
 			lic += "*"
 		}
-		fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %s\n",
-			s.Name, srcW, s.Source, lic, scripts, truncateStr(oneLine(s.Description), 60))
+		tools := "-"
+		if len(s.Tools) > 0 {
+			tools = strings.Join(s.Tools, " ")
+		}
+		fmt.Fprintf(&sb, "%-24s %-*s %-18s %-9s %-*s %s\n",
+			s.Name, srcW, s.Source, lic, scripts, toolsW, tools, truncateStr(oneLine(s.Description), 60))
 	}
 	fmt.Fprintf(&sb, "\n%d skills · cap %d per task\n", len(cat), SkillCap())
 	if sourceAvailable {

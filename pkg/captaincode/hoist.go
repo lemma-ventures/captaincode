@@ -33,6 +33,14 @@ func HoistLeading(raw string) string {
 	var mods []string
 	rest := t
 	for {
+		// A leading /skill ask is a modifier with a list attached; strip it
+		// whole, as stripLeadingModifiers does, or the names it asked for
+		// would read as the task text.
+		if m := skillAskHeadRe.FindString(rest); m != "" {
+			mods = append(mods, "/skill")
+			rest = rest[len(m):]
+			continue
+		}
 		m := modifierWordRe.FindString(rest)
 		if m == "" {
 			break

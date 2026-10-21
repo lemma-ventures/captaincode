@@ -105,7 +105,9 @@ thread-id     = ( "rp_" | "ch_" ) , hex-digits ;
 modifier      = lane | pool | skill | "/frontier" ;
 lane          = "/quality" | "/q" | "/best" | "/speed" | "/fast" | "/save" | "/cheap" ;
 pool          = "/oss" | "/open" | "/deterministic" | "/det" | "/adi" ;
-skill         = "/noslop" ;
+skill         = "/noslop" | skill-ask ;
+skill-ask     = "/skill" , 1*( skill-name , [ "," ] ) ;   (* "/skill rdkit,pymc" - commas, no spaces *)
+skill-name    = lowercase-word ;
 leg           = "/" , leg-id ;                       (* the registered legs, and /frontier *)
 
 SEQ           = ">" | "->" ;
@@ -201,6 +203,7 @@ Text with no head is routed ([ROUTING.md](ROUTING.md)). `/auto` asks for routing
 | `/oss` `/open` | pool | Open-weight models only. |
 | `/deterministic` `/det` `/adi` | pool | Legs green in the Agentic Determinism Index only ([ADI.md](ADI.md)). |
 | `/noslop` | skill | The plain-writing rules for every worker of the turn. |
+| `/skill rdkit,pymc` | skill | Stock the named synced skills for the turn, whatever the task's words select. A space after a comma ends the list. |
 
 ### 6.4 Workflows (Captain Workflow Language)
 
@@ -312,7 +315,7 @@ Every slash word in the table is reserved. A new leg may not take one of these n
 | `/repeat` `/parallel` | Loop and background heads |
 | `/quality` `/q` `/best` `/speed` `/fast` `/save` `/cheap` | Lanes |
 | `/oss` `/open` `/deterministic` `/det` `/adi` | Pools |
-| `/noslop` | Skill |
+| `/noslop` `/skill` | Skill |
 | `/btw` `/interrupt` `/init` `/context` `/euclid` `/private` `/captain` `/help` `/rename` | Control lines |
 | `/wf` `/workflow` `/run` `/wfrun` | Workflow commands |
 
