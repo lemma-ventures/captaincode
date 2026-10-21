@@ -423,7 +423,19 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	req.ws.MayPublish = req.ws.SentBy == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
 	req.ws.DirtyBefore = checkoutDirty(req.ws.Dir)
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
-		b.markHandled(promptKey(req.ws.Dir, req.Messages, i))
+		key := promptKey(req.ws.Dir, req.Messages, i)
+		// OpenCode retries a request whose brain died. The new brain sees
+		// the same prompt after the same messages, and ends the turn
+		// instead of starting a second worker for it (pkg turns.go).
+		if captaincode.InterruptedTurn(key) {
+			fmt.Printf("captain brain: a retried turn its brain died during is not run again: %s\n", promptPeek(messageText(req.Messages[i].Content)))
+			emit, _, finish := newCompletionWriter(w, req, "captain")
+			emit("[captain] The brain stopped while this turn ran, and its worker was stopped. The turn was not run a second time. Send the prompt again to run it.")
+			finish()
+			return
+		}
+		b.markHandled(key)
+		defer captaincode.BeginTurn(key)()
 	}
 	// Modifiers compose with control words in either order: "/oss /repeat 5
 	// <task>" is "/repeat 5 /oss <task>" (hoist.go). Canonicalize the last

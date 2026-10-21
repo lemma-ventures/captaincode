@@ -358,9 +358,10 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
         signal: AbortSignal.timeout(3000),
       }).catch(() => {})
     }
-    const outOfBand = async (title: string, path: string, body: unknown, acted: (j: any) => boolean): Promise<string | null> => {
+    const outOfBand = async (title: string, path: string, body: unknown, acted: (j: any) => boolean, turn = ""): Promise<string | null> => {
       try {
-        const r = await fetch(`${BRAIN}${path}?cwd=${encodeURIComponent(cwd)}`, {
+        const scope = turn ? `&turn=${encodeURIComponent(turn)}` : ""
+        const r = await fetch(`${BRAIN}${path}?cwd=${encodeURIComponent(cwd)}${scope}`, {
           method: "POST",
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(10_000),
@@ -387,13 +388,15 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
 
     const btw = text.match(BTW)
     if (btw && btw[1].trim()) {
-      const msg = await outOfBand("/btw", "/v1/btw", { text: btw[1].trim() }, (j) => !!j.delivered)
+      // A note reaches this session's worker only, never another session's
+      // in the same folder (chat.headers names the turn by its session).
+      const msg = await outOfBand("/btw", "/v1/btw", { text: btw[1].trim() }, (j) => !!j.delivered, typedIn)
       if (msg !== null) throw new Error(`captain: ${msg.slice(0, 240)} - nothing queued`)
     }
 
     const intr = text.match(INTERRUPT)
     if (intr) {
-      const msg = await outOfBand("/interrupt", "/v1/interrupt", { reason: (intr[1] ?? "").trim() }, (j) => (j.asked?.length || j.stopped?.length || j.withdrawn) > 0)
+      const msg = await outOfBand("/interrupt", "/v1/interrupt", { reason: (intr[1] ?? "").trim() }, (j) => (j.asked?.length || j.stopped?.length || j.withdrawn) > 0, typedIn)
       if (msg !== null) throw new Error(`captain: ${msg.slice(0, 240)} - nothing queued`)
     }
 
@@ -479,25 +482,38 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
   // goes away, but the brain keeps a run whose client vanished on purpose -
   // an answer produced for a dead connection is preserved for a resend
   // ("I never got the answer", 2026-08-01). An abort is the user's choice,
-  // so it is forwarded as a stop: the folder's running workers end now,
+  // so it is forwarded as a stop: the session's running workers end now,
   // what they produced is kept (2026-09-19: a claude -p ran on 26 minutes
-  // after ctrl+c and a restart).
+  // after ctrl+c and a restart). Another session in the same folder keeps
+  // running.
   event: async ({ event }: { event: any }) => {
     if (!ENABLED) return
     const err = event?.type === "session.error" ? event.properties?.error : undefined
     if (!err || err.name !== "MessageAbortedError") return
     const cwd = process.env["CAPTAIN_CWD"] ?? input?.directory ?? ""
+    const turn = String(event.properties?.sessionID ?? "")
+    if (!turn) return
     try {
-      const r = await fetch(`${BRAIN}/v1/interrupt?cwd=${encodeURIComponent(cwd)}`, {
+      const r = await fetch(`${BRAIN}/v1/interrupt?cwd=${encodeURIComponent(cwd)}&turn=${encodeURIComponent(turn)}`, {
         method: "POST",
-        body: JSON.stringify({ reason: "ctrl+c in the TUI", stop: true }),
+        body: JSON.stringify({ stop: true }),
         signal: AbortSignal.timeout(5_000),
       })
-      const j = (await r.json()) as { result?: string }
-      log(`abort → brain: ${(j.result ?? r.status).toString().slice(0, 100)}`)
+      const j = (await r.json()) as { result?: string; stopped?: unknown; error?: string }
+      log(`abort → brain: ${(j.result ?? j.error ?? (j.stopped !== undefined ? `stopped ${JSON.stringify(j.stopped)}` : r.status)).toString().slice(0, 100)}`)
     } catch (e) {
       log(`abort → brain failed: ${String(e).slice(0, 80)}`)
     }
+  },
+
+  // Every Captain turn names its session (X-Captain-Turn), so /btw,
+  // /interrupt and ctrl+c reach this session's workers and no other's.
+  // opencode's title and summary calls share the session id and run beside
+  // the turn; the brain allows one turn per id, so they carry none.
+  "chat.headers": async (call: { sessionID?: string; agent?: string; model?: { providerID?: string } }, output: { headers: Record<string, string> }) => {
+    if (!ENABLED || call?.model?.providerID !== "captain" || !call.sessionID) return
+    if (call.agent === "title" || call.agent === "summary" || call.agent === "compaction") return
+    output.headers["X-Captain-Turn"] = call.sessionID
   },
 
   "tool.execute.before": async (call: { tool: string; sessionID?: string }, output: { args: any }) => {

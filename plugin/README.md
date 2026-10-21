@@ -56,3 +56,19 @@ Director routing for unprefixed prompts is deliberately **not** done here:
 `chat.message` runs before the message renders, so deciding in the plugin froze
 the UI for the length of a director call. Unprefixed prompts go to
 `captain/auto` and the brain routes inside the turn instead.
+
+## End-to-end check
+
+`e2e/combined.ts` runs a stock opencode release with these plugins against a
+real brain and a fake `claude` worker. It covers routing, `/btw` and
+`/interrupt` scoped to their session, abort, a brain restart, programs,
+`/team`, the Euclid journal, the worker guard and a brain crash. Both servers
+run under a macOS sandbox that only reaches the check's own ports.
+
+```sh
+go build -o /tmp/captain-e2e ./cmd/captaincode
+CAPTAIN_BRAIN_BIN=/tmp/captain-e2e OPENCODE_BIN="$(command -v opencode)" bun plugin/e2e/combined.ts
+```
+
+It needs network once, to install `@opencode-ai/plugin` at the opencode
+version under test, and macOS for the sandbox.
