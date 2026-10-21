@@ -45,6 +45,7 @@ var gateTimeout = 3 * time.Second
 func cmdGate(args []string) {
 	fs := flag.NewFlagSet("gate", flag.ExitOnError)
 	hook := fs.Bool("hook", false, "Claude Code PreToolUse hook: hook JSON on stdin, hook JSON on stdout")
+	presenceHook := fs.Bool("presence-hook", false, "signed-turn action gate")
 	sentHook := fs.Bool("sent-hook", false, "Claude Code PreToolUse hook for a sent turn: the sent-turn policy alone (sentpolicy.go)")
 	tool := fs.String("tool", "", "screen this tool's call; its arguments are JSON on stdin")
 	cwd := fs.String("cwd", "", "the worker's working directory (default: this process's)")
@@ -61,6 +62,8 @@ func cmdGate(args []string) {
 		gateStatus()
 	case *report:
 		gateReport(*target, *minN)
+	case *presenceHook:
+		presenceHookRun()
 	case *sentHook:
 		sentTurnHook()
 	case *hook:

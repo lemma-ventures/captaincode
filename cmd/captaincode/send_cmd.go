@@ -22,6 +22,14 @@ import (
 )
 
 func cmdSend(args []string) {
+	for _, arg := range args {
+		if arg == "--signed" {
+			if err := sendSigned(args); err != nil {
+				fatal(err)
+			}
+			return
+		}
+	}
 	cwd := ""
 	leg := ""
 	from := ""

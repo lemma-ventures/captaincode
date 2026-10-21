@@ -38,7 +38,7 @@ var secretDirs = []string{
 }
 
 // secretFiles are single credential files under $HOME.
-var secretFiles = []string{".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude.json"}
+var secretFiles = []string{".config/captain/presence.json", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude.json"}
 
 // writableCaches are the build caches a jailed build may fill.
 var writableCaches = []string{"Library/Caches", ".cache", ".npm", ".bun/install/cache", "go/pkg/mod", ".cargo/registry"}

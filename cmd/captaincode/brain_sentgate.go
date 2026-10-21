@@ -28,6 +28,7 @@ type sentSessions struct {
 // the serve did not answer, so sent is a fail-closed assumption, not a fact.
 type sessionFacts struct {
 	sent, mayPublish, dirty, guessed bool
+	presenceID                       string
 }
 
 var sentSessionCache = &sentSessions{}
@@ -48,7 +49,7 @@ func (s *sentSessions) facts(session string, fetch func(string) (string, error))
 		fmt.Printf("captain brain: sent-turn gate - could not read session %s (%v); applying the sent-turn policy to this call\n", session, err)
 		return sessionFacts{sent: true, dirty: true, guessed: true}
 	}
-	v = sessionFacts{sent: captaincode.IsSentTurn(prompt),
+	v = sessionFacts{presenceID: captaincode.PresenceGrantID(prompt), sent: captaincode.IsSentTurn(prompt),
 		mayPublish: strings.Contains(prompt, captaincode.PublishGrantMarker),
 		dirty:      strings.Contains(prompt, captaincode.DirtyCheckoutMarker)}
 	s.mu.Lock()
@@ -132,7 +133,9 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 		Args    map[string]any `json:"args"`
 		Cwd     string         `json:"cwd"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	decoder := json.NewDecoder(r.Body)
+	decoder.UseNumber()
+	_ = decoder.Decode(&req)
 	fetch := firstUserPrompt
 	if b.sessionPromptFn != nil {
 		fetch = b.sessionPromptFn
@@ -146,6 +149,16 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 		Command: firstString(req.Args, "command", "cmd", "url", "script"),
 		Path:    firstString(req.Args, "filePath", "file_path", "path"), Cwd: req.Cwd, SessionID: req.Session}
 	if !f.sent {
+		if f.presenceID != "" {
+			a = presenceToolAction(req.Tool, req.Args, req.Cwd)
+			if err := captaincode.PresenceAction(f.presenceID, a); err != nil {
+				writeJSON(w, 200, map[string]any{"allow": false, "reason": err.Error()})
+				return
+			}
+			if captaincode.PresenceHighTier(a) {
+				f.mayPublish = true
+			}
+		}
 		// Every worker: no unrequested release, no bulk staging over other
 		// sessions' changes (pkg workerguard.go).
 		if a.Tool == "bash" || a.Tool == "shell" {

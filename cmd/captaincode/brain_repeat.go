@@ -1068,6 +1068,9 @@ func jsonString(s string) json.RawMessage {
 // currently in flight at the HTTP layer.
 func chatRequestFrom(ctx context.Context, req oaiChatReq) *http.Request {
 	body, _ := json.Marshal(req)
+	if req.ws.PresenceID != "" {
+		ctx = context.WithValue(ctx, presenceRoundKey{}, req.ws.PresenceID)
+	}
 	if req.ws.Origin != "" {
 		// The header carries only the folder the round runs in. Without the
 		// origin, a round whose task moved it (followTask) reported that

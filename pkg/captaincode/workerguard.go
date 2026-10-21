@@ -182,7 +182,7 @@ func ReadConduct(since time.Time) []ConductEvent {
 }
 
 // guardedTools are the programs the CLI shims stand in for.
-var guardedTools = []string{"git", "gh", "npm", "pnpm", "yarn", "bun", "cargo", "twine", "docker", "goreleaser", "gem", "poetry"}
+var guardedTools = []string{"git", "gh", "npm", "pnpm", "yarn", "bun", "cargo", "twine", "docker", "goreleaser", "gem", "poetry", "rm", "rmdir", "unlink", "shred", "curl", "wget"}
 
 // GuardShimEnv marks a process started by a shim: a shim run inside it goes
 // straight to the real tool. Without it a captain that did not know
@@ -289,6 +289,7 @@ func WorkerGuardEnv(task string) []string {
 		GuardEnv + "=1",
 		MayPublishEnv + "=" + flag(strings.Contains(task, PublishGrantMarker)),
 		DirtyBeforeEnv + "=" + flag(strings.Contains(task, DirtyCheckoutMarker)),
+		PresenceEnv + "=" + PresenceGrantID(task),
 	}
 }
 

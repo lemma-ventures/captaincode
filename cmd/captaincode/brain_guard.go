@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	pres "github.com/lemma-ventures/captaincode/internal/presence"
 )
 
 // localOrigin reports an Origin served from this machine: http(s) on
@@ -34,6 +36,14 @@ func dashboardPath(p string) bool { return strings.HasPrefix(p, "/v1/euclid") }
 
 func browserGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/presence/") || r.URL.Path == "/v1/inbox" {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if c, err := pres.DefaultStore().Read(); err == nil && pres.Allowed(c.Origins, origin) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 			next.ServeHTTP(w, r)

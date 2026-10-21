@@ -29,15 +29,17 @@ import (
 	"sync"
 	"time"
 
+	pres "github.com/lemma-ventures/captaincode/internal/presence"
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 type inboxItem struct {
-	ID   string    `json:"id"`
-	Text string    `json:"text"`
-	Leg  string    `json:"leg,omitempty"` // forced leg / pseudo-model, "" = the TUI's own model
-	From string    `json:"from,omitempty"`
-	At   time.Time `json:"at"`
+	Presence *pres.Grant `json:"-"`
+	ID       string      `json:"id"`
+	Text     string      `json:"text"`
+	Leg      string      `json:"leg,omitempty"` // forced leg / pseudo-model, "" = the TUI's own model
+	From     string      `json:"from,omitempty"`
+	At       time.Time   `json:"at"`
 	// Session is the TUI session a reply is for (brain_reply.go); "" = any
 	// session open in the folder. Origin says who sent it, from where.
 	Session string `json:"session,omitempty"`
@@ -63,10 +65,7 @@ type inbox struct {
 	// handed holds the texts given to the TUI and not yet seen as a turn, so
 	// a submitted prompt is not taken for the user typing.
 	sent   map[string]int
-	handed map[string][]string
-	// origins remembers who sent each handed text, so the turn it becomes
-	// carries its provenance into the worker prompt (sentTurnContract).
-	origins map[string]string
+	handed map[string][]inboxItem
 	// held are messages the injection screen stopped, waiting for the user
 	// (captain inbox release|drop); notify lists the ones a sidebar has not
 	// been told about yet.
@@ -248,24 +247,40 @@ func (ib *inbox) admit(dir string) bool {
 
 // noteTurn sees a turn arrive in dir. A prompt the inbox handed over is
 // crossed off; anything else was typed by the user, which refills the quota.
-func (ib *inbox) noteTurn(dir, text string) (sentBy string, sent bool) {
+func (ib *inbox) noteTurn(dir, text string) (string, bool) {
+	by, sent, _ := ib.notePresenceTurn(dir, text)
+	return by, sent
+}
+
+func (ib *inbox) notePresenceTurn(dir, text string) (string, bool, *pres.Grant) {
 	dir = filepath.Clean(dir)
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
+	exactText := text
 	text = strings.TrimSpace(text)
 	for i, h := range ib.handed[dir] {
-		if h == text {
-			ib.handed[dir] = append(ib.handed[dir][:i:i], ib.handed[dir][i+1:]...)
-			sentBy = ib.origins[text]
-			delete(ib.origins, text)
-			if sentBy == "" {
-				sentBy = "captain send (no sender named)"
-			}
-			return sentBy, true
+		if strings.TrimSpace(h.Text) != text {
+			continue
 		}
+		if h.Presence != nil && h.Text != exactText {
+			return "presence_refused: signed text changed during handoff", true, nil
+		}
+		ib.handed[dir] = append(ib.handed[dir][:i:i], ib.handed[dir][i+1:]...)
+		if h.Presence != nil {
+			if g, e := pres.DefaultStore().Grant(h.Presence.ID); e == nil && g.Dir == dir && g.TextSHA256 == pres.HashText(h.Text) {
+				delete(ib.sent, dir)
+				return "", false, &g
+			}
+			return "presence_refused: expired or revoked approval", true, nil
+		}
+		by := h.Origin
+		if by == "" {
+			by = "captain send (no sender named)"
+		}
+		return by, true, nil
 	}
 	delete(ib.sent, dir)
-	return "", false
+	return "", false, nil
 }
 
 const inboxTTL = 24 * time.Hour
@@ -308,13 +323,9 @@ func (ib *inbox) take(dir, session string) []inboxItem {
 		if time.Since(it.At) < inboxTTL {
 			fresh = append(fresh, it)
 			if ib.handed == nil {
-				ib.handed = map[string][]string{}
+				ib.handed = map[string][]inboxItem{}
 			}
-			ib.handed[dir] = append(ib.handed[dir], strings.TrimSpace(it.Text))
-			if ib.origins == nil {
-				ib.origins = map[string]string{}
-			}
-			ib.origins[strings.TrimSpace(it.Text)] = it.Origin
+			ib.handed[dir] = append(ib.handed[dir], it)
 		}
 	}
 	return fresh
@@ -329,6 +340,9 @@ func (ib *inbox) pending(dir string) int {
 // inboxHTTP: POST /v1/inbox?cwd=<dir> {"text":"…","leg":"grok","from":"a100 watcher"} queues;
 // GET /v1/inbox?cwd=<dir> takes what is queued (the sidebar's poll).
 func (b *brain) inboxHTTP(w http.ResponseWriter, r *http.Request) {
+	if b.detectSignedInbox(w, r) {
+		return
+	}
 	dir, ok := workspaceFilter(r)
 	if !ok {
 		dir = defaultWorkspace().Dir

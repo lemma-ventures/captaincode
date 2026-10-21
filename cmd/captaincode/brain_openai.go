@@ -432,14 +432,32 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if !round && !isTitleTurn(req.Messages) {
 		// A turn the user typed refills the folder's inbox quota; one the
 		// inbox handed to the TUI does not (brain_inbox.go).
-		if by, sent := b.inbox.noteTurn(req.ws.Dir, lastUserRaw(req.Messages)); sent {
+		text := ""
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if req.Messages[i].Role == "user" || req.Messages[i].Role == "" {
+				text = messageText(req.Messages[i].Content)
+				break
+			}
+		}
+		by, sent, grant := b.inbox.notePresenceTurn(req.ws.Dir, text)
+		if strings.HasPrefix(by, "presence_refused:") {
+			writeErr(w, 403, by)
+			return
+		}
+		if sent {
 			req.ws.SentBy = by
+		}
+		if grant != nil {
+			req.ws.PresenceID = grant.ID
 		}
 	}
 	// The worker guard's two facts for this turn (pkg workerguard.go): a
 	// release only when the user's own turn asks for one, and no bulk
 	// staging over changes that were there before the turn.
-	req.ws.MayPublish = req.ws.SentBy == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
+	if inherited, _ := r.Context().Value(presenceRoundKey{}).(string); inherited != "" {
+		req.ws.SentBy = "a later round of a signed prompt; fresh approval required"
+	}
+	req.ws.MayPublish = req.ws.SentBy == "" && req.ws.PresenceID == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
 	req.ws.DirtyBefore = checkoutDirty(req.ws.Dir)
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
 		key := promptKey(req.ws.Dir, req.Messages, i)
@@ -551,7 +569,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// The repository the task is about (reporefs.go): by default the folder
 	// the TUI is open in; a task that names another repo runs there.
-	if !titleReq {
+	if !titleReq && req.ws.PresenceID == "" {
 		req.ws = b.followTask(req.ws, lastUserTurn(prompt))
 		// A worker moved into a repository with work in flight gets its own
 		// worktree; its changes come back as a patch (brain_isolate.go).

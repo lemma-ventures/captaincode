@@ -44,7 +44,8 @@ type Workspace struct {
 	Session string
 	// SentBy names who sent this turn with `captain send` ("" = the user
 	// typed it): the worker prompt then says so (sentTurnContract).
-	SentBy string
+	SentBy     string
+	PresenceID string
 	// MayPublish: the user's turn asked for a release or a publish;
 	// DirtyBefore: the folder had uncommitted changes when the turn started
 	// (workerguard.go).
@@ -2390,6 +2391,9 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 		}
 		args = append(args, claudeAdvisorArg(frontier, effort)...) // CAPTAIN_CLAUDE_ADVISOR on the cheap tier
 	}
+	if PresenceGrantID(task) != "" {
+		args = append(args, "--settings", PresenceClaudeSettings())
+	}
 	if IsSentTurn(task) {
 		// The sent-turn policy as this run's own PreToolUse hook, loaded with
 		// --settings for this run only: it holds whether or not the global
@@ -2434,13 +2438,20 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	// The task itself, off the scan loop: a pipe takes 64K before the reader
 	// must drain it, and a prompt is often longer. A write that fails (the
 	// process died before reading) surfaces through the run's own exit.
+	initialSent := make(chan struct{})
 	go func() {
+		defer close(initialSent)
 		if err := in.send(task); err != nil {
 			fmt.Fprintf(os.Stderr, "captain: claude -p did not take its prompt: %v\n", err)
 		}
 	}()
 	if steer != nil {
 		defer steer.Attach(LegClaude, func(note string) error {
+			select {
+			case <-initialSent:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			if err := in.send(SteerLine(note)); err != nil {
 				return err
 			}

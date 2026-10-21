@@ -197,6 +197,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/btw", b.btwHTTP)
 	mux.HandleFunc("/v1/interrupt", b.interruptHTTP)
 	mux.HandleFunc("/v1/inbox", b.inboxHTTP)
+	mux.HandleFunc("/v1/presence/", b.presenceHTTP)
 	mux.HandleFunc("/v1/inbox/held", b.inboxHeldHTTP)
 	mux.HandleFunc("/v1/inbox/trip", b.inboxTripHTTP)
 	mux.HandleFunc("/v1/gate/sent", b.gateSentHTTP)
@@ -1554,6 +1555,12 @@ func (b *brain) runWorkerRerouted(ws captaincode.Workspace, leg captaincode.Leg,
 // that reservation instead of a second one, and is reconciled here like every
 // other call - one reserve and one reconcile per provider call (ROADMAP Q5).
 func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.Leg, prompt string, onDelta, onStatus func(string), taskID string, held bool) (captaincode.Leg, captaincode.Result, error) {
+	if err := b.presenceBudget(ws, taskID); err != nil {
+		if held {
+			b.releaseAttempt(taskID)
+		}
+		return leg, captaincode.Result{}, err
+	}
 	// OpenShell has its own entries (openShellChat, the CLI, task recovery):
 	// they save the task before dispatch, bind cancellation to the sandbox
 	// controller and keep the verified export. This path does none of that.
@@ -1569,6 +1576,9 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 	titleRun := captaincode.IsTitlePrompt(prompt)
 	var runOneRaw func(l captaincode.Leg, od, os_ func(string)) (captaincode.Leg, captaincode.Result, error)
 	runOne := func(l captaincode.Leg, od, os_ func(string)) (captaincode.Leg, captaincode.Result, error) {
+		if err := b.presenceBudget(ws, taskID); err != nil {
+			return l, captaincode.Result{}, err
+		}
 		b.inflightRuns.Add(1)
 		defer b.inflightRuns.Add(-1)
 		defer b.active.begin(ws, l, prompt)()
@@ -1869,6 +1879,9 @@ func sentTurnContract(ws captaincode.Workspace) string {
 // it as if the user had typed it. The line tells the worker to arm it
 // instead of promising. CAPTAIN_WORKER_CALLBACK=0 drops it.
 func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
+	if ws.PresenceID != "" {
+		return captaincode.PresenceContract(ws.PresenceID) + captaincode.GuardContract(false, ws.DirtyBefore)
+	}
 	if os.Getenv("CAPTAIN_WORKER_CALLBACK") == "0" {
 		return sentTurnContract(ws) + captaincode.GuardContract(ws.MayPublish, ws.DirtyBefore)
 	}

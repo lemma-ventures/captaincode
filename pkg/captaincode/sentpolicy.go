@@ -74,13 +74,13 @@ var sentShellRules = []sentRule{
 	{"publish or push", regexp.MustCompile(`(?i)\bgit\s+(push|tag\s+-d)\b|\bgh\s+(pr\s+(create|merge|close)|release|repo\s+(delete|edit|create)|secret|api\s+-X\s*(POST|PUT|PATCH|DELETE))\b|\b(npm|pnpm|yarn)\s+publish\b|\bcargo\s+publish\b|\bdocker\s+push\b|\btwine\s+upload\b`)},
 	{"delete or rewrite history", regexp.MustCompile(`(?i)\brm\s+-[a-z]*[rf][a-z]*\b|\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|filter-repo|filter-branch|branch\s+-D|rebase\b)|\bfind\b[^|]*-delete\b|\bshred\b`)},
 	{"send data off the machine", regexp.MustCompile(`(?i)\b(curl|wget|http|httpie)\b[^|;&]*\s(-d|--data[a-z-]*|-F|--form|-T|--upload-file|-X\s*(POST|PUT|PATCH)|--post-(data|file))\b|\b(scp|sftp|rsync)\b[^|;&]*\S+:\S*|\b(nc|ncat|netcat|socat|telnet)\s|\bssh\s+\S+@|\bmail(x)?\s+-s\b`)},
-	{"read secrets", regexp.MustCompile(`(?i)(~|\$HOME|/Users/[^/\s]+|/home/[^/\s]+)/\.(ssh|aws|gnupg|netrc|docker/config|config/gh|kube)\b|\b(printenv|env)\s*($|\||>)|\bgh\s+auth\s+token\b|\bsecurity\s+find-(generic|internet)-password\b|\bcat\s+[^|;&]*\.(env|pem|key|p12|keychain)\b`)},
+	{"read secrets", regexp.MustCompile(`(?i)(~|\$HOME|/Users/[^/\s]+|/home/[^/\s]+)/\.(ssh|aws|gnupg|netrc|docker/config|config/gh|config/captain/presence\.json|kube)\b|\b(printenv|env)\s*($|\||>)|\bgh\s+auth\s+token\b|\bsecurity\s+find-(generic|internet)-password\b|\bcat\s+[^|;&]*\.(env|pem|key|p12|keychain)\b`)},
 	{"relay to other captains", regexp.MustCompile(`(?i)\bcaptain\s+send\b|/v1/inbox\b`)},
 	{"switch off a safety check", regexp.MustCompile(`(?i)--no-verify\b|CAPTAIN_(ACTION_GATE|REDACT|INBOX_HOLD|ISOLATE_MOVED)\s*=\s*(0|off)|git\s+config\s+[^|;&]*core\.hooksPath|chmod\s+-?R?\s*777`)},
 }
 
 // secretPathRe is a path into a credential store.
-var secretPathRe = regexp.MustCompile(`(^|/)\.(ssh|aws|gnupg|netrc|docker/config\.json|config/gh|kube)(/|$)|\.(pem|p12|keychain)$|(^|/)\.env(\.|$)`)
+var secretPathRe = regexp.MustCompile(`(^|/)\.(ssh|aws|gnupg|netrc|docker/config\.json|config/gh|config/captain/presence\.json|kube)(/|$)|\.(pem|p12|keychain)$|(^|/)\.env(\.|$)`)
 
 // longTokenRe is a value that looks like a credential in a URL: a long run of
 // letters and digits, or a captain secret placeholder.
@@ -138,6 +138,35 @@ func sentRefuse(why string) string {
 func SentTurnRefusal(a GateAction) string {
 	refuse := sentRefuse
 	tool := strings.ToLower(a.Tool)
+	presencePath := a.Path
+	if presencePath == "~" || strings.HasPrefix(presencePath, "~/") {
+		if home, e := os.UserHomeDir(); e == nil {
+			presencePath = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(presencePath, "~"), "/"))
+		}
+	}
+	if !filepath.IsAbs(presencePath) {
+		presencePath, _ = filepath.Abs(filepath.Join(a.Cwd, presencePath))
+	}
+	if real, e := filepath.EvalSymlinks(presencePath); e == nil {
+		presencePath = real
+	}
+	if strings.Contains(filepath.ToSlash(filepath.Clean(presencePath)), "/.config/captain/presence.json") {
+		return refuse("access presence credentials")
+	}
+	if !shellTools[tool] {
+		if home, e := os.UserHomeDir(); e == nil {
+			homes := []string{home}
+			if real, err := filepath.EvalSymlinks(home); err == nil {
+				homes = append(homes, real)
+			}
+			for _, root := range homes {
+				target := filepath.Join(root, ".config", "captain", "presence.json")
+				if rel, err := filepath.Rel(presencePath, target); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					return refuse("access presence credentials through a parent directory")
+				}
+			}
+		}
+	}
 	if !sentTurnTools[tool] && !shellTools[tool] {
 		return refuse("use the " + a.Tool + " tool (a sent turn reads, edits its workspace and runs sandboxed commands; nothing else)")
 	}

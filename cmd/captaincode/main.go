@@ -190,6 +190,9 @@ func main() {
 		case "legs":
 			cmdLegs(args[1:])
 			return
+		case "presence":
+			cmdPresence(os.Args[2:])
+			return
 		case "send":
 			cmdSend(os.Args[2:])
 			return

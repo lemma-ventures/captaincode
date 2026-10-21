@@ -29,7 +29,17 @@ func cmdGuardExec(args []string) {
 		for _, a := range args[1:] {
 			line += " " + shellWord(a)
 		}
-		if why := captaincode.WorkerGuardRefusal(line, os.Getenv(captaincode.MayPublishEnv) == "1", os.Getenv(captaincode.DirtyBeforeEnv) == "1"); why != "" {
+		mayPublish := os.Getenv(captaincode.MayPublishEnv) == "1"
+		if id := os.Getenv(captaincode.PresenceEnv); id != "" {
+			cwd, _ := os.Getwd()
+			a := captaincode.GateAction{Tool: "bash", Command: line, Cwd: cwd}
+			if err := captaincode.PresenceAction(id, a); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(126)
+			}
+			mayPublish = captaincode.PresenceHighTier(a)
+		}
+		if why := captaincode.WorkerGuardRefusal(line, mayPublish, os.Getenv(captaincode.DirtyBeforeEnv) == "1"); why != "" {
 			cwd, _ := os.Getwd()
 			captaincode.AppendConduct(captaincode.ConductEvent{Rule: why, Command: line, Dir: cwd,
 				Leg: os.Getenv(captaincode.GateLegEnv), TaskID: os.Getenv(captaincode.GateTaskIDEnv)})
