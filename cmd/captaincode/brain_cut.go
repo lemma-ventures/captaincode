@@ -129,7 +129,11 @@ func cutToFit(prompt string, budget int, summary string, covered int) string {
 		b.WriteString(opening)
 		if len(dropped) > 0 {
 			chars := dropped[len(dropped)-1].end - dropped[0].start
-			fmt.Fprintf(&b, "[system]\n[captain: %d earlier messages (%dk chars) between the opening request and the recent turns were left out to fit this model's context.]\n", len(dropped), (chars+999)/1000)
+			// Say that the current request is whole: a worker read "left out"
+			// as part of the request being missing and went looking for it
+			// (grok-cli, live 2026-10-21: "the middle of the request is
+			// offloaded").
+			fmt.Fprintf(&b, "[system]\n[captain: %d earlier messages (%dk chars) between the opening request and the recent turns were left out to fit this model's context. Only older history is missing: the latest user message below is complete. Answer it; do not look for missing parts of it.]\n", len(dropped), (chars+999)/1000)
 			b.WriteString(cutDigest(conv, dropped, summary, covered, reserve))
 			b.WriteString("\n\n")
 		}

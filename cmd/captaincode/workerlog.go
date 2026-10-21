@@ -53,8 +53,15 @@ func openWorkerLog(ws captaincode.Workspace, leg captaincode.Leg, task string) *
 		return nil
 	}
 	l := &workerLog{path: f.Name(), f: f, started: now}
-	fmt.Fprintf(f, "# captain worker log\nleg: %s\nstarted: %s\ncwd: %s\ntask: %s\n---\n",
-		leg, now.Format(time.RFC3339), ws.Dir, truncate(strings.Join(strings.Fields(lastUserTurn(task)), " "), 600))
+	from := ""
+	if ws.Origin != "" && filepath.Clean(ws.Origin) != filepath.Clean(ws.Dir) {
+		from = "origin: " + ws.Origin + "\n" // the TUI that started it, when the task moved the run elsewhere
+	}
+	// The model the leg dispatches at this effort: "frontier" or "quality"
+	// alone does not say which model ran.
+	model := captaincode.ModelIDAt(leg, ws.Effort)
+	fmt.Fprintf(f, "# captain worker log\nleg: %s\nmodel: %s\nstarted: %s\ncwd: %s\n%stask: %s\n---\n",
+		leg, model, now.Format(time.RFC3339), ws.Dir, from, truncate(strings.Join(strings.Fields(lastUserTurn(task)), " "), 600))
 	return l
 }
 

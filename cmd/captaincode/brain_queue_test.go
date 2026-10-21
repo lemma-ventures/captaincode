@@ -63,6 +63,21 @@ func TestQueuedPromptsRunOneAfterTheOther(t *testing.T) {
 	assert.Less(t, strings.Index(text, "answer to remove"), strings.Index(text, "answer to drop"), "answers in order")
 }
 
+// Live 2026-10-21: notes `captain run` had posted into a session (stored as
+// user messages) ran as queued prompts ahead of the user's real one.
+func TestCaptainNotesAreNotQueuedPrompts(t *testing.T) {
+	msgs := []oaiMessage{
+		{Role: "user", Content: jsonString("a")},
+		{Role: "assistant", Content: jsonString("b")},
+		{Role: "user", Content: jsonString("**→ luna** `w-gpt-6-luna-29`\n\nclass=trivial iter=1 manager: Bare 'help'")},
+		{Role: "user", Content: jsonString("**assessed luna** `w-gpt-6-luna-29` → 8.0/10 (good) Correct")},
+		{Role: "user", Content: jsonString("/frontier Build the hub")},
+	}
+	assert.Nil(t, queuedPrompts(msgs), "two notes and one prompt are one prompt, not a queue of three")
+	msgs = append(msgs, oaiMessage{Role: "user", Content: jsonString("and then the docs")})
+	assert.Equal(t, []int{4, 5}, queuedPrompts(msgs), "the real prompts still queue, in order")
+}
+
 func TestASinglePendingPromptIsNotAQueue(t *testing.T) {
 	msgs := []oaiMessage{
 		{Role: "user", Content: jsonString("a")},

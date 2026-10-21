@@ -194,6 +194,7 @@ func TestSlowSummaryGivesWayAndServesTheNextTurn(t *testing.T) {
 	out := b.fitPrompt(ws, captaincode.LegFree, in, 60_000)
 	assert.Less(t, time.Since(start), 2*time.Second, "the worker did not wait for the summary")
 	assert.Contains(t, out, "were left out to fit")
+	assert.Contains(t, out, "the latest user message below is complete", "the worker must not hunt for a cut request")
 	assert.NotContains(t, out, "THE-SUMMARY")
 	// A second turn while the fold runs joins it rather than starting another.
 	b.fitPrompt(ws, captaincode.LegFree, in, 60_000)

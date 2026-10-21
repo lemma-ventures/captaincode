@@ -105,7 +105,8 @@ const roundContract = "\n\n[captain] This is one round of a repeating task. A ro
 
 type repeatThread struct {
 	id         string
-	dir        string     // the workspace the thread runs in - its rounds and its listing belong to that TUI
+	dir        string     // the workspace the thread runs in
+	origin     string     // the TUI folder it was started from: dir moves when the task names another repository (followTask), origin does not
 	task       string     // the prompt as typed, minus the /repeat directive
 	steps      []string   // a chain's steps (brain_chain.go); nil for a repeat
 	budget     *runBudget // shared with the threads its rounds start (brain_budget.go)
@@ -288,6 +289,15 @@ func parseRepeat(raw string) (count int, rest string, ok bool) {
 	return captaincode.SplitRepeat(raw)
 }
 
+// withoutSentFooter drops the "- sent by ..." line the inbox appends to a
+// sent turn (brain_inbox.go).
+func withoutSentFooter(s string) string {
+	if i := strings.LastIndex(s, "\n\n- sent by "); i >= 0 && !strings.Contains(s[i+2:], "\n") {
+		return s[:i]
+	}
+	return s
+}
+
 // handleRepeat intercepts the /repeat control words. Returns true when it
 // answered the request.
 func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oaiChatReq, raw string) bool {
@@ -298,7 +308,10 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 	emit, status, finish := newCompletionWriter(w, req, "repeat")
 	defer finish()
 
-	restLow := strings.ToLower(strings.TrimSpace(rest))
+	// A sent turn (captain send, a dashboard) ends with the inbox's "- sent by"
+	// footer. It is not part of a control word: `/repeat finish` sent from
+	// from a dashboard must finish the loop, not start one on "finish - sent by ...".
+	restLow := strings.ToLower(strings.TrimSpace(withoutSentFooter(rest)))
 	// A control word only counts when it stands alone or is followed by a
 	// thread reference. Otherwise "/repeat watch the queue" - a perfectly
 	// ordinary task that happens to start with "watch" - would be swallowed as
@@ -311,7 +324,7 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 		}
 		b.rmu.Lock()
 		th := b.repeatState()[arg]
-		matches := th != nil && filepath.Clean(th.dir) == filepath.Clean(req.ws.Dir)
+		matches := th != nil && (th.belongs(req.ws.Dir) || th.belongs(req.ws.Origin))
 		b.rmu.Unlock()
 		if !matches {
 			emit("No repeat thread with that exact thread ID exists in this workspace.\n")
@@ -449,7 +462,7 @@ func (b *brain) repeatCtlHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		b.rmu.Lock()
 		th := b.repeatState()[id]
-		matches := th != nil && filepath.Clean(th.dir) == dir
+		matches := th != nil && th.belongs(dir)
 		b.rmu.Unlock()
 		if !matches {
 			writeErr(w, http.StatusNotFound, "thread not found")
@@ -485,7 +498,7 @@ func (b *brain) repeatNote(dir, id, msg string) bool {
 	defer b.rmu.Unlock()
 	var pick *repeatThread
 	for k, th := range b.repeatState() {
-		if threadMatches(th.dir, k, dir, id) && (pick == nil || th.started.After(pick.started)) {
+		if th.matches(k, dir, id) && (pick == nil || th.started.After(pick.started)) {
 			pick = th
 		}
 	}
@@ -508,7 +521,7 @@ func (b *brain) repeatNotice(dir string) string {
 	defer b.rmu.Unlock()
 	var lines []string
 	for id, th := range b.repeatState() {
-		if th.dir != dir {
+		if !th.belongs(dir) {
 			continue // another TUI's loop: its rounds are announced there
 		}
 		for i := range th.rounds {
@@ -554,7 +567,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 		defer b.rmu.Unlock()
 		var t *repeatThread
 		for k, th := range b.repeatState() {
-			if threadMatches(th.dir, k, dir, id) {
+			if th.matches(k, dir, id) {
 				if t == nil || th.started.After(t.started) {
 					t = th
 				}
@@ -573,10 +586,23 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 	sent := 0
 	shown := 0 // th.liveSeq up to which progress has been forwarded
 	noted := 0 // th.noteSeq up to which control answers have been printed
+	var filter watchFilter
+	round, roundFrom := -1, time.Time{} // the round the filter serves
 	for {
 		b.rmu.Lock()
 		rounds := append([]roundRecord(nil), th.rounds...)
 		done, finished := th.done, th.finished
+		ended, endedFrom := filter, roundFrom // the round that just finished, if done moved on
+		if done != round {
+			filter.reset()
+		} else {
+			ended.held = 0
+		}
+		endedRound := round
+		round = done
+		if th.roundFrom.After(roundFrom) { // the next round starts after the last one's summary
+			roundFrom = th.roundFrom
+		}
 		var fresh []string
 		if status != nil && th.liveSeq > shown {
 			n := th.liveSeq - shown
@@ -592,6 +618,9 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			noted = th.noteSeq
 		}
 		b.rmu.Unlock()
+		if note := ended.heldNote(endedFrom); note != "" && status != nil {
+			status(fmt.Sprintf("%s %d · %s\n", th.unit(), endedRound+1, note))
+		}
 		for _, n := range notes {
 			emit("\n---\n\n" + n + "\n")
 		}
@@ -599,7 +628,7 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			s = strings.TrimSpace(s)
 			// The round's own feed header ("**captain · claude**") and the
 			// reroute marker are not activity.
-			if s == "" || strings.HasPrefix(s, "**captain") || strings.HasPrefix(s, "captain ·") {
+			if s == "" || strings.HasPrefix(s, "**captain") || strings.HasPrefix(s, "captain ·") || !filter.keep(s) {
 				continue
 			}
 			status(fmt.Sprintf("%s %d · %s\n", th.unit(), done+1, s)) // one line each: the TUI concatenates deltas
@@ -658,7 +687,7 @@ func (b *brain) repeatShow(dir, id string) string {
 	st := b.repeatState()
 	var pick *repeatThread
 	for k, th := range st {
-		if threadMatches(th.dir, k, dir, id) {
+		if th.matches(k, dir, id) {
 			if pick == nil || th.started.After(pick.started) {
 				pick = th
 			}
@@ -689,7 +718,7 @@ func (b *brain) repeatStatus(dir string) string {
 	st := b.repeatState()
 	mine, elsewhere := 0, 0
 	for _, th := range st {
-		if th.dir == dir {
+		if th.belongs(dir) {
 			mine++
 		} else {
 			elsewhere++
@@ -705,7 +734,7 @@ func (b *brain) repeatStatus(dir string) string {
 	var sb strings.Builder
 	sb.WriteString("### repeat threads\n\n")
 	for _, th := range st {
-		if th.dir != dir {
+		if !th.belongs(dir) {
 			continue
 		}
 		target := fmt.Sprintf("%d", th.target)
@@ -719,6 +748,13 @@ func (b *brain) repeatStatus(dir string) string {
 		fmt.Fprintf(&sb, "- **%s** - %s · %d/%s done, %d failed · %s\n  %s\n",
 			th.id, state, th.done, target, th.failed,
 			time.Since(th.started).Round(time.Second), promptPeek(th.task))
+		if th.origin != "" && filepath.Clean(th.origin) != filepath.Clean(th.dir) {
+			if filepath.Clean(dir) == filepath.Clean(th.origin) {
+				fmt.Fprintf(&sb, "  runs in `%s` (the task names it)\n", th.dir)
+			} else {
+				fmt.Fprintf(&sb, "  started from `%s`\n", th.origin)
+			}
+		}
 		if th.stopReason != "" {
 			fmt.Fprintf(&sb, "  stopped: %s\n", th.stopReason)
 		}
@@ -745,6 +781,20 @@ func (b *brain) repeatStatus(dir string) string {
 	}
 	sb.WriteString("\n`/repeat watch` follows rounds live · `/repeat show` prints them in full · `/repeat finish` (or `wrapup`, `stop`) ends the loop once the current round completes · `/repeat abort` kills it now.")
 	return sb.String()
+}
+
+// belongs: the thread is listed, announced and controlled in both the folder
+// it runs in and the TUI that started it. Live 2026-10-21: a loop whose
+// task named another repository ran there, and `/repeat finish` typed in its TUI
+// answered "nothing to stop".
+func (th *repeatThread) belongs(dir string) bool {
+	dir = filepath.Clean(dir)
+	return filepath.Clean(th.dir) == dir || (th.origin != "" && filepath.Clean(th.origin) == dir)
+}
+
+// matches is threadMatches over both of the thread's folders.
+func (th *repeatThread) matches(threadID, dir, id string) bool {
+	return threadMatches(th.dir, threadID, dir, id) || (th.origin != "" && threadMatches(th.origin, threadID, dir, id))
 }
 
 // threadMatches is the selection rule shared by /repeat and /parallel: an
@@ -782,7 +832,7 @@ func (b *brain) repeatStop(dir, id string) string {
 		if th.finished {
 			continue
 		}
-		if threadMatches(th.dir, k, dir, id) {
+		if th.matches(k, dir, id) {
 			// Graceful by default: cancelling the context would abort the round
 			// in flight, and that round is usually the expensive one. Live
 			// 2026-08-31: a stop killed a 25-minute claude round mid-work and
@@ -808,7 +858,7 @@ func (b *brain) repeatAbort(dir, id string) string {
 		if th.finished {
 			continue
 		}
-		if threadMatches(th.dir, k, dir, id) {
+		if th.matches(k, dir, id) {
 			th.stopped = true
 			th.cancel()
 			th.finished = true
@@ -828,6 +878,7 @@ func (b *brain) startRepeat(req oaiChatReq, task string, count int, budget *runB
 		budget:  budget,
 		id:      newRepeatID(),
 		dir:     req.ws.Dir,
+		origin:  req.ws.Origin,
 		task:    task,
 		target:  count,
 		started: time.Now(),
@@ -1017,12 +1068,23 @@ func jsonString(s string) json.RawMessage {
 // currently in flight at the HTTP layer.
 func chatRequestFrom(ctx context.Context, req oaiChatReq) *http.Request {
 	body, _ := json.Marshal(req)
+	if req.ws.Origin != "" {
+		// The header carries only the folder the round runs in. Without the
+		// origin, a round whose task moved it (followTask) reported that
+		// folder as its TUI: /v1/workers and a dashboard showed a loop's worker
+		// under the other repository (live 2026-10-21).
+		ctx = context.WithValue(ctx, originKey{}, req.ws.Origin)
+	}
 	r, _ := http.NewRequestWithContext(context.WithValue(ctx, noDedupeKey{}, true),
 		http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set(workspaceHeader, req.ws.Dir) // a detached round stays in the folder that started it
 	return r
 }
+
+// originKey carries a detached round's TUI folder into its turn. A context
+// value, not a header: only the brain's own rounds can set it.
+type originKey struct{}
 
 // discardWriter is an http.ResponseWriter for detached runs: the turn that
 // launched the thread is long gone, so an iteration's bytes have nowhere to

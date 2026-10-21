@@ -147,6 +147,7 @@ func (b *brain) startProgram(req oaiChatReq, raw string, p captaincode.Program, 
 	th := &repeatThread{
 		id:      newRepeatID(),
 		dir:     req.ws.Dir,
+		origin:  req.ws.Origin,
 		task:    raw,
 		target:  target,
 		started: time.Now(),

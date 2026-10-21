@@ -93,13 +93,14 @@ func TestLastSessionIsTheFoldersOwnNewest(t *testing.T) {
 	repo := filepath.Join(root, "repo")
 	require.NoError(t, os.MkdirAll(repo, 0o755))
 	db := filepath.Join(root, "opencode.db")
-	sql := `create table session (id text primary key, directory text, parent_id text, time_updated integer);
-insert into session values ('ses_old_here', '` + repo + `', null, 100);
-insert into session values ('ses_new_here', '` + repo + `', null, 200);
-insert into session values ('ses_gone_sub', '` + repo + `/prototype/gone', null, 300);
-insert into session values ('ses_worker', '` + repo + `', 'ses_new_here', 400);`
+	sql := `create table session (id text primary key, directory text, parent_id text, time_updated integer, title text);
+insert into session values ('ses_old_here', '` + repo + `', null, 100, 'old');
+insert into session values ('ses_new_here', '` + repo + `', null, 200, 'new');
+insert into session values ('ses_gone_sub', '` + repo + `/prototype/gone', null, 300, 'sub');
+insert into session values ('ses_worker', '` + repo + `', 'ses_new_here', 400, 'captain-claude');
+insert into session values ('ses_notes', '` + repo + `', null, 500, 'captain');`
 	require.NoError(t, exec.Command("sqlite3", db, sql).Run())
-	assert.Equal(t, "ses_new_here", LastSessionFromDB(db, repo), "the newest top-level session of the folder itself")
+	assert.Equal(t, "ses_new_here", LastSessionFromDB(db, repo), "the newest top-level session of the folder itself, never the captain notes session")
 	assert.Equal(t, "", LastSessionFromDB(db, filepath.Join(repo, "prototype", "gone")), "a folder that is gone cannot be resumed")
 	assert.Equal(t, "", LastSessionFromDB(db, filepath.Join(root, "other")))
 }

@@ -42,6 +42,15 @@ const queueNudge = "Continue if you have next steps, or stop and ask for clarifi
 // A blanked prompt never runs.
 const deletedPrompt = "[captain: this queued prompt was deleted]"
 
+// isCaptainNote reports a note `captain run` posted into a session
+// (captainNote in main.go: "**→ leg** ...", "**assessed leg** ..."). opencode
+// stores such a note as a user message, with noReply, so it sits after the
+// last answer like a prompt; it is a log line, not a request. Live
+// 2026-10-21: two notes in a resumed session ran as queued prompts.
+func isCaptainNote(text string) bool {
+	return strings.HasPrefix(text, "**→ ") || strings.HasPrefix(text, "**assessed ")
+}
+
 // dropDeleted removes the prompts the user deleted from a transcript.
 func dropDeleted(msgs []oaiMessage) []oaiMessage {
 	out := msgs[:0:0]
@@ -95,7 +104,7 @@ func queuedPrompts(msgs []oaiMessage) []int {
 			continue
 		}
 		t := strings.TrimSpace(messageText(msgs[i].Content))
-		if t == "" || t == queueNudge {
+		if t == "" || t == queueNudge || isCaptainNote(t) {
 			continue
 		}
 		out = append(out, i)

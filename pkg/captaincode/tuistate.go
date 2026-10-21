@@ -140,6 +140,9 @@ func PromptHistoryFromDB(db, dir string, n int) []string {
 
 func sqlQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
+// captainNotesTitle is the title of the notes session `captain run` writes to.
+const captainNotesTitle = "captain"
+
 // LastSessionFromDB is the newest top-level session opencode holds for
 // exactly this folder, or "" - what `-c` should resume. Stock opencode's
 // --continue picks the newest session of the PROJECT (the git root), so a
@@ -148,6 +151,12 @@ func sqlQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") +
 // died on FileSystem.realPath ENOENT before reaching the brain
 // (2026-09-13). The directory must still exist: a session whose folder is
 // gone cannot take a prompt.
+//
+// The session titled "captain" is the notes channel of `captain run` (its
+// "→ leg" and "assessed" lines, posted with noReply). Each run updates it, so
+// it was always the folder's newest session: the TUI resumed into it, and the
+// next prompt replayed those notes as queued prompts (live 2026-10-21). A TUI
+// never resumes it.
 func LastSessionFromDB(db, dir string) string {
 	if db == "" || dir == "" || !isFile(db) || !isDir(dir) {
 		return ""
@@ -156,7 +165,7 @@ func LastSessionFromDB(db, dir string) string {
 	if err != nil {
 		return ""
 	}
-	q := fmt.Sprintf(`select id from session where directory = %s and parent_id is null order by time_updated desc limit 1`, sqlQuote(dir))
+	q := fmt.Sprintf(`select id from session where directory = %s and parent_id is null and title != %s order by time_updated desc limit 1`, sqlQuote(dir), sqlQuote(captainNotesTitle))
 	out, err := exec.Command(sqlite, "-readonly", db, q).Output()
 	if err != nil {
 		return ""

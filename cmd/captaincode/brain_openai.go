@@ -297,7 +297,23 @@ func promptFrom(msgs []oaiMessage) string {
 // 200k tokens vs codex). Budgets are conservative chars≈4·tokens estimates
 // below each model's window, leaving room for output. Override all legs with
 // CAPTAIN_WRAPPER_MAX_PROMPT (chars).
+// grokCLIInline is the most a grok-cli prompt may carry. The Grok CLI keeps
+// about 100 KB of a `-p` prompt inline and writes the rest to a file, telling
+// the model it sees "only an excerpt of the user's request": the model then
+// spends its first steps reading the file and says the request was cut (live
+// 2026-10-21, a 128 KB replay for a one-line request). The brain adds its
+// contracts after fitting, so the cap leaves room under the CLI's limit.
+const grokCLIInline = 80_000
+
 func promptBudget(leg captaincode.Leg) int {
+	b := promptBudgetRaw(leg)
+	if s, ok := captaincode.Spec(leg); ok && s.Transport == captaincode.TransportGrokCLI && b > grokCLIInline {
+		return grokCLIInline
+	}
+	return b
+}
+
+func promptBudgetRaw(leg captaincode.Leg) int {
 	if v := os.Getenv("CAPTAIN_WRAPPER_MAX_PROMPT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
@@ -373,6 +389,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ws = workspaceOf(r)
+	if o, _ := r.Context().Value(originKey{}).(string); o != "" {
+		req.ws.Origin = o
+	}
 	req.ws.Session = sessions.of(req.ws.Dir)
 	req.internal = r.Context().Value(noDedupeKey{}) != nil
 	req.outcome, _ = r.Context().Value(turnOutcomeKey{}).(*turnOutcome)
