@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 	"github.com/stretchr/testify/assert"
@@ -191,4 +192,50 @@ func TestBootstrapFillsAFreshRepoBrainFromItsDocs(t *testing.T) {
 	vision, _ := os.ReadFile(filepath.Join(repo, ".euclid", "VISION.md"))
 	assert.Contains(t, string(vision), "billing engine for co-ops")
 	assert.Empty(t, b.ledger.Events, "bootstrap is bookkeeping, never scored")
+}
+
+// Live 2026-10-19: the learning state rejected every commit in a busy repo,
+// and each finished task sent the same batch to the model again (180 calls).
+// One failure still retries on the next task; from the second in a row a
+// failure waits, longer each time.
+func TestAutoDistillWaitsAfterRepeatedFailuresAndBacksOff(t *testing.T) {
+	b := teamBrain()
+	st := &b.autoDistill
+	st.pending, st.last, st.failed, st.fails = map[string]captaincode.Workspace{}, map[string]time.Time{}, map[string]string{}, map[string]int{}
+	st.wake = make(chan struct{}, 1)
+	st.cooldown = time.Hour
+	root := filepath.Join(t.TempDir(), "brain") // no write brain at ws.Dir: the run fails before any model call
+	run := func() {
+		st.mu.Lock()
+		st.pending[root] = captaincode.Workspace{Dir: t.TempDir()}
+		st.order = append(st.order, root)
+		st.running = true
+		st.mu.Unlock()
+		st.wg.Add(1)
+		go b.drainAutoDistill()
+	}
+	fails := func() int { st.mu.Lock(); defer st.mu.Unlock(); return st.fails[root] }
+
+	run()
+	st.wg.Wait()
+	assert.Equal(t, 1, fails())
+	assert.True(t, st.last[root].IsZero(), "one failure retries on the next task")
+	run()
+	st.wg.Wait()
+	assert.Equal(t, 2, fails())
+	assert.False(t, st.last[root].IsZero(), "the second failure in a row starts the wait")
+	assert.Contains(t, b.autoDistillStatus(root), "failed 2 time(s); retry after")
+
+	run() // the next finished task queues it again: it waits instead of running
+	time.Sleep(200 * time.Millisecond)
+	assert.Equal(t, 2, fails(), "no third attempt inside the wait")
+	t.Setenv("CAPTAIN_EUCLID", "0") // stop the waiting drain
+	st.wake <- struct{}{}
+	st.wg.Wait()
+
+	assert.Equal(t, time.Hour, st.delayFor(root))
+	st.fails[root] = 4
+	assert.Equal(t, 4*time.Hour, st.delayFor(root))
+	st.fails[root] = 40
+	assert.Equal(t, 16*time.Hour, st.delayFor(root), "capped")
 }

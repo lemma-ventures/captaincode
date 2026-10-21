@@ -48,6 +48,7 @@ type autoDistillState struct {
 	active   string
 	last     map[string]time.Time
 	failed   map[string]string
+	fails    map[string]int // consecutive failures per brain, for the backoff
 	pending  map[string]captaincode.Workspace
 	order    []string
 	wake     chan struct{}
@@ -60,6 +61,20 @@ func (st *autoDistillState) delay() time.Duration {
 		return st.cooldown
 	}
 	return autoDistillCooldown
+}
+
+// delayFor is the wait before root's next run: the cooldown, doubled for each
+// failure in a row after the second, up to 16 times. One failure (a provider
+// blip) still retries on the next finished task. Repeated failures used to
+// retry the same way, so every task sent the same batch to the model again:
+// 2026-10-19, a commit the learning state kept rejecting cost 180 model calls
+// in one repository.
+func (st *autoDistillState) delayFor(root string) time.Duration {
+	d := st.delay()
+	for i := 2; i < st.fails[root] && i < 6; i++ {
+		d *= 2
+	}
+	return d
 }
 
 func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
@@ -81,6 +96,7 @@ func (b *brain) maybeAutoDistill(ws captaincode.Workspace) {
 		st.pending = map[string]captaincode.Workspace{}
 		st.last = map[string]time.Time{}
 		st.failed = map[string]string{}
+		st.fails = map[string]int{}
 		st.wake = make(chan struct{}, 1)
 	}
 	if in.Err != nil {
@@ -121,7 +137,7 @@ func (b *brain) drainAutoDistill() {
 		}
 		next, wait := -1, st.delay()
 		for i, root := range st.order {
-			delay := time.Until(st.last[root].Add(st.delay()))
+			delay := time.Until(st.last[root].Add(st.delayFor(root)))
 			if delay <= 0 {
 				next = i
 				break
@@ -151,13 +167,16 @@ func (b *brain) drainAutoDistill() {
 		changed, err := b.autoDistillWorkspace(ws, root)
 		st.mu.Lock()
 		st.active = ""
-		if changed {
-			st.last[root] = time.Now()
-		}
 		if err != nil {
 			st.failed[root] = captaincode.Scrub(err.Error())
-		} else {
+			st.fails[root]++
+		}
+		if changed || st.fails[root] >= 2 { // from the second failure in a row, failures wait too
+			st.last[root] = time.Now()
+		}
+		if err == nil {
 			delete(st.failed, root)
+			delete(st.fails, root)
 		}
 		st.mu.Unlock()
 		if err != nil {
@@ -213,13 +232,13 @@ func (b *brain) autoDistillStatus(root string) string {
 		return "running"
 	}
 	if _, ok := st.pending[root]; ok {
-		if due := st.last[root].Add(st.delay()); time.Now().Before(due) {
+		if due := st.last[root].Add(st.delayFor(root)); time.Now().Before(due) {
 			return "queued until " + due.UTC().Format(time.RFC3339)
 		}
 		return "queued"
 	}
 	if err := st.failed[root]; err != "" {
-		return "failed; retry on next completed task: " + err
+		return fmt.Sprintf("failed %d time(s); retry after %s: %s", st.fails[root], st.last[root].Add(st.delayFor(root)).UTC().Format(time.RFC3339), err)
 	}
 	if last := st.last[root]; !last.IsZero() {
 		return "last completed " + last.UTC().Format(time.RFC3339)
