@@ -1571,8 +1571,7 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 	runOne := func(l captaincode.Leg, od, os_ func(string)) (captaincode.Leg, captaincode.Result, error) {
 		b.inflightRuns.Add(1)
 		defer b.inflightRuns.Add(-1)
-		b.active.begin(ws, l, prompt)
-		defer b.active.end(l)
+		defer b.active.begin(ws, l, prompt)()
 		// /interrupt typed while the turn was still being prepared (compaction,
 		// routing): the worker never starts - the prompt is withdrawn, nothing
 		// spent (2026-09-18; before, "no worker is running" and the turn ran).

@@ -127,8 +127,7 @@ func TestMovedWorkerIsIsolatedFromABusyCheckout(t *testing.T) {
 	land()
 	assert.Equal(t, repo, same.Dir, "idle: the worker runs in the checkout")
 
-	b.active.begin(captaincode.Workspace{Dir: repo, Origin: repo}, captaincode.LegClaude, "[user]\nimplement the next roadmap item")
-	t.Cleanup(func() { b.active.end(captaincode.LegClaude) })
+	t.Cleanup(b.active.begin(captaincode.Workspace{Dir: repo, Origin: repo}, captaincode.LegClaude, "[user]\nimplement the next roadmap item"))
 	busy, why := b.repoBusy(repo)
 	require.True(t, busy)
 	assert.Contains(t, why, "claude is running there")
@@ -153,8 +152,7 @@ func TestMovedWorkerIsIsolatedFromABusyCheckout(t *testing.T) {
 func TestWorkersPanelNamesWhereARunCameFrom(t *testing.T) {
 	b := teamBrain()
 	repo, other := gitRepo(t), t.TempDir()
-	b.active.begin(captaincode.Workspace{Dir: repo, Origin: other}, captaincode.LegCodexCLI, "[user]\nreview and fix the readme")
-	t.Cleanup(func() { b.active.end(captaincode.LegCodexCLI) })
+	t.Cleanup(b.active.begin(captaincode.Workspace{Dir: repo, Origin: other}, captaincode.LegCodexCLI, "[user]\nreview and fix the readme"))
 	rec := httptest.NewRecorder()
 	b.workers(rec, httptest.NewRequest(http.MethodGet, "/v1/workers?cwd="+url.QueryEscape(repo), nil))
 	var out struct {

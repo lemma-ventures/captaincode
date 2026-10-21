@@ -20,6 +20,7 @@ import (
 
 // activeRun is a worker currently executing.
 type activeRun struct {
+	leg     captaincode.Leg
 	started time.Time
 	task    string
 	dir     string             // the workspace the run is for
@@ -27,39 +28,71 @@ type activeRun struct {
 	effort  captaincode.Effort // how hard it was asked to think ("" = the transport's default)
 }
 
-// activeRuns is the live per-leg view. Keyed by leg because that is what the
-// panel shows; a leg running twice at once keeps the first start time, which
-// is the one worth displaying ("this leg has been busy for 4m").
+// activeRuns holds every run in progress, one entry per run. The panel shows
+// one row per leg, but two TUIs can run the same leg at once: keyed by leg,
+// the second run was invisible, and the first run to end removed the other
+// one too (a claude run in one folder vanished when a claude run elsewhere
+// finished, and repoBusy then saw an idle checkout that was not).
 type activeRuns struct {
 	mu   sync.Mutex
-	runs map[captaincode.Leg]activeRun
+	next uint64
+	runs map[uint64]activeRun
 }
 
-func (a *activeRuns) begin(ws captaincode.Workspace, l captaincode.Leg, task string) {
+// begin records a run and returns the function that ends exactly that run.
+func (a *activeRuns) begin(ws captaincode.Workspace, l captaincode.Leg, task string) (end func()) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.runs == nil {
-		a.runs = map[captaincode.Leg]activeRun{}
+		a.runs = map[uint64]activeRun{}
 	}
-	if _, busy := a.runs[l]; !busy {
-		a.runs[l] = activeRun{started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir, origin: ws.Origin, effort: ws.Effort}
+	a.next++
+	id := a.next
+	a.runs[id] = activeRun{leg: l, started: time.Now(), task: promptPeek(lastUserTurn(task)), dir: ws.Dir, origin: ws.Origin, effort: ws.Effort}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			delete(a.runs, id)
+		})
 	}
 }
 
-func (a *activeRuns) end(l captaincode.Leg) {
+// list is every run in progress, oldest first.
+func (a *activeRuns) list() []activeRun {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	delete(a.runs, l)
+	out := make([]activeRun, 0, len(a.runs))
+	for _, run := range a.runs {
+		out = append(out, run)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].started.Before(out[j].started) })
+	return out
 }
 
+// snapshot is the oldest run of each busy leg: the one worth displaying
+// ("this leg has been busy for 4m").
 func (a *activeRuns) snapshot() map[captaincode.Leg]activeRun {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	out := make(map[captaincode.Leg]activeRun, len(a.runs))
-	for k, v := range a.runs {
-		out[k] = v
+	out := map[captaincode.Leg]activeRun{}
+	for _, run := range a.list() {
+		if _, seen := out[run.leg]; !seen {
+			out[run.leg] = run
+		}
 	}
 	return out
+}
+
+// runRow is one run in progress, for a view that shows every worker on the
+// machine (several TUIs, several folders) rather than one row per leg.
+type runRow struct {
+	Leg       string `json:"leg"`
+	Task      string `json:"task,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	ElapsedMs int64  `json:"elapsed_ms"`
+	Started   int64  `json:"started"` // Unix milliseconds
+	Dir       string `json:"dir,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 }
 
 type workerRow struct {
@@ -77,17 +110,25 @@ type workerRow struct {
 }
 
 func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
-	live := b.active.snapshot()
 	now := time.Now()
 	// A sidebar sees its own project's runs. Cooldowns and run counts stay
 	// machine-wide: a rate limit is per account, whichever folder hit it.
 	dir, mine := workspaceFilter(r)
-	if mine {
-		for l, run := range live {
-			if run.dir != dir && !insideRepo(run.dir, dir) {
-				delete(live, l)
-			}
+	all := b.active.list()
+	runs := make([]runRow, 0, len(all))
+	live := map[captaincode.Leg]activeRun{}
+	for _, run := range all {
+		if mine && run.dir != dir && !insideRepo(run.dir, dir) {
+			continue
 		}
+		if _, seen := live[run.leg]; !seen {
+			live[run.leg] = run
+		}
+		runs = append(runs, runRow{
+			Leg: string(run.leg), Task: run.task, Effort: string(run.effort),
+			ElapsedMs: now.Sub(run.started).Milliseconds(), Started: run.started.UnixMilli(),
+			Dir: run.dir, Origin: run.origin,
+		})
 	}
 
 	if !b.lockForPoll(w, r) {
@@ -137,7 +178,7 @@ func (b *brain) workers(w http.ResponseWriter, r *http.Request) {
 		}
 		return rows[i].Leg < rows[j].Leg
 	})
-	writeJSON(w, 200, map[string]any{"workers": rows, "busy": len(live)})
+	writeJSON(w, 200, map[string]any{"workers": rows, "busy": len(runs), "runs": runs})
 }
 
 // insideRepo: run dir is a worktree of the repository at dir. An isolated

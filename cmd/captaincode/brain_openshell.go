@@ -192,8 +192,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	}
 	b.inflightRuns.Add(1)
 	defer b.inflightRuns.Add(-1)
-	b.active.begin(req.ws, captaincode.LegOpenShell, prompt)
-	defer b.active.end(captaincode.LegOpenShell)
+	defer b.active.begin(req.ws, captaincode.LegOpenShell, prompt)()
 	req.ws.Steer.Began(captaincode.LegOpenShell)
 	defer req.ws.Steer.Ended(captaincode.LegOpenShell)
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "run", Leg: "openshell", Model: "openshell", Text: promptPeek(lastUserTurn(prompt))})
