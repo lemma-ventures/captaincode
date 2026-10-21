@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -210,4 +211,97 @@ func TestLocalRegistryCannotPromoteHelper(t *testing.T) {
 	require.Error(t, validateSpec(LegSpec{ID: "another", Transport: TransportLocal}))
 	_, err := ParseWorkflow("/local edit files > /claude review")
 	require.Error(t, err)
+}
+
+func TestCompactLocalStaysOffUntilNamed(t *testing.T) {
+	t.Setenv("CAPTAIN_COMPACT_LOCAL", "")
+	_, on, err := CompactLocalConfig()
+	require.NoError(t, err)
+	require.False(t, on)
+	t.Setenv("CAPTAIN_COMPACT_LOCAL", "cloud-model")
+	_, on, err = CompactLocalConfig()
+	require.Error(t, err)
+	require.True(t, on)
+}
+
+func TestCompleteProseIgnoresThinkingAndSkipsQualification(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	chats := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			fmt.Fprint(w, `{"models":[{"name":"gpt-oss:20b","digest":"sha256:fixture"}]}`)
+		case "/api/show":
+			fmt.Fprint(w, `{}`)
+		case "/api/chat":
+			chats++
+			var req map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			require.Equal(t, false, req["think"])
+			_, tools := req["tools"]
+			require.False(t, tools)
+			opt := req["options"].(map[string]any)
+			require.Equal(t, float64(0), opt["temperature"])
+			fmt.Fprint(w, "{\"message\":{\"thinking\":\"hidden plan\",\"content\":\"kept the number 4\"},\"done\":false}\n")
+			fmt.Fprint(w, "{\"message\":{\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":8,\"eval_count\":3}\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("CAPTAIN_LOCAL_URL", srv.URL)
+	t.Setenv("CAPTAIN_LOCAL_MODEL", "gpt-oss:20b")
+	t.Setenv("CAPTAIN_COMPACT_LOCAL", "gpt-oss:20b")
+	c, on, err := CompactLocalConfig()
+	require.NoError(t, err)
+	require.True(t, on)
+	res, err := c.CompleteProse(context.Background(), "No tools.", "Facts: 4 tests passed.", 128)
+	require.NoError(t, err)
+	require.Equal(t, "kept the number 4", res.Text)
+	require.NotContains(t, res.Text, "hidden")
+	require.Equal(t, 11, res.Tokens)
+	_, err = RunLocalSmall(context.Background(), "digest", "Facts: 4 tests passed.")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unqualified")
+	require.Equal(t, 1, chats)
+}
+
+func TestCompleteProseRefusesRemoteOversizeAndTruncation(t *testing.T) {
+	c := LocalConfig{Endpoint: "http://127.0.0.1:11434", Model: "gpt-oss:20b"}
+	c.client = &http.Client{Transport: localRoundTrip(func(*http.Request) (*http.Response, error) {
+		t.Fatal("oversize input must not call the runtime")
+		return nil, nil
+	})}
+	_, err := c.CompleteProse(context.Background(), "s", strings.Repeat("a", localProseMaxInput), 128)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "350000")
+
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			fmt.Fprint(w, `{"models":[{"name":"gpt-oss:20b","digest":"sha256:fixture"}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"remote_host":"https://example.test"}`)
+	}))
+	defer remote.Close()
+	c = LocalConfig{Endpoint: remote.URL, Model: "gpt-oss:20b"}
+	_, err = c.CompleteProse(context.Background(), "s", "short", 128)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "remote-backed")
+
+	cut := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			fmt.Fprint(w, `{"models":[{"name":"gpt-oss:20b","digest":"sha256:fixture"}]}`)
+		case "/api/show":
+			fmt.Fprint(w, `{}`)
+		default:
+			fmt.Fprint(w, "{\"message\":{\"content\":\"partial\"},\"done\":true,\"done_reason\":\"length\"}\n")
+		}
+	}))
+	defer cut.Close()
+	c = LocalConfig{Endpoint: cut.URL, Model: "gpt-oss:20b"}
+	_, err = c.CompleteProse(context.Background(), "s", "short", 128)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "truncated")
 }

@@ -1045,7 +1045,8 @@ See the [pilot setup and limits](../examples/openshell-pilot/README.md).
 | `CAPTAIN_COMPACT` | on (`0` disables) | Prune-then-summarise long sessions. Off, an over-budget replay is cut: the framing, the opening request, the live turn and the newest whole turns are kept; the oldest middle turns go, replaced by the session's last summary and a one-line index of the requests left out. |
 | `CAPTAIN_COMPACT_SKIP_PCT` | `15` | A replay at most this many percent over budget after pruning is cut, with no summary call. |
 | `CAPTAIN_COMPACT_WAIT` | `20s` | How long a worker waits for a summary. Past it the turn starts on the cut; the summary finishes in the background and the next turn uses it. Summaries are saved per session under `~/.captaincode/compact/`, and reused only while the history they cover is unchanged. |
-| `CAPTAIN_COMPACT_LEG` | a fast cheap leg | Which leg summarises. Benchmark candidates on *distinct* prose - repetitive filler makes a slow model look fast. |
+| `CAPTAIN_COMPACT_LEG` | a fast cheap leg | Which leg summarises, and which leg narrates a worker's steps, when `CAPTAIN_COMPACT_LOCAL` is unset. Benchmark candidates on *distinct* prose - repetitive filler makes a slow model look fast. The inbox judge and the repeat-round digest keep using this leg. |
+| `CAPTAIN_COMPACT_LOCAL` | unset | Installed Ollama tag for compaction and narration. The call uses `CAPTAIN_LOCAL_URL` (loopback only), sends no tools, and turns thinking off. A failed call is not sent to `CAPTAIN_COMPACT_LEG`. Input over 350,000 characters fails and the turn uses the cut. This does not set `CAPTAIN_LOCAL_TASKS` and does not require `captain local qualify`. The brain reads it at startup. |
 | `CAPTAIN_REPLAY_BUDGETS` | on (`0` disables) | Per-leg prompt budgets derived from context windows. |
 | `CAPTAIN_WRAPPER_MAX_PROMPT` | derived | Hard character ceiling on a worker prompt. |
 

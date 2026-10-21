@@ -20,5 +20,6 @@ func TestMain(m *testing.M) {
 	// itself.
 	os.Unsetenv("CAPTAIN_EUCLID_MCP_CONFIG")
 	os.Unsetenv("CAPTAIN_EUCLID_MEMORY_CONFIG")
+	os.Unsetenv("CAPTAIN_COMPACT_LOCAL")
 	os.Exit(m.Run())
 }

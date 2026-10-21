@@ -263,6 +263,142 @@ func (c LocalConfig) complete(ctx context.Context, purpose, input string) (Resul
 	return res, nil
 }
 
+const localProseMaxInput = 350_000
+const localProseContext = 131072
+
+// CompactLocalConfig is the operator's Ollama tag for compaction and narration.
+// An empty CAPTAIN_COMPACT_LOCAL leaves those calls on CAPTAIN_COMPACT_LEG.
+// A set value does not enable CAPTAIN_LOCAL_TASKS and does not read the
+// qualification file. RunLocalSmall stays gated.
+func CompactLocalConfig() (LocalConfig, bool, error) {
+	model := strings.TrimSpace(os.Getenv("CAPTAIN_COMPACT_LOCAL"))
+	if model == "" {
+		return LocalConfig{}, false, nil
+	}
+	c := LocalConfig{Endpoint: strings.TrimRight(os.Getenv("CAPTAIN_LOCAL_URL"), "/"), Model: model}
+	if c.Endpoint == "" {
+		c.Endpoint = "http://127.0.0.1:11434"
+	}
+	return c, true, c.Validate()
+}
+
+func (c LocalConfig) longClient() *http.Client {
+	if c.client != nil {
+		return c.client
+	}
+	return &http.Client{Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("local redirects refused")
+	}}
+}
+
+// CompleteProse asks the selected local model for text. It sends no tools.
+// It refuses a remote-backed model, an input over 350,000 characters, and a
+// prompt that does not fit the 131,072-token context. It does not truncate
+// and it does not call another provider. Thinking text is not part of the result.
+func (c LocalConfig) CompleteProse(ctx context.Context, system, input string, maxTokens int) (Result, error) {
+	res := Result{Model: c.Model}
+	if err := c.Validate(); err != nil {
+		return res, err
+	}
+	if maxTokens < 1 || maxTokens > 4096 {
+		return res, errors.New("local prose token cap is 1 to 4096")
+	}
+	if len(system)+len(input) > localProseMaxInput {
+		return res, errors.New("local prose input exceeds 350000 characters; no truncation or remote fallback")
+	}
+	tokens := (len(system)+len(input))/3 + maxTokens
+	if tokens > localProseContext {
+		return res, errors.New("local prose input exceeds the model context; no truncation or remote fallback")
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 6*time.Minute)
+		defer cancel()
+	}
+	if _, err := c.digest(ctx); err != nil {
+		return res, err
+	}
+	numCtx := ((tokens + 2047) / 2048) * 2048
+	if numCtx < 8192 {
+		numCtx = 8192
+	}
+	if numCtx > localProseContext {
+		numCtx = localProseContext
+	}
+	raw, err := json.Marshal(map[string]any{
+		"model": c.Model, "stream": true, "think": false,
+		"options":  map[string]any{"temperature": 0, "num_predict": maxTokens, "num_ctx": numCtx},
+		"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": input}},
+	})
+	if err != nil {
+		return res, err
+	}
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, "POST", c.Endpoint+"/api/chat", bytes.NewReader(raw))
+	if err != nil {
+		return res, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.longClient().Do(req)
+	if err != nil {
+		return res, errors.New("local completion unavailable")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return res, fmt.Errorf("local completion HTTP %d", resp.StatusCode)
+	}
+	sc := bufio.NewScanner(io.LimitReader(resp.Body, (1<<20)+1))
+	sc.Buffer(make([]byte, 4096), 256<<10)
+	var out strings.Builder
+	finished := false
+	for sc.Scan() {
+		var chunk struct {
+			Error   string `json:"error"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			Done       bool   `json:"done"`
+			DoneReason string `json:"done_reason"`
+			PromptEval int    `json:"prompt_eval_count"`
+			Eval       int    `json:"eval_count"`
+		}
+		if json.Unmarshal(sc.Bytes(), &chunk) != nil {
+			return res, errors.New("invalid local stream")
+		}
+		if chunk.Error != "" {
+			return res, errors.New("local completion failed")
+		}
+		if chunk.Message.Content != "" {
+			if res.TTFTMs == nil {
+				ms := time.Since(start).Milliseconds()
+				res.TTFTMs = &ms
+			}
+			out.WriteString(chunk.Message.Content)
+		}
+		if out.Len() > 64<<10 {
+			return res, errors.New("local output exceeds limit")
+		}
+		if chunk.DoneReason == "length" {
+			return res, errors.New("local output truncated")
+		}
+		if chunk.Done {
+			finished = true
+			if chunk.PromptEval >= 0 && chunk.Eval >= 0 {
+				p, n := chunk.PromptEval, chunk.Eval
+				res.Tokens = p + n
+				res.TokenUsage = OptionalInclusiveTokenUsage(&p, &n, nil, "local")
+			}
+			break
+		}
+	}
+	res.Text = out.String()
+	res.DurationMs = time.Since(start).Milliseconds()
+	if sc.Err() != nil || !finished || strings.TrimSpace(res.Text) == "" {
+		return res, errors.New("incomplete local stream")
+	}
+	return res, nil
+}
+
 // RunLocalSmall verifies the model digest on every call. Qualification bypass
 // is private to QualifyLocal, so a routing flag cannot promote an untested model.
 func RunLocalSmall(ctx context.Context, purpose, input string) (Result, error) {

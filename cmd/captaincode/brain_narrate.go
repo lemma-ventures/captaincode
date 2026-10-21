@@ -17,6 +17,7 @@ package main
 // turns it off.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -83,12 +84,29 @@ func (b *brain) narrateSteps(task string, steps []captaincode.Step) ([]string, e
 	if b.narrateFn != nil {
 		return b.narrateFn(task, steps)
 	}
+	prompt := narrationPrompt(task, steps)
+	if c, on, lerr := captaincode.CompactLocalConfig(); on {
+		if lerr != nil {
+			return nil, lerr
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		res, err := c.CompleteProse(ctx, "No tools. Follow the user instructions exactly.", prompt, 1024)
+		captaincode.LogSmallCall("narrate", res, err)
+		if h := b.chargeOverhead(task); h != nil {
+			h(captaincode.LegLocal, "narrate", res, err)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return parseNarration(res.Text, len(steps)), nil
+	}
 	d := captaincode.NewDispatcher(opencodePort)
 	d.Title = "narrate"
 	d.NoTools = true
 	d.Timeout = 45 * time.Second
 	leg := compactLeg()
-	res, err := d.Run(leg, narrationPrompt(task, steps))
+	res, err := d.Run(leg, prompt)
 	if h := b.chargeOverhead(task); h != nil {
 		h(leg, "narrate", res, err)
 	}

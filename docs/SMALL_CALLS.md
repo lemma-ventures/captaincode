@@ -59,6 +59,12 @@ a 64-KiB input limit, a 64-KiB output limit, and a 2,048-token output request ca
 Oversized input and incomplete or truncated streams fail. There is no silent
 truncation and no remote fallback for a selected helper call.
 
+## Compaction and narration
+
+Set `CAPTAIN_COMPACT_LOCAL` to an installed Ollama tag to send compaction and narration to that model. Leave `CAPTAIN_LOCAL_TASKS` unset. Classify, title, commit, digest, and learn still require a qualification pass.
+
+The call stays on the loopback runtime. It sends no tools and turns thinking off. A failed call is not sent to `CAPTAIN_COMPACT_LEG`. One compaction chunk is at most 80,000 characters. Input over 350,000 characters fails, and the turn keeps the cut. The brain reads the variable at startup.
+
 Only literal loopback HTTP origins are accepted. DNS names, URL credentials,
 paths, proxies, and redirects are refused. Remote-backed models are refused using
 runtime metadata and the model name. The operator must trust the local runtime:

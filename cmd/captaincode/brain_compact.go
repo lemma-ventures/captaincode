@@ -27,6 +27,7 @@ package main
 // the next turn. CAPTAIN_COMPACT=0 always cuts.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -220,22 +221,42 @@ func compactLeg() captaincode.Leg {
 // structured asks mirror prime's summary format, plus the style note the
 // editorial workload depends on.
 func summarizeSpan(span, prev string, onCall captaincode.CallHook) (string, error) {
-	d := captaincode.NewDispatcher(opencodePort)
-	d.Title = "compact"
-	d.NoTools = true
-	// Scale with span size: 90s strangled a 1MB session (live 2026-08-28 -
-	// compaction timed out every turn, windowing fallback each time). Cached
-	// per boundary, so the long first pass amortizes.
-	d.Timeout = 90*time.Second + time.Duration(len(span)/4_000)*time.Second
-	if d.Timeout > 6*time.Minute {
-		d.Timeout = 6 * time.Minute
-	}
 	var sb strings.Builder
 	sb.WriteString("Summarize this conversation span for an AI assistant that must continue the work seamlessly. STRUCTURE: 1) task state & open goals, 2) decisions made (with the user's exact key wordings), 3) essential content produced (titles, names, numbers, file paths touched), 4) the user's style/preferences. Be dense; keep exact terms; max ~600 words.\n\n")
 	if prev != "" {
 		sb.WriteString("Previous summary (fold it in - do not lose anything from it):\n" + prev + "\n\n")
 	}
 	sb.WriteString("New span:\n" + span)
+	wait := 90*time.Second + time.Duration(len(span)/4_000)*time.Second
+	if wait > 6*time.Minute {
+		wait = 6 * time.Minute
+	}
+	if c, on, lerr := captaincode.CompactLocalConfig(); on {
+		if lerr != nil {
+			return "", lerr
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		defer cancel()
+		res, err := c.CompleteProse(ctx, "No tools. Follow the user instructions exactly.", sb.String(), 4096)
+		captaincode.LogSmallCall("compaction", res, err)
+		if onCall != nil {
+			onCall(captaincode.LegLocal, "compaction", res, err)
+		}
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(res.Text) == "" {
+			return "", fmt.Errorf("empty summary")
+		}
+		return strings.TrimSpace(res.Text), nil
+	}
+	d := captaincode.NewDispatcher(opencodePort)
+	d.Title = "compact"
+	d.NoTools = true
+	// Scale with span size: 90s strangled a 1MB session (live 2026-08-28 -
+	// compaction timed out every turn, windowing fallback each time). Cached
+	// per boundary, so the long first pass amortizes.
+	d.Timeout = wait
 	leg := compactLeg()
 	res, err := d.Run(leg, sb.String())
 	if onCall != nil {
@@ -292,8 +313,12 @@ func (b *brain) fitPrompt(ws captaincode.Workspace, leg captaincode.Leg, prompt 
 	// to the turn it serves rather than letting it run off the books (M1.2).
 	// The sidebar's activity feed says what is happening while it runs.
 	t0 := time.Now()
-	b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(leg), Model: string(leg),
-		Text: fmt.Sprintf("compacting a %dk-char conversation on %s before %s starts (at most %s)", len(prompt)/1000, compactLeg(), leg, compactWait())})
+	who := string(compactLeg())
+	if m := strings.TrimSpace(os.Getenv("CAPTAIN_COMPACT_LOCAL")); m != "" {
+		who = m
+	}
+	b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: string(leg), Model: who,
+		Text: fmt.Sprintf("compacting a %dk-char conversation on %s before %s starts (at most %s)", len(prompt)/1000, who, leg, compactWait())})
 	out, err := b.compactPrompt(ws, prompt, budget, b.chargeOverhead(lastUserTurn(prompt)), compactWait())
 	if err != nil {
 		why := fmt.Sprintf("compaction failed: %v", err)

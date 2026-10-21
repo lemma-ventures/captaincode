@@ -95,6 +95,8 @@ func TestCompactLegDefaultsToFreeAndIsOverridable(t *testing.T) {
 	assert.Equal(t, captaincode.LegGemini, compactLeg())
 	t.Setenv("CAPTAIN_COMPACT_LEG", "not-a-leg")
 	assert.Equal(t, captaincode.LegGemini, compactLeg(), "an unknown override falls back to the default preference, never breaks the turn")
+	t.Setenv("CAPTAIN_COMPACT_LOCAL", "gpt-oss:20b")
+	assert.Equal(t, captaincode.LegGemini, compactLeg(), "the local prose model does not become the judge or the round-summary leg")
 }
 
 // A pruned block must never end on a torn multibyte character: the pruned
