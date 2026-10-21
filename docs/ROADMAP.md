@@ -1,6 +1,7 @@
 # Captain Code implementation roadmap
 
 Prepared 13 September 2026; status refreshed 7 October 2026.
+Blackbox backlog added 21 October 2026; earlier item statuses are unchanged.
 
 **M1–M5 control surfaces have largely landed in source** (accounting, eval harness,
 decisions, capabilities, quotas, budgets, escalation, isolation, artifacts,
@@ -21,6 +22,7 @@ guides, not release promises.
 | M5.3 real numbers | Needs cost-attributed pilot data |
 | M3.2 host workflows | Stages hand over their tree and cumulative diff applies at end (Q6 done); host `/team` and `+` stages rule once per conflict group (Q7 done) |
 | M3.8 `/btw` on codex | Named, not built; the installed `codex app-server` (0.156.0) has `turn/steer` |
+| Optional Blackbox security checks | Plan reviewed; evaluator, host coverage, authenticated rule import and enforcement remain unbuilt. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
 
 ### Build queue (October 2026)
 
@@ -47,6 +49,11 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | queued |
 | Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | queued |
 | Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
+| BB1 | Offline security evaluator and explicit detection coverage | M3/M4 | queued: contract and synthetic fixtures first |
+| BB2 | OpenCode audit hook and private security records | M3/M4 | blocked: BB1 |
+| BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | blocked: export contract and BB1 |
+| BB4 | Claude hook parity and workspace security status | M4 | blocked: BB2; rule health uses BB3 |
+| BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: BB2–BB4 and enforcement evidence |
 | N1 | Install a local model runtime and pull one candidate model | Small calls | needs you |
 | N2 | Qualify and run one real task on a second machine | M3.7 | needs you, after Q3 |
 | N3 | OpenShell #3940: maintainer vouch, then reopen with a DCO sign-off | M3.7 | blocked: maintainer |
@@ -69,7 +76,8 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
    `proposed`. When no row is left, report "no buildable row" and stop.
 2. Read the spec, then the files it cites. Line numbers are from 7 October. If
    a line moved, find the code by name. If the code no longer matches "Today",
-   adapt the build and write the difference in the row.
+   adapt the build and write the difference in the row. BB1–BB5 use the
+   revision and review date in the linked Blackbox plan.
 3. Write the named tests first, and see them fail where the spec says the code
    is wrong. Then build. Run the focused tests, `gofmt -l pkg cmd` and
    `go vet ./...`, and `bun test` in `plugin/` for a plugin change. The full
@@ -3648,6 +3656,138 @@ decision and its candidates. Verdicts are in the outcome records
    never changes a route the user typed.
 
 Step 1 needs no model and can start after Q8. Steps 2 and 3 need your go.
+
+### Blackbox security backlog (21 October 2026)
+
+**Outcome.** Developers can see which worker actions were checked, why a
+check flagged an action, and which supported actions were refused before
+execution. Security findings do not change routing quality scores.
+
+**Scope.** Accept a limited local detector into the backlog. Captain owns
+policy, identity, refusal and records. The [integration plan](AGENT_BLACKBOX_INTEGRATION.md)
+owns the detailed contracts, proposed mode settings, source references and
+validation cases. Its upstream review is pinned to
+`7d697683e0d56608cfe3fee374d6a6866702058a`. These entries do not enable it.
+
+Prioritize exact known-malware dependency matches, operator-selected protected
+paths, and secret-exposure warnings that add coverage beyond existing masking.
+Keep shell and prompt-injection heuristics advisory. A post-execution finding
+does not establish prevention. Existing Captain refusals always win.
+
+| ID | Priority | Accountable owner | Depends on | Definition of done |
+|---|---|---|---|---|
+| BB1 | High | Runtime engineer | Selected-category contract | One bounded Go evaluator runs offline without a decision model; synthetic fixtures define matches, benign cases, unsupported input and failures |
+| BB2 | High | Host integration engineer | BB1 | Actual OpenCode worker calls reach audit hooks; final arguments and exact task identities are checked; private records expose gaps |
+| BB3 | High | Security maintainer | BB1; complete upstream export | Verified, complete selected-category snapshots survive interrupted updates; forged authority, replay and revoked rules cannot become blockable |
+| BB4 | Medium | Host integration engineer | BB2; BB3 for verified rule health | Claude checks the final executed arguments; the existing workspace view shows host coverage, snapshot age and disposition |
+| BB5 | High, gated | Security maintainer | BB2–BB4; proof and pilot gates | Eligible trusted matches stop side effects; required-check failures stop the scoped action; retry and fallback cannot bypass the refusal |
+
+Priority expresses value; dependencies determine build order. BB1–BB2 can use
+synthetic rules before BB3. A missing authenticated export blocks production
+enforcement, not the audit experiment.
+
+| ID | Formalized | Specified | Implemented | Tested | Released |
+|---|---|---|---|---|---|
+| BB1 | not_applicable | draft | not_started | not_started | not_started |
+| BB2 | not_applicable | draft | not_started | not_started | not_started |
+| BB3 | not_started | draft | not_started | not_started | not_started |
+| BB4 | not_applicable | draft | not_started | not_started | not_started |
+| BB5 | not_started | draft | not_started | not_started | not_started |
+
+BB1, BB2 and BB4 only evaluate or observe. Their assurance comes from bounded
+parser tests, privacy tests and host integration fixtures; no formal claim is
+made about detector judgment. Before protected implementation in BB3 and BB5,
+machine-check snapshot acceptance and policy-composition invariants using the
+repository's formal workflow. Include replay, revocation, required-check failure,
+denial precedence and retry transitions. Model assumptions must name the host
+hook and worker-containment boundary. A proof cannot establish classifier accuracy.
+
+#### BB1. Offline security evaluator and coverage contract
+
+Use the Python detector as the semantic reference. Use the TypeScript bridge
+for host mapping examples. Preserve the upstream MIT notice for derived code.
+Do not install the full host application or import the bridge entry point.
+
+Specify normalized actions, findings, snapshot identity and coverage states
+before implementing the proposed JSON CLI. Bound input size, rule count, regex
+work and execution time. No network request or model call belongs in evaluation.
+Unknown tools, unsupported package syntax and truncated targets report incomplete
+coverage. They must not report a clean check.
+
+**Tests.** Map `filePath`, `file_path`, shell arguments, nested patch targets,
+reads, edits, fetches and MCP calls. Include synthetic secrets, benign examples,
+unsupported regexes, oversized inputs and detector failures. Record expected
+Python/TypeScript differences. Run required parity fixtures without skips.
+
+#### BB2. OpenCode audit hook and private security records
+
+Compose the hook after secret restoration and before execution wrapping.
+It must run without the existing model gate or routing plugin being enabled.
+Keep redaction, sandboxing, sent-turn restrictions and cancellation intact.
+
+Store bounded security metadata with workspace, task, session, run and tool-call
+IDs, rule and snapshot IDs, coverage, duration and final disposition. Do not
+copy raw prompts, command bodies, transcripts or secret values into this stream.
+Q8's run-record work does not authorize a second copy in security records.
+
+**Tests.** Prove hook invocation in the combined fixture runtime. Exercise two
+workspaces, reused sessions, missing IDs, concurrent writes, rotation and disk
+failure. Observe post-tool output separately from pre-tool decisions. Verify
+that audit findings do not grant permission or claim a blocked action.
+
+#### BB3. Authenticated rule snapshots
+
+Keep rule acquisition outside tool execution. Validate schema, upstream revision,
+graph/network, trusted authority, generation, expiry, revocations, category counts
+and export completeness before atomic replacement. A checksum or a `public`
+label alone does not authenticate a publisher.
+
+Retain the last accepted snapshot and its actual verification time on refresh
+failure. Preserve revocations across restart. Restrict writes to policy and rule
+state through the worker-containment boundary; same-user file permissions alone
+do not establish that boundary.
+
+**Tests.** Reject forged authority, wrong graph, partial exports, unsupported
+schemas, replay and revoked rules. Exercise interrupted replacement, restart,
+stale state and rollback. The security maintainer must resolve the export and
+authority contract before declaring this item specified.
+
+#### BB4. Claude coverage and workspace security status
+
+Reuse BB1 through one composed Claude hook path. Prove that the screened input
+matches the executed input. Preserve unrelated user hooks. Other transports
+remain explicitly uncovered until their pre-execution hooks pass the same gates.
+
+Extend the existing workspace activity view with `blocked`, `would_block`,
+`observed_after_execution`, `degraded` and `not_covered`. Show snapshot age and
+supported hosts. Treat external rule text as untrusted data. Join on exact IDs.
+
+**Tests.** Verify final-input mapping, hook coexistence, scope isolation, stale
+rules, output escaping and coverage display. Reuse the current UI and scoped
+read path; a separate upstream dashboard is outside this item.
+
+#### BB5. Selective enforcement
+
+Start with selected exact known-malware package rules and explicit local path
+rules. Preserve masked secret-file reads by default. Injection and other
+heuristic findings remain advisory. Use the plan's explicit mode/failure table.
+
+An eligible denial must stop the action before a side effect. An unavailable
+required check returns `security_check_unavailable`. A worker cannot retry that
+action through another host to avoid refusal. Overrides must be scoped, expire
+and leave a safe record. Rollback preserves all existing Captain controls.
+
+**Tests and release gate.** Prove no side effect from a refused synthetic write
+or command, including retry and fallback. Pass the plan's authority, privacy,
+failure and performance gates. Review at least 1,000 benign pilot actions across
+the two supported hosts and two disposable workspaces, with no unexplained
+would-block results in enabled categories. This is a rollout gate, not proof of
+universal detection. The operator selects hosts and categories before activation.
+
+**Deferred Blackbox features.** Community publishing, DKG node operation,
+external AI review, OSV network enrichment, exchange/token-specific detectors
+and the upstream dashboard stay outside BB1–BB5. Revisit a feature only when a
+measured coverage gap justifies its runtime, privacy and maintenance cost.
 
 ## First ten working days
 
