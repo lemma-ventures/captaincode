@@ -14,6 +14,7 @@ package captaincode
 // Everything stays on this machine: no model sees a candidate.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,7 +42,7 @@ var RepoVisibility = repoVisibility
 // CurateCandidates proposes the names that identify the repository holding
 // dir, minus those already listed or dismissed.
 func CurateCandidates(dir string) []NameCandidate {
-	root := repoRoot(dir)
+	root := mainRepoRoot(dir)
 	if root == "" {
 		return nil
 	}
@@ -51,6 +52,9 @@ func CurateCandidates(dir string) []NameCandidate {
 	}
 	known := knownNames()
 	base := filepath.Base(root)
+	if worktreeDirRe.MatchString(base) {
+		return nil // a scratch checkout outside its repository: its folder names nothing
+	}
 	var out []NameCandidate
 	add := func(name, source string, auto bool) {
 		name = strings.TrimSpace(name)
@@ -366,41 +370,113 @@ func visCachePath() string {
 	return filepath.Join(home, ".captaincode", "repo-visibility.json")
 }
 
+// worktreeDirRe is the folder captain gives a worker's scratch worktree. On
+// 22 Oct curation listed eight of them as private names.
+var worktreeDirRe = regexp.MustCompile(`^captain-wt-\d+$`)
+
 var githubRemoteRe = regexp.MustCompile(`github\.com[:/]([^/]+)/([^/.]+?)(\.git)?$`)
 
 func repoVisibility(root string) string {
+	out, err := exec.Command("git", "-C", root, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return "local" // asked every time: a remote added later must count at once
+	}
+	url := strings.TrimSpace(string(out))
+	return cachedVisibility(root, func() string { return urlVisibility(url) })
+}
+
+// RemoteVisibility is "public", "private" or "unknown" for a push URL, so a
+// push from a private repository to a public one is still checked. Tests
+// replace it.
+var RemoteVisibility = func(url string) string {
+	url = strings.TrimSpace(url)
+	return cachedVisibility(url, func() string { return urlVisibility(url) })
+}
+
+// DirVisibility is RepoVisibility for the repository holding dir, keyed by
+// its main checkout so every worktree of a repository shares one answer;
+// "unknown" outside a repository.
+func DirVisibility(dir string) string {
+	root := mainRepoRoot(dir)
+	if root == "" {
+		return "unknown"
+	}
+	return RepoVisibility(root)
+}
+
+// cachedVisibility answers from the week-long cache, else asks and keeps
+// the answer. "unknown" is not kept: GitHub out of reach once must not
+// stand for a week.
+func cachedVisibility(key string, ask func() string) string {
 	visMu.Lock()
 	defer visMu.Unlock()
 	cache := map[string]visEntry{}
 	if b, err := os.ReadFile(visCachePath()); err == nil {
 		_ = json.Unmarshal(b, &cache)
 	}
-	if e, ok := cache[root]; ok && time.Since(e.At) < 7*24*time.Hour {
+	if e, ok := cache[key]; ok && e.Vis != "unknown" && time.Since(e.At) < 7*24*time.Hour {
 		return e.Vis
 	}
-	vis := "unknown"
-	out, err := exec.Command("git", "-C", root, "remote", "get-url", "origin").Output()
-	switch {
-	case err != nil:
-		vis = "local"
-	default:
-		if m := githubRemoteRe.FindStringSubmatch(strings.TrimSpace(string(out))); m != nil {
-			cmd := exec.Command("gh", "api", "repos/"+m[1]+"/"+m[2], "-q", ".private")
-			if b, err := cmd.Output(); err == nil {
-				if strings.TrimSpace(string(b)) == "true" {
-					vis = "private"
-				} else {
-					vis = "public"
-				}
-			}
-		}
+	vis := ask()
+	if vis == "unknown" {
+		return vis
 	}
-	cache[root] = visEntry{Vis: vis, At: time.Now()}
+	cache[key] = visEntry{Vis: vis, At: time.Now()}
 	if b, err := json.MarshalIndent(cache, "", "  "); err == nil {
 		_ = os.MkdirAll(filepath.Dir(visCachePath()), 0o700)
 		_ = os.WriteFile(visCachePath(), b, 0o600)
 	}
 	return vis
+}
+
+// urlVisibility asks GitHub through gh, and when gh has no working login
+// (an SSH session on 22 Oct), tries the URL anonymously: a public
+// repository answers, a private one asks for a login. Anything else, and
+// any host but GitHub, is "unknown".
+func urlVisibility(url string) string {
+	m := githubRemoteRe.FindStringSubmatch(url)
+	if m == nil {
+		return "unknown"
+	}
+	if b, err := exec.Command("gh", "api", "repos/"+m[1]+"/"+m[2], "-q", ".private").Output(); err == nil {
+		switch strings.TrimSpace(string(b)) {
+		case "true":
+			return "private"
+		case "false":
+			return "public"
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-c", "credential.helper=", "ls-remote", "https://github.com/"+m[1]+"/"+m[2]+".git", "HEAD")
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return "public"
+	}
+	if s := strings.ToLower(string(out)); strings.Contains(s, "could not read username") || strings.Contains(s, "authentication failed") || strings.Contains(s, "repository not found") {
+		return "private"
+	}
+	return "unknown"
+}
+
+// mainRepoRoot is the main checkout of the repository holding dir, also
+// from inside a linked worktree, whose folder name ("captain-wt-…") names
+// nothing.
+func mainRepoRoot(dir string) string {
+	root := repoRoot(dir)
+	if root == "" {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		return root
+	}
+	common := strings.TrimSpace(string(out))
+	if filepath.Base(common) == ".git" {
+		return filepath.Dir(common)
+	}
+	return root // a bare or unusual layout: the checkout itself
 }
 
 // SortedNames is names sorted case-insensitively, for display.

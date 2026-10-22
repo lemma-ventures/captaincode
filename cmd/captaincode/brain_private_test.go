@@ -56,3 +56,21 @@ func TestTheBrainCuratesPrivateNamesAndAnswersPrivate(t *testing.T) {
 	assert.Equal(t, "zephyrine", captaincode.NameRecords()["quillcore"].Repo, "an accepted suggestion keeps its project")
 	assert.False(t, ran, "/private never reaches a worker")
 }
+
+// A worker in a private repository is told it may name that work; one in a
+// public repository keeps the names out and runs the check.
+func TestTheWorkerPrivacyRuleFollowsTheRepositorysVisibility(t *testing.T) {
+	repo := t.TempDir()
+	require.NoError(t, exec.Command("git", "-C", repo, "init", "-q").Run())
+	prev := captaincode.RepoVisibility
+	defer func() { captaincode.RepoVisibility = prev }()
+	ws := captaincode.Workspace{Dir: repo}
+
+	captaincode.RepoVisibility = func(string) string { return "private" }
+	assert.Contains(t, privacyRules(ws), "this repository is private, so it may name itself")
+	captaincode.RepoVisibility = func(string) string { return "public" }
+	assert.Contains(t, privacyRules(ws), "in a public repository")
+	assert.Contains(t, privacyRules(ws), "captain leakcheck --staged")
+	captaincode.RepoVisibility = func(string) string { return "unknown" }
+	assert.Contains(t, privacyRules(ws), "in a public repository", "a visibility GitHub cannot confirm keeps the strict rule")
+}

@@ -77,7 +77,7 @@ func TestOpenShellHTTPPersistsBeforeResponding(t *testing.T) {
 				b.runWorkerFn = func(leg captaincode.Leg, prompt string, _, _ func(string)) (captaincode.Leg, captaincode.Result, error) {
 					calls++
 					assert.Equal(t, captaincode.LegOpenShell, leg)
-					assert.Equal(t, "[user]\nfix parser\n\n"+openShellRules(captaincode.Workspace{}), prompt)
+					assert.Equal(t, "[user]\nfix parser\n\n"+openShellRules(captaincode.Workspace{Dir: dir}), prompt)
 					stored, err := captaincode.LoadLedger()
 					require.NoError(t, err)
 					require.Len(t, stored.AttemptStates, 1)

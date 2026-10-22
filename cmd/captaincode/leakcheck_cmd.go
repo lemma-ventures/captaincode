@@ -10,9 +10,18 @@ package main
 //	captain leakcheck --range A..B        added lines and messages of commits in a range
 //	captain leakcheck --pre-push          the pre-push hook: ref lines on stdin
 //	captain leakcheck FILE...             files; "-" reads stdin
+//	captain leakcheck --public ...        check even in a private repository
 //
 // Exit 3 names each hit; exit 0 is clean. With no list nothing is checked,
 // and the command says so on stderr.
+//
+// The names are kept out of public repositories only (22 Oct). A private
+// repository names itself and the user's other private projects: workers in
+// two private repositories ran the check, read a refusal of the repository's
+// own name and left the commit undone. So nothing is checked where GitHub
+// says the repository is private or it has no remote, and a push is checked
+// by where it goes: the pre-push hook passes the remote's URL. A visibility
+// GitHub cannot confirm is checked.
 
 import (
 	"bufio"
@@ -30,13 +39,26 @@ func cmdLeakcheck(args []string) {
 	staged := fs.Bool("staged", false, "check the staged diff (pre-commit)")
 	msgFile := fs.String("message-file", "", "check a commit message file (commit-msg)")
 	rng := fs.String("range", "", "check the commits in a git range, e.g. origin/main..HEAD")
-	prePush := fs.Bool("pre-push", false, "check what a push sends: the pre-push hook's ref lines on stdin")
+	prePush := fs.Bool("pre-push", false, "check what a push sends: the pre-push hook's ref lines on stdin, its remote name and URL as arguments")
+	public := fs.Bool("public", false, "check even in a private repository, for text bound for a public one")
 	_ = fs.Parse(args)
 
 	names := captaincode.PrivateNames()
 	if len(names) == 0 {
 		fmt.Fprintf(os.Stderr, "captain leakcheck: no private-names list at %s - nothing checked\n", captaincode.PrivateNamesPath())
 		return
+	}
+	if !*public {
+		where, vis := "this repository", ""
+		if *prePush && len(fs.Args()) >= 2 {
+			where, vis = fs.Arg(1), captaincode.RemoteVisibility(fs.Arg(1))
+		} else {
+			vis = captaincode.DirVisibility(".")
+		}
+		if vis == "private" || vis == "local" {
+			fmt.Fprintf(os.Stderr, "captain leakcheck: %s is private (%s) - it may name itself and other private projects; nothing checked\n", where, vis)
+			return
+		}
 	}
 	var hits []string
 	check := func(where, text string) {

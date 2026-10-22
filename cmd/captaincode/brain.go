@@ -1918,17 +1918,25 @@ func securityContract() string {
 // (2026-10-04). The rule is inline so an OpenShell sandbox gets it too; a
 // host worker is also pointed at the skill and at `captain leakcheck`.
 func privacyContract(ws captaincode.Workspace) string {
-	s := privacyRules()
+	s := privacyRules(ws)
 	if s != "" && ws.Dir != "" && captaincode.AlwaysStocked(captaincode.PrivacySkill) {
 		s += " The `" + captaincode.PrivacySkill + "` skill has the full rules (`.agents/skills/" + captaincode.PrivacySkill + "/SKILL.md`)."
 	}
 	return s
 }
 
-// privacyRules is the inline half of privacyContract.
-func privacyRules() string {
+// privacyRules is the inline half of privacyContract. In a private
+// repository it says so: workers there ran `captain leakcheck`, read the
+// repository's own name as a leak and left the commit undone (22 Oct).
+func privacyRules(ws captaincode.Workspace) string {
 	if os.Getenv("CAPTAIN_WORKER_PRIVATE_NAMES") == "0" {
 		return ""
+	}
+	if ws.Dir != "" {
+		if vis := captaincode.DirVisibility(ws.Dir); vis == "private" || vis == "local" {
+			return "\n\n[captain] Private names: this repository is private, so it may name itself and the user's other private projects, papers, people and tools; do not rename them, and `captain leakcheck` passes here." +
+				" Keep those names out of anything you write to a public repository, issue or pull request; check such text with `captain leakcheck --public FILE`."
+		}
 	}
 	return "\n\n[captain] Private names: in a public repository - code, comments, test fixtures, commit messages, docs, release notes, issues - never write the names of the user's private projects, repositories, unpublished papers, people or internal tools, nor local paths that reveal them. Record incidents and examples with neutral names (a sibling repository, project A, a paper review)." +
 		" Before committing to a public repository run `captain leakcheck --staged` where captain is installed; never bypass a hook that refuses a name."

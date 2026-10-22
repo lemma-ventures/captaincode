@@ -71,3 +71,31 @@ func TestAWordNamedRepositoryIsProposedNotAdded(t *testing.T) {
 	assert.Equal(t, "orchard", cands[0].Name)
 	assert.False(t, cands[0].Auto, "an ordinary word would flag ordinary prose: the user decides")
 }
+
+// A worker's scratch worktree is named captain-wt-<digits>; curation names
+// the repository it was cut from, never the scratch folder.
+func TestCurationNamesTheRepositoryNotAWorkersWorktree(t *testing.T) {
+	curateEnv(t, "private")
+	root := curateFixture(t, "zephyrine")
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	git("add", ".")
+	git("commit", "-q", "-m", "init")
+	wt := filepath.Join(t.TempDir(), "captain-wt-3517310793")
+	git("worktree", "add", "-q", "--detach", wt)
+
+	var names []string
+	for _, c := range CurateCandidates(wt) {
+		names = append(names, c.Name)
+	}
+	assert.Contains(t, names, "zephyrine", "the repository the worktree belongs to")
+	assert.NotContains(t, names, "captain-wt-3517310793")
+
+	clone := filepath.Join(t.TempDir(), "captain-wt-829463614")
+	require.NoError(t, exec.Command("git", "clone", "-q", root, clone).Run())
+	assert.Empty(t, CurateCandidates(clone), "a scratch clone names nothing")
+}
