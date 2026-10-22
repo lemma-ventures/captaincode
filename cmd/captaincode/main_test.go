@@ -45,6 +45,7 @@ func TestMain(m *testing.M) {
 	os.Unsetenv("CAPTAIN_EUCLID_MCP_CONFIG")
 	os.Unsetenv("CAPTAIN_EUCLID_MEMORY_CONFIG")
 	os.Unsetenv("CAPTAIN_COMPACT_LOCAL")
+	os.Unsetenv("CAPTAIN_LEARN_LOCAL")
 	// The director-path tests stub the PLAN call; the typed pick (the
 	// default since 2026-09-22) has its own tests, which opt in. Solo
 	// verification runs real test commands in real repositories; off here.

@@ -196,7 +196,9 @@ func (b *brain) learnBrainInWorkspace(ws captaincode.Workspace, eu captaincode.E
 		fmt.Fprintf(w, "learn: %s · pass %d: asking %s…\n", eu.Label, pass, leg)
 		var res captaincode.Result
 		var err error
-		if captaincode.LocalSelected("learn") {
+		if r, on, lerr := runLearnLocal(prompt); on {
+			res, err = r, lerr
+		} else if captaincode.LocalSelected("learn") {
 			res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
 		} else if b.runWorkerFn != nil {
 			_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
