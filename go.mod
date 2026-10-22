@@ -2,6 +2,8 @@ module github.com/lemma-ventures/captaincode
 
 go 1.24.2
 
+toolchain go1.27.3
+
 // v0.3.0 to v0.3.2 can freeze the brain: a sampled jev triage shadow
 // deadlocked on the brain lock. Fixed in v0.3.3.
 retract [v0.3.0, v0.3.2]
