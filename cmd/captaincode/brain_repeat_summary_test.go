@@ -21,10 +21,10 @@ func TestRoundSummaryFallsBackToTheFinalAnswer(t *testing.T) {
 	b.roundSummaryFn = func(string) string { calls++; return "" }
 	streamed := "Orienting: three roadmap rounds ran this morning.\n\nI've committed three fixes on own-skills-shelf."
 	final := "I've committed three fixes on own-skills-shelf.\n\n| Commit | What |"
-	assert.Equal(t, "I've committed three fixes on own-skills-shelf.", b.roundSummary("/frontier continue", streamed, final))
+	assert.Equal(t, "I've committed three fixes on own-skills-shelf.", b.roundSummary("", "/frontier continue", streamed, final))
 	assert.Equal(t, 2, calls, "the compaction leg, then the free leg")
 
-	assert.Equal(t, "Orienting: three roadmap rounds ran this morning.", b.roundSummary("/frontier continue", streamed, ""),
+	assert.Equal(t, "Orienting: three roadmap rounds ran this morning.", b.roundSummary("", "/frontier continue", streamed, ""),
 		"without a final answer the streamed text is all there is")
 }
 
@@ -34,7 +34,7 @@ func TestRoundSummaryReadsTheEndOfALongRound(t *testing.T) {
 	var got string
 	b.roundSummaryFn = func(in string) string { got = in; return "did it" }
 	text := "Orienting: reading the roadmap.\n\n" + strings.Repeat("progress line\n", 2_000) + "Implemented attempt accounting; tests pass."
-	assert.Equal(t, "did it", b.roundSummary("continue", text, ""))
+	assert.Equal(t, "did it", b.roundSummary("", "continue", text, ""))
 	assert.Contains(t, got, "Implemented attempt accounting", "the conclusion reaches the digest")
 	assert.Less(t, len(got), 14_000, "bounded")
 }
