@@ -217,6 +217,19 @@ func compactLeg() captaincode.Leg {
 	return captaincode.LegFree
 }
 
+// localCompactWait bounds a fold on the local model. A local model reads a
+// span far slower than a hosted one: on 22 Oct every local fold timed out
+// (9 of 9) under the hosted bound, and a 186k-char span took 108 to 127 s
+// before the first word on every model tried. The worker still waits only
+// compactWait; the fold finishes in the background for the next turn.
+func localCompactWait(n int) time.Duration {
+	wait := 2*time.Minute + time.Duration(n/1_000)*time.Second
+	if wait > 8*time.Minute {
+		wait = 8 * time.Minute
+	}
+	return wait
+}
+
 // summarizeSpan is the default tier: the FREE leg, no tools, bounded. The
 // structured asks mirror prime's summary format, plus the style note the
 // editorial workload depends on.
@@ -235,7 +248,7 @@ func summarizeSpan(span, prev string, onCall captaincode.CallHook) (string, erro
 		if lerr != nil {
 			return "", lerr
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		ctx, cancel := context.WithTimeout(context.Background(), localCompactWait(len(sb.String())))
 		defer cancel()
 		res, err := c.CompleteProse(ctx, "No tools. Follow the user instructions exactly.", sb.String(), 4096)
 		captaincode.LogSmallCall("compaction", res, err)

@@ -271,7 +271,20 @@ const localProseContext = 131072
 // A set value does not enable CAPTAIN_LOCAL_TASKS and does not read the
 // qualification file. RunLocalSmall stays gated.
 func CompactLocalConfig() (LocalConfig, bool, error) {
-	model := strings.TrimSpace(os.Getenv("CAPTAIN_COMPACT_LOCAL"))
+	return localTagConfig("CAPTAIN_COMPACT_LOCAL")
+}
+
+// LearnLocalConfig is the operator's Ollama tag for Euclid learning (the
+// distill and learn passes). Learning sends its state and asks for JSON only,
+// so it runs on the long-context prose call: no tools, thinking off, no
+// fallback to the hosted distill leg. On a hosted worker the same call ran as a
+// full tool session, about 36 model replies a run (22 Oct).
+func LearnLocalConfig() (LocalConfig, bool, error) {
+	return localTagConfig("CAPTAIN_LEARN_LOCAL")
+}
+
+func localTagConfig(env string) (LocalConfig, bool, error) {
+	model := strings.TrimSpace(os.Getenv(env))
 	if model == "" {
 		return LocalConfig{}, false, nil
 	}

@@ -65,3 +65,36 @@ func TestLocalProseFailureDoesNotCallAnotherLeg(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "local")
 }
+
+// Euclid learning asks for JSON only, so CAPTAIN_LEARN_LOCAL runs it on the
+// long-context local call: no tools, thinking off, the model's text returned.
+func TestLearningUsesTheLocalLearnTag(t *testing.T) {
+	srv := localProseServer(t, "{\"message\":{\"content\":\"{\\\"summary\\\":\\\"s\\\",\\\"lessons\\\":[]}\"},\"done\":true,\"done_reason\":\"stop\"}\n", 200)
+	defer srv.Close()
+	t.Setenv("CAPTAIN_LEARN_LOCAL", "gpt-oss:20b")
+	t.Setenv("CAPTAIN_LOCAL_URL", srv.URL)
+	res, on, err := runLearnLocal("[euclid learn] return JSON only")
+	require.True(t, on)
+	require.NoError(t, err)
+	assert.Equal(t, `{"summary":"s","lessons":[]}`, res.Text)
+	assert.Equal(t, captaincode.LegLocal, (&brain{}).distillLeg(), "the run is charged to the local leg")
+}
+
+func TestLocalLearningFailureDoesNotCallAnotherLeg(t *testing.T) {
+	srv := localProseServer(t, "", 500)
+	defer srv.Close()
+	t.Setenv("CAPTAIN_LEARN_LOCAL", "gpt-oss:20b")
+	t.Setenv("CAPTAIN_LOCAL_URL", srv.URL)
+	_, on, err := runLearnLocal("[euclid learn] return JSON only")
+	require.True(t, on)
+	require.Error(t, err)
+	t.Setenv("CAPTAIN_LEARN_LOCAL", "")
+	_, on, _ = runLearnLocal("x")
+	assert.False(t, on, "unset, learning keeps its distill leg")
+}
+
+func TestLocalCompactionWaitsLongerThanAHostedFold(t *testing.T) {
+	assert.Equal(t, 2*time.Minute+26*time.Second, localCompactWait(26_000))
+	assert.Equal(t, 2*time.Minute+186*time.Second, localCompactWait(186_000))
+	assert.Equal(t, 8*time.Minute, localCompactWait(400_000))
+}

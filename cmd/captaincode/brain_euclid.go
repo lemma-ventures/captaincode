@@ -186,10 +186,33 @@ func renderEuclidStatus(st euclidStatus) string {
 	return sb.String()
 }
 
+// learnLocalWait bounds one local learning call. A 55 KB learning prompt is
+// about 14,000 tokens to read before the first token of the answer.
+const learnLocalWait = 4 * time.Minute
+
+const learnLocalSystem = "No tools. Reply with the JSON the instructions ask for and nothing else."
+
+// runLearnLocal runs one learning call on CAPTAIN_LEARN_LOCAL when it is set
+// (on reports that it is). A failure is returned, never sent to another leg.
+func runLearnLocal(prompt string) (captaincode.Result, bool, error) {
+	c, on, err := captaincode.LearnLocalConfig()
+	if !on {
+		return captaincode.Result{}, false, nil
+	}
+	if err != nil {
+		return captaincode.Result{}, true, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), learnLocalWait)
+	defer cancel()
+	res, err := c.CompleteProse(ctx, learnLocalSystem, prompt, 4096)
+	captaincode.LogSmallCall("learn", res, err)
+	return res, true, err
+}
+
 // distillLeg is the leg that summarizes journals: cheap and fast.
 // CAPTAIN_EUCLID_DISTILL_LEG overrides; default gemini when allowed, else free.
 func (b *brain) distillLeg() captaincode.Leg {
-	if captaincode.LocalSelected("learn") {
+	if _, on, _ := captaincode.LearnLocalConfig(); on || captaincode.LocalSelected("learn") {
 		return captaincode.LegLocal
 	}
 	if v := captaincode.Leg(strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_DISTILL_LEG"))); v != "" && captaincode.KnownLeg(v) {
@@ -237,7 +260,9 @@ func (b *brain) distill(ws captaincode.Workspace, apply bool) (captaincode.Disti
 	prompt := captaincode.DistillPrompt(wb, entries)
 	leg := b.distillLeg()
 	var res captaincode.Result
-	if captaincode.LocalSelected("learn") {
+	if r, on, lerr := runLearnLocal(prompt); on {
+		res, err = r, lerr
+	} else if captaincode.LocalSelected("learn") {
 		res, err = captaincode.RunLocalSmall(context.Background(), "learn", prompt)
 	} else if b.runWorkerFn != nil {
 		_, res, err = b.runWorkerFn(leg, prompt, nil, nil)
