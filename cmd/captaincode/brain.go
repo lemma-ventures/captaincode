@@ -53,6 +53,9 @@ func cmdBrain(args []string) {
 	fs := flag.NewFlagSet("brain", flag.ExitOnError)
 	addr := fs.String("addr", brainAddr, "listen address")
 	_ = fs.Parse(args)
+	if msg := captaincode.RepairDefaultWorkspace(); msg != "" {
+		fmt.Printf("captain brain: %s\n", msg)
+	}
 
 	b := &brain{
 		mgr:        captaincode.Manager{Director: captaincode.Director, Port: opencodePort},
