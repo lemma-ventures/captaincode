@@ -264,7 +264,9 @@ func cmdBrain(args []string) {
 	defer stopLife()
 	b.life = life
 	go b.watchLock(life.Done(), os.Stdout)
-	b.ledger.DeferSaves() // written by saveLoop, outside b.mu (brain_save.go)
+	b.loadSignedQueue()               // signed prompts accepted before a restart (brain_queue.go)
+	go b.signedQueueLoop(life.Done()) // and the ones no TUI takes
+	b.ledger.DeferSaves()             // written by saveLoop, outside b.mu (brain_save.go)
 	go b.saveLoop(life.Done())
 	go b.startEuclidReconciler(life.Done())
 	go b.auditLoop(life.Done())      // workers' misconduct, penalized (brain_audit.go)
@@ -476,6 +478,9 @@ type brain struct {
 
 	// roundSummaryFn stubs the per-round digest in tests; nil → compaction leg.
 	roundSummaryFn func(text string) string
+	// queueRunFn stubs the queue's own run of a signed prompt in tests
+	// (brain_queue.go); nil → a real chatCompletions call.
+	signedQueueRunFn func(w http.ResponseWriter, r *http.Request)
 	// narrateFn stubs the step narrator in tests (brain_narrate.go).
 	narrateFn func(task string, steps []captaincode.Step) ([]string, error)
 	rmu       sync.Mutex

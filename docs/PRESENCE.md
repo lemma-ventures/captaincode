@@ -341,6 +341,15 @@ that TUI. The signature, the machine and folder binding, the envelope window
 and the one-use nonce are the checks; nothing guesses at each command. An
 unsigned prompt still receives the sent-turn contract and jail.
 
+An accepted signed prompt is also written to `~/.captaincode/queue/pending/`,
+so it survives a brain restart. The folder's TUI gets it as before. When no
+TUI for that folder has asked for prompts in the last 20 seconds and a minute
+has passed, the brain runs the prompt itself as a typed turn in that folder,
+with the same approval; its output is a run log like any other. `captain
+queue` lists pending and recent entries, `captain queue show ID` prints one,
+and `captain queue drop ID` removes a pending one before it runs. The
+Gouvernail link will write to the same queue.
+
 Only the always-ask list needs a separate signed decision, whatever the prompt
 says: a force push (`-f`, `--force*`, a `+` refspec, `--mirror`), deleting a
 remote branch (`--delete`, a `:` refspec) or force-deleting a local one

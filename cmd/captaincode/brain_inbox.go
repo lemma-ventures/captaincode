@@ -77,6 +77,9 @@ type inbox struct {
 	// reopens it with `captain inbox open`.
 	closed       map[string]string
 	closedLoaded bool
+	// polled is when a TUI last asked for its folder's prompts (take): the
+	// queue runs a signed prompt itself only for a folder with no TUI open.
+	polled map[string]time.Time
 }
 
 // closedPath keeps the closures across brain restarts: a restart must not
@@ -315,10 +318,21 @@ func (ib *inbox) pushScreening(dir, text, leg, from, session, origin string, scr
 func (ib *inbox) take(dir, session string) []inboxItem {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
+	if ib.polled == nil {
+		ib.polled = map[string]time.Time{}
+	}
+	ib.polled[dir] = time.Now()
 	items := ib.items[dir]
 	delete(ib.items, dir)
 	var fresh []inboxItem
 	for _, it := range items {
+		// A signed prompt dropped from the queue (captain queue drop) or
+		// already run is not handed out.
+		if it.Presence != nil {
+			if _, pending := sqRead("pending", it.ID); !pending {
+				continue
+			}
+		}
 		if it.Screening {
 			ib.items[dir] = append(ib.items[dir], it)
 			continue
@@ -328,6 +342,9 @@ func (ib *inbox) take(dir, session string) []inboxItem {
 			continue
 		}
 		if time.Since(it.At) < inboxTTL {
+			if it.Presence != nil {
+				sqFinish(it.ID, "tui", "handed to the TUI")
+			}
 			fresh = append(fresh, it)
 			if ib.handed == nil {
 				ib.handed = map[string][]inboxItem{}

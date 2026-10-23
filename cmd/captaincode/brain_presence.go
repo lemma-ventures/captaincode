@@ -245,6 +245,9 @@ func (b *brain) signedInbox(w http.ResponseWriter, p pres.Signed) {
 	b.inbox.seq++
 	it := inboxItem{ID: fmt.Sprintf("in_%d_%d", time.Now().Unix(), b.inbox.seq), Text: p.Text, At: time.Now(), Dir: g.Dir, Presence: &g}
 	b.inbox.items[g.Dir] = append(b.inbox.items[g.Dir], it)
+	if e := sqWrite("pending", sqEntry{ID: it.ID, Grant: g.ID, Dir: g.Dir, Text: p.Text, At: it.At}); e != nil {
+		fmt.Printf("captain presence: queue write failed for %s: %v\n", it.ID, e)
+	}
 	fmt.Printf("captain presence: verified user=%q device=%q machine=%q folder=%q text_sha256=%s\n", g.User, g.Label, g.Machine, g.Folder, g.TextSHA256)
 	writeJSON(w, 200, map[string]any{"ok": true, "id": it.ID, "pending": len(b.inbox.items[g.Dir]), "trust": "typed"})
 }
