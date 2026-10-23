@@ -88,3 +88,20 @@ func TestPresenceProjectFoldersAndWorktrees(t *testing.T) {
 		t.Error("a relative cd into a worktree of the project is allowed")
 	}
 }
+
+// Git counts by subcommand, not by the words around it.
+func TestPresenceGitSubcommands(t *testing.T) {
+	for _, cmd := range []string{"git merge feature", "git -C ../x merge feature", "git status && git reset --hard",
+		"echo $(git rebase -i HEAD~2)", "git clean -fdx", "git tag v1.2", "git --no-pager -c core.pager=cat rebase main",
+		"git filter-repo --path x"} {
+		if !presenceGitHigh(cmd) {
+			t.Errorf("%q rewrites or discards work", cmd)
+		}
+	}
+	for _, cmd := range []string{"git merge-base main HEAD", "git log --grep merge --oneline", "git show HEAD:docs/reset.md",
+		"git tag", "git tag -l 'v*'", "git status --short", "git log --format=%s origin/main..main", "cat merge.go"} {
+		if presenceGitHigh(cmd) {
+			t.Errorf("%q only reads", cmd)
+		}
+	}
+}

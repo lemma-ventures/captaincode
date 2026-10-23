@@ -19,6 +19,7 @@ package main
 // send a prompt telling the next worker to send again, without end.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -588,9 +589,60 @@ func (b *brain) runJudge(leg captaincode.Leg, message string) (captaincode.Judge
 	return captaincode.ParseJudgeVerdict(res.Text, key)
 }
 
+// judgeLocalModels are the Ollama tags that judge sent messages
+// (CAPTAIN_INBOX_JUDGE_LOCAL, comma-separated). They replace the hosted
+// panel: on 23 Oct the hosted judges took 14 to 45 s through opencode and
+// the signed-prompt review waited for the slowest, while gpt-oss and Qwen
+// answered the same screen correctly in 1 to 4 s on the machine.
+func judgeLocalModels() []string {
+	var out []string
+	for _, f := range strings.Split(os.Getenv("CAPTAIN_INBOX_JUDGE_LOCAL"), ",") {
+		if m := strings.TrimSpace(f); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+const judgeLocalSystem = "No tools. Reply with the JSON the instructions ask for and nothing else."
+
+// runLocalJudge asks one local model; ok is false when it could not answer.
+func (b *brain) runLocalJudge(model, message string) (captaincode.JudgeVerdict, bool) {
+	if b.judgeFn != nil {
+		return b.judgeFn(captaincode.Leg("local:"+model), message)
+	}
+	c, err := captaincode.LocalModelConfig(model)
+	if err != nil {
+		return captaincode.JudgeVerdict{}, false
+	}
+	key := captaincode.NewJudgeNonce()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := c.CompleteJSON(ctx, judgeLocalSystem, captaincode.JudgePrompt(message, captaincode.NewJudgeNonce(), key), 1024)
+	captaincode.LogSmallCall("judge", res, err)
+	if err != nil {
+		return captaincode.JudgeVerdict{}, false
+	}
+	return captaincode.ParseJudgeVerdict(res.Text, key)
+}
+
 // judgePanel asks every judge at once and combines their answers
 // (captaincode.DecideJudges: fail-closed).
 func (b *brain) judgePanel(message string) captaincode.JudgeOutcome {
+	if models := judgeLocalModels(); len(models) > 0 {
+		verdicts := make([]captaincode.JudgeVerdict, len(models))
+		answered := make([]bool, len(models))
+		var wg sync.WaitGroup
+		for i, m := range models {
+			wg.Add(1)
+			go func(i int, m string) {
+				defer wg.Done()
+				verdicts[i], answered[i] = b.runLocalJudge(m, message)
+			}(i, m)
+		}
+		wg.Wait()
+		return captaincode.DecideJudges(verdicts, answered)
+	}
 	legs := judgeLegs()
 	verdicts := make([]captaincode.JudgeVerdict, len(legs))
 	answered := make([]bool, len(legs))

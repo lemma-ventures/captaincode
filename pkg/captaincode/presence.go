@@ -38,7 +38,47 @@ func PresenceGrantID(prompt string) string {
 	return id
 }
 
-var presenceHighRE = regexp.MustCompile(`(?i)\b(rm|rmdir|unlink|shred|truncate|goreleaser)\b|\b(delete|destroy|terminate|purchase|payment|charge|transfer|spend|publish|release)\b|\bgit\b[^\n]*\b(merge|tag|reset|clean|rebase|filter-repo|filter-branch)\b|\bgit\b[^\n]*\bbranch\b[^\n]*\s(-d\b|--delete\b)|\bgh\s+pr\s+merge\b|\b(docker|gem)\s+(image\s+)?push\b`)
+var presenceHighRE = regexp.MustCompile(`(?i)\b(rm|rmdir|unlink|shred|truncate|goreleaser)\b|\b(delete|destroy|terminate|purchase|payment|charge|transfer|spend|publish|release)\b|\bgit\b[^\n]*\bbranch\b[^\n]*\s(-d\b|--delete\b)|\bgh\s+pr\s+merge\b|\b(docker|gem)\s+(image\s+)?push\b`)
+
+// presenceGitHigh finds a git subcommand that rewrites or discards history
+// or work: merge, tag (not a listing), reset, clean, rebase, filter-repo,
+// filter-branch. It reads the subcommand, not the words around it: on 23 Oct
+// `git merge-base`, a merge in a --grep pattern and a path held a signed
+// turn for approval. Every git invocation in the command counts, in a
+// pipeline, a list or a subshell.
+func presenceGitHigh(command string) bool {
+	for _, seg := range presenceShellSplit.Split(command, -1) {
+		f := strings.Fields(seg)
+		for i := 0; i < len(f); i++ {
+			if filepath.Base(strings.Trim(f[i], `"'`)) != "git" {
+				continue
+			}
+			j := i + 1
+			for j < len(f) && strings.HasPrefix(f[j], "-") {
+				switch f[j] {
+				case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env":
+					j++ // the option's value
+				}
+				j++
+			}
+			if j >= len(f) {
+				break
+			}
+			switch strings.Trim(f[j], `"'`) {
+			case "merge", "reset", "clean", "rebase", "filter-repo", "filter-branch":
+				return true
+			case "tag":
+				if j+1 < len(f) && f[j+1] != "-l" && f[j+1] != "--list" && f[j+1] != "-n" && !strings.HasPrefix(f[j+1], "--sort") && f[j+1] != "--contains" && f[j+1] != "--points-at" {
+					return true
+				}
+			}
+			i = j
+		}
+	}
+	return false
+}
+
+var presenceShellSplit = regexp.MustCompile("[;&|\n()`]+")
 
 func PresenceHighTier(a GateAction) bool {
 	tool := strings.ToLower(a.Tool)
@@ -58,7 +98,7 @@ func PresenceHighTier(a GateAction) bool {
 			return true
 		}
 	}
-	if presenceHighRE.MatchString(a.Command) {
+	if presenceHighRE.MatchString(a.Command) || presenceGitHigh(a.Command) {
 		return true
 	}
 	if regexp.MustCompile(`(?i)\bgit\b[^\n]*\bpush\b`).MatchString(a.Command) {

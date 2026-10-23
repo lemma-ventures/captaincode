@@ -288,11 +288,18 @@ func localTagConfig(env string) (LocalConfig, bool, error) {
 	if model == "" {
 		return LocalConfig{}, false, nil
 	}
-	c := LocalConfig{Endpoint: strings.TrimRight(os.Getenv("CAPTAIN_LOCAL_URL"), "/"), Model: model}
+	c, err := LocalModelConfig(model)
+	return c, true, err
+}
+
+// LocalModelConfig is one Ollama tag on CAPTAIN_LOCAL_URL (default
+// 127.0.0.1:11434).
+func LocalModelConfig(model string) (LocalConfig, error) {
+	c := LocalConfig{Endpoint: strings.TrimRight(os.Getenv("CAPTAIN_LOCAL_URL"), "/"), Model: strings.TrimSpace(model)}
 	if c.Endpoint == "" {
 		c.Endpoint = "http://127.0.0.1:11434"
 	}
-	return c, true, c.Validate()
+	return c, c.Validate()
 }
 
 func (c LocalConfig) longClient() *http.Client {
