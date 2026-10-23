@@ -105,3 +105,29 @@ func TestPresenceGitSubcommands(t *testing.T) {
 		}
 	}
 }
+
+// A feature push may name the project with -C and tidy its output; a push to
+// the default branch, or into another repository, still needs a decision.
+func TestPresenceFeaturePushForms(t *testing.T) {
+	root := t.TempDir()
+	repo, other := filepath.Join(root, "project-a"), filepath.Join(root, "project-b")
+	for _, d := range []string{repo, other} {
+		for _, args := range [][]string{{"init", "--quiet", d}, {"-C", d, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}} {
+			if out, e := exec.Command("git", args...).CombinedOutput(); e != nil {
+				t.Fatal(string(out), e)
+			}
+		}
+	}
+	for _, cmd := range []string{"git push origin decoder-combined", "git -C " + repo + " push origin decoder-combined 2>&1 | tail -6",
+		"git push origin feature | head -n 20"} {
+		if !presenceFeaturePush(cmd, repo) {
+			t.Errorf("%q is a feature push", cmd)
+		}
+	}
+	for _, cmd := range []string{"git push origin main", "git -C " + other + " push origin feature", "git push origin feature | tail -5; rm -rf x",
+		"git push origin feature && git push origin main", "git -C " + repo + " push origin main 2>&1 | tail -5"} {
+		if presenceFeaturePush(cmd, repo) {
+			t.Errorf("%q is not a plain feature push", cmd)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -330,5 +331,71 @@ func TestPresenceCredentialFileDeniedThroughParents(t *testing.T) {
 				t.Errorf("%s can read presence through %s", tool, path)
 			}
 		}
+	}
+}
+
+// runPresenceHook feeds one tool call to the hook and returns what it wrote.
+func runPresenceHook(t *testing.T, input string) string {
+	t.Helper()
+	inR, inW, _ := os.Pipe()
+	outR, outW, _ := os.Pipe()
+	oldIn, oldOut := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = inR, outW
+	defer func() { os.Stdin, os.Stdout = oldIn, oldOut }()
+	_, _ = inW.WriteString(input)
+	inW.Close()
+	presenceHookRun()
+	outW.Close()
+	raw, _ := io.ReadAll(outR)
+	return string(raw)
+}
+
+// A step that needs a signed decision waits for it: the approval lets the
+// same command go on in the same turn, and no approval refuses it in time.
+func TestPresenceHookWaitsForTheSignedDecision(t *testing.T) {
+	_, p, dir := signedInboxFixture(t)
+	g, e := pres.DefaultStore().VerifyPrompt(p)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Setenv(captaincode.PresenceEnv, g.ID)
+	oldWait, oldPoll := presenceHookWait, presenceHookPoll
+	presenceHookWait, presenceHookPoll = 3*time.Second, 50*time.Millisecond
+	defer func() { presenceHookWait, presenceHookPoll = oldWait, oldPoll }()
+	call, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin main"}, "cwd": dir})
+
+	approved := make(chan struct{})
+	found := false
+	go func() {
+		defer close(approved)
+		for i := 0; i < 100; i++ {
+			time.Sleep(20 * time.Millisecond)
+			ds, _ := pres.DefaultStore().Decisions()
+			if len(ds) == 1 {
+				_ = pres.DefaultStore().Update(func(c *pres.Config) error {
+					d := c.Decisions[ds[0].ID]
+					d.Approved = true
+					c.Decisions[ds[0].ID] = d
+					return nil
+				})
+				found = true
+				return
+			}
+		}
+	}()
+	out := runPresenceHook(t, string(call))
+	<-approved
+	if !found {
+		t.Fatal("the push to main created no decision")
+	}
+	if strings.Contains(out, "deny") {
+		t.Fatalf("an approved step goes on: %s", out)
+	}
+
+	presenceHookWait = 300 * time.Millisecond
+	other, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin main --tags"}, "cwd": dir})
+	out = runPresenceHook(t, string(other))
+	if !strings.Contains(out, "signed_decision_required") {
+		t.Fatalf("a step nobody approves is refused: %s", out)
 	}
 }

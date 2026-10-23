@@ -346,7 +346,11 @@ default-branch pushes, merges, release/publish commands, deletes, payment
 actions, and unknown service tools create a pending decision. Feature pushes
 are allowed only in the unambiguous form `git push origin feature`, with a
 known `refs/remotes/origin/HEAD` and a target other than that default branch,
-`main`, or `master`. Ambiguous push syntax requires a decision.
+`main`, or `master`. `git -C <dir>` is accepted when `<dir>` is in the same
+repository as the turn's folder, and so is output handling at the end (`2>&1`,
+`| tail -N`, `| head -N`). Ambiguous push syntax requires a decision. Git is
+classified by its subcommand: `merge`, `reset`, `clean`, `rebase`,
+`filter-repo`, `filter-branch`, and `tag` other than a listing.
 
 `GET /v1/presence/decisions` returns pending decisions and their challenges.
 The decision binds its random ID, grant ID, exact action, and expiry to the
@@ -361,7 +365,10 @@ Its challenge is SHA-256 of canonical JSON in this field order:
 Display the action, then call the same `get` helper with that challenge.
 Send `{ "id": "DECISION_ID", "assertion": proof }` to
 `POST /v1/presence/decision`. Only a credential of the original user can approve
-it. Retry the exact action. Approval is consumed once. A fresh decision gets a
+it. A Claude Code worker's hook waits up to nine minutes for the approval
+(checking every two seconds), so the same command goes on in the same turn;
+Galaxy's review button shows how many decisions are waiting. Other workers
+retry the exact action. Approval is consumed once. A fresh decision gets a
 new random ID, so a zero-counter authenticator cannot replay the old approval.
 A text reply such as `yes` has no effect.
 

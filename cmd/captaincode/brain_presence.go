@@ -238,6 +238,13 @@ func (b *brain) detectSignedInbox(w http.ResponseWriter, r *http.Request) bool {
 
 type presenceRoundKey struct{}
 
+// presenceHookWait is how long a worker's step waits for its signed
+// decision: under the hook's 600 s limit (PresenceClaudeSettings).
+var (
+	presenceHookWait = 9 * time.Minute
+	presenceHookPoll = 2 * time.Second
+)
+
 func presenceHookRun() {
 	var in struct {
 		ToolName  string         `json:"tool_name"`
@@ -248,7 +255,18 @@ func presenceHookRun() {
 	decoder.UseNumber()
 	err := decoder.Decode(&in)
 	if err == nil {
-		err = captaincode.PresenceActionForHook(os.Getenv(captaincode.PresenceEnv), presenceToolAction(in.ToolName, in.ToolInput, gateCwd(in.Cwd)))
+		action := presenceToolAction(in.ToolName, in.ToolInput, gateCwd(in.Cwd))
+		grant := os.Getenv(captaincode.PresenceEnv)
+		err = captaincode.PresenceActionForHook(grant, action)
+		// A step that needs a signed decision waits for it here, so the
+		// approval in Galaxy lets this same command go on in this same turn.
+		// Before (23 Oct) the worker was refused at once, ended its turn and
+		// asked for a new prompt; the decision had expired by then.
+		deadline := time.Now().Add(presenceHookWait)
+		for err != nil && strings.HasPrefix(err.Error(), "signed_decision_required") && time.Now().Before(deadline) {
+			time.Sleep(presenceHookPoll)
+			err = captaincode.PresenceActionForHook(grant, action)
+		}
 	}
 	if err != nil {
 		writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": err.Error()}})

@@ -107,10 +107,25 @@ func PresenceHighTier(a GateAction) bool {
 	return false
 }
 func presenceFeaturePush(command, dir string) bool {
+	// Output handling after the push changes nothing it sends: 23 Oct, a
+	// worker's `git -C <project> push origin feature 2>&1 | tail -6` waited
+	// for a signed decision like a push to main.
+	command = presencePushTail.ReplaceAllString(command, "")
 	if strings.ContainsAny(command, ";&|\n\r`$\\'\"<>()") {
 		return false
 	}
 	words := strings.Fields(command)
+	if len(words) == 6 && words[0] == "git" && words[1] == "-C" {
+		target := words[2]
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		// -C may only point into the same repository as the turn's folder.
+		if c := presenceGitCommon(presenceRealPath(target)); c == "" || c != presenceGitCommon(presenceRealPath(dir)) {
+			return false
+		}
+		dir, words = target, append([]string{"git"}, words[3:]...)
+	}
 	if len(words) != 4 || words[0] != "git" || words[1] != "push" || words[2] != "origin" {
 		return false
 	}
@@ -129,6 +144,8 @@ func presenceFeaturePush(command, dir string) bool {
 	def := strings.TrimSpace(strings.TrimPrefix(string(raw), "refs/remotes/origin/"))
 	return ref != def && ref != "main" && ref != "master"
 }
+
+var presencePushTail = regexp.MustCompile(`\s*(2>&1)?\s*(\|\s*(tail|head)(\s+-n)?(\s+-?[0-9]+)?)?\s*$`)
 
 // presenceFolderAllowed: a signed turn works in its project - the linked
 // folder, a folder inside it, or a linked worktree of the same repository
@@ -237,7 +254,7 @@ func presenceAction(grantID string, a GateAction, hook bool) error {
 }
 
 func PresenceClaudeSettings() string {
-	raw, _ := json.Marshal(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": shellQuote(CaptainBinary()) + " gate --presence-hook", "timeout": 10}}}}}})
+	raw, _ := json.Marshal(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": shellQuote(CaptainBinary()) + " gate --presence-hook", "timeout": 600}}}}}})
 	return string(raw)
 }
 
