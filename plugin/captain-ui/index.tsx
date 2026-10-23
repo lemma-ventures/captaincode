@@ -10,6 +10,7 @@ import { existsSync } from "node:fs"
 import { homedir, platform } from "node:os"
 import { join } from "node:path"
 import { hookEpilogue, logo, resumeCommand } from "./epilogue"
+import { openInboxDialog } from "./inbox-dialog"
 
 const id = "captain:sidebar"
 
@@ -192,7 +193,15 @@ function View(props: { api: TuiPluginApi }) {
     inboxPolling = true
     try {
       const cur = props.api.route.current as { name: string; params?: { sessionID?: string } }
-      if (cur?.name !== "session" || !cur.params?.sessionID) return
+      if (cur?.name !== "session" || !cur.params?.sessionID) {
+        const r = await fetch(brainURL("/v1/inbox/held"), { signal: AbortSignal.timeout(3000) })
+        if (r.ok) {
+          const j = await r.json() as { held?: unknown[]; closed?: Record<string, string> }
+          const wait = { waiting: j.held?.length ?? 0, closed: j.closed?.[CWD] ?? "" }
+          if (wait.waiting !== inboxWait().waiting || wait.closed !== inboxWait().closed) setInboxWait(wait)
+        }
+        return
+      }
       // The session id lets a worker's reply reach the session its turn came
       // from rather than whichever TUI is open in the folder (brain_reply.go).
       const r = await fetch(brainURL(`/v1/inbox?session=${encodeURIComponent(cur.params.sessionID)}`), { signal: AbortSignal.timeout(3000) })
@@ -212,7 +221,7 @@ function View(props: { api: TuiPluginApi }) {
         const why = kinds.includes("inbox closed")
           ? "this folder's inbox is closed, so every sent prompt waits for you"
           : `possible prompt injection (${kinds.join(", ")})`
-        props.api.ui.toast({ title: "captain inbox held a message", message: `from ${h.origin || "an unnamed sender"}: ${why}. Review: ! captain inbox`, variant: "warning", duration: 15000 } as any)
+        props.api.ui.toast({ title: "captain inbox held a message", message: `from ${h.origin || "an unnamed sender"}: ${why}. Click inbox in the sidebar to review.`, variant: "warning", duration: 15000 } as any)
       }
       for (const it of j.items ?? []) {
         if (!it?.text || inboxTaken.has(it.id)) continue
@@ -510,14 +519,14 @@ function View(props: { api: TuiPluginApi }) {
       </Show>
 
       {/* Sent prompts held for the user, and a closed inbox. */}
-      <Show when={(inboxWait().waiting || inboxWait().closed) && !offline()}>
+      <Show when={!offline()}>
         <text> </text>
         <box flexDirection="row" gap={1}>
-          <text fg={theme().warning}>✉</text>
-          <text fg={theme().text}>inbox</text>
+          <text fg={inboxWait().waiting || inboxWait().closed ? theme().warning : theme().textMuted}>✉</text>
+          <text fg={theme().accent} attributes={TextAttributes.UNDERLINE} onMouseUp={() => openInboxDialog(props.api, brainURL("/v1/inbox/held"), (waiting) => setInboxWait((state) => ({ ...state, waiting })))}>inbox</text>
           <text fg={theme().textMuted} wrapMode="word">
             {[
-              inboxWait().waiting ? `${inboxWait().waiting} held for you · ! captain inbox` : "",
+              inboxWait().waiting ? `${inboxWait().waiting} held for you · click to review` : "no held messages · click to review",
               inboxWait().closed ? `closed: ${inboxWait().closed} · ! captain inbox open` : "",
             ]
               .filter(Boolean)
@@ -1088,6 +1097,12 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({ order: 150, slots })
   registerPromptCommands(api)
   registerChromeCommands(api)
+  api.keymap.registerLayer({
+    commands: [
+      { name: "captain.inbox", title: "Inbox: release or drop messages…", category: "Captain", namespace: "palette", run: () => openInboxDialog(api, brainURL("/v1/inbox/held")) },
+    ],
+    bindings: [...api.tuiConfig.keybinds.gather("captain.inbox", ["captain.inbox"])],
+  })
   // The exit screen: stock opencode prints its own wordmark and
   // "opencode -s <id>" after the plugins are gone (see epilogue.ts).
   const proc = (globalThis as any).process

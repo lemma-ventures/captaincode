@@ -104,6 +104,15 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 `/repeat` control words take an optional `last`, `all` or `rp_…` thread id. Anything
 wordier is a task: `/repeat watch the queue` repeats that task.
 
+## Inbox
+
+Click **inbox** in the right panel to review held messages for this folder.
+Select a message to read its full text, sender, destination, and screening findings.
+Choose **Release…** or **Drop…**, then confirm. Release queues the message for
+its session and keeps sent-turn restrictions. Drop deletes it without running it.
+The command palette also has **Inbox: release or drop messages…**. Use **Refresh**
+to update the list. Press **Esc** to close it without changing messages.
+
 ## Settings & memory
 
 | Word | What it does |

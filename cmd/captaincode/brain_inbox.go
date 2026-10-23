@@ -211,12 +211,18 @@ func (ib *inbox) takeNotify(dir string) []inboxItem {
 }
 
 // unhold removes a held message and returns it.
-func (ib *inbox) unhold(id string) (inboxItem, bool) {
+func (ib *inbox) unhold(id, dir string) (inboxItem, bool) {
 	ib.mu.Lock()
 	defer ib.mu.Unlock()
 	for i, it := range ib.held {
-		if it.ID == id {
+		if it.ID == id && (dir == "" || it.Dir == dir) {
 			ib.held = append(ib.held[:i:i], ib.held[i+1:]...)
+			for j, notice := range ib.notify[it.Dir] {
+				if notice.ID == id {
+					ib.notify[it.Dir] = append(ib.notify[it.Dir][:j:j], ib.notify[it.Dir][j+1:]...)
+					break
+				}
+			}
 			return it, true
 		}
 	}
@@ -529,7 +535,8 @@ func (b *brain) inboxHeldHTTP(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, `action is "release", "drop" or "open"`)
 			return
 		}
-		it, ok := b.inbox.unhold(strings.TrimSpace(req.ID))
+		dir, _ := workspaceFilter(r)
+		it, ok := b.inbox.unhold(strings.TrimSpace(req.ID), dir)
 		if !ok {
 			writeErr(w, 404, "no held message "+req.ID)
 			return
