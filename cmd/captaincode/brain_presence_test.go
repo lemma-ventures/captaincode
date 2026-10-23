@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,11 @@ import (
 )
 
 func signedInboxFixture(t *testing.T) (*brain, pres.Signed, string) {
+	t.Helper()
+	return signedFixtureText(t, "implement the change")
+}
+
+func signedFixtureText(t *testing.T, text string) (*brain, pres.Signed, string) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
@@ -40,7 +46,7 @@ func signedInboxFixture(t *testing.T) (*brain, pres.Signed, string) {
 	}); e != nil {
 		t.Fatal(e)
 	}
-	p := pres.Signed{Text: "implement the change"}
+	p := pres.Signed{Text: text}
 	p.Envelope = pres.Envelope{V: 1, Machine: "test-machine", Folder: "repo", TextSHA256: pres.HashText(p.Text), IssuedAt: time.Now().Unix() - 1, ExpiresAt: time.Now().Unix() + 120, Nonce: pres.Encode(make([]byte, 32))}
 	h, _ := p.Envelope.Hash()
 	cd, _ := json.Marshal(map[string]any{"type": "webauthn.get", "challenge": pres.Encode(h), "origin": "http://localhost:8781"})
@@ -397,5 +403,52 @@ func TestPresenceHookWaitsForTheSignedDecision(t *testing.T) {
 	out = runPresenceHook(t, string(other))
 	if !strings.Contains(out, "signed_decision_required") {
 		t.Fatalf("a step nobody approves is refused: %s", out)
+	}
+}
+
+// A signed prompt that asks to push may push the project's default branch
+// without a second approval (23 Oct: "commit and push on gh" asked for its
+// own push again). Force, delete and tag pushes still need a decision, and
+// so does a push the prompt did not ask for.
+func TestPresenceSignedPushIntentCoversAPlainPush(t *testing.T) {
+	_, p, dir := signedFixtureText(t, "commit and push on gh")
+	for _, args := range [][]string{{"init", "--quiet", dir}, {"-C", dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}} {
+		if out, e := exec.Command("git", args...).CombinedOutput(); e != nil {
+			t.Fatal(string(out), e)
+		}
+	}
+	g, e := pres.DefaultStore().VerifyPrompt(p)
+	if e != nil || !g.Push {
+		t.Fatal("the grant records the push intent", e)
+	}
+	act := func(cmd string) error {
+		return captaincode.PresenceAction(g.ID, captaincode.GateAction{Tool: "bash", Command: cmd, Cwd: dir})
+	}
+	for _, cmd := range []string{
+		"git show --format= --check HEAD && git diff origin/main..HEAD -- docs/feedback.md docs/roadmap.md && git push origin main",
+		"git push origin main 2>&1; echo \"push exit $?\"", "git push -u origin HEAD:main", "git -C " + dir + " push origin main",
+	} {
+		if err := act(cmd); err != nil {
+			t.Errorf("%q is the push the prompt asked for: %v", cmd, err)
+		}
+	}
+	for _, cmd := range []string{"git push --force origin main", "git push origin +main", "git push origin :old-branch",
+		"git push origin v1 --tags", "git push origin main && rm -rf build", "git push origin main && git reset --hard HEAD~1",
+		"git -C /tmp push origin main", "git push --mirror origin"} {
+		if err := act(cmd); err == nil || !strings.Contains(err.Error(), "signed_decision_required") {
+			t.Errorf("%q still needs a decision: %v", cmd, err)
+		}
+	}
+}
+
+func TestPresenceSignedPromptWithoutPushStillAsks(t *testing.T) {
+	_, p, dir := signedFixtureText(t, "fix the decoder test, do not push")
+	g, e := pres.DefaultStore().VerifyPrompt(p)
+	if e != nil || g.Push {
+		t.Fatal("\"do not push\" is no push intent", e)
+	}
+	err := captaincode.PresenceAction(g.ID, captaincode.GateAction{Tool: "bash", Command: "git push origin main", Cwd: dir})
+	if err == nil || !strings.Contains(err.Error(), "signed_decision_required") {
+		t.Fatal(err)
 	}
 }

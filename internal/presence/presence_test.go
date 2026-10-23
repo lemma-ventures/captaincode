@@ -430,3 +430,16 @@ func TestApproveAllAndPurgeDecisions(t *testing.T) {
 		t.Fatal("a purged action is still refused until approved")
 	}
 }
+
+func TestPushIntent(t *testing.T) {
+	for _, s := range []string{"commit and push on gh", "/frontier commit and push on gh try4", "Push the branch", "then pushes to main"} {
+		if !PushIntent(s) {
+			t.Errorf("%q asks to push", s)
+		}
+	}
+	for _, s := range []string{"fix the test", "do not push yet", "commit, don't push", "never push to main", "review the pushback notes"} {
+		if PushIntent(s) {
+			t.Errorf("%q does not ask to push", s)
+		}
+	}
+}

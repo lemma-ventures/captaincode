@@ -89,6 +89,67 @@ func presenceGitSubcommands(command string) map[string]bool {
 	return subs
 }
 
+// presencePlainPushOnly: the command is high-tier only for plain pushes of
+// this project: no force, delete, tags, mirror or --all, no + or : refspec,
+// and any -C inside the project. Everything else in it must pass on its own.
+func presencePlainPushOnly(a GateAction, dir string) bool {
+	if !shellTools[strings.ToLower(a.Tool)] {
+		return false
+	}
+	segs := presenceShellSplit.Split(a.Command, -1)
+	rest := a.Command
+	pushes := 0
+	for _, seg := range segs {
+		f := strings.Fields(seg)
+		for i := 0; i < len(f); i++ {
+			if filepath.Base(strings.Trim(f[i], `"'`)) != "git" {
+				continue
+			}
+			j := i + 1
+			for j < len(f) && strings.HasPrefix(f[j], "-") {
+				switch f[j] {
+				case "-C":
+					if j+1 >= len(f) {
+						return false
+					}
+					target := strings.Trim(f[j+1], `"'`)
+					if !filepath.IsAbs(target) {
+						target = filepath.Join(a.Cwd, target)
+					}
+					if !presenceFolderAllowed(dir, target) {
+						return false
+					}
+					j++
+				case "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env":
+					j++
+				}
+				j++
+			}
+			if j >= len(f) || strings.Trim(f[j], `"'`) != "push" {
+				i = j
+				continue
+			}
+			for _, arg := range f[j+1:] {
+				arg = strings.Trim(arg, `"'`)
+				switch {
+				case arg == "-f", strings.HasPrefix(arg, "--force"), arg == "--mirror", arg == "--delete", arg == "-d",
+					arg == "--tags", arg == "--follow-tags", arg == "--all", arg == "--prune", strings.HasPrefix(arg, "--push-option"), arg == "-o",
+					strings.HasPrefix(arg, "+"), strings.HasPrefix(arg, ":"), strings.Contains(arg, "refs/tags"):
+					return false
+				}
+			}
+			pushes++
+			rest = strings.Replace(rest, strings.TrimSpace(seg), "true", 1)
+			break
+		}
+	}
+	if pushes == 0 {
+		return false
+	}
+	// What is left once the pushes are taken out must need no decision.
+	return !PresenceHighTier(GateAction{Tool: a.Tool, Command: rest, Path: a.Path, Cwd: a.Cwd})
+}
+
 var presenceShellSplit = regexp.MustCompile("[;&|\n()`]+")
 
 func PresenceHighTier(a GateAction) bool {
@@ -252,6 +313,9 @@ func presenceAction(grantID string, a GateAction, hook bool) error {
 	}
 	if !PresenceHighTier(a) {
 		return nil
+	}
+	if g.Push && presencePlainPushOnly(a, g.Dir) {
+		return nil // the signed prompt asked for this push
 	}
 	preview := false
 	if shellTools[strings.ToLower(a.Tool)] {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -188,7 +189,7 @@ func (s *Store) VerifyPrompt(p Signed) (Grant, error) {
 		if e != nil {
 			return e
 		}
-		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: p.Envelope.ExpiresAt}
+		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: p.Envelope.ExpiresAt, Push: PushIntent(p.Text)}
 		if c.Used == nil {
 			c.Used = map[string]int64{}
 		}
@@ -414,6 +415,19 @@ func (s *Store) ApproveDecision(id string, a Assertion) error {
 		c.Audit = append(c.Audit, Event{Grant: g, At: nowUnix(), Kind: "decision:" + id})
 		return nil
 	})
+}
+
+var (
+	pushWord    = regexp.MustCompile(`(?i)\bpush(es|ed|ing)?\b`)
+	pushNegated = regexp.MustCompile(`(?i)\b(don'?t|do not|never|without|no|not|avoid)\b[^.\n]{0,24}\bpush`)
+)
+
+// PushIntent is whether a signed prompt asks to push ("commit and push on
+// gh"). On 23 Oct the operator signed exactly that and was asked again to
+// approve the push it named; a plain push is now part of what the signature
+// approves. "do not push" and the like do not count.
+func PushIntent(text string) bool {
+	return pushWord.MatchString(text) && !pushNegated.MatchString(text)
 }
 
 // DecisionsChallenge binds one passkey approval to every listed decision,

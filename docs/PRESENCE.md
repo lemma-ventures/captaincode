@@ -352,6 +352,12 @@ repository as the turn's folder, and so is output handling at the end (`2>&1`,
 classified by its subcommand: `merge`, `reset`, `clean`, `rebase`,
 `filter-repo`, `filter-branch`, and `tag` other than a listing.
 
+A signed prompt that asks to push ("commit and push on gh"; not "do not
+push") covers a plain push of its project, the default branch included: no
+force, delete, tag, mirror or `--all` push, no `+` or `:` refspec, any
+`git -C` inside the project, and nothing else in the command that needs a
+decision. The grant records this as `push`.
+
 `GET /v1/presence/decisions` returns pending decisions and their challenges.
 The decision binds its random ID, grant ID, exact action, and expiry to the
 machine. Non-shell actions bind the complete tool argument object. Simple
