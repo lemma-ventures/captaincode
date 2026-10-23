@@ -1,7 +1,9 @@
 package captaincode
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -37,5 +39,52 @@ func TestPresencePublishAndPatchDeletionRequireDecision(t *testing.T) {
 		if !PresenceHighTier(action) {
 			t.Errorf("no signed decision for %+v", action)
 		}
+	}
+}
+
+// A signed turn works in its project: the linked folder, a folder inside it,
+// and every linked worktree of the same repository. Another repository stays
+// refused, and a leading `cd` back into the project brings a worker home.
+func TestPresenceProjectFoldersAndWorktrees(t *testing.T) {
+	root := t.TempDir()
+	repo, other := filepath.Join(root, "project-a"), filepath.Join(root, "captaincode")
+	wt := filepath.Join(root, "project-a-wt-decoder")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, e := cmd.CombinedOutput(); e != nil {
+			t.Fatal(string(out), e)
+		}
+	}
+	git("init", "--quiet", repo)
+	git("-C", repo, "commit", "--quiet", "--allow-empty", "-m", "init")
+	git("-C", repo, "worktree", "add", "--quiet", "-b", "decoder", wt)
+	git("init", "--quiet", other)
+	sub := filepath.Join(repo, ".worktrees", "x")
+	if e := os.MkdirAll(sub, 0o755); e != nil {
+		t.Fatal(e)
+	}
+	for _, c := range []string{repo, sub, wt} {
+		if !presenceFolderAllowed(repo, c) {
+			t.Errorf("%s is part of the project", c)
+		}
+	}
+	for _, c := range []string{other, root} {
+		if presenceFolderAllowed(repo, c) {
+			t.Errorf("%s is not part of the project", c)
+		}
+	}
+	back := GateAction{Tool: "bash", Command: "cd " + repo + " && git status", Cwd: other}
+	if !presenceFolderAllowed(repo, presenceEffectiveCwd(back)) {
+		t.Error("a cd back into the project is allowed from anywhere")
+	}
+	away := GateAction{Tool: "bash", Command: "cd " + other + " && git status", Cwd: repo}
+	if presenceFolderAllowed(repo, presenceEffectiveCwd(away)) {
+		t.Error("a cd out of the project is refused")
+	}
+	rel := GateAction{Tool: "bash", Command: "cd ../project-a-wt-decoder; git log", Cwd: repo}
+	if !presenceFolderAllowed(repo, presenceEffectiveCwd(rel)) {
+		t.Error("a relative cd into a worktree of the project is allowed")
 	}
 }

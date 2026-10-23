@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,7 +22,7 @@ func PresenceContract(id string) string {
 	if id == "" {
 		return ""
 	}
-	return "\n\n" + PresenceMarker + id + "\nThis prompt has passkey approval. It has typed-turn tools in its linked folder. A default-branch push, merge, release, publish, delete or payment requires a separate signed decision. A chat reply cannot approve that decision. Later repeat rounds need fresh approval."
+	return "\n\n" + PresenceMarker + id + "\nThis prompt has passkey approval. It has typed-turn tools in its project: the linked folder, the folders inside it and the worktrees of its repository. A default-branch push, merge, release, publish, delete or payment requires a separate signed decision. A chat reply cannot approve that decision. Later repeat rounds need fresh approval."
 }
 func PresenceGrantID(prompt string) string {
 	i := strings.LastIndex(prompt, PresenceMarker)
@@ -87,6 +89,72 @@ func presenceFeaturePush(command, dir string) bool {
 	def := strings.TrimSpace(strings.TrimPrefix(string(raw), "refs/remotes/origin/"))
 	return ref != def && ref != "main" && ref != "master"
 }
+
+// presenceFolderAllowed: a signed turn works in its project - the linked
+// folder, a folder inside it, or a linked worktree of the same repository
+// (captain's scratch worktrees included). On 23 Oct a worker that ran one
+// `cd` elsewhere had every later tool call refused, even Read, and could not
+// get back.
+func presenceFolderAllowed(dir, cwd string) bool {
+	d, c := presenceRealPath(dir), presenceRealPath(cwd)
+	if d == "" || c == "" {
+		return false
+	}
+	if c == d || strings.HasPrefix(c, d+string(filepath.Separator)) {
+		return true
+	}
+	dc, cc := presenceGitCommon(d), presenceGitCommon(c)
+	return dc != "" && dc == cc
+}
+
+// presenceEffectiveCwd is where a shell command runs: a leading `cd <dir>`
+// moves it, so a worker can always step back into its project.
+func presenceEffectiveCwd(a GateAction) string {
+	if !shellTools[strings.ToLower(a.Tool)] {
+		return a.Cwd
+	}
+	m := presenceLeadingCd.FindStringSubmatch(a.Command)
+	if m == nil {
+		return a.Cwd
+	}
+	target := strings.Trim(m[1], `"'`)
+	if target == "~" || strings.HasPrefix(target, "~/") {
+		if home, e := os.UserHomeDir(); e == nil {
+			target = filepath.Join(home, strings.TrimPrefix(target, "~"))
+		}
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(a.Cwd, target)
+	}
+	return target
+}
+
+var presenceLeadingCd = regexp.MustCompile(`^\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)\s*(?:&&|;|$)`)
+
+func presenceRealPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if r, e := filepath.EvalSymlinks(filepath.Clean(p)); e == nil {
+		return r
+	}
+	return filepath.Clean(p)
+}
+
+// presenceGitCommon is the repository a folder belongs to: its shared .git
+// directory, the same for the main checkout and every linked worktree.
+func presenceGitCommon(dir string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
+	cmd.Dir = dir
+	out, e := cmd.Output()
+	if e != nil {
+		return ""
+	}
+	return presenceRealPath(strings.TrimSpace(string(out)))
+}
+
 func PresenceAction(grantID string, a GateAction) error { return presenceAction(grantID, a, false) }
 func PresenceActionForHook(grantID string, a GateAction) error {
 	return presenceAction(grantID, a, true)
@@ -99,7 +167,7 @@ func presenceAction(grantID string, a GateAction, hook bool) error {
 	if e != nil {
 		return e
 	}
-	if a.Cwd != "" && a.Cwd != g.Dir {
+	if a.Cwd != "" && !presenceFolderAllowed(g.Dir, presenceEffectiveCwd(a)) {
 		return fmt.Errorf("signed_folder_mismatch")
 	}
 	if !PresenceHighTier(a) {

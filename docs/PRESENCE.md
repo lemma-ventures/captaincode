@@ -334,8 +334,12 @@ The inbox hands the exact signed text to the existing TUI consumer. A TUI must
 be open to consume it. The brain keeps the verified grant outside client
 fields, checks the exact text again when the turn starts, resets the sent quota, and puts
 its grant ID into the worker contract. It prevents automatic routing to a
-second repository. The signed prompt has typed-turn tools in the linked
-folder. An unsigned prompt still receives the sent-turn contract and jail.
+second repository. The signed prompt has typed-turn tools in its project:
+the linked folder, any folder inside it, and any linked worktree of the same
+repository (captain's scratch worktrees included). A tool call elsewhere is
+refused with `signed_folder_mismatch`; a shell command that starts with `cd`
+back into the project is checked where it lands, so one `cd` elsewhere cannot
+lock the turn. An unsigned prompt still receives the sent-turn contract and jail.
 
 The signed-turn gate runs independently of `CAPTAIN_ACTION_GATE`. Known
 default-branch pushes, merges, release/publish commands, deletes, payment
