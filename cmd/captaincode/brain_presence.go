@@ -151,6 +151,24 @@ func (b *brain) presenceHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
+	case "decisions/challenge":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		var d struct {
+			IDs []string `json:"ids"`
+		}
+		if e := pres.ReadJSON(r.Body, &d); e != nil {
+			presenceError(w, e)
+			return
+		}
+		ch, e := s.DecisionsChallengeFor(d.IDs)
+		if e != nil {
+			presenceError(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]string{"challenge": pres.Encode(ch)})
 	case "decisions/approve":
 		if r.Method != http.MethodPost {
 			writeErr(w, 405, "POST")

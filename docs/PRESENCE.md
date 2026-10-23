@@ -375,7 +375,8 @@ A text reply such as `yes` has no effect.
 `POST /v1/presence/decisions/approve` with `{ "ids": [...], "assertion": proof }`
 approves up to 32 pending decisions with one passkey assertion. Its challenge is
 SHA-256 of `{"purpose":"captain.presence.decisions.v1","machine":"MACHINE_ID","decisions":[...]}`
-with the decisions sorted by ID; all must belong to the same user, and only
+with the decisions sorted by ID (`POST /v1/presence/decisions/challenge` with
+`{ "ids": [...] }` returns it); all must belong to the same user, and only
 that user's credential can approve them. `POST /v1/presence/decisions/purge`
 with `{ "ids": [...] }` removes pending decisions without approving them; it
 needs no passkey because it can only refuse.

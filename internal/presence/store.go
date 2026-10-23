@@ -458,6 +458,19 @@ func (c *Config) pendingDecisions(ids []string) ([]Decision, string, error) {
 	return ds, user, nil
 }
 
+// DecisionsChallengeFor is the challenge ApproveDecisions expects for ids.
+func (s *Store) DecisionsChallengeFor(ids []string) ([]byte, error) {
+	c, e := s.Read()
+	if e != nil {
+		return nil, e
+	}
+	ds, _, e := c.pendingDecisions(ids)
+	if e != nil {
+		return nil, e
+	}
+	return DecisionsChallenge(c.Machine, ds), nil
+}
+
 // ApproveDecisions approves every listed decision with one passkey assertion
 // over DecisionsChallenge. Only the user who signed their prompts can.
 func (s *Store) ApproveDecisions(ids []string, a Assertion) error {

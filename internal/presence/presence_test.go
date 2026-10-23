@@ -397,7 +397,11 @@ func TestApproveAllAndPurgeDecisions(t *testing.T) {
 	}
 	pair := []Decision{ds[0], ds[1]}
 	slices.SortFunc(pair, func(a, b Decision) int { return strings.Compare(a.ID, b.ID) })
-	a := sign(DecisionsChallenge(g.Machine, pair), 2)
+	ch, e := s.DecisionsChallengeFor([]string{ds[1].ID, ds[0].ID})
+	if e != nil || string(ch) != string(DecisionsChallenge(g.Machine, pair)) {
+		t.Fatal("the challenge for a set names it sorted by ID", e)
+	}
+	a := sign(ch, 2)
 	if e := s.ApproveDecisions([]string{ds[0].ID, ds[2].ID}, a); e == nil {
 		t.Fatal("an approval signed for two decisions approved another set")
 	}
