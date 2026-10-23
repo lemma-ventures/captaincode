@@ -241,7 +241,8 @@ func TestCompleteProseIgnoresThinkingAndSkipsQualification(t *testing.T) {
 			_, tools := req["tools"]
 			require.False(t, tools)
 			opt := req["options"].(map[string]any)
-			require.Equal(t, float64(0), opt["temperature"])
+			require.Equal(t, 0.7, opt["temperature"])
+			require.Equal(t, 0.8, opt["top_p"])
 			fmt.Fprint(w, "{\"message\":{\"thinking\":\"hidden plan\",\"content\":\"kept the number 4\"},\"done\":false}\n")
 			fmt.Fprint(w, "{\"message\":{\"content\":\"\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":8,\"eval_count\":3}\n")
 		default:

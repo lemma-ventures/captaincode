@@ -308,7 +308,22 @@ func (c LocalConfig) longClient() *http.Client {
 // It refuses a remote-backed model, an input over 350,000 characters, and a
 // prompt that does not fit the 131,072-token context. It does not truncate
 // and it does not call another provider. Thinking text is not part of the result.
+//
+// It samples as Qwen3 advises without thinking (temperature 0.7, top_p 0.8,
+// top_k 20): greedy decoding looped to the 4,096-token cap on two of twelve
+// compactions on 23 Oct.
 func (c LocalConfig) CompleteProse(ctx context.Context, system, input string, maxTokens int) (Result, error) {
+	return c.completeProse(ctx, system, input, maxTokens, map[string]any{"temperature": 0.7, "top_p": 0.8, "top_k": 20})
+}
+
+// CompleteJSON is CompleteProse with greedy decoding, for an answer that
+// must be the same each time: sampled, one learning batch gave 0, 2 and 0
+// lessons in three runs, greedy gave 2 each time (23 Oct).
+func (c LocalConfig) CompleteJSON(ctx context.Context, system, input string, maxTokens int) (Result, error) {
+	return c.completeProse(ctx, system, input, maxTokens, map[string]any{"temperature": 0})
+}
+
+func (c LocalConfig) completeProse(ctx context.Context, system, input string, maxTokens int, sampling map[string]any) (Result, error) {
 	res := Result{Model: c.Model}
 	if err := c.Validate(); err != nil {
 		return res, err
@@ -338,9 +353,13 @@ func (c LocalConfig) CompleteProse(ctx context.Context, system, input string, ma
 	if numCtx > localProseContext {
 		numCtx = localProseContext
 	}
+	options := map[string]any{"num_predict": maxTokens, "num_ctx": numCtx}
+	for k, v := range sampling {
+		options[k] = v
+	}
 	raw, err := json.Marshal(map[string]any{
 		"model": c.Model, "stream": true, "think": false,
-		"options":  map[string]any{"temperature": 0, "num_predict": maxTokens, "num_ctx": numCtx},
+		"options":  options,
 		"messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": input}},
 	})
 	if err != nil {

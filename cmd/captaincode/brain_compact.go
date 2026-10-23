@@ -230,6 +230,16 @@ func localCompactWait(n int) time.Duration {
 	return wait
 }
 
+const compactLocalSystem = "No tools. Follow the user instructions exactly."
+
+// foldLooksLikeSummary refuses what a summary of a span over the budget
+// cannot be: the system line echoed back, or a few words. The fold only runs
+// on a conversation over its budget, so a real summary is never this short.
+func foldLooksLikeSummary(text string) bool {
+	t := strings.TrimSpace(text)
+	return len(t) >= 200 && !strings.Contains(t, compactLocalSystem)
+}
+
 // summarizeSpan is the default tier: the FREE leg, no tools, bounded. The
 // structured asks mirror prime's summary format, plus the style note the
 // editorial workload depends on.
@@ -240,6 +250,9 @@ func summarizeSpan(span, prev string, onCall captaincode.CallHook) (string, erro
 		sb.WriteString("Previous summary (fold it in - do not lose anything from it):\n" + prev + "\n\n")
 	}
 	sb.WriteString("New span:\n" + span)
+	// The brief again after the span: on a 39k-token span with the brief only
+	// at the top, the local model answered with its system line (23 Oct).
+	sb.WriteString("\n\nEnd of the span. Now write the summary the instructions at the top ask for: 1) task state & open goals, 2) decisions made, 3) essential content produced, 4) the user's style/preferences. Max ~600 words.")
 	wait := 90*time.Second + time.Duration(len(span)/4_000)*time.Second
 	if wait > 6*time.Minute {
 		wait = 6 * time.Minute
@@ -250,7 +263,10 @@ func summarizeSpan(span, prev string, onCall captaincode.CallHook) (string, erro
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), localCompactWait(len(sb.String())))
 		defer cancel()
-		res, err := c.CompleteProse(ctx, "No tools. Follow the user instructions exactly.", sb.String(), 4096)
+		res, err := c.CompleteProse(ctx, compactLocalSystem, sb.String(), 4096)
+		if err == nil && !foldLooksLikeSummary(res.Text) {
+			err = fmt.Errorf("local summary rejected: %d chars, not a summary", len(strings.TrimSpace(res.Text)))
+		}
 		captaincode.LogSmallCall("compaction", res, err)
 		if onCall != nil {
 			onCall(captaincode.LegLocal, "compaction", res, err)
