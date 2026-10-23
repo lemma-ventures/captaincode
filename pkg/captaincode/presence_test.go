@@ -131,3 +131,28 @@ func TestPresenceFeaturePushForms(t *testing.T) {
 		}
 	}
 }
+
+// The calls that queued eleven approvals on 23 Oct: Claude Code's own git
+// with -c hook.pre-push.enabled=false (and forty more options), and feature
+// pushes in the HEAD:refs/heads/<branch> form with a trailing echo.
+func TestPresenceClaudeCodeGitAndFeaturePushes(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "--quiet", dir}, {"-C", dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}} {
+		if out, e := exec.Command("git", args...).CombinedOutput(); e != nil {
+			t.Fatal(string(out), e)
+		}
+	}
+	hooks := "git -c core.fsmonitor= -c core.hooksPath=/dev/null -c hook.pre-push.enabled=false -c hook.pre-merge-commit.enabled=false -c hook.pre-rebase.enabled=false -c hook.post-rewrite.enabled=false -c hook.reference-transaction.enabled=false"
+	for _, cmd := range []string{hooks + " config user.name", hooks + " --no-optional-locks status --short", hooks + " remote get-url origin",
+		hooks + " --literal-pathspecs write-tree", "git push origin HEAD:refs/heads/d404-decisions 2>&1; echo \"push exit $?\"", "git push origin HEAD:feature"} {
+		if PresenceHighTier(GateAction{Tool: "bash", Command: cmd, Cwd: dir}) {
+			t.Errorf("%q needs no decision", cmd)
+		}
+	}
+	for _, cmd := range []string{"git push origin main 2>&1; echo \"push exit $?\"", "git push origin HEAD:main", "git push origin HEAD:refs/heads/main",
+		hooks + " push origin main", "git push origin feature; echo \"$(rm -rf x)\""} {
+		if !PresenceHighTier(GateAction{Tool: "bash", Command: cmd, Cwd: dir}) {
+			t.Errorf("%q needs a decision", cmd)
+		}
+	}
+}

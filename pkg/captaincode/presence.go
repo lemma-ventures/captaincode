@@ -47,6 +47,20 @@ var presenceHighRE = regexp.MustCompile(`(?i)\b(rm|rmdir|unlink|shred|truncate|g
 // turn for approval. Every git invocation in the command counts, in a
 // pipeline, a list or a subshell.
 func presenceGitHigh(command string) bool {
+	subs := presenceGitSubcommands(command)
+	for _, sub := range []string{"merge", "reset", "clean", "rebase", "filter-repo", "filter-branch", "tag"} {
+		if subs[sub] {
+			return true
+		}
+	}
+	return false
+}
+
+// presenceGitSubcommands is the set of git subcommands a shell command runs,
+// in a pipeline, a list or a subshell, past git's global options and their
+// values. "tag" is only listed when it creates or deletes a tag.
+func presenceGitSubcommands(command string) map[string]bool {
+	subs := map[string]bool{}
 	for _, seg := range presenceShellSplit.Split(command, -1) {
 		f := strings.Fields(seg)
 		for i := 0; i < len(f); i++ {
@@ -64,18 +78,15 @@ func presenceGitHigh(command string) bool {
 			if j >= len(f) {
 				break
 			}
-			switch strings.Trim(f[j], `"'`) {
-			case "merge", "reset", "clean", "rebase", "filter-repo", "filter-branch":
-				return true
-			case "tag":
-				if j+1 < len(f) && f[j+1] != "-l" && f[j+1] != "--list" && f[j+1] != "-n" && !strings.HasPrefix(f[j+1], "--sort") && f[j+1] != "--contains" && f[j+1] != "--points-at" {
-					return true
-				}
+			sub := strings.Trim(f[j], `"'`)
+			if sub == "tag" && !(j+1 < len(f) && f[j+1] != "-l" && f[j+1] != "--list" && f[j+1] != "-n" && !strings.HasPrefix(f[j+1], "--sort") && f[j+1] != "--contains" && f[j+1] != "--points-at") {
+				sub = "tag-list"
 			}
+			subs[sub] = true
 			i = j
 		}
 	}
-	return false
+	return subs
 }
 
 var presenceShellSplit = regexp.MustCompile("[;&|\n()`]+")
@@ -101,7 +112,10 @@ func PresenceHighTier(a GateAction) bool {
 	if presenceHighRE.MatchString(a.Command) || presenceGitHigh(a.Command) {
 		return true
 	}
-	if regexp.MustCompile(`(?i)\bgit\b[^\n]*\bpush\b`).MatchString(a.Command) {
+	// push by its subcommand too: Claude Code's own background git calls carry
+	// `-c hook.pre-push.enabled=false`, and the word "push" in that option made
+	// git status, git config and git log wait for approval (23 Oct).
+	if presenceGitSubcommands(a.Command)["push"] {
 		return !presenceFeaturePush(a.Command, a.Cwd)
 	}
 	return false
@@ -110,6 +124,7 @@ func presenceFeaturePush(command, dir string) bool {
 	// Output handling after the push changes nothing it sends: 23 Oct, a
 	// worker's `git -C <project> push origin feature 2>&1 | tail -6` waited
 	// for a signed decision like a push to main.
+	command = presencePushEcho.ReplaceAllString(command, "")
 	command = presencePushTail.ReplaceAllString(command, "")
 	if strings.ContainsAny(command, ";&|\n\r`$\\'\"<>()") {
 		return false
@@ -130,6 +145,11 @@ func presenceFeaturePush(command, dir string) bool {
 		return false
 	}
 	ref := words[3]
+	// HEAD:<branch> and HEAD:refs/heads/<branch> push the current commit to
+	// that branch: the branch is what decides.
+	if after, ok := strings.CutPrefix(ref, "HEAD:"); ok {
+		ref = strings.TrimPrefix(after, "refs/heads/")
+	}
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_./-]*$`).MatchString(ref) || ref == "HEAD" || strings.Contains(ref, "..") || strings.HasPrefix(ref, "refs/") {
 		return false
 	}
@@ -144,6 +164,9 @@ func presenceFeaturePush(command, dir string) bool {
 	def := strings.TrimSpace(strings.TrimPrefix(string(raw), "refs/remotes/origin/"))
 	return ref != def && ref != "main" && ref != "master"
 }
+
+// presencePushEcho is a trailing `; echo "push exit $?"`: it prints, it sends nothing.
+var presencePushEcho = regexp.MustCompile(`\s*;\s*echo\s+"[^"$` + "`" + `]*(\$\?)?[^"$` + "`" + `]*"\s*$`)
 
 var presencePushTail = regexp.MustCompile(`\s*(2>&1)?\s*(\|\s*(tail|head)(\s+-n)?(\s+-?[0-9]+)?)?\s*$`)
 
