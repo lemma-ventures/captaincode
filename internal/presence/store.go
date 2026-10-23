@@ -189,7 +189,7 @@ func (s *Store) VerifyPrompt(p Signed) (Grant, error) {
 		if e != nil {
 			return e
 		}
-		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: p.Envelope.ExpiresAt, Push: PushIntent(p.Text)}
+		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: now + GrantLifetime, Push: PushIntent(p.Text)}
 		if c.Used == nil {
 			c.Used = map[string]int64{}
 		}
@@ -416,6 +416,12 @@ func (s *Store) ApproveDecision(id string, a Assertion) error {
 		return nil
 	})
 }
+
+// GrantLifetime is how long an accepted signed prompt keeps its typed trust:
+// its loops and long rounds run past the envelope's delivery window
+// (operator decision, 23 Oct). The envelope must still be fresh, and its
+// nonce unused, when the prompt is accepted.
+const GrantLifetime = 24 * 60 * 60
 
 var (
 	pushWord    = regexp.MustCompile(`(?i)\bpush(es|ed|ing)?\b`)

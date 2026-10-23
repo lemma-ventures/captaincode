@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -157,7 +156,7 @@ func TestPresenceHighTierNeedsDecision(t *testing.T) {
 	}
 	sentSessionCache = &sentSessions{}
 	b.sessionPromptFn = func(string) (string, error) { return captaincode.PresenceContract(g.ID), nil }
-	body, _ := json.Marshal(map[string]any{"session": "signed", "tool": "bash", "args": map[string]string{"command": "git push origin main"}, "cwd": dir})
+	body, _ := json.Marshal(map[string]any{"session": "signed", "tool": "bash", "args": map[string]string{"command": "git push --force origin main"}, "cwd": dir})
 	w := httptest.NewRecorder()
 	b.gateSentHTTP(w, httptest.NewRequest("POST", "/v1/gate/sent", bytes.NewReader(body)))
 	if !strings.Contains(w.Body.String(), "signed_decision_required") {
@@ -368,7 +367,7 @@ func TestPresenceHookWaitsForTheSignedDecision(t *testing.T) {
 	oldWait, oldPoll := presenceHookWait, presenceHookPoll
 	presenceHookWait, presenceHookPoll = 3*time.Second, 50*time.Millisecond
 	defer func() { presenceHookWait, presenceHookPoll = oldWait, oldPoll }()
-	call, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin main"}, "cwd": dir})
+	call, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push --force origin main"}, "cwd": dir})
 
 	approved := make(chan struct{})
 	found := false
@@ -392,63 +391,75 @@ func TestPresenceHookWaitsForTheSignedDecision(t *testing.T) {
 	out := runPresenceHook(t, string(call))
 	<-approved
 	if !found {
-		t.Fatal("the push to main created no decision")
+		t.Fatal("the force push created no decision")
 	}
 	if strings.Contains(out, "deny") {
 		t.Fatalf("an approved step goes on: %s", out)
 	}
 
 	presenceHookWait = 300 * time.Millisecond
-	other, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin main --tags"}, "cwd": dir})
+	other, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git push origin v1 --tags"}, "cwd": dir})
 	out = runPresenceHook(t, string(other))
 	if !strings.Contains(out, "signed_decision_required") {
 		t.Fatalf("a step nobody approves is refused: %s", out)
 	}
 }
 
-// A signed prompt that asks to push may push the project's default branch
-// without a second approval (23 Oct: "commit and push on gh" asked for its
-// own push again). Force, delete and tag pushes still need a decision, and
-// so does a push the prompt did not ask for.
-func TestPresenceSignedPushIntentCoversAPlainPush(t *testing.T) {
-	_, p, dir := signedFixtureText(t, "commit and push on gh")
-	for _, args := range [][]string{{"init", "--quiet", dir}, {"-C", dir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"}} {
-		if out, e := exec.Command("git", args...).CombinedOutput(); e != nil {
-			t.Fatal(string(out), e)
-		}
-	}
+// A verified signed prompt is a typed turn (operator decision, 23 Oct): only
+// the always-ask list - force push, remote branch delete or local force
+// delete, tags and releases, publishing, payments - needs a decision.
+func TestPresenceSignedTurnIsTypedExceptTheAlwaysAskList(t *testing.T) {
+	_, p, dir := signedFixtureText(t, "fix the decoder test")
 	g, e := pres.DefaultStore().VerifyPrompt(p)
-	if e != nil || !g.Push {
-		t.Fatal("the grant records the push intent", e)
+	if e != nil {
+		t.Fatal(e)
 	}
-	act := func(cmd string) error {
-		return captaincode.PresenceAction(g.ID, captaincode.GateAction{Tool: "bash", Command: cmd, Cwd: dir})
+	act := func(tool, cmd string) error {
+		return captaincode.PresenceAction(g.ID, captaincode.GateAction{Tool: tool, Command: cmd, Cwd: dir})
 	}
 	for _, cmd := range []string{
 		"git show --format= --check HEAD && git diff origin/main..HEAD -- docs/feedback.md docs/roadmap.md && git push origin main",
-		"git push origin main 2>&1; echo \"push exit $?\"", "git push -u origin HEAD:main", "git -C " + dir + " push origin main",
+		"git push origin main && rm -rf build", "git reset --hard HEAD~1", "git merge feature", "git -C /tmp/elsewhere status",
+		"git branch -d merged-branch", "git tag --list", "cd ../another-repo && make test",
 	} {
-		if err := act(cmd); err != nil {
-			t.Errorf("%q is the push the prompt asked for: %v", cmd, err)
+		if err := act("bash", cmd); err != nil {
+			t.Errorf("%q runs as typed: %v", cmd, err)
 		}
 	}
-	for _, cmd := range []string{"git push --force origin main", "git push origin +main", "git push origin :old-branch",
-		"git push origin v1 --tags", "git push origin main && rm -rf build", "git push origin main && git reset --hard HEAD~1",
-		"git -C /tmp push origin main", "git push --mirror origin"} {
-		if err := act(cmd); err == nil || !strings.Contains(err.Error(), "signed_decision_required") {
-			t.Errorf("%q still needs a decision: %v", cmd, err)
+	if err := act("some_mcp_tool", ""); err != nil {
+		t.Errorf("an unknown tool runs as typed: %v", err)
+	}
+	for _, c := range [][2]string{{"bash", "git push --force origin main"}, {"bash", "git push origin +main"}, {"bash", "git push origin :old-branch"},
+		{"bash", "git push --delete origin old"}, {"bash", "git push origin v1 --tags"}, {"bash", "git push --mirror origin"},
+		{"bash", "git branch -D unmerged"}, {"bash", "npm publish"}, {"bash", "gh release create v1"}, {"bash", "git tag v1.2"}, {"bash", "stripe charges create --amount 100"},
+		{"payments_transfer", ""}} {
+		if err := act(c[0], c[1]); err == nil || !strings.Contains(err.Error(), "signed_decision_required") {
+			t.Errorf("%q always asks: %v", c[1]+c[0], err)
 		}
 	}
 }
 
-func TestPresenceSignedPromptWithoutPushStillAsks(t *testing.T) {
-	_, p, dir := signedFixtureText(t, "fix the decoder test, do not push")
+// A later /repeat round keeps the signed prompt's typed trust while its
+// grant lasts, and falls back to a sent turn after.
+func TestPresenceRepeatRoundsKeepTypedTrust(t *testing.T) {
+	_, p, _ := signedInboxFixture(t)
 	g, e := pres.DefaultStore().VerifyPrompt(p)
-	if e != nil || g.Push {
-		t.Fatal("\"do not push\" is no push intent", e)
+	if e != nil {
+		t.Fatal(e)
 	}
-	err := captaincode.PresenceAction(g.ID, captaincode.GateAction{Tool: "bash", Command: "git push origin main", Cwd: dir})
-	if err == nil || !strings.Contains(err.Error(), "signed_decision_required") {
-		t.Fatal(err)
+	if g.Expires < time.Now().Unix()+pres.GrantLifetime-60 {
+		t.Fatal("an accepted signed prompt keeps its trust past the envelope window")
+	}
+	if id, sent := presenceRoundTrust(g.ID); id != g.ID || sent != "" {
+		t.Fatal("a later round keeps the grant", id, sent)
+	}
+	_ = pres.DefaultStore().Update(func(c *pres.Config) error {
+		x := c.Grants[g.ID]
+		x.Expires = time.Now().Unix() - 1
+		c.Grants[g.ID] = x
+		return nil
+	})
+	if id, sent := presenceRoundTrust(g.ID); id != "" || sent == "" {
+		t.Fatal("an expired grant gives a sent turn", id, sent)
 	}
 }

@@ -293,6 +293,16 @@ func (b *brain) detectSignedInbox(w http.ResponseWriter, r *http.Request) bool {
 
 type presenceRoundKey struct{}
 
+// presenceRoundTrust is the trust of a later /repeat round of a signed
+// prompt: the grant's typed trust while it lasts (GrantLifetime), else the
+// restrictions of a sent turn.
+func presenceRoundTrust(grantID string) (presenceID, sentBy string) {
+	if _, e := pres.DefaultStore().Grant(grantID); e == nil {
+		return grantID, ""
+	}
+	return "", "a later round of a signed prompt whose approval expired"
+}
+
 // presenceHookWait is how long a worker's step waits for its signed
 // decision: under the hook's 600 s limit (PresenceClaudeSettings).
 var (

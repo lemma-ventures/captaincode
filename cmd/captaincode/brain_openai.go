@@ -454,10 +454,12 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// The worker guard's two facts for this turn (pkg workerguard.go): a
 	// release only when the user's own turn asks for one, and no bulk
 	// staging over changes that were there before the turn.
+	// A later /repeat round of a signed prompt keeps its typed trust, as a
+	// typed loop does (operator decision, 23 Oct).
 	if inherited, _ := r.Context().Value(presenceRoundKey{}).(string); inherited != "" {
-		req.ws.SentBy = "a later round of a signed prompt; fresh approval required"
+		req.ws.PresenceID, req.ws.SentBy = presenceRoundTrust(inherited)
 	}
-	req.ws.MayPublish = req.ws.SentBy == "" && req.ws.PresenceID == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
+	req.ws.MayPublish = req.ws.SentBy == "" && captaincode.AsksToPublish(lastUserRaw(req.Messages))
 	req.ws.DirtyBefore = checkoutDirty(req.ws.Dir)
 	if i := lastUserIndex(req.Messages); i >= 0 && !round && !isTitleTurn(req.Messages) {
 		key := promptKey(req.ws.Dir, req.Messages, i)
@@ -569,7 +571,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// The repository the task is about (reporefs.go): by default the folder
 	// the TUI is open in; a task that names another repo runs there.
-	if !titleReq && req.ws.PresenceID == "" {
+	if !titleReq {
 		req.ws = b.followTask(req.ws, lastUserTurn(prompt))
 		// A worker moved into a repository with work in flight gets its own
 		// worktree; its changes come back as a patch (brain_isolate.go).

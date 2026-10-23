@@ -3,7 +3,6 @@ package captaincode
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +21,7 @@ func PresenceContract(id string) string {
 	if id == "" {
 		return ""
 	}
-	return "\n\n" + PresenceMarker + id + "\nThis prompt has passkey approval. It has typed-turn tools in its project: the linked folder, the folders inside it and the worktrees of its repository. A default-branch push, merge, release, publish, delete or payment requires a separate signed decision. A chat reply cannot approve that decision. Later repeat rounds need fresh approval."
+	return "\n\n" + PresenceMarker + id + "\nThis prompt has passkey approval: it runs as a typed turn. A force push, deleting a remote branch or force-deleting a local one, a tag or a release, publishing a package or image, and a payment each need a separate signed decision; the step waits for it. A chat reply cannot approve that decision. Later /repeat rounds keep this approval for 24 hours."
 }
 func PresenceGrantID(prompt string) string {
 	i := strings.LastIndex(prompt, PresenceMarker)
@@ -151,6 +150,69 @@ func presencePlainPushOnly(a GateAction, dir string) bool {
 }
 
 var presenceShellSplit = regexp.MustCompile("[;&|\n()`]+")
+
+// PresenceAlwaysAsk is the short list a signed turn still asks about,
+// whatever the prompt says: a force push, deleting a branch on the remote or
+// force-deleting a local one, pushing tags or releasing, publishing a
+// package or image, and payments. Everything else runs as typed.
+func PresenceAlwaysAsk(a GateAction) bool {
+	tool := strings.ToLower(a.Tool)
+	if !shellTools[tool] {
+		return presencePaymentTool.MatchString(tool)
+	}
+	for _, rule := range publishRules {
+		if rule.re.MatchString(a.Command) {
+			return true
+		}
+	}
+	if presencePaymentCommand.MatchString(a.Command) {
+		return true
+	}
+	for _, seg := range presenceShellSplit.Split(a.Command, -1) {
+		f := strings.Fields(seg)
+		for i := 0; i < len(f); i++ {
+			if filepath.Base(strings.Trim(f[i], `"'`)) != "git" {
+				continue
+			}
+			j := i + 1
+			for j < len(f) && strings.HasPrefix(f[j], "-") {
+				switch f[j] {
+				case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env":
+					j++
+				}
+				j++
+			}
+			if j >= len(f) {
+				break
+			}
+			args := f[j+1:]
+			switch strings.Trim(f[j], `"'`) {
+			case "push":
+				for _, arg := range args {
+					arg = strings.Trim(arg, `"'`)
+					if arg == "-f" || strings.HasPrefix(arg, "--force") || arg == "--mirror" || arg == "--delete" || arg == "-d" ||
+						arg == "--tags" || arg == "--follow-tags" || strings.HasPrefix(arg, "+") || strings.HasPrefix(arg, ":") ||
+						strings.Contains(arg, ":+") || strings.Contains(arg, "refs/tags") {
+						return true
+					}
+				}
+			case "branch":
+				for _, arg := range args {
+					if arg == "-D" || (arg == "--delete" && slices.Contains(args, "--force")) {
+						return true
+					}
+				}
+			}
+			i = j
+		}
+	}
+	return false
+}
+
+var (
+	presencePaymentTool    = regexp.MustCompile(`(?i)payment|purchase|charge|transfer|spend|payout|refund|invoice`)
+	presencePaymentCommand = regexp.MustCompile(`(?i)\b(stripe|paypal|adyen)\b[^\n]*\b(charges?|payouts?|transfers?|refunds?|payment_intents?)\b|\bpayment\s+(transfer|send|pay)\b`)
+)
 
 func PresenceHighTier(a GateAction) bool {
 	tool := strings.ToLower(a.Tool)
@@ -308,14 +370,12 @@ func presenceAction(grantID string, a GateAction, hook bool) error {
 	if e != nil {
 		return e
 	}
-	if a.Cwd != "" && !presenceFolderAllowed(g.Dir, presenceEffectiveCwd(a)) {
-		return fmt.Errorf("signed_folder_mismatch")
-	}
-	if !PresenceHighTier(a) {
+	_ = g
+	// A verified signed prompt is a typed turn (operator decision, 23 Oct): no
+	// folder rule and no guesswork about what is risky. Only the short
+	// always-ask list needs a separate signed decision.
+	if !PresenceAlwaysAsk(a) {
 		return nil
-	}
-	if g.Push && presencePlainPushOnly(a, g.Dir) {
-		return nil // the signed prompt asked for this push
 	}
 	preview := false
 	if shellTools[strings.ToLower(a.Tool)] {

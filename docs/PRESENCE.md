@@ -12,8 +12,8 @@ user presence, user verification, signature, and counter before it grants trust.
 P1: A failed check changes no credential, counter, nonce, or inbox item.
 P2: A nonce can authorize one prompt. Replay state survives a restart.
 P3: Registration requires a five-minute terminal code or a trusted user's signature.
-P4: A verified prompt resets the sent quota and gets typed-turn tools in its folder.
-P5: High-tier actions need a separate signed decision. Prompt approval is not that decision.
+P4: A verified prompt resets the sent quota and runs as a typed turn.
+P5: The always-ask list (force push, branch delete, tag or release, publish, payment) needs a separate signed decision. Prompt approval is not that decision.
 P6: The client receives injection findings for the exact text before signing.
 P7: Unsigned messages retain the existing sent-turn restrictions.
 
@@ -333,30 +333,21 @@ import a key, or add a key using an unsigned message.
 The inbox hands the exact signed text to the existing TUI consumer. A TUI must
 be open to consume it. The brain keeps the verified grant outside client
 fields, checks the exact text again when the turn starts, resets the sent quota, and puts
-its grant ID into the worker contract. It prevents automatic routing to a
-second repository. The signed prompt has typed-turn tools in its project:
-the linked folder, any folder inside it, and any linked worktree of the same
-repository (captain's scratch worktrees included). A tool call elsewhere is
-refused with `signed_folder_mismatch`; a shell command that starts with `cd`
-back into the project is checked where it lands, so one `cd` elsewhere cannot
-lock the turn. An unsigned prompt still receives the sent-turn contract and jail.
+its grant ID into the worker contract.
 
-The signed-turn gate runs independently of `CAPTAIN_ACTION_GATE`. Known
-default-branch pushes, merges, release/publish commands, deletes, payment
-actions, and unknown service tools create a pending decision. Feature pushes
-are allowed only in the unambiguous form `git push origin feature`, with a
-known `refs/remotes/origin/HEAD` and a target other than that default branch,
-`main`, or `master`. `git -C <dir>` is accepted when `<dir>` is in the same
-repository as the turn's folder, and so is output handling at the end (`2>&1`,
-`| tail -N`, `| head -N`). Ambiguous push syntax requires a decision. Git is
-classified by its subcommand: `merge`, `reset`, `clean`, `rebase`,
-`filter-repo`, `filter-branch`, and `tag` other than a listing.
+A verified signed prompt is a typed turn (operator decision, 23 October): the
+same tools, folders, task routing and publishing rules as a prompt typed in
+that TUI. The signature, the machine and folder binding, the envelope window
+and the one-use nonce are the checks; nothing guesses at each command. An
+unsigned prompt still receives the sent-turn contract and jail.
 
-A signed prompt that asks to push ("commit and push on gh"; not "do not
-push") covers a plain push of its project, the default branch included: no
-force, delete, tag, mirror or `--all` push, no `+` or `:` refspec, any
-`git -C` inside the project, and nothing else in the command that needs a
-decision. The grant records this as `push`.
+Only the always-ask list needs a separate signed decision, whatever the prompt
+says: a force push (`-f`, `--force*`, a `+` refspec, `--mirror`), deleting a
+remote branch (`--delete`, a `:` refspec) or force-deleting a local one
+(`git branch -D`), a tag or a release (pushing tags, creating a tag,
+`gh release`, `goreleaser`), publishing a package or an image, and payments.
+A plain push, to the default branch too, a merge, a reset, `rm` and any other
+command run as typed. The gate runs independently of `CAPTAIN_ACTION_GATE`.
 
 `GET /v1/presence/decisions` returns pending decisions and their challenges.
 The decision binds its random ID, grant ID, exact action, and expiry to the
@@ -443,11 +434,12 @@ Unsupported methods return 405. Unknown presence routes return 404.
 | `expired_registration`, `invalid_enrollment_code`, `enrollment_proof_required`, `invalid_attestation`, `unsupported_attestation` | Registration proof failed. |
 | `held_text_mismatch`, `expired_grant`, `unknown_decision` | Held item, execution grant, or decision no longer valid. |
 
-Tool refusals use `signed_decision_required: ID` or `signed_folder_mismatch`.
-They do not execute the action. Store failures refuse instead of falling back
-to full trust. Signed grants expire at the envelope expiry; long tasks need a
-fresh approved prompt. A later `/repeat` round does not inherit signed trust.
-It keeps sent-turn restrictions until submitted as a new signed prompt.
+Tool refusals use `signed_decision_required: ID`. They do not execute the
+action. Store failures refuse instead of falling back to full trust. The
+envelope window bounds delivery: a signed prompt must be accepted before it
+expires. An accepted prompt keeps its typed trust for 24 hours
+(`GrantLifetime`), and its later `/repeat` rounds keep it too; after that a
+round runs with sent-turn restrictions.
 
 ## Evidence and open decisions
 
@@ -466,10 +458,10 @@ unavailable; no Lean proof is claimed.
 | Browser device approval | Exact calls above | Not tested with a physical passkey. |
 | Hub transport | Payload contract above | Specified; hub implementation is separate. |
 
-Open decisions for the operator: the maximum window for an offline hub queue,
-whether accepted tasks should retain trust past envelope expiry, and whether
-later `/repeat` rounds should retain it. Current defaults are 900 seconds,
-expiry-bounded execution grants, and no inherited trust for later rounds.
+Open decision for the operator: the maximum window for an offline hub queue.
+Decided on 23 October: a signed prompt runs as a typed turn with the
+always-ask list; accepted tasks keep trust for 24 hours; later `/repeat`
+rounds inherit it. The delivery window stays 900 seconds.
 
 Formalized: finite model checked. Specified: this contract. Implemented: branch
 work. Tested: see the command evidence reported with the change. Released:
