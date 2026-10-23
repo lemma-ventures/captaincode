@@ -154,8 +154,12 @@ const repeatLiveKeep = 40
 // loop. final is the round's final answer when run history has it: the
 // streamed text opens with the worker's narration ("Orienting: …", "I'll read
 // the roadmap …"), so its first line made a 55-minute round that committed
-// three fixes read like a review (2026-10-02).
-func (b *brain) roundSummary(task, text, final string) string {
+// three fixes read like a review (2026-10-02). dir is the folder the round
+// ran in: the digest's session is pinned there, not to the brain's
+// CAPTAIN_CWD, which may name a folder this machine does not have (a
+// migrated brain pinned to a missing ~/.buzz failed every digest in a
+// second, and each round showed its worker's opening line, 2026-10-22).
+func (b *brain) roundSummary(dir, task, text, final string) string {
 	if strings.TrimSpace(text) == "" && strings.TrimSpace(final) == "" {
 		return "(no output)"
 	}
@@ -165,7 +169,7 @@ func (b *brain) roundSummary(task, text, final string) string {
 	}
 	input := summaryInput(source)
 	for _, leg := range roundSummaryLegs() {
-		if out := b.summarizeRoundOn(leg, task, input); out != "" {
+		if out := b.summarizeRoundOn(leg, dir, task, input); out != "" {
 			return out
 		}
 	}
@@ -173,12 +177,13 @@ func (b *brain) roundSummary(task, text, final string) string {
 }
 
 // summarizeRoundOn is one digest attempt; "" means it produced nothing.
-func (b *brain) summarizeRoundOn(leg captaincode.Leg, task, input string) string {
+func (b *brain) summarizeRoundOn(leg captaincode.Leg, dir, task, input string) string {
 	if b.roundSummaryFn != nil {
 		return strings.TrimSpace(b.roundSummaryFn(input))
 	}
 	d := captaincode.NewDispatcher(opencodePort)
 	d.Title = "round-summary"
+	d.Dir = dir
 	d.NoTools = true
 	d.Timeout = 90 * time.Second
 	res, err := d.Run(leg,
@@ -984,7 +989,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		digest := ""
 		if errText == "" {
 			// Outside the lock: it reads history and makes calls.
-			digest = b.roundSummary(task, full, roundFinal(task, start))
+			digest = b.roundSummary(iter.ws.Dir, task, full, roundFinal(task, start))
 		}
 		b.rmu.Lock()
 		noop := errText == "" && roundDeferred(text)

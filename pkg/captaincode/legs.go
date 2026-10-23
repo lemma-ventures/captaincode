@@ -68,6 +68,30 @@ func (ws Workspace) At(dir string) Workspace { ws.Dir = dir; return ws }
 // cwd): the CLI paths and the fallback for a caller that sent no workspace.
 func DefaultWorkspace() Workspace { return Workspace{Dir: os.Getenv("CAPTAIN_CWD")} }
 
+// RepairDefaultWorkspace points CAPTAIN_CWD at captain's own folder when it
+// names one that does not exist, and says what it changed ("" when nothing
+// did). Every call that names no project runs in that folder, and opencode
+// refuses a missing one, so the round digests, titles and triage of a brain
+// pinned to a folder a machine does not have all failed in a second (a
+// brain migrated with CAPTAIN_CWD=~/.buzz, the Buzz Nest, 2026-10-22).
+// Pinning the brain to Buzz stays an option: set CAPTAIN_CWD to the Nest on
+// a machine that has one.
+func RepairDefaultWorkspace() string {
+	dir := strings.TrimSpace(os.Getenv("CAPTAIN_CWD"))
+	if dir == "" {
+		return ""
+	}
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+		return ""
+	}
+	fallback := umbrellaDir()
+	if err := os.MkdirAll(fallback, 0o755); err != nil {
+		return fmt.Sprintf("CAPTAIN_CWD %s does not exist, and %s cannot be created: %v", dir, fallback, err)
+	}
+	_ = os.Setenv("CAPTAIN_CWD", fallback)
+	return fmt.Sprintf("CAPTAIN_CWD %s does not exist - calls without a project run in %s", dir, fallback)
+}
+
 // WorkerTimeout exposes the per-worker hard cap (reroute chains bound on it).
 func WorkerTimeout() time.Duration { return workerTimeout() }
 

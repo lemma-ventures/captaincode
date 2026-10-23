@@ -423,7 +423,7 @@ func (pr *progRun) dispatch(ctx context.Context, text string, prior []progStep, 
 	}
 	digest := ""
 	if strings.TrimSpace(answer) != "" {
-		digest = b.roundSummary(text, answer, roundFinal(text, start))
+		digest = b.roundSummary(pr.base.ws.Dir, text, answer, roundFinal(text, start))
 	}
 	b.rmu.Lock()
 	th.done++
