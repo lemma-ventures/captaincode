@@ -204,7 +204,7 @@ func runLearnLocal(prompt string) (captaincode.Result, bool, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), learnLocalWait)
 	defer cancel()
-	res, err := c.CompleteProse(ctx, learnLocalSystem, prompt, 4096)
+	res, err := c.CompleteJSON(ctx, learnLocalSystem, prompt, 4096)
 	captaincode.LogSmallCall("learn", res, err)
 	return res, true, err
 }
