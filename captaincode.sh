@@ -35,6 +35,12 @@ brain_health() {
 
 start_brain() {
   echo "→ starting captain brain…"
+  # A brain started over SSH keeps that session: macOS keeps the login
+  # keychain locked to it, so every Claude CLI worker reported "not logged
+  # in" while the same login worked in the Terminal (2026-10-23).
+  if [ -n "${SSH_CONNECTION:-}" ] && [ "$(uname)" = Darwin ]; then
+    echo "! starting the brain from an SSH session: logins kept in the macOS keychain (the Claude CLI's) are unreadable to its workers - restart it from a Terminal on this Mac" >&2
+  fi
   # The brain is the GO binary (captain brain) - the routing/scorecard/team
   # engine with the resilience stack. A TS stub (index.ts brain) briefly
   # replaced it here and broke every turn with 404s (2026-07-23): it served
