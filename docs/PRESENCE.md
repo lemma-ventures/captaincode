@@ -372,6 +372,14 @@ retry the exact action. Approval is consumed once. A fresh decision gets a
 new random ID, so a zero-counter authenticator cannot replay the old approval.
 A text reply such as `yes` has no effect.
 
+`POST /v1/presence/decisions/approve` with `{ "ids": [...], "assertion": proof }`
+approves up to 32 pending decisions with one passkey assertion. Its challenge is
+SHA-256 of `{"purpose":"captain.presence.decisions.v1","machine":"MACHINE_ID","decisions":[...]}`
+with the decisions sorted by ID; all must belong to the same user, and only
+that user's credential can approve them. `POST /v1/presence/decisions/purge`
+with `{ "ids": [...] }` removes pending decisions without approving them; it
+needs no passkey because it can only refuse.
+
 An exhausted recorded task cost cap creates a separate `increase_task_cap`
 decision before another worker dispatch. It binds the task ID, previous cap,
 new cap, settled cost, and reserved cost. The proposed cap is the old cap plus

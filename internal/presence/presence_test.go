@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -374,5 +376,53 @@ func TestApprovalPreviewDoesNotSpendDecision(t *testing.T) {
 	}
 	if e = s.CheckAction(g.ID, "action"); e == nil {
 		t.Fatal("approval consumed twice")
+	}
+}
+
+// One passkey approval covers every listed decision, and only those; purge
+// removes pending decisions and approves nothing.
+func TestApproveAllAndPurgeDecisions(t *testing.T) {
+	s, p, sign := fixture(t, "Ed25519")
+	g, e := s.VerifyPrompt(p)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var ds []Decision
+	for _, act := range []string{"push main", "merge feature", "delete item A"} {
+		d, e := s.RequireDecision(g.ID, act)
+		if e != nil {
+			t.Fatal(e)
+		}
+		ds = append(ds, d)
+	}
+	pair := []Decision{ds[0], ds[1]}
+	slices.SortFunc(pair, func(a, b Decision) int { return strings.Compare(a.ID, b.ID) })
+	a := sign(DecisionsChallenge(g.Machine, pair), 2)
+	if e := s.ApproveDecisions([]string{ds[0].ID, ds[2].ID}, a); e == nil {
+		t.Fatal("an approval signed for two decisions approved another set")
+	}
+	if e := s.ApproveDecisions([]string{ds[1].ID, ds[0].ID}, a); e != nil {
+		t.Fatal(e)
+	}
+	for _, d := range pair {
+		if e := s.CheckAction(g.ID, d.Action); e != nil {
+			t.Fatalf("%s approved: %v", d.Action, e)
+		}
+	}
+	if e := s.ApproveDecisions([]string{ds[0].ID, ds[1].ID}, a); e == nil {
+		t.Fatal("a used approval approved again")
+	}
+	n, e := s.PurgeDecisions([]string{ds[2].ID, "no-such-id"})
+	if e != nil || n != 1 {
+		t.Fatal(n, e)
+	}
+	left, _ := s.Decisions()
+	for _, d := range left {
+		if d.ID == ds[2].ID {
+			t.Fatal("a purged decision is still pending")
+		}
+	}
+	if e := s.CheckAction(g.ID, "delete item A"); e == nil {
+		t.Fatal("a purged action is still refused until approved")
 	}
 }

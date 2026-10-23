@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -414,6 +415,86 @@ func (s *Store) ApproveDecision(id string, a Assertion) error {
 		return nil
 	})
 }
+
+// DecisionsChallenge binds one passkey approval to every listed decision,
+// sorted by ID, on this machine.
+func DecisionsChallenge(machine string, ds []Decision) []byte {
+	b, _ := json.Marshal(struct {
+		Purpose   string     `json:"purpose"`
+		Machine   string     `json:"machine"`
+		Decisions []Decision `json:"decisions"`
+	}{"captain.presence.decisions.v1", machine, ds})
+	return Digest(b)
+}
+
+// PendingDecisions are the decisions ids name, sorted by ID, as one approval
+// would sign them: every one pending, unexpired and signed for one user.
+func (c *Config) pendingDecisions(ids []string) ([]Decision, string, error) {
+	if len(ids) == 0 || len(ids) > 32 {
+		return nil, "", fail("unknown_decision")
+	}
+	sorted := slices.Clone(ids)
+	slices.Sort(sorted)
+	if len(slices.Compact(slices.Clone(sorted))) != len(sorted) {
+		return nil, "", fail("unknown_decision")
+	}
+	var ds []Decision
+	user := ""
+	for _, id := range sorted {
+		d, ok := c.Decisions[id]
+		if !ok || d.Approved || d.Expires <= nowUnix() {
+			return nil, "", fail("unknown_decision")
+		}
+		g, ok := c.Grants[d.GrantID]
+		if !ok {
+			return nil, "", fail("expired_grant")
+		}
+		if user != "" && g.User != user {
+			return nil, "", fail("mixed_users")
+		}
+		user = g.User
+		ds = append(ds, d)
+	}
+	return ds, user, nil
+}
+
+// ApproveDecisions approves every listed decision with one passkey assertion
+// over DecisionsChallenge. Only the user who signed their prompts can.
+func (s *Store) ApproveDecisions(ids []string, a Assertion) error {
+	return s.Update(func(c *Config) error {
+		ds, user, e := c.pendingDecisions(ids)
+		if e != nil {
+			return e
+		}
+		if _, _, e := c.verify(a, DecisionsChallenge(c.Machine, ds), user); e != nil {
+			return e
+		}
+		for _, d := range ds {
+			d.Approved = true
+			c.Decisions[d.ID] = d
+			c.Audit = append(c.Audit, Event{Grant: c.Grants[d.GrantID], At: nowUnix(), Kind: "decision:" + d.ID})
+		}
+		return nil
+	})
+}
+
+// PurgeDecisions removes pending decisions without approving them: the
+// actions they hold stay refused. It needs no passkey; it can only refuse.
+func (s *Store) PurgeDecisions(ids []string) (int, error) {
+	n := 0
+	e := s.Update(func(c *Config) error {
+		for _, id := range ids {
+			if d, ok := c.Decisions[id]; ok && !d.Approved {
+				delete(c.Decisions, id)
+				c.Audit = append(c.Audit, Event{Grant: c.Grants[d.GrantID], At: nowUnix(), Kind: "purge:" + id})
+				n++
+			}
+		}
+		return nil
+	})
+	return n, e
+}
+
 func (s *Store) Decisions() ([]Decision, error) {
 	c, e := s.Read()
 	out := []Decision{}

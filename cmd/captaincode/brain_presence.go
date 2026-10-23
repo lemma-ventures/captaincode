@@ -151,6 +151,43 @@ func (b *brain) presenceHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]bool{"ok": true})
+	case "decisions/approve":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		var d struct {
+			IDs       []string       `json:"ids"`
+			Assertion pres.Assertion `json:"assertion"`
+		}
+		if e := pres.ReadJSON(r.Body, &d); e != nil {
+			presenceError(w, e)
+			return
+		}
+		if e := s.ApproveDecisions(d.IDs, d.Assertion); e != nil {
+			presenceError(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "approved": len(d.IDs)})
+	case "decisions/purge":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		var d struct {
+			IDs []string `json:"ids"`
+		}
+		if e := pres.ReadJSON(r.Body, &d); e != nil {
+			presenceError(w, e)
+			return
+		}
+		n, e := s.PurgeDecisions(d.IDs)
+		if e != nil {
+			presenceError(w, e)
+			return
+		}
+		fmt.Printf("captain presence: purged %d pending decision(s)\n", n)
+		writeJSON(w, 200, map[string]any{"ok": true, "purged": n})
 	default:
 		writeErr(w, 404, "unknown presence route")
 	}
