@@ -53,7 +53,7 @@ func perfRefreshInterval() time.Duration {
 
 type rosterLeg struct {
 	Leg        string               `json:"leg"`
-	Label      string               `json:"label"` // the harness and provenance the sidebar prints: claude-cli, grok-xai, kimi-nim (pkg harness.go)
+	Label      string               `json:"label"` // the harness and provenance the sidebar prints: claude-cli, grok-xai, kimi-openrouter (pkg harness.go)
 	Model      string               `json:"model"`
 	Display    string               `json:"display"`
 	Frontier   bool                 `json:"frontier"`

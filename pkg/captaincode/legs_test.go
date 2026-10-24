@@ -811,14 +811,15 @@ func TestFreeLegModel_DefaultAndEnvOverride(t *testing.T) {
 	assert.Equal(t, "some/other-model", legModels[LegFree].Model)
 }
 
-// Provider policy: NIM first when the model is on the free NVIDIA catalog
-// (kimi-k3, glm-5.3, deepseek-v4.1-flash, checked 2026-09-26). OpenRouter
-// (paid) for the rest. MiniMax left NIM on 2026-09-09 (410) and stays paid.
+// Provider policy: NIM when the model is on the free NVIDIA catalog
+// (glm-5.3, deepseek-v4.1-flash, checked 2026-09-26). OpenRouter (paid)
+// for the rest. Kimi left NIM for K3.1 Pro on 2026-10-23. MiniMax left
+// NIM on 2026-09-09 (410) and stays paid.
 func TestOpenRouterLegs(t *testing.T) {
 	for leg, want := range map[Leg]struct{ Provider, Model string }{
 		LegDeepSeek: {"openrouter", "deepseek/deepseek-v4-pro"},
 		LegGemini:   {"openrouter", "google/gemini-3.7-flash"},
-		LegKimi:     {"nim", "moonshotai/kimi-k3"},
+		LegKimi:     {"openrouter", "moonshotai/kimi-k3.1-pro"},
 	} {
 		assert.True(t, KnownLeg(leg))
 		assert.Equal(t, want.Provider, legModels[leg].Provider)
@@ -827,7 +828,14 @@ func TestOpenRouterLegs(t *testing.T) {
 		assert.True(t, ok, "%s needs a cold-start prior or routing treats it as quality 0", leg)
 	}
 	assert.True(t, defaultVisionLegs()[LegGemini], "gemini is multimodal - vision tasks must be able to route to it")
+	assert.True(t, defaultVisionLegs()[LegKimi], "kimi k3.1 pro takes image and video")
 	assert.False(t, defaultVisionLegs()[LegDeepSeek])
+	hosts := OpenRouterHosts("moonshotai/kimi-k3.1-pro")
+	assert.Equal(t, []any{"moonshotai"}, hosts["order"])
+	assert.Equal(t, []any{"mxfp4"}, hosts["quantizations"], "fp4/fp8/bf16 misses the only published endpoint")
+	assert.Equal(t, 2.0, specs[LegKimi].PriceIn)
+	assert.Equal(t, 10.0, specs[LegKimi].PriceOut)
+	assert.False(t, OpenWeights(LegKimi), "weights are not public until 2026-11-04")
 }
 
 // A refusal is not a successful run: the leg is healthy but its POLICY does

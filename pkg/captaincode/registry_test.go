@@ -273,18 +273,21 @@ func TestValueRankLatencyBreaksTies(t *testing.T) {
 
 func TestValueRankSortsUnreliableLegsLast(t *testing.T) {
 	t.Setenv("CAPTAIN_VALUE_TAU", "5,5")
-	// kimi: $0 (NIM) and prior 8.0 wins on value - but 0 successes, 2 fails.
-	// (minimax played this part until NIM retired it and it became a paid
-	// OpenRouter leg, 2026-09-15.)
-	stats := map[Leg]LegStats{LegKimi: {N: 0, Fails: 2}, LegGemini: {N: 3, Scored: 0}}
-	rows := ValueRank(ClassMedium, DomainGeneral, []Leg{LegKimi, LegGemini}, stats, 50_000, nil)
+	_, err := LoadRegistry(filepath.Join(t.TempDir(), "none.json"))
+	require.NoError(t, err)
+	t.Cleanup(func() { LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
+	// glm: $0 (NIM) and prior 8.2 wins on value - but 0 successes, 2 fails.
+	// (kimi played this part until it left NIM for paid K3.1 Pro, 2026-10-23.
+	// minimax played it until NIM retired it, 2026-09-15.)
+	stats := map[Leg]LegStats{LegGLM: {N: 0, Fails: 2}, LegGemini: {N: 3, Scored: 0}}
+	rows := ValueRank(ClassMedium, DomainGeneral, []Leg{LegGLM, LegGemini}, stats, 50_000, nil)
 	require.Len(t, rows, 2)
 	assert.Equal(t, LegGemini, rows[0].Leg, "a leg failing a third of its runs never leads the cheap path")
 	assert.True(t, rows[1].Unreliable)
 	// One fail in six is not unreliable.
-	stats[LegKimi] = LegStats{N: 5, Fails: 1}
-	rows = ValueRank(ClassMedium, DomainGeneral, []Leg{LegKimi, LegGemini}, stats, 50_000, nil)
-	assert.Equal(t, LegKimi, rows[0].Leg)
+	stats[LegGLM] = LegStats{N: 5, Fails: 1}
+	rows = ValueRank(ClassMedium, DomainGeneral, []Leg{LegGLM, LegGemini}, stats, 50_000, nil)
+	assert.Equal(t, LegGLM, rows[0].Leg)
 }
 
 func TestMatchAAPrefersExactSlugThenBaseVariant(t *testing.T) {

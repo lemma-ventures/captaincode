@@ -14,7 +14,7 @@ func adiTestFeed() *ADIFeed {
 		{Provider: "openrouter", Model: "openai/gpt-oss-120b", Label: "Groq via OpenRouter", Rank: 5, Streak: 0, MeanModeShare: 0.6, Green: false,
 			ProviderPrefs: map[string]any{"order": []any{"groq"}, "allow_fallbacks": false}},
 		{Provider: "openrouter", Model: "z-ai/glm-5.3", Label: "", Rank: 9, Streak: 0, MeanModeShare: 0.4, Green: false},
-		{Provider: "nvidia_nim", Model: "moonshotai/kimi-k3", Label: "NIM hosted", Rank: 3, Streak: 2, MeanModeShare: 0.9, Green: true},
+		{Provider: "openrouter", Model: "moonshotai/kimi-k3.1-pro", Label: "Moonshot via OpenRouter", Rank: 3, Streak: 2, MeanModeShare: 0.9, Green: true},
 	}}
 }
 
@@ -30,7 +30,7 @@ func TestPoolWordsAreReadAnywhereAndPathsAreNot(t *testing.T) {
 func TestOpenWeightsByFamilyAndRegistryFlag(t *testing.T) {
 	assert.True(t, OpenWeights(LegGLM))
 	assert.True(t, OpenWeights(LegDeepSeek))
-	assert.True(t, OpenWeights(LegKimi))
+	assert.False(t, OpenWeights(LegKimi), "K3.1 Pro weights are not public until 2026-11-04")
 	assert.True(t, OpenWeights(LegGPTOSS))
 	assert.True(t, OpenWeights(LegStep))
 	assert.True(t, OpenWeights(LegDS4Flash))
@@ -60,7 +60,7 @@ func TestDeterministicPoolFollowsTheADIFeed(t *testing.T) {
 	assert.Nil(t, ADIPinFor(LegClaude), "not measured")
 	assert.Equal(t, []Leg{LegGPTOSS, LegKimi}, ADIGreenLegs(), "best ADI rank first")
 	assert.Equal(t, []Leg{LegGPTOSS, LegKimi}, FilterPool(Pool{Deterministic: true}, AllLegs))
-	assert.Equal(t, []Leg{LegGPTOSS, LegKimi}, FilterPool(Pool{OSS: true, Deterministic: true}, AllLegs), "both: open AND green")
+	assert.Equal(t, []Leg{LegGPTOSS}, FilterPool(Pool{OSS: true, Deterministic: true}, AllLegs), "kimi is green but the weights are not public")
 	assert.Contains(t, ADIOneLine(LegGPTOSS), "green (ADI #1, streak 10")
 	assert.Equal(t, "not measured by ADI", ADIOneLine(LegCursor))
 	assert.Empty(t, ADIGreenUnregistered(), "every green tuple is served by a leg here")

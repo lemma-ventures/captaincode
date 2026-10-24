@@ -54,7 +54,7 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	assert.Equal(t, "grok-xai", byLeg["grok-max"].Label)
 	assert.Equal(t, byLeg["grok"].Label, byLeg["grok-max"].Label, "grok and grok-max are one harness")
 	assert.Equal(t, "glm-nim", byLeg["glm"].Label)
-	assert.Equal(t, "kimi-nim", byLeg["kimi"].Label)
+	assert.Equal(t, "kimi-openrouter", byLeg["kimi"].Label)
 	assert.Equal(t, "nemotron-opencode", byLeg["free"].Label)
 	require.NotEmpty(t, byLeg["codex-cli"].Models, "each row says which model runs at which effort")
 	assert.False(t, byLeg["glm"].Frontier, "glm ranks near grok-max but stays in Models")

@@ -135,7 +135,10 @@ func ParseResetAt(msg string, now time.Time) (time.Time, bool) {
 		}
 		at := time.Date(n.Year(), n.Month(), n.Day(), hour, minute, 0, 0, loc)
 		if !at.After(n) {
-			at = at.Add(24 * time.Hour)
+			// The same clock time tomorrow, not 24 hours on: across a
+			// daylight-saving change those differ by an hour (24 Oct, the
+			// day before Europe left summer time).
+			at = time.Date(n.Year(), n.Month(), n.Day()+1, hour, minute, 0, 0, loc)
 		}
 		return at, true
 	}

@@ -14,7 +14,7 @@ func TestHarnessNamesTheHarnessAndTheProvenance(t *testing.T) {
 		LegClaude: "claude-cli", LegCodexCLI: "codex-cli", LegCursor: "cursor-cli",
 		"grok": "grok-xai", "grok-max": "grok-xai",
 		"codex": "gpt-openai", "luna": "codex-cli",
-		"kimi": "kimi-nim", "glm": "glm-nim", "ds-flash": "deepseek-nim",
+		"kimi": "kimi-openrouter", "glm": "glm-nim", "ds-flash": "deepseek-nim",
 		"ds4-flash": "deepseek-hf", "step": "step-hf",
 		"gemini": "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter", "qwen": "qwen-openrouter",
 		"openshell": "openshell-nvidia",
@@ -27,12 +27,13 @@ func TestModelShortReadsLikeAVersion(t *testing.T) {
 	assert.Equal(t, "opus-5.5", ModelShort("claude-opus-5-5"))
 	assert.Equal(t, "opus-5.5", ModelShort("claude-opus-5-5-frontier"))
 	assert.Equal(t, "kimi-k3", ModelShort("moonshotai/kimi-k3"))
+	assert.Equal(t, "kimi-k3.1-pro", ModelShort("moonshotai/kimi-k3.1-pro"))
 	assert.Equal(t, "step-3.5-flash", ModelShort("stepfun-ai/Step-3.5-Flash"))
 	assert.Equal(t, "qwen3.5-397b-a17b", ModelShort("qwen/qwen3.5-397b-a17b"), "only a trailing dashed version is dotted")
 }
 
 func TestRunLabelSaysWhatRanAndHowHard(t *testing.T) {
-	assert.Equal(t, "kimi-nim:kimi-k3@effort:high", RunLabel("kimi", EffortHigh))
+	assert.Equal(t, "kimi-openrouter:kimi-k3.1-pro@effort:high", RunLabel("kimi", EffortHigh))
 	assert.Equal(t, "codex-cli:"+ModelAt(LegCodexCLI, EffortMax)+"@effort:max", RunLabel(LegCodexCLI, EffortMax))
 	assert.Equal(t, "codex-cli:gpt-6-luna@effort:low", RunLabel(LegLuna, EffortLow), "luna is a version of codex-cli, not its own harness")
 	assert.Contains(t, RunLabel("kimi", ""), "@effort:default")

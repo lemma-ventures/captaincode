@@ -40,7 +40,7 @@ func TestEveryLegResolvesThreeTiers(t *testing.T) {
 		{LegDeepSeek, "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro"},
 		{LegGLM, "z-ai/glm-5.3-flash", "z-ai/glm-5.3", "z-ai/glm-5.3"},
 		{LegQwen, "qwen/qwen3.6-35b-a3b", "qwen/qwen3.5-397b-a17b", "qwen/qwen3.5-397b-a17b"},
-		{LegKimi, "moonshotai/kimi-k3", "moonshotai/kimi-k3", "moonshotai/kimi-k3"},
+		{LegKimi, "moonshotai/kimi-k3.1-pro", "moonshotai/kimi-k3.1-pro", "moonshotai/kimi-k3.1-pro"},
 	}
 	for _, c := range cases {
 		got := TierModels(c.leg)

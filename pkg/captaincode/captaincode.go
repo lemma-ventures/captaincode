@@ -34,7 +34,7 @@ const (
 	// OpenRouter OSS legs (2026-08-24): paid per-token, multi-host failover.
 	LegDeepSeek Leg = "deepseek" // opencode serve -> DeepSeek V4 Pro via OpenRouter
 	LegGemini   Leg = "gemini"   // opencode serve -> Gemini 3.7 Flash via OpenRouter (vision)
-	LegKimi     Leg = "kimi"     // opencode serve -> Kimi K3 via NIM (flagship, FREE with the NVIDIA key)
+	LegKimi     Leg = "kimi"     // opencode serve -> Kimi K3.1 Pro via OpenRouter ($2/M in, $10/M out)
 	// Hugging Face router (2026-09-20): open-weight legs on the HF Inference
 	// Providers router; join the /oss pool. Same credential (HF_TOKEN).
 	LegStep     Leg = "step"      // opencode serve -> Step 3.5 Flash via Hugging Face

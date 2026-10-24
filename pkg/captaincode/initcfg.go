@@ -690,7 +690,7 @@ CAPTAIN_ROUTE_TIMEOUT_MS=30000
 CAPTAIN_FALLBACK_LEG=%s
 # Restrict which legs may run (comma list). Unset = all wired legs.
 #CAPTAIN_LEGS=free,grok,codex,claude,cursor,glm,minimax
-# NVIDIA NIM key - kimi, glm (5.3 and 5.3 Flash) and ds-flash (V4.1 Flash). MiniMax left NIM on 2026-09-09.
+# NVIDIA NIM key - glm (5.3 and 5.3 Flash) and ds-flash (V4.1 Flash). Kimi left NIM for OpenRouter on 2026-10-23. MiniMax left NIM on 2026-09-09.
 #NVIDIA_API_KEY=
 # Self-hosted Qwen (OpenAI root incl /v1) - enables the qwen leg.
 #CAPTAIN_SCALEWAY_BASE_URL=
