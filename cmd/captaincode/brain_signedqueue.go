@@ -15,6 +15,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -198,7 +200,14 @@ func (b *brain) runSignedQueued(e sqEntry, it inboxItem) {
 			sqFinish(e.ID, "headless", fmt.Sprintf("failed: %v", r))
 		}
 	}()
-	body, _ := json.Marshal(map[string]any{"model": "auto", "messages": []map[string]string{{"role": "user", "content": it.Text}}})
+	// The leading directive picks the model, as the TUI would: nobody else
+	// parses "/codex-cli /frontier" for a prompt the brain runs itself.
+	msgs := []map[string]string{}
+	for _, t := range sqThread(e.Dir) {
+		msgs = append(msgs, map[string]string{"role": "user", "content": t.User}, map[string]string{"role": "assistant", "content": t.Answer})
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": it.Text})
+	body, _ := json.Marshal(map[string]any{"model": modelForTask(it.Text, "auto"), "messages": msgs})
 	ctx := b.life
 	if ctx == nil {
 		ctx = context.Background()
@@ -221,8 +230,101 @@ func (b *brain) runSignedQueued(e sqEntry, it inboxItem) {
 	if errText != "" || rec.status >= 400 {
 		result = "failed: " + promptPeek(errText)
 	}
+	if errText == "" && rec.status < 400 && strings.TrimSpace(text) != "" {
+		if err := sqThreadAppend(e.Dir, sqTurn{At: time.Now(), User: it.Text, Answer: text}); err != nil {
+			fmt.Printf("captain brain: queue - could not keep %s's thread: %v\n", filepath.Base(e.Dir), err)
+		}
+	}
 	sqFinish(e.ID, "headless", result)
 	fmt.Printf("captain brain: queue - ran %s in %s: %s\n", e.ID, filepath.Base(e.Dir), result)
+}
+
+// A folder with no TUI still has a conversation. Each prompt the brain runs
+// there and its answer join the folder's thread, and the next one starts
+// with the newest of them (sqThreadTurns, sqThreadChars, sqThreadAge), as a
+// TUI session would - the brain's own compaction trims a long one. A TUI
+// opened later has its own session and does not see this thread; the
+// folder's memory and run logs it does share.
+type sqTurn struct {
+	At     time.Time `json:"at"`
+	User   string    `json:"user"`
+	Answer string    `json:"answer"`
+}
+
+var (
+	sqThreadTurns = 12
+	sqThreadChars = 60_000
+	sqThreadAge   = 7 * 24 * time.Hour
+	sqThreadKeep  = 50
+	sqAnswerMax   = 20_000
+)
+
+func sqThreadPath(dir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(dir)))
+	return filepath.Join(sqRoot(), "threads", hex.EncodeToString(sum[:8])+".jsonl")
+}
+
+func sqThreadAll(dir string) []sqTurn {
+	raw, err := os.ReadFile(sqThreadPath(dir))
+	if err != nil {
+		return nil
+	}
+	var out []sqTurn
+	for _, line := range strings.Split(string(raw), "\n") {
+		var t sqTurn
+		if json.Unmarshal([]byte(line), &t) == nil && t.User != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// sqThread is the part of the folder's thread the next prompt carries,
+// oldest first.
+func sqThread(dir string) []sqTurn {
+	all := sqThreadAll(dir)
+	var out []sqTurn
+	chars := 0
+	for i := len(all) - 1; i >= 0 && len(out) < sqThreadTurns; i-- {
+		t := all[i]
+		if time.Since(t.At) > sqThreadAge {
+			break
+		}
+		chars += len(t.User) + len(t.Answer)
+		if chars > sqThreadChars && len(out) > 0 {
+			break
+		}
+		out = append([]sqTurn{t}, out...)
+	}
+	return out
+}
+
+func sqThreadAppend(dir string, t sqTurn) error {
+	if len(t.Answer) > sqAnswerMax {
+		t.Answer = t.Answer[:sqAnswerMax] + "\n[…]"
+	}
+	all := append(sqThreadAll(dir), t)
+	if len(all) > sqThreadKeep {
+		all = all[len(all)-sqThreadKeep:]
+	}
+	var b strings.Builder
+	for _, x := range all {
+		line, err := json.Marshal(x)
+		if err != nil {
+			return err
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	path := sqThreadPath(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // cmdSignedQueue is `captain queue`: the brain's signed-prompt queue on this Mac.

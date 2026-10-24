@@ -53,12 +53,12 @@ func TestSignedQueueRunsAPromptNoTUITook(t *testing.T) {
 			Messages []struct{ Content string } `json:"messages"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &body))
-		_, sent, grant := b.inbox.notePresenceTurn(dir, body.Messages[0].Content)
+		_, sent, grant := b.inbox.notePresenceTurn(dir, body.Messages[len(body.Messages)-1].Content)
 		assert.False(t, sent, "a typed turn, not a sent one")
 		assert.NotNil(t, grant, "the signed approval goes with it")
 		w.WriteHeader(200)
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"done it"}}]}`))
-		ran <- body.Messages[0].Content
+		ran <- body.Messages[len(body.Messages)-1].Content
 	}
 	b.signedQueueStep()
 	select {
@@ -100,4 +100,62 @@ func TestSignedQueueSurvivesARestartAndADrop(t *testing.T) {
 	id := sqList("pending")[0].ID
 	sqFinish(id, "dropped", "test")
 	assert.Empty(t, b3.inbox.take(dir3, ""), "a dropped prompt is not handed out")
+}
+
+// A prompt the brain runs itself had no lane: "/codex-cli /frontier what do
+// you need" went out as model auto and ran on the quality lane's leg
+// (2026-10-24). The leading directive picks the model, as a TUI would.
+func TestSignedQueueHonoursTheLeadingLane(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := &brain{}
+	var model string
+	b.signedQueueRunFn = func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ Model string }
+		raw, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(raw, &body))
+		model = body.Model
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}
+	dir := t.TempDir()
+	for text, want := range map[string]string{
+		"/codex-cli /frontier what do you need": "codex-cli",
+		"/frontier plan the next step":          "frontier",
+		"/quality /team review it":              "team",
+		"what do you need":                      "auto",
+	} {
+		b.runSignedQueued(sqEntry{ID: "in_1", Dir: dir, Text: text}, inboxItem{Text: text})
+		assert.Equal(t, want, model, text)
+	}
+}
+
+// A folder with no TUI keeps its conversation: the next prompt the brain
+// runs there starts with the earlier prompts and answers, as a TUI session
+// would; another folder's thread is not mixed in.
+func TestSignedQueueKeepsAThreadPerFolder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	b := &brain{}
+	var got []struct{ Role, Content string }
+	n := 0
+	b.signedQueueRunFn = func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Role, Content string }
+		}
+		raw, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(raw, &body))
+		got = body.Messages
+		n++
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"answer ` + string(rune('0'+n)) + `"}}]}`))
+	}
+	ws3, other := t.TempDir(), t.TempDir()
+	b.runSignedQueued(sqEntry{ID: "in_1", Dir: ws3, Text: "what do you need"}, inboxItem{Text: "what do you need"})
+	require.Len(t, got, 1)
+	b.runSignedQueued(sqEntry{ID: "in_2", Dir: other, Text: "elsewhere"}, inboxItem{Text: "elsewhere"})
+	require.Len(t, got, 1, "another folder starts its own thread")
+	b.runSignedQueued(sqEntry{ID: "in_3", Dir: ws3, Text: "start with E1-01"}, inboxItem{Text: "start with E1-01"})
+	require.Len(t, got, 3)
+	assert.Equal(t, "user", got[0].Role)
+	assert.Equal(t, "what do you need", got[0].Content)
+	assert.Equal(t, "assistant", got[1].Role)
+	assert.Equal(t, "answer 1", got[1].Content)
+	assert.Equal(t, "start with E1-01", got[2].Content, "the new prompt comes last")
 }
