@@ -356,9 +356,10 @@ func isTextBody(ct string) bool {
 // textKeys are the JSON fields that carry model output in the streaming
 // formats we proxy: Anthropic (delta.text, delta.partial_json), OpenAI chat
 // (delta.content, function.arguments), OpenAI/xAI responses (delta as a
-// string). The restore runs on those, with one holdback across events so a
+// string), and codex's custom tool calls (item.input: the shell command it
+// runs, 2026-10-24). The restore runs on those, with one holdback across events so a
 // stand-in split over two chunks ("/home/cap" + "tain/…") is still put back.
-var textKeys = map[string]bool{"text": true, "partial_json": true, "content": true, "arguments": true, "delta": true}
+var textKeys = map[string]bool{"text": true, "partial_json": true, "content": true, "arguments": true, "delta": true, "input": true}
 
 type sseRestorer struct {
 	w       io.Writer

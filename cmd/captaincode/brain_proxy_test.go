@@ -132,3 +132,31 @@ func TestProxyLeavesEncryptedReasoningIntact(t *testing.T) {
 	assert.NotContains(t, strings.Replace(out, blob, "", 1), key, "a key in readable text is still masked")
 	assert.Equal(t, 1, rep.Secrets)
 }
+
+// Codex runs shell commands as a custom tool call whose command is in
+// "input". That field was not restored, so the commands kept the stand-in
+// home: `cat /Users/rpellerin/.codex/skills/…/SKILL.md` found no skill and
+// `cd /Users/rpellerin/Gits/…` failed (2026-10-24).
+func TestProxyRestoresIdentityInCodexToolInput(t *testing.T) {
+	t.Setenv("CAPTAIN_REDACT", "on")
+	captaincode.SetIdentityRulesForTest(map[string]string{"/home/jdoe": "/home/captain", "jdoe": "rpellerin"})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, l := range []string{
+			`event: response.custom_tool_call_input.delta`, `data: {"type":"response.custom_tool_call_input.delta","item_id":"ctc_1","delta":"cat /home/captain/.codex/skills/rigor/SKILL.md"}`, ``,
+			`event: response.output_item.done`, `data: {"type":"response.output_item.done","item":{"type":"custom_tool_call","id":"ctc_1","call_id":"call_1","name":"exec","status":"completed","input":"cat /home/captain/.codex/skills/rigor/SKILL.md"}}`, ``,
+		} {
+			_, _ = w.Write([]byte(l + "\n"))
+		}
+	}))
+	defer up.Close()
+	proxyUpstreams["test"] = up.URL
+	defer delete(proxyUpstreams, "test")
+	req := httptest.NewRequest(http.MethodPost, "/test/responses", strings.NewReader(`{"input":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	proxyHandler(rec, req)
+	out := rec.Body.String()
+	assert.NotContains(t, out, "/home/captain", out)
+	assert.Equal(t, 2, strings.Count(out, "cat /home/jdoe/.codex/skills/rigor/SKILL.md"), out)
+}
