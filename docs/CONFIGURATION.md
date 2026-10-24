@@ -1088,7 +1088,7 @@ a single model runs it in all three bands, at that band's effort.
 `CAPTAIN_CLAUDE_FRONTIER_MODEL`); `<PREFIX>_MODEL` stays the quality model,
 and on claude it now pins `claude -p --model` too. A registry overlay entry
 sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
-`glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0, as `kimi` does. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
+`glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0. `kimi` is Kimi K3.1 Pro on OpenRouter (`moonshotai/kimi-k3.1-pro`, $2/M in, $10/M out), pinned to Moonshot's mxfp4 endpoint. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
 
 OpenRouter serves an open-weight model from many hosts at different
 quantizations and, by default, favours the cheapest. A registry overlay entry

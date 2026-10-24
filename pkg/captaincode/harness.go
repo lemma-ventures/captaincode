@@ -6,7 +6,7 @@ package captaincode
 // sidebar read as twenty different things and hid what actually ran.
 //
 // The sidebar lists harness-provider only (claude-cli, codex-cli, grok-xai,
-// kimi-nim). Version and effort are not on that list. They appear on a run:
+// kimi-openrouter). Version and effort are not on that list. They appear on a run:
 // codex-cli:gpt-6-luna@effort:low. Luna is not its own row. It is gpt-6-luna,
 // a version of the codex-cli harness.
 //
@@ -19,7 +19,7 @@ import (
 )
 
 // Harness names the harness and provenance a leg runs through.
-// The shape is harness-provider: claude-cli, codex-cli, grok-xai, kimi-nim.
+// The shape is harness-provider: claude-cli, codex-cli, grok-xai, kimi-openrouter.
 func Harness(l Leg) string {
 	// Luna is gpt-6-luna on the ChatGPT subscription, the same harness as
 	// codex exec. It is a version of that row, not a second leg on the list.

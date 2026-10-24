@@ -80,9 +80,10 @@ func TestHostStallsBenchEveryLegOnTheHost(t *testing.T) {
 	assert.Empty(t, l.BenchedHosts, "two stalls are not a run")
 	l.Record(Event{Leg: LegKimi, Route: "opencode:nim", Outcome: "fail", Error: stall})
 	require.Contains(t, l.BenchedHosts, "nim")
-	for _, leg := range []Leg{LegDSFlash, LegGLM, LegKimi} {
+	for _, leg := range []Leg{LegDSFlash, LegGLM} {
 		assert.True(t, l.Cooldowns[leg].After(time.Now().Add(25*time.Minute)), "%s cools with its host", leg)
 	}
+	assert.True(t, l.Cooldowns[LegKimi].IsZero(), "kimi left NIM; a stall recorded on the old host does not cool it")
 	assert.True(t, l.Cooldowns[LegStep].IsZero(), "other hosts stay open")
 }
 

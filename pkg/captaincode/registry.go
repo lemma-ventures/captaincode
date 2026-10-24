@@ -176,9 +176,19 @@ var defaultLegSpecs = []LegSpec{
 		PriceIn: 0.38, PriceOut: 2.0, Ctx: 1048576, Vision: true, Prior: 7.8, Display: "Gemini 3.7 Flash (captain · opencode)",
 		Tiers: map[Tier]string{TierCheap: "google/gemini-3.5-flash-lite", TierFrontier: "google/gemini-3.8-flash"},
 		Note:  "Gemini 3.7 Flash (OpenRouter, ~$0.38/M in); vision-capable, 1M context, fast; the compaction leg; good for multimodal or long-context tasks"},
-	{ID: LegKimi, Transport: TransportOpencode, Provider: "nim", Model: "moonshotai/kimi-k3", AA: "kimi-k3",
-		Ctx: 262144, Prior: 8.0, Display: "Kimi K3 (captain · opencode)",
-		Note: "Kimi K3 flagship via NVIDIA NIM (free with the NVIDIA key); strong pick for hard reasoning/code at zero marginal cost; single-host, watch for NIM stalls"},
+	// Kimi K3.1 Pro (2026-10-23). OpenRouter serves one standard endpoint
+	// (Moonshot AI, mxfp4, $2/M in, $10/M out, 1,048,576 tokens, text plus
+	// image and video) and a Highspeed tier at $4/$20 that standard routing
+	// does not use. Weights are not public until 2026-11-04, so /oss skips
+	// this leg. The prior stays 8.0 and reads the K3 scorecard until
+	// Artificial Analysis scores K3.1.
+	{ID: LegKimi, Transport: TransportOpencode, Provider: "openrouter", Model: "moonshotai/kimi-k3.1-pro", AA: "kimi-k3-1-pro",
+		PriceIn: 2, PriceOut: 10, Ctx: 1048576, Vision: true, Open: boolp(false), Prior: 8.0,
+		Display: "Kimi K3.1 Pro (captain · OpenRouter)",
+		Hosts: map[Tier]map[string]any{TierQuality: {
+			"order": []any{"moonshotai"}, "quantizations": []any{"mxfp4"}, "require_parameters": true,
+		}},
+		Note: "Kimi K3.1 Pro via OpenRouter ($2/M in, $10/M out, cache read $0.20/M), pinned to Moonshot's mxfp4 endpoint; 1,048,576 context, image and video in; Highspeed is $4/$20 and is not this pin; weights ship by 2026-11-04 so this leg is not open; reads the Kimi K3 scorecard until K3.1 is scored"},
 	{ID: LegCursor, Transport: TransportCursorCLI, Model: "grok-4.7", AA: "cursor-composer",
 		Ctx: 262144, Vision: true, Subscription: true, Prior: 8.0, Display: "Cursor (captain · cursor-agent)",
 		Tiers: map[Tier]string{TierCheap: "composer-2.5", TierFrontier: "grok-4.7-xhigh"},

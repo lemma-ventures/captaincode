@@ -46,7 +46,7 @@ var legAAPatterns = map[Leg][]string{
 	LegClaude:   {"claude-opus-5"}, // the Opus 5 row when the feed lacks 5.5 or lists it unscored, as grok-max reads 4.6 until 4.7 is scored
 	LegCodexCLI: {"gpt-6-astra"},
 	LegGemini:   {"gemini-3-7-flash"},
-	LegKimi:     {"kimi-k3"},
+	LegKimi:     {"kimi-k3-1-pro", "kimi-k3"}, // K3.1 until the feed scores it, then the K3 row
 	LegGLM:      {"glm-5-3"},
 	LegGPTOSS:   {"gpt-oss-120b"},
 	LegDeepSeek: {"deepseek-v4-pro"},
