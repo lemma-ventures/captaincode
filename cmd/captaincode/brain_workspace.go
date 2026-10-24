@@ -124,13 +124,17 @@ func defaultWorkspace() captaincode.Workspace {
 // that repository's brain is the one read and written. Several named: the
 // workspace stays and their brains are read alongside (reporefs.go). The
 // move is announced in the origin folder's feed - a worker running
-// elsewhere must never be a surprise.
+// elsewhere must never be a surprise. A name spelt only as prose ("Buzz
+// Finance" for acme-ledger) does not move the worker (RepoNamedFirmly).
 func (b *brain) followTask(ws captaincode.Workspace, task string) captaincode.Workspace {
 	refs := captaincode.RepoRefs(task, ws.Dir)
 	switch len(refs) {
 	case 0:
 		return ws
 	case 1:
+		if !captaincode.RepoNamedFirmly(task, refs[0]) {
+			break // named in passing: read its brain alongside, below
+		}
 		fmt.Printf("captain brain: task names %s - the worker runs there, its brain reads and writes\n", refs[0])
 		b.pushActivity(activity{Dir: ws.Dir, Kind: "route", Leg: "workspace", Model: filepath.Base(refs[0]),
 			Text: "task names " + filepath.Base(refs[0]) + " - worker and memory move there"})

@@ -358,3 +358,30 @@ func TestFollowTaskMovesTheWorkspaceToTheRepoTheTaskNames(t *testing.T) {
 	ws = b.followTask(qmx, "fix the QMX parser")
 	assert.Equal(t, qmx, ws, "its own repo is the default")
 }
+
+// A long prompt in project-a that weighed "Acme Ledger execution model" among its
+// perspectives moved every /repeat round into a acme-ledger worktree
+// (2026-10-24). A name spelt as prose, not as the folder, is a mention: its
+// brain is read alongside, the worker stays. The folder's own spelling, a
+// cue or a path still move it.
+func TestFollowTaskStaysForANameSpeltAsProse(t *testing.T) {
+	root := t.TempDir()
+	for _, r := range []string{"project-a", "acme-ledger"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
+	}
+	t.Setenv("CAPTAIN_WORKSPACE_ROOT", root)
+	t.Setenv("EUCLID_HOME", filepath.Join(root, ".euclid-main"))
+	captaincode.ResetKnownReposForTest()
+	t.Cleanup(captaincode.ResetKnownReposForTest)
+	b := &brain{}
+	home := captaincode.Workspace{Dir: filepath.Join(root, "project-a")}
+	ledger := filepath.Join(root, "acme-ledger")
+
+	ws := b.followTask(home, "Measure the serving path.\n\nDirection\tAssessment\nAcme Ledger execution model\tBest first product test.")
+	assert.Equal(t, home.Dir, ws.Dir, "a passing mention does not move the worker")
+	assert.Equal(t, []string{ledger}, ws.Brains, "its memory is read alongside")
+
+	for _, task := range []string{"mirror the fix in acme-ledger", "update the Acme Ledger repo README", "read " + ledger + "/docs/WORKSTREAMS.md and fix it"} {
+		assert.Equal(t, ledger, b.followTask(home, task).Dir, task)
+	}
+}

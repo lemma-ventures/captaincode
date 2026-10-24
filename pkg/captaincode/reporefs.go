@@ -312,6 +312,33 @@ func collapseName(s string) string {
 	}), " ")
 }
 
+// RepoNamedFirmly reports whether the task names root as the place to work,
+// not in passing: a path inside it, a cue ("the Acme Ledger repo"), or the
+// folder's own spelling as a whole word ("acme-ledger", "captaincode").
+// "Acme Ledger" in a table of perspectives is the product, not the folder.
+func RepoNamedFirmly(task, root string) bool {
+	root = filepath.Clean(root)
+	name := filepath.Base(root)
+	if nearCue(task, name) || nearCue(task, strings.Join(nameTokens(name), " ")) {
+		return true
+	}
+	if regexp.MustCompile(`(?i)(?:^|[^\w-])` + regexp.QuoteMeta(name) + `(?:$|[^\w-])`).MatchString(task) {
+		return true
+	}
+	for _, tok := range pathTokenRe.FindAllString(task, -1) {
+		if strings.HasPrefix(tok, "~") {
+			if h, err := os.UserHomeDir(); err == nil {
+				tok = h + tok[1:]
+			}
+		}
+		p := filepath.Clean(strings.TrimRight(tok, "./"))
+		if p == root || strings.HasPrefix(p, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
 // nearCue: the name sits next to a word that says it is a repository.
 func nearCue(task, name string) bool {
 	re := regexp.MustCompile(`(?i)(?:` + repoCueRe + `\s+["'` + "`" + `]?` + regexp.QuoteMeta(name) + `\b|\b` + regexp.QuoteMeta(name) + `["'` + "`" + `]?\s+` + repoCueRe + `|~/` + regexp.QuoteMeta(name) + `\b)`)

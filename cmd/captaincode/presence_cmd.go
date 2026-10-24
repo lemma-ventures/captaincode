@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -97,6 +98,14 @@ func runPresence(args []string) error {
 			for _, k := range u.Credentials {
 				fmt.Printf("%s\t%s\t%s\t%s\n", u.Name, k.ID, k.Label, k.Origin)
 			}
+		}
+		labels := make([]string, 0, len(c.Folders))
+		for l := range c.Folders {
+			labels = append(labels, l)
+		}
+		sort.Strings(labels)
+		for _, l := range labels {
+			fmt.Printf("folder\t%s\t%s\n", l, c.Folders[l])
 		}
 		return nil
 	case "remove":
