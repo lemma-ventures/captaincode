@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -276,7 +277,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 	var rep captaincode.Redaction
 	if len(body) > 0 && isTextBody(r.Header.Get("Content-Type")) {
 		var out string
-		out, rep = captaincode.Redact(string(body))
+		out, rep = proxyRedactBody(string(body))
 		body = []byte(out)
 	}
 	// /deterministic: a request for a pinned model is routed to the serving
@@ -619,4 +620,38 @@ func (t *pinTable) apply(body []byte) ([]byte, bool) {
 		return body, false
 	}
 	return out, true
+}
+
+// opaqueFieldRe is a provider-encrypted blob in a request: codex sends its
+// reasoning back as "encrypted_content", base64url that only the provider
+// can decrypt. Redaction cannot read it, and any change makes the provider
+// refuse the turn (invalid_encrypted_content: a blob held "-sk-" and 20
+// more characters, 2026-10-24). Only base64 characters qualify, so a field
+// of that name carrying readable text is still scanned.
+var opaqueFieldRe = regexp.MustCompile(`"encrypted_content"\s*:\s*"[A-Za-z0-9+/=_\-]*"`)
+
+// proxyRedactBody redacts a request body except its opaque blobs.
+func proxyRedactBody(body string) (string, captaincode.Redaction) {
+	locs := opaqueFieldRe.FindAllStringIndex(body, -1)
+	if len(locs) == 0 {
+		return captaincode.Redact(body)
+	}
+	var b strings.Builder
+	total := captaincode.Redaction{Kinds: map[string]int{}}
+	prev := 0
+	for _, l := range append(locs, []int{len(body), len(body)}) {
+		out, rep := captaincode.Redact(body[prev:l[0]])
+		b.WriteString(out)
+		b.WriteString(body[l[0]:l[1]])
+		total.Secrets += rep.Secrets
+		total.Identity += rep.Identity
+		for k, n := range rep.Kinds {
+			total.Kinds[k] += n
+		}
+		prev = l[1]
+	}
+	if len(total.Kinds) == 0 {
+		total.Kinds = nil
+	}
+	return b.String(), total
 }

@@ -117,3 +117,18 @@ func TestProxyAddsTheLegsOpenRouterHosts(t *testing.T) {
 	_, ok = routeOpenRouterHosts([]byte(`{"model":"minimax/minimax-m3"}`))
 	assert.False(t, ok)
 }
+
+// Codex sends its reasoning back as an opaque base64url blob that only the
+// provider can decrypt. One blob held "-sk-" and 20 more characters, the key
+// rule replaced it, and the round failed with invalid_encrypted_content
+// (2026-10-24). The blob is passed through; a key next to it is still masked.
+func TestProxyLeavesEncryptedReasoningIntact(t *testing.T) {
+	t.Setenv("CAPTAIN_REDACT", "on")
+	key := "s" + "k-" + strings.Repeat("Q7x", 9)
+	blob := "gAAAAB" + strings.Repeat("aZ09_", 12) + "-" + key + "_tail=="
+	body := `{"input":[{"type":"reasoning","encrypted_content":"` + blob + `"},{"type":"message","content":"use ` + key + `"}]}`
+	out, rep := proxyRedactBody(body)
+	assert.Contains(t, out, `"encrypted_content":"`+blob+`"`, "the provider's blob arrives byte for byte")
+	assert.NotContains(t, strings.Replace(out, blob, "", 1), key, "a key in readable text is still masked")
+	assert.Equal(t, 1, rep.Secrets)
+}
