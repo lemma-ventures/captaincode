@@ -192,3 +192,15 @@ func TestSpendLimitOnAFrontierRunIsTheFrontiersToWear(t *testing.T) {
 	require.True(t, errors.As(rateLimitedFrontier("You've hit your usage limit · resets 5pm"), &rl))
 	assert.Equal(t, "", rl.Tier, "an account window closes every model: claude wears it")
 }
+
+// "Try again at 14:00" after 14:00 is tomorrow at 14:00, also across a
+// daylight-saving change, where 24 hours later is 13:00.
+func TestParseResetAtRollsToTomorrowsClockTime(t *testing.T) {
+	zurich, err := time.LoadLocation("Europe/Zurich")
+	require.NoError(t, err)
+	now := time.Date(2026, time.October, 24, 14, 5, 0, 0, zurich) // the day before summer time ends
+	at, ok := ParseResetAt("You've hit your usage limit. Try again at 14:00", now)
+	require.True(t, ok)
+	assert.Equal(t, time.Date(2026, time.October, 25, 14, 0, 0, 0, zurich), at)
+	assert.Equal(t, 14, at.Hour())
+}
