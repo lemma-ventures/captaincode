@@ -24,9 +24,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	pres "github.com/lemma-ventures/captaincode/internal/presence"
+	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
 
 // sqEntry is one signed prompt, by the inbox item ID it was handed as.
@@ -177,14 +179,63 @@ func (b *brain) signedQueueLoop(done <-chan struct{}) {
 	}
 }
 
+// A folder runs one queued prompt at a time: two side by side wrote one
+// checkout at once (2026-10-25: a merge of every branch while another worker
+// had uncommitted edits there). The next prompt waits for the folder's
+// running prompt, worker or /repeat; a control line does not wait.
+var (
+	sqRunMu  sync.Mutex
+	sqRunDir = map[string]bool{}
+)
+
+func sqControl(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if t == "/btw" || strings.HasPrefix(t, "/btw ") || t == "/interrupt" || strings.HasPrefix(t, "/interrupt ") {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(t, "/repeat"); ok && (rest == "" || rest[0] == ' ') {
+		_, _, ok := captaincode.RepeatControl(rest)
+		return ok
+	}
+	return false
+}
+
+func (b *brain) sqFolderBusy(dir string) bool {
+	sqRunMu.Lock()
+	running := sqRunDir[filepath.Clean(dir)]
+	sqRunMu.Unlock()
+	if running {
+		return true
+	}
+	busy, _ := b.repoBusy(dir)
+	return busy
+}
+
+func sqMarkRunning(dir string, on bool) {
+	sqRunMu.Lock()
+	defer sqRunMu.Unlock()
+	if on {
+		sqRunDir[filepath.Clean(dir)] = true
+	} else {
+		delete(sqRunDir, filepath.Clean(dir))
+	}
+}
+
 func (b *brain) signedQueueStep() {
 	for _, e := range sqList("pending") {
 		if time.Since(e.At) < sqHeadlessAfter || b.inbox.sqTUIOpen(e.Dir) {
 			continue
 		}
+		control := sqControl(e.Text)
+		if !control && b.sqFolderBusy(e.Dir) {
+			continue
+		}
 		it, ok := b.inbox.sqClaim(e.Dir, e.ID)
 		if !ok {
 			continue
+		}
+		if !control {
+			sqMarkRunning(e.Dir, true)
 		}
 		fmt.Printf("captain brain: queue - no TUI took %s in %s; running it here\n", it.ID, filepath.Base(e.Dir))
 		b.pushActivity(activity{Dir: e.Dir, Kind: "route", Leg: "queue", Text: "no TUI open: running the signed prompt here: " + promptPeek(it.Text)})
@@ -195,6 +246,9 @@ func (b *brain) signedQueueStep() {
 // runSignedQueued runs one signed prompt as a typed turn in its folder, the way
 // a /repeat round runs, and records how it ended.
 func (b *brain) runSignedQueued(e sqEntry, it inboxItem) {
+	if !sqControl(it.Text) {
+		defer sqMarkRunning(e.Dir, false)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			sqFinish(e.ID, "headless", fmt.Sprintf("failed: %v", r))

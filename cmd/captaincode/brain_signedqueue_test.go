@@ -159,3 +159,67 @@ func TestSignedQueueKeepsAThreadPerFolder(t *testing.T) {
 	assert.Equal(t, "answer 1", got[1].Content)
 	assert.Equal(t, "start with E1-01", got[2].Content, "the new prompt comes last")
 }
+
+// Two signed prompts for one folder with no TUI ran side by side in the same
+// checkout: a merge of every branch while another worker had uncommitted
+// edits there (2026-10-25). A folder's next prompt now waits for the one
+// running there; a control line (/repeat stop, /btw, /interrupt) does not.
+func TestSignedQueueRunsOneAtATimePerFolder(t *testing.T) {
+	b, _, dir := queueSigned(t)
+	old := sqHeadlessAfter
+	sqHeadlessAfter = 0
+	defer func() { sqHeadlessAfter = old }()
+	require.NoError(t, sqWrite("pending", sqEntry{ID: "in_second", Dir: dir, Text: "merge all branches", At: time.Now()}))
+	require.NoError(t, sqWrite("pending", sqEntry{ID: "in_stop", Dir: dir, Text: "/repeat stop", At: time.Now()}))
+	b.inbox.mu.Lock()
+	signed := b.inbox.items[dir][0].Presence
+	for _, id := range []string{"in_second", "in_stop"} {
+		text := map[string]string{"in_second": "merge all branches", "in_stop": "/repeat stop"}[id]
+		b.inbox.items[dir] = append(b.inbox.items[dir], inboxItem{ID: id, Text: text, Presence: signed})
+	}
+	b.inbox.mu.Unlock()
+	release := make(chan struct{})
+	started := make(chan string, 4)
+	b.signedQueueRunFn = func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Content string } `json:"messages"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		text := body.Messages[len(body.Messages)-1].Content
+		started <- text
+		if text != "/repeat stop" {
+			<-release
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	next := func() string {
+		select {
+		case text := <-started:
+			return text
+		case <-time.After(2 * time.Second):
+			return ""
+		}
+	}
+	b.signedQueueStep()
+	got := map[string]bool{next(): true, next(): true}
+	assert.True(t, got["implement the change"], "the first prompt runs: %v", got)
+	assert.True(t, got["/repeat stop"], "a control line is not held behind the running prompt: %v", got)
+	assert.False(t, got["merge all branches"], "the second prompt waits while the first runs: %v", got)
+	b.signedQueueStep()
+	select {
+	case text := <-started:
+		t.Fatalf("%q started while the folder's prompt was running", text)
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	require.Eventually(t, func() bool { b.signedQueueStep(); return len(sqList("pending")) == 0 }, 5*time.Second, 50*time.Millisecond)
+	assert.Equal(t, "merge all branches", next(), "the next prompt runs once the first is done")
+}
