@@ -197,8 +197,10 @@ func captainModelEntry(l Leg) map[string]any {
 }
 
 // refreshCaptainModelEntries updates the limit and cost of every captain
-// model entry already in cfg (names the user edited are kept). Reports
-// whether anything changed.
+// model entry already in cfg, and its name while that name is still one
+// captain wrote (it carries "(captain ·"): the kimi leg moved to Kimi K3.1
+// Pro and the picker kept "Kimi K2.7-code" (2026-10-25). A name the user
+// wrote is kept. Reports whether anything changed.
 func refreshCaptainModelEntries(cfg map[string]any) bool {
 	providers, _ := cfg["provider"].(map[string]any)
 	captain, ok := providers["captain"].(map[string]any)
@@ -216,6 +218,13 @@ func refreshCaptainModelEntries(cfg map[string]any) bool {
 			continue
 		}
 		want := captainModelEntry(Leg(id))
+		name, _ := cur["name"].(string)
+		if _, leg := Spec(Leg(id)); leg && strings.Contains(name, "(captain ·") {
+			if wn, _ := want["name"].(string); wn != "" && wn != name {
+				cur["name"] = wn
+				changed = true
+			}
+		}
 		for _, k := range []string{"limit", "cost"} {
 			v, has := want[k]
 			if !has {
