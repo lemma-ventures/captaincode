@@ -195,7 +195,8 @@ func sqControl(text string) bool {
 	}
 	if rest, ok := strings.CutPrefix(t, "/repeat"); ok && (rest == "" || rest[0] == ' ') {
 		_, _, ok := captaincode.RepeatControl(rest)
-		return ok
+		_, _, _, edit := captaincode.RepeatEdit(rest) // changes the running loop, never waits behind it
+		return ok || edit
 	}
 	return false
 }

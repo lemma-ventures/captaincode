@@ -1,6 +1,6 @@
 # The Captain command language
 
-Version **3.0** · normative · implementation: `pkg/captaincode/language.go`
+Version **3.1** · normative · implementation: `pkg/captaincode/language.go`
 
 Every line typed into a Captain session is a program in this language: a task, plus the words
 that say who runs it, how, how often, and in what order. This document defines the language.
@@ -96,10 +96,12 @@ leg-command   = { modifier } , leg , [ text ] , [ gate ] ;
 command       = { modifier } , [ head ] , { modifier } , [ text ] , [ gate ] ;
 head          = leg | "/frontier" | "/team" | "/auto" | "/openshell"
               | "/repeat" , [ count ] , [ repeat-control ]
+              | "/repeat" , repeat-edit
               | "/parallel" , [ "show" | "status" | "stop" ] ;
 gate          = "gate:" , shell-command ;
 repeat-control = ( "status" | "show" | "watch" | "stop" | "finish" | "wrapup" | "abort" ) ,
                  [ "last" | "all" | thread-id ] ;
+repeat-edit   = ( "edit" | "add" ) , [ "last" | thread-id ] , ":" , text ;
 thread-id     = ( "rp_" | "ch_" ) , hex-digits ;
 
 modifier      = lane | pool | skill | "/frontier" ;
@@ -150,6 +152,8 @@ suite.
 9. **`/repeat` control words.** `/repeat` followed by exactly one control word, optionally plus
    `last`, `all` or a thread id, manages loops. Anything wordier is a task to repeat:
    `/repeat watch the queue` repeats "watch the queue". A bare `/repeat` is `status`.
+   `/repeat edit: <prompt>` and `/repeat add: <instruction>` change a running loop's prompt; the
+   colon is what makes them commands, so `/repeat 5 edit the README` stays a task.
 10. **A bare leg inherits.** In a workflow, a leg with no text takes the previous stage's text
     (`/grok review X > /codex`). A `/team` or lane step with no text is an error.
 11. **Code and pasted text.** Text in backticks, and text after a blank line, are never syntax.
@@ -243,6 +247,8 @@ its budget is spent (§8). The control words:
 | `/repeat show [id]` · `/repeat watch [id]` | What recent rounds did · follow one live |
 | `/repeat stop` · `finish` · `wrapup` `[id\|all]` | End after the current round or step |
 | `/repeat abort [id\|all]` | End now; the round in flight is lost |
+| `/repeat edit [id]: <prompt>` | Replace the loop's prompt from the next round on; the round in flight keeps its prompt. Without a leading `/frontier`, `/team` or leg, the loop keeps the one it had |
+| `/repeat add [id]: <instruction>` | Append an instruction to the loop's prompt from the next round on |
 
 ### 6.7 Control lines
 
@@ -287,7 +293,7 @@ its budget is spent (§8). The control words:
 | `until: ends its loop` | Something after a loop's `until:` command |
 | `/quality is a preference prefix, not a leg` | A lane joined to a workflow stage with `+` |
 | a sent prompt held (HTTP 202) | `captain send` text the injection screen rates high: review it with `captain inbox` ([SECURITY.md](../SECURITY.md#messages-between-captains-and-prompt-injection)) |
-| `captain send cannot start a loop or a program` | `captain send` with `/repeat`, a group, `\|\|` or `until:` (HTTP 403) |
+| `captain send cannot start a loop or a program` | `captain send` with `/repeat`, a group, `\|\|` or `until:` (HTTP 403); `/repeat edit:` and `add:` too, since they decide what a loop does |
 
 ## 8. Safety
 
@@ -320,7 +326,7 @@ Every slash word in the table is reserved. A new leg may not take one of these n
 | `/wf` `/workflow` `/run` `/wfrun` | Workflow commands |
 
 `/repeat` reserves its control words: `status`, `show`, `watch`, `stop`, `finish`, `wrapup`,
-`abort`. Each registered leg id is a word too (`captain legs`).
+`abort`, and `edit` and `add` when a colon follows them. Each registered leg id is a word too (`captain legs`).
 
 ## 10. Maintaining the language
 
@@ -374,6 +380,7 @@ says why and the version moves.
 
 | Version | Date | Change |
 |---|---|---|
+| 3.1 | 2026-11-02 | `/repeat edit:` and `/repeat add:` change a running loop's prompt from its next round on. Every line that parsed before reads the same: without the colon, `edit` and `add` still start a task. |
 | 3.0 | 2026-10-11 | Gates count only as separate words outside backtick code on the last line of the first paragraph. Quoted reports on earlier lines stay text. Invalid literal command names are refused before work starts. LF and CRLF paragraph breaks have the same meaning. Use `sh -c` for shell expressions. This correction intentionally has no legacy mode: that mode would execute pasted prose as commands. It adds no turn or re-entry path; the existing turn-budget proofs still apply. |
 | 2.0 | 2026-10-07 | Programs (WORKFLOW_LANGUAGE §11) replace chains: `\|\|` fallbacks, `until:` loop checks, backtick code that is never syntax, and groups that open only at a step start. Readings that changed: `/openshell` cannot be a program step (it was a chain step); a `/team` or lane step with no text is an error; a lane step shows as `lane` and a group as `group` in parse trees. The formal model now covers the program scanner and programs' turn budget. |
 | 1.1 | 2026-10-06 | `/quality` leaves frontier-class legs (`codex-cli`, `grok-max`) to `/frontier`. Every line parses as before; the lane `/quality` names has fewer legs. Its description now matches the code: every leg within 85% of the best, not "the two best". |

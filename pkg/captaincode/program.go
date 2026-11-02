@@ -831,11 +831,32 @@ func RepeatControl(rest string) (word, arg string, ok bool) {
 	return "", "", false
 }
 
+// repeatEditRe reads "/repeat edit: <prompt>" and "/repeat add: <text>",
+// optionally naming the thread ("/repeat edit rp_1a2b: …"). The colon is
+// what makes it a command: "/repeat 5 edit the README" stays a task.
+var repeatEditRe = regexp.MustCompile(`(?is)^\s*(edit|add)(?:[ \t]+(rp_[0-9a-z]+|last))?[ \t]*:\s*(\S.*)$`)
+
+// RepeatEdit recognizes a change to a running loop's prompt: "edit" replaces
+// the prompt, "add" appends an instruction to it. rest is what follows
+// "/repeat" with no count; text keeps its case.
+func RepeatEdit(rest string) (word, id, text string, ok bool) {
+	m := repeatEditRe.FindStringSubmatch(rest)
+	if m == nil {
+		return "", "", "", false
+	}
+	return strings.ToLower(m[1]), strings.ToLower(m[2]), strings.TrimSpace(m[3]), true
+}
+
 // StartsLoop reports whether a typed prompt would start a /repeat loop or
 // a program. /repeat's control words (status, show, finish …) start nothing.
+// An edit counts as starting one: it decides what every later round does,
+// so whoever may not start a loop may not rewrite one either.
 func StartsLoop(text string) bool {
 	h := HoistLeading(strings.TrimSpace(text))
-	if _, rest, ok := SplitRepeat(h); ok {
+	if count, rest, ok := SplitRepeat(h); ok {
+		if _, _, _, edit := RepeatEdit(rest); edit && count == 0 {
+			return true
+		}
 		_, _, ctl := RepeatControl(strings.ToLower(strings.TrimSpace(rest)))
 		return strings.TrimSpace(rest) != "" && !ctl
 	}

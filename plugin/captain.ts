@@ -219,6 +219,12 @@ async function refreshLegs(): Promise<void> {
 // watch ends; a status is idempotent, so that is a repeat, not a harm.
 const REPEAT_CTL = /^\s*\/repeat\s+(show|status|finish|wrapup|stop|abort)\b\s*(.*)$/i
 
+// /repeat edit: <prompt> and /repeat add: <instruction> change a running
+// loop's prompt from its next round on, without stopping the round in
+// flight. Out of band for the same reason: typed into a watched loop, the
+// queued copy would wait behind the whole loop.
+const REPEAT_EDIT = /^\s*\/repeat\s+(edit|add)(?:[ \t]+(rp_[0-9a-z]+|last))?[ \t]*:\s*(\S[\s\S]*)$/i
+
 // /btw <note>: a note for the worker that is ALREADY running. Same timing
 // problem, same answer: sent to the brain the moment it is typed, and the
 // brain hands it to the running worker mid-turn (claude -p takes it on
@@ -384,6 +390,13 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     if (ctl) {
       const msg = await outOfBand(`/repeat ${ctl[1].toLowerCase()}`, "/v1/repeat/ctl", { word: ctl[1].toLowerCase(), arg: ctl[2] ?? "" }, () => true)
       if (msg !== null) throw new Error(`captain: /repeat ${ctl[1].toLowerCase()} done - nothing queued. ${msg.slice(0, 200)}`)
+    }
+
+    const edit = text.match(REPEAT_EDIT)
+    if (edit) {
+      const word = edit[1].toLowerCase()
+      const msg = await outOfBand(`/repeat ${word}`, "/v1/repeat/ctl", { word, arg: (edit[2] ?? "").toLowerCase(), text: edit[3].trim() }, () => true)
+      if (msg !== null) throw new Error(`captain: /repeat ${word} done - nothing queued. ${msg.slice(0, 300)}`)
     }
 
     const btw = text.match(BTW)

@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -107,7 +108,11 @@ type repeatThread struct {
 	id         string
 	dir        string     // the workspace the thread runs in
 	origin     string     // the TUI folder it was started from: dir moves when the task names another repository (followTask), origin does not
-	task       string     // the prompt as typed, minus the /repeat directive
+	task       string     // the prompt as typed, minus the /repeat directive; `/repeat edit:` and `add:` change it between rounds
+	model      string     // the model each round runs on: from task's leading directive, else baseModel
+	baseModel  string     // the launching turn's model
+	edits      int        // how many times the prompt was changed mid-run
+	inFlight   bool       // a round is running now
 	steps      []string   // a chain's steps (brain_chain.go); nil for a repeat
 	budget     *runBudget // shared with the threads its rounds start (brain_budget.go)
 	target     int        // 0 = until stopped (bounded by repeatHardCap)
@@ -317,6 +322,13 @@ func (b *brain) handleRepeat(ctx context.Context, w http.ResponseWriter, req oai
 	// footer. It is not part of a control word: `/repeat finish` sent from
 	// from a dashboard must finish the loop, not start one on "finish - sent by ...".
 	restLow := strings.ToLower(strings.TrimSpace(withoutSentFooter(rest)))
+	// "/repeat edit: …" and "/repeat add: …" change a running loop's prompt
+	// (repeatEdit); the colon keeps "/repeat 5 edit the README" a task.
+	if ew, eid, etext, edit := captaincode.RepeatEdit(withoutSentFooter(rest)); edit && count == 0 {
+		emit(b.repeatEdit(req.ws.Dir, eid, ew, etext))
+		finish()
+		return true
+	}
 	// A control word only counts when it stands alone or is followed by a
 	// thread reference. Otherwise "/repeat watch the queue" - a perfectly
 	// ordinary task that happens to start with "watch" - would be swallowed as
@@ -446,8 +458,9 @@ func (b *brain) repeatCtlHTTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Word string `json:"word"`
 		Arg  string `json:"arg"`
+		Text string `json:"text,omitempty"` // edit/add: the new prompt or the instruction to append
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid control request")
@@ -488,6 +501,13 @@ func (b *brain) repeatCtlHTTP(w http.ResponseWriter, r *http.Request) {
 		msg = b.repeatStop(dir, arg)
 	case "abort":
 		msg = b.repeatAbort(dir, arg)
+	case "edit", "add":
+		text := strings.TrimSpace(req.Text)
+		if text == "" {
+			writeErr(w, http.StatusBadRequest, "edit and add need text")
+			return
+		}
+		msg = b.repeatEdit(dir, arg, strings.ToLower(strings.TrimSpace(req.Word)), text)
 	default:
 		writeErr(w, 400, "unknown control word "+req.Word)
 		return
@@ -750,9 +770,13 @@ func (b *brain) repeatStatus(dir string) string {
 		if th.finished {
 			state = "finished"
 		}
-		fmt.Fprintf(&sb, "- **%s** - %s · %d/%s done, %d failed · %s\n  %s\n",
+		edited := ""
+		if th.edits > 0 {
+			edited = fmt.Sprintf(" · prompt edited %d×", th.edits)
+		}
+		fmt.Fprintf(&sb, "- **%s** - %s · %d/%s done, %d failed · %s%s\n  %s\n",
 			th.id, state, th.done, target, th.failed,
-			time.Since(th.started).Round(time.Second), promptPeek(th.task))
+			time.Since(th.started).Round(time.Second), edited, promptPeek(th.task))
 		if th.origin != "" && filepath.Clean(th.origin) != filepath.Clean(th.dir) {
 			if filepath.Clean(dir) == filepath.Clean(th.origin) {
 				fmt.Fprintf(&sb, "  runs in `%s` (the task names it)\n", th.dir)
@@ -854,6 +878,85 @@ func (b *brain) repeatStop(dir, id string) string {
 		"\nUse `/repeat abort` to kill the running round instead."
 }
 
+// withRoundTask is the conversation with its last user turn replaced by a
+// round's task.
+func withRoundTask(msgs []oaiMessage, text string) []oaiMessage {
+	out := append([]oaiMessage(nil), msgs...)
+	for i := len(out) - 1; i >= 0; i-- {
+		if out[i].Role == "user" || out[i].Role == "" {
+			out[i] = oaiMessage{Role: "user", Content: jsonString(text)}
+			break
+		}
+	}
+	return out
+}
+
+// repeatEdit changes a running loop's prompt for its next rounds: "edit"
+// replaces it, "add" appends an instruction. The round in flight keeps the
+// prompt it started with. An edit without a leading directive keeps the
+// old one (/frontier, /team, a leg), so the loop stays on its lane.
+func (b *brain) repeatEdit(dir, id, word, text string) string {
+	b.rmu.Lock()
+	defer b.rmu.Unlock()
+	var hits []*repeatThread
+	for k, th := range b.repeatState() {
+		if th.finished || th.stopped || th.program != nil || th.steps != nil {
+			continue
+		}
+		if th.matches(k, dir, id) {
+			hits = append(hits, th)
+		}
+	}
+	switch {
+	case len(hits) == 0:
+		return "no running repeat thread to edit here (`/repeat status` to check)."
+	case len(hits) > 1:
+		ids := make([]string, 0, len(hits))
+		for _, th := range hits {
+			ids = append(ids, th.id)
+		}
+		sort.Strings(ids)
+		return fmt.Sprintf("%d repeat threads run here: name one, `/repeat %s %s: …` (%s).", len(hits), word, ids[0], strings.Join(ids, ", "))
+	}
+	th := hits[0]
+	if word == "add" {
+		th.task = strings.TrimRight(th.task, " \n") + "\n\n" + text
+	} else {
+		if lead := leadingDirectives(th.task); lead != "" && leadingDirectives(text) == "" {
+			text = lead + " " + text
+		}
+		th.task = text
+		th.model = modelForTask(text, th.baseModel)
+	}
+	th.edits++
+	fmt.Printf("captain brain: repeat %s prompt %sed (edit %d) - %s\n", th.id, word, th.edits, promptPeek(th.task))
+	next := th.done + 1
+	if th.inFlight {
+		next++ // round done+1 is running with the old prompt
+	}
+	verb := "replaced"
+	if word == "add" {
+		verb = "extended"
+	}
+	return fmt.Sprintf("%s: prompt %s. Round %d and later run it; the round in flight keeps the prompt it started with.\n\nPrompt now: %s",
+		th.id, verb, next, promptPeek(th.task))
+}
+
+// leadingDirectives is the run of /frontier, /team, /quality, leg … words a
+// prompt opens with ("" when it opens with plain text).
+func leadingDirectives(task string) string {
+	t := strings.TrimSpace(task)
+	var words []string
+	for {
+		m := captainDirective.FindString(t)
+		if m == "" {
+			return strings.Join(words, " ")
+		}
+		words = append(words, strings.TrimRight(strings.TrimSpace(m), ":"))
+		t = t[len(m):]
+	}
+}
+
 // repeatAbort is the hard stop: cancel the round in flight too.
 func (b *brain) repeatAbort(dir, id string) string {
 	b.rmu.Lock()
@@ -880,14 +983,16 @@ func (b *brain) repeatAbort(dir, id string) string {
 func (b *brain) startRepeat(req oaiChatReq, task string, count int, budget *runBudget) *repeatThread {
 	ctx, cancel := context.WithCancel(withBudget(context.Background(), budget))
 	th := &repeatThread{
-		budget:  budget,
-		id:      newRepeatID(),
-		dir:     req.ws.Dir,
-		origin:  req.ws.Origin,
-		task:    task,
-		target:  count,
-		started: time.Now(),
-		cancel:  cancel,
+		budget:    budget,
+		id:        newRepeatID(),
+		dir:       req.ws.Dir,
+		origin:    req.ws.Origin,
+		task:      task,
+		baseModel: req.Model,
+		model:     modelForTask(task, req.Model),
+		target:    count,
+		started:   time.Now(),
+		cancel:    cancel,
 	}
 	b.rmu.Lock()
 	b.repeatState()[th.id] = th
@@ -898,13 +1003,8 @@ func (b *brain) startRepeat(req oaiChatReq, task string, count int, budget *runB
 	// the control word.
 	// Streaming, so the round's progress lines exist to be captured and shown
 	// to a watcher; the captureWriter folds the stream back into one answer.
-	iter := oaiChatReq{Model: modelForTask(task, req.Model), Stream: true, Messages: append([]oaiMessage(nil), req.Messages...), ws: req.ws}
-	for i := len(iter.Messages) - 1; i >= 0; i-- {
-		if iter.Messages[i].Role == "user" || iter.Messages[i].Role == "" {
-			iter.Messages[i] = oaiMessage{Role: "user", Content: jsonString(task + roundContract)}
-			break
-		}
-	}
+	iter := oaiChatReq{Model: th.model, Stream: true, Messages: append([]oaiMessage(nil), req.Messages...), ws: req.ws}
+	iter.Messages = withRoundTask(iter.Messages, task+roundContract)
 	fmt.Printf("captain brain: repeat %s started (target=%d) - %s\n", th.id, count, promptPeek(task))
 	go b.runRepeat(ctx, th, iter)
 	return th
@@ -931,21 +1031,20 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		}
 		start := time.Now()
 		b.rmu.Lock()
-		th.live, th.roundFrom = nil, start
+		th.live, th.roundFrom, th.inFlight = nil, start, true
+		// Each round is built from the thread's prompt as it is now: an edit
+		// typed during a round applies from the next one (2 Nov: a ten-round
+		// loop of 2-4 h rounds could only be changed by stopping it).
+		round := iter
+		round.Model = th.model
+		text := th.task + roundContract
 		// A round that deferred is not a state the next round may inherit
 		// silently: name it, in the task itself.
-		round := iter
 		if n := len(th.rounds); n > 0 && th.rounds[n-1].noop {
 			prev := th.rounds[n-1]
-			round.Messages = append([]oaiMessage(nil), iter.Messages...)
-			for i := len(round.Messages) - 1; i >= 0; i-- {
-				if round.Messages[i].Role == "user" || round.Messages[i].Role == "" {
-					round.Messages[i] = oaiMessage{Role: "user", Content: jsonString(th.task + roundContract +
-						fmt.Sprintf("\n\n[captain] Round %d of this task returned no work: %q. Whatever it was waiting for is gone with it. Do the step it deferred, now.", prev.n, promptPeek(prev.text)))}
-					break
-				}
-			}
+			text += fmt.Sprintf("\n\n[captain] Round %d of this task returned no work: %q. Whatever it was waiting for is gone with it. Do the step it deferred, now.", prev.n, promptPeek(prev.text))
 		}
+		round.Messages = withRoundTask(iter.Messages, text)
 		b.rmu.Unlock()
 		rec := &captureWriter{onStatus: func(s string) {
 			b.rmu.Lock()
@@ -974,6 +1073,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		text, errText := rec.answer()
 		b.rmu.Lock()
 		th.done++
+		th.inFlight = false
 		if errText != "" || rec.status >= 400 || rec.status == 0 {
 			th.failed++
 			th.lastErr = promptPeek(errText)
