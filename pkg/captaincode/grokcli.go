@@ -58,6 +58,28 @@ func grokBin() string {
 	return "grok"
 }
 
+// grokPrivacyEnv turns off what Grok Build sends xAI beside the model call:
+// product analytics, session-trace uploads and crash reports. xAI pushes
+// trace_upload_enabled and telemetry_enabled per account and the user's
+// online choice did not hold (2 Nov), so every run says it again; these come
+// after the inherited environment, and the last value of a name wins.
+// Training on coding data is the account's /privacy opt-out, which the CLI
+// reads from the login (coding_data_retention_opt_out).
+var grokPrivacyEnv = []string{
+	"GROK_TELEMETRY_ENABLED=0",
+	"DISABLE_TELEMETRY=1",
+	"GROK_TELEMETRY_TRACE_UPLOAD=0",
+	"DISABLE_ERROR_REPORTING=1",
+}
+
+// grokCLIEnv is a `grok -p` worker's environment.
+func grokCLIEnv(base []string, task, steerTask string) []string {
+	env := append(append([]string(nil), base...), "GROK_DISABLE_AUTOUPDATER=1")
+	env = append(env, grokPrivacyEnv...)
+	env = append(env, GateWorkerEnv(LegGrokCLI, task, steerTask)...)
+	return append(env, WorkerGuardEnv(task)...)
+}
+
 // grokCLICmdArgs builds the `grok` argument list for one task. The model is
 // passed explicitly so a run is attributed to the version it ran.
 // --reasoning-effort only when CAPTAIN_GROK_CLI_EFFORT names one: the CLI
@@ -154,7 +176,7 @@ func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSta
 	defer detachStop()
 	cmd := exec.CommandContext(ctx, grokBin(), grokCLICmdArgs(dir, task)...)
 	cmd.Dir = dir
-	cmd.Env = append(append(append(os.Environ(), "GROK_DISABLE_AUTOUPDATER=1"), GateWorkerEnv(LegGrokCLI, task, steer.Task())...), WorkerGuardEnv(task)...)
+	cmd.Env = grokCLIEnv(os.Environ(), task, steer.Task())
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()

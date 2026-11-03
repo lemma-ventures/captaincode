@@ -136,3 +136,23 @@ func TestGrokToolStatusNamesTheShell(t *testing.T) {
 		t.Errorf("grokToolStatus = %q, want a shell line", got)
 	}
 }
+
+// Every `grok -p` run turns off analytics, trace uploads and crash reports,
+// over anything the inherited environment says: exec uses a name's last value.
+func TestGrokCLIEnvTurnsOffTelemetry(t *testing.T) {
+	env := grokCLIEnv([]string{"GROK_TELEMETRY_ENABLED=1", "GROK_TELEMETRY_TRACE_UPLOAD=1", "HOME=/h"}, "fix the parser", "")
+	last := map[string]string{}
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		last[k] = v
+	}
+	for k, v := range map[string]string{
+		"GROK_TELEMETRY_ENABLED": "0", "DISABLE_TELEMETRY": "1",
+		"GROK_TELEMETRY_TRACE_UPLOAD": "0", "DISABLE_ERROR_REPORTING": "1",
+		"GROK_DISABLE_AUTOUPDATER": "1", "HOME": "/h",
+	} {
+		if last[k] != v {
+			t.Errorf("%s = %q, want %q", k, last[k], v)
+		}
+	}
+}
