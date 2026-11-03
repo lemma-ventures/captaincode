@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -374,6 +375,7 @@ func (b *brain) runWorkflowLeg(ws captaincode.Workspace, leg captaincode.Leg, pr
 	// refused frontier stage was "every stage failed" while the solo path
 	// was rerouting the same prompt fine (2026-09-20).
 	discard := func(string) {}
+	ws.Named = leg // the user's topology named it
 	return b.runWorkerRerouted(ws, leg, prompt, discard, onStatus, taskID)
 }
 
@@ -382,6 +384,7 @@ func (b *brain) runWorkflowLeg(ws captaincode.Workspace, leg captaincode.Leg, pr
 // reservation once, at the billed amount (ROADMAP Q5).
 func (b *brain) runWorkflowLegHeld(ws captaincode.Workspace, leg captaincode.Leg, prompt string, onStatus func(string), taskID string) (captaincode.Leg, captaincode.Result, error) {
 	discard := func(string) {}
+	ws.Named = leg
 	return b.runWorkerReroutedHeld(ws, leg, prompt, discard, onStatus, taskID, true)
 }
 
@@ -473,6 +476,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 		gateCmd   string  // gate command that ran, for check evidence
 		gateOk    bool    // gate result, for check evidence
 		gateOut   string  // gate output tail, for check evidence
+		login     error   // the stage's leg is not logged in (loginerr.go)
 	}
 	// One workflow turn is ONE task: its stages are stage rows and its workers
 	// attempts beneath them, so a five-run pipeline no longer reads as five
@@ -655,6 +659,10 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 				ev.Outcome, ev.Error = "fail", truncate(err.Error(), 160)
 				rf.stage(si+1, len(wf.Stages), string(ran), dur, "", err)
 				slots[li] = slot{ev: ev, retried: gateRetried, escalated: gateEscalated, wtDir: wtDir, committed: res.CostCommitted}
+				if errors.Is(err, captaincode.ErrLoginNeeded) {
+					slots[li].login = err
+					req.outcome.needLogin(err)
+				}
 				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "done", Leg: string(ran), Model: captaincode.ModelID(ran),
 					Text: fmt.Sprintf("workflow stage %d: %s", si+1, promptPeek(err.Error())), Ms: dur.Milliseconds()})
 				return
@@ -827,6 +835,12 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 			// Nothing survived this stage: stop, but review what did run -
 			// partial work is reviewed, never discarded.
 			aborted = fmt.Sprintf("stage %d/%d produced no output", si+1, len(wf.Stages))
+			for _, s := range slots {
+				if s.login != nil {
+					aborted = fmt.Sprintf("stage %d/%d did not run: %v", si+1, len(wf.Stages), s.login)
+					break
+				}
+			}
 			req.outcome.fail("the workflow was cut short: " + aborted)
 			fmt.Printf("captain brain: workflow %s aborted - %s\n", key, aborted)
 			feed.note(fmt.Sprintf("\n[captain] %s - reviewing the completed stages\n", aborted))

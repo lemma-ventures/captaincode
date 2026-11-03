@@ -1055,6 +1055,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 			}
 			b.rmu.Unlock()
 		}}
+		outcome := &turnOutcome{}
 		func() {
 			defer func() { // an iteration must never take the brain down
 				if r := recover(); r != nil {
@@ -1067,7 +1068,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 				b.chatFn(rec)
 				return
 			}
-			b.chatCompletions(rec, chatRequestFrom(ctx, round))
+			b.chatCompletions(rec, chatRequestFrom(context.WithValue(ctx, turnOutcomeKey{}, outcome), round))
 		}()
 
 		text, errText := rec.answer()
@@ -1111,6 +1112,16 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 			Text: fmt.Sprintf("%s iteration %d: %s", th.id, done, promptPeek(th.task)),
 			Ms:   time.Since(start).Milliseconds()})
 
+		// A leg the user named is not logged in: every later round would
+		// fail the same way, so the loop stops now and says what to run.
+		if lerr := outcome.loginErr(); lerr != nil {
+			b.rmu.Lock()
+			th.stopReason = lerr.Error()
+			th.lastErr = promptPeek(lerr.Error())
+			b.rmu.Unlock()
+			fmt.Printf("captain brain: repeat %s stopped after round %d - %v\n", th.id, done, lerr)
+			break
+		}
 		b.rmu.Lock()
 		halted = th.stopped
 		b.rmu.Unlock()

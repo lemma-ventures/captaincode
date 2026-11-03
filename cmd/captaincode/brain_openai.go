@@ -683,6 +683,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// (the old fork, or any client calling /v1/route before sending) freezes
 	// its UI for the whole decision: measured p50 2.9s, p90 25s, max 44s on our
 	// own traffic. This path never does.
+	routed := req.Model == "" || req.Model == "auto"
 	if req.Model == "auto" && !titleReq {
 		task, followUp := routeTaskFor(lastUserTurn(prompt), req.Messages)
 		if resp, fail := b.decideRoute(routeReq{Task: task, followUp: followUp, Prefer: captaincode.MidPromptPrefer(lastUserRaw(req.Messages)), ws: req.ws}); fail != nil {
@@ -778,6 +779,8 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	leg := captaincode.Leg(req.Model)
 	if !captaincode.KnownLeg(leg) {
 		leg = captaincode.LegClaude
+	} else if !routed && !titleReq {
+		req.ws.Named = leg
 	}
 	// Replay budgets scale with the turn's complexity (usage analysis F3/I2):
 	// the stateless wrapper replays the conversation every turn, which put
@@ -889,6 +892,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	if !req.Stream {
 		ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, nil, nil, taskID)
+		if req.ws.Named != "" && errors.Is(err, captaincode.ErrLoginNeeded) {
+			req.outcome.needLogin(err)
+		}
 		if err == nil {
 			res = b.nudgeNarration(req.ws, ranLeg, prompt, res, nil, nil)
 		}
@@ -1040,6 +1046,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		chunk(map[string]any{"content": d}, nil)
 	}
 	ranLeg, res, err := b.runWorkerRerouted(req.ws, leg, prompt, answer, feed.note, taskID)
+	if req.ws.Named != "" && errors.Is(err, captaincode.ErrLoginNeeded) {
+		req.outcome.needLogin(err)
+	}
 	leg = ranLeg
 	if err == nil {
 		res = b.nudgeNarration(req.ws, leg, prompt, res, answer, feed.note)
@@ -1209,6 +1218,13 @@ func writeWorkerError(w http.ResponseWriter, leg captaincode.Leg, err error) {
 		code, etype = http.StatusServiceUnavailable, "provider_unavailable"
 		msg = "the " + string(leg) + " leg's provider is temporarily unavailable (upstream outage) - cooling this leg down briefly; retry shortly or switch model"
 	}
+	if errors.Is(err, captaincode.ErrLoginNeeded) {
+		// Not an outage: retrying does nothing until the user logs in, so
+		// 400 (the SDK blind-retries 5xx) and the error's own words, which
+		// name the machine and the command.
+		code, etype = http.StatusBadRequest, "login_required"
+		msg = err.Error()
+	}
 	if errors.Is(err, captaincode.ErrContextOverflow) {
 		// The conversation, not the worker, is at fault - retrying the same
 		// input overflows again, so 400 (the SDK blind-retries 5xx). Windowing
@@ -1260,6 +1276,14 @@ func benchPolicy(leg captaincode.Leg, err error) (time.Duration, string) {
 		// A rejected key does not heal by itself: bench the leg for an hour
 		// (the next attempt is an instant 403 anyway) and say what to fix.
 		d, why = time.Hour, "credentials rejected - check the provider key"
+	case errors.Is(err, captaincode.ErrLoginNeeded):
+		// Short, as a provider outage: a login takes effect at once, and a
+		// leg the user names runs whatever its bench says.
+		d, why = 10*time.Minute, "not logged in"
+		var le *captaincode.LoginError
+		if errors.As(err, &le) {
+			why = "not logged in - run `" + le.Cmd + "`, then `captain legs reopen " + string(leg) + "`"
+		}
 	case errors.Is(err, captaincode.ErrProviderDown):
 		d, why = 10*time.Minute, "provider unavailable"
 	case errors.Is(err, captaincode.ErrWorkerStalled):

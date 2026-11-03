@@ -239,7 +239,9 @@ launching turn prints the plan first. A program's own turns never start a progra
 until stopped, up to `CAPTAIN_REPEAT_MAX` rounds (100). In a program, `until: <command>` ends the
 loop as soon as the command exits 0 after a round, and a round reads the check's failing output.
 A loop also stops when two rounds report the same thing, after three failures in a row, or when
-its budget is spent (§8). The control words:
+its budget is spent (§8). It stops after the first round in which a leg the prompt names (`/grok-cli`,
+a workflow stage) is not logged in, and says which command to run on which machine. A named leg
+is not swapped for another one when its login is gone. The control words:
 
 | Form | Meaning |
 |---|---|

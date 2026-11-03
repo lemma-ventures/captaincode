@@ -56,6 +56,10 @@ type Workspace struct {
 	Steer       *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
 	Pool        Pool         // the turn's /oss and /deterministic constraints (pool.go)
 	Asked       []AskedSkill // the turn's skill words, e.g. /noslop (skills.go)
+	// Named is the leg the user named for this run (a forced /leg, a
+	// workflow stage); "" when the brain routed it. A named leg whose
+	// login is gone fails instead of rerouting (loginerr.go).
+	Named Leg
 }
 
 // WithEffort is this workspace with the request's effort set.
@@ -2720,7 +2724,7 @@ func runCursorModel(dir, task, model string) (string, error) {
 				// The streaming path has classified this since 2026-09-13;
 				// this one had not, so a logged-out cursor was dispatched
 				// again on every CLI turn instead of being benched.
-				return "", fmt.Errorf("cursor-agent -p: %w: not logged in - run `cursor-agent login`: %s", ErrProviderDown, truncateStr(msg, 160))
+				return "", loginNeeded(LegCursor, "cursor-agent login", msg)
 			}
 			if transientProviderError(msg) {
 				return "", fmt.Errorf("cursor-agent -p: %w: %s", ErrProviderDown, truncateStr(msg, 160))
@@ -2899,7 +2903,7 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 				// the user still gets an answer; harnessFault keeps it off the
 				// model's stats; the short cooldown lets `agent login` take
 				// effect within minutes (live 2026-09-13).
-				return Result{}, fmt.Errorf("cursor-agent -p: %w: not logged in - run `cursor-agent login`: %s", ErrProviderDown, truncateStr(msg, 160))
+				return Result{}, loginNeeded(LegCursor, "cursor-agent login", msg)
 			}
 			return Result{}, fmt.Errorf("cursor-agent -p: %w: %s", waitErr, truncateStr(msg, 300))
 		}
@@ -2933,10 +2937,10 @@ func claudeAuthError(msg string) bool {
 // every turn paid the same failure again (2026-09-22).
 func classifyClaudeFailure(msg string) error {
 	if claudeAuthError(msg) {
-		// Provider-down so the task reroutes and the user still gets an
-		// answer; harnessFault() keeps it off the model's reliability stats.
-		return fmt.Errorf("claude: %w: not logged in - run `claude /login` (the Claude CLI keeps its own credential store): %s",
-			ErrProviderDown, truncateStr(msg, 160))
+		// A LoginError is provider-down, so a routed task reroutes and the
+		// user still gets an answer; harnessFault() keeps it off the model's
+		// reliability stats.
+		return loginNeeded(LegClaude, "claude /login", msg)
 	}
 	if transientProviderError(msg) {
 		return fmt.Errorf("claude: %w: %s", ErrProviderDown, truncateStr(msg, 160))

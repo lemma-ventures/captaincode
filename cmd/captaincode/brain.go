@@ -1771,7 +1771,10 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 	// real work) is NOT rerouted: a fresh leg would start over from zero and
 	// the caller salvages the text instead (45 minutes of frontier work went
 	// to cursor as a blank slate, 2026-09-10).
-	for hop := 0; hop < 2 && leg != captaincode.LegOpenShell && !titleRun && err != nil && isReroutable(err) && !captaincode.WorthKeeping(res, err) &&
+	// A leg the user named that is not logged in is not swapped for another:
+	// they asked for that leg, and only their login fixes it (loginerr.go).
+	namedLogin := ws.Named != "" && errors.Is(err, captaincode.ErrLoginNeeded)
+	for hop := 0; hop < 2 && !namedLogin && leg != captaincode.LegOpenShell && !titleRun && err != nil && isReroutable(err) && !captaincode.WorthKeeping(res, err) &&
 		time.Since(chainStart) < captaincode.WorkerTimeout()*time.Duration(captaincode.NoTimeoutMul(prompt)); hop++ {
 		// Shared budget gate (ROADMAP M2.4): a reroute is another provider
 		// call that draws from the same root task budget. If the cap is

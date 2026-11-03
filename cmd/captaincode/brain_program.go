@@ -36,6 +36,7 @@ import (
 type turnOutcome struct {
 	mu     sync.Mutex
 	failed []string
+	login  error // a leg the user named is not logged in: a loop stops
 }
 
 type turnOutcomeKey struct{}
@@ -47,6 +48,29 @@ func (o *turnOutcome) fail(why string) {
 	o.mu.Lock()
 	o.failed = append(o.failed, why)
 	o.mu.Unlock()
+}
+
+// needLogin records that a leg the user named could not run for want of a
+// login. The turn has failed, and a /repeat loop running it stops: every
+// later round would fail the same way until the user logs in.
+func (o *turnOutcome) needLogin(err error) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	if o.login == nil {
+		o.login = err
+	}
+	o.mu.Unlock()
+}
+
+func (o *turnOutcome) loginErr() error {
+	if o == nil {
+		return nil
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.login
 }
 
 func (o *turnOutcome) reason() string {

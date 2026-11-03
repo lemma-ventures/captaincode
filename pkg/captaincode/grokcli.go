@@ -127,10 +127,9 @@ func classifyGrokCLIFailure(msg string) error {
 	case codexCLIRateLimited(msg):
 		return rateLimited(LegGrokCLI, msg)
 	case grokCLIAuthError(msg):
-		// Provider-down so the task reroutes; harnessFault() keeps a dead
-		// login off the model's reliability stats.
-		return fmt.Errorf("grok -p: %w: not signed in - run `grok login` (the Grok CLI keeps its own credential store) or set XAI_API_KEY: %s",
-			ErrProviderDown, truncateStr(msg, 160))
+		// A LoginError is provider-down, so a routed task reroutes;
+		// harnessFault() keeps a dead login off the model's reliability stats.
+		return loginNeeded(LegGrokCLI, "grok login", msg)
 	case transientProviderError(msg) || codexCLIOutage(msg):
 		return fmt.Errorf("grok -p: %w: %s", ErrProviderDown, truncateStr(msg, 160))
 	}

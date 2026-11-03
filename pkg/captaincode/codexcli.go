@@ -215,10 +215,10 @@ func classifyCodexCLIFailure(msg string) error {
 	case codexCLIRateLimited(msg):
 		return rateLimited(LegCodexCLI, msg)
 	case codexCLIAuthError(msg):
-		// Provider-down so the task reroutes and the user still gets an
-		// answer; harnessFault() keeps it off the model's reliability stats.
-		return fmt.Errorf("codex exec: %w: not logged in - run `codex login` (the Codex CLI keeps its own credential store): %s",
-			ErrProviderDown, truncateStr(msg, 160))
+		// A LoginError is provider-down, so a routed task reroutes and the
+		// user still gets an answer; harnessFault() keeps it off the model's
+		// reliability stats.
+		return loginNeeded(LegCodexCLI, "codex login", msg)
 	case transientProviderError(msg) || codexCLIOutage(msg):
 		return fmt.Errorf("codex exec: %w: %s", ErrProviderDown, truncateStr(msg, 160))
 	}
