@@ -21,3 +21,14 @@ func TestLandingContractCanBeTurnedOff(t *testing.T) {
 	t.Setenv("CAPTAIN_WORKER_LANDING", "0")
 	assert.Empty(t, landingContract())
 }
+
+// "D10 still blocks a cloud run" sat in a worker log; the user found it by
+// reading the log (2026-11-07). A worker posts such a question instead.
+func TestDecisionContractTellsWorkersToPost(t *testing.T) {
+	c := decisionContract()
+	assert.Contains(t, c, "captain decision post")
+	assert.Contains(t, c, "--recommend")
+	assert.Contains(t, c, "only the user", "routine choices stay with the worker")
+	t.Setenv("CAPTAIN_WORKER_DECISIONS", "0")
+	assert.Empty(t, decisionContract())
+}

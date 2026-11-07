@@ -164,6 +164,9 @@ func main() {
 		case "leakcheck": // private names never reach a public repo (leakcheck_cmd.go)
 			cmdLeakcheck(args[1:])
 			return
+		case "decision": // decisions waiting on the user (decision_cmd.go)
+			cmdDecision(args[1:])
+			return
 		case "sweep": // merged worktrees and branches (sweep_cmd.go)
 			cmdSweep(args[1:])
 			return

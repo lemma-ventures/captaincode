@@ -1918,6 +1918,19 @@ func landingContract() string {
 		" A checkout a record cites stays: `git worktree lock --reason \"<why>\" <path>`. `captain sweep` removes merged leftovers daily."
 }
 
+// decisionContract sends a question only the user can settle to the
+// register (decisions.go) instead of a log line: on 2026-11-07 "D10 still
+// blocks a cloud run" sat in a worker log and the user found it by reading
+// the log. CAPTAIN_WORKER_DECISIONS=0 drops it.
+func decisionContract() string {
+	if os.Getenv("CAPTAIN_WORKER_DECISIONS") == "0" {
+		return ""
+	}
+	return "\n\n[captain] Decisions for the user: when work needs a choice that only the user can make (spending, naming a person, accepting a rule or contract change, a product direction the repository says is the owner's), do not only write it in a document or your final message." +
+		" Post it once: `captain decision post --ref <the repo's id, if any> --title \"...\" --question \"...\" --context \"<what they need to know, 2-4 sentences>\" --option a=\"...\" --option b=\"...\" --recommend <id> --why \"<one line>\" --record <the file the answer belongs in>` (add --github owner/repo#n when an issue or pull request tracks it)." +
+		" Check `captain decision list` first and do not post a question that is already open. Keep working around it where you can, and decide routine choices yourself."
+}
+
 // securityContract makes security the worker's starting posture rather than a
 // review that may or may not come later ("all agents should be conscious
 // about security first, in particular when they code or add libraries",
