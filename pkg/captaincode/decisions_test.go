@@ -95,10 +95,13 @@ func TestDecisionRecordPrompt(t *testing.T) {
 	if p1 != p2 {
 		t.Fatal("record prompt is not deterministic")
 	}
-	for _, want := range []string{d.ID, "D10", "option a", "USD 50, eu-west-1", "start in eu", "captain decision answered " + d.ID} {
+	for _, want := range []string{d.ID, "D10", "option a", "USD 50, eu-west-1", "start in eu"} {
 		if !strings.Contains(p1, want) {
 			t.Fatalf("record prompt lacks %q:\n%s", want, p1)
 		}
+	}
+	if strings.Contains(p1, "captain decision") {
+		t.Fatal("the record prompt must not ask a worker to run a captain subcommand an older binary reads as a task")
 	}
 	if _, err := DecisionRecordPrompt(d, "z", ""); err == nil {
 		t.Fatal("an option the agent did not offer was accepted")
@@ -166,5 +169,42 @@ func TestFindRunLog(t *testing.T) {
 	}
 	if got := FindRunLog(dir, "/repo/none", "grok-cli"); got != "" {
 		t.Fatalf("got %q for a folder with no run", got)
+	}
+}
+
+// One Face ID per repository: several answers in one record prompt. Every
+// answer stays visible in the signed text and limited to offered options.
+func TestDecisionBundlePrompt(t *testing.T) {
+	a, _ := PostDecision(decisionFixture(t))
+	dir := os.Getenv(DecisionsDirEnv)
+	second := decisionFixture(t)
+	second.Ref, second.Title = "D11", "Maintainer"
+	t.Setenv(DecisionsDirEnv, dir)
+	b, _ := PostDecision(second)
+	text, err := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "a", Note: "eu"}, {ID: b.ID, Option: "c"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"2 decisions", "D10", "D11", "option a", "option c", "eu"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("bundle lacks %q:\n%s", want, text)
+		}
+	}
+	again, _ := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "a", Note: "eu"}, {ID: b.ID, Option: "c"}})
+	if again != text {
+		t.Fatal("bundle is not deterministic")
+	}
+	if _, err := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "z"}}); err == nil {
+		t.Fatal("an option the agent did not offer was accepted")
+	}
+	if _, err := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "a"}, {ID: a.ID, Option: "b"}}); err == nil {
+		t.Fatal("the same decision twice was accepted")
+	}
+	other := decisionFixture(t)
+	other.Repo = "/tmp/other"
+	t.Setenv(DecisionsDirEnv, dir)
+	c, _ := PostDecision(other)
+	if _, err := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "a"}, {ID: c.ID, Option: "a"}}); err == nil {
+		t.Fatal("a bundle across repositories was accepted; a signature binds one folder")
 	}
 }

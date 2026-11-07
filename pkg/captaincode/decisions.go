@@ -266,8 +266,105 @@ func DecisionRecordPrompt(d OwnerDecision, option, note string) (string, error) 
 	if d.GitHub != "" {
 		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decision and the chosen option.", d.GitHub)
 	}
-	fmt.Fprintf(&b, " Finally run `captain decision answered %s --option %s` so the register shows it as answered.", d.ID, o.ID)
+	// No "run captain decision answered" here (7 Nov): an older captain reads
+	// an unknown word as a task, so a worker would start a run instead. The
+	// cockpit marks the item answered when the signature is accepted.
 	return b.String(), nil
+}
+
+// DecisionChoice is one answer in a bundle.
+type DecisionChoice struct {
+	ID     string `json:"id"`
+	Option string `json:"option"`
+	Note   string `json:"note,omitempty"`
+}
+
+// DecisionBundlePrompt is one record prompt for several open decisions of the
+// same repository, so the user signs them with one passkey approval. A
+// signature binds one folder, so a bundle never spans repositories.
+func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
+	if len(choices) == 0 {
+		return "", errors.New("decision bundle: nothing chosen")
+	}
+	var repo string
+	seen := map[string]bool{}
+	type item struct {
+		d OwnerDecision
+		o DecisionOption
+		n string
+	}
+	var items []item
+	for _, c := range choices {
+		if seen[c.ID] {
+			return "", fmt.Errorf("decision bundle: %s appears twice", c.ID)
+		}
+		seen[c.ID] = true
+		d, err := GetDecision(c.ID)
+		if err != nil {
+			return "", err
+		}
+		if d.Status != DecisionOpen {
+			return "", fmt.Errorf("decision %s is %s", d.ID, d.Status)
+		}
+		o, ok := d.option(c.Option)
+		if !ok {
+			return "", fmt.Errorf("decision %s: %q is not one of its options", d.ID, c.Option)
+		}
+		if repo == "" {
+			repo = d.Repo
+		} else if d.Repo != repo {
+			return "", errors.New("decision bundle: all decisions must belong to one repository")
+		}
+		items = append(items, item{d, o, strings.TrimSpace(c.Note)})
+	}
+	var b strings.Builder
+	noun := "decisions"
+	if len(items) == 1 {
+		noun = "decision"
+	}
+	fmt.Fprintf(&b, "Record the user's %d %s for %s.\n", len(items), noun, filepath.Base(repo))
+	records, notes := []string{}, []string{}
+	for i, it := range items {
+		name := it.d.ID
+		if it.d.Ref != "" {
+			name = it.d.Ref + " (" + it.d.ID + ")"
+		}
+		fmt.Fprintf(&b, "\n%d. %s: %s\n   Question: %s\n   The user chose option %s: %s", i+1, name, it.d.Title, it.d.Question, it.o.ID, it.o.Label)
+		if it.o.Detail != "" {
+			fmt.Fprintf(&b, " - %s", it.o.Detail)
+		}
+		b.WriteString("\n")
+		if it.d.Recommend != "" && it.d.Recommend != it.o.ID {
+			fmt.Fprintf(&b, "   The posting agent recommended option %s; the user chose otherwise.\n", it.d.Recommend)
+		}
+		if it.n != "" {
+			fmt.Fprintf(&b, "   The user's note: %s\n", it.n)
+		}
+		if it.d.Record != "" && !containsString(records, it.d.Record) {
+			records = append(records, it.d.Record)
+		}
+		if it.d.GitHub != "" && !containsString(notes, it.d.GitHub) {
+			notes = append(notes, it.d.GitHub)
+		}
+	}
+	b.WriteString("\nWrite each answer into the repository's own decision record")
+	if len(records) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(records, "; "))
+	}
+	b.WriteString(", in the format and wording that file already uses, and mark each question closed wherever it is listed as open. Change nothing else. Commit only if this repository's rules say decision records are committed.")
+	if len(notes) > 0 {
+		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decisions and the chosen options.", strings.Join(notes, ", "))
+	}
+	return b.String(), nil
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 func updateDecision(id string, f func(*OwnerDecision) error) (OwnerDecision, error) {

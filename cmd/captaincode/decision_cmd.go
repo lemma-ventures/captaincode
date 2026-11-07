@@ -10,6 +10,7 @@ package main
 //	captain decision list [--all] [--json]
 //	captain decision show ID [--json]
 //	captain decision prompt ID --option a [--note N] [--json]    the text the user signs
+//	captain decision bundle < [{"id":ID,"option":"a","note":N},...]   one prompt for several, same repository
 //	captain decision answered ID --option a [--note N] [--via V]
 //	captain decision withdraw ID --reason R
 
@@ -17,6 +18,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +134,17 @@ func cmdDecision(args []string) {
 			return
 		}
 		fmt.Println(text)
+	case "bundle":
+		var choices []captaincode.DecisionChoice
+		if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&choices); err != nil {
+			fatal(fmt.Errorf("decision bundle: read a JSON list of {id, option, note} on stdin: %w", err))
+		}
+		text, err := captaincode.DecisionBundlePrompt(choices)
+		if err != nil {
+			fatal(err)
+		}
+		first, _ := captaincode.GetDecision(choices[0].ID)
+		printJSON(map[string]string{"repo": first.Repo, "text": text, "text_sha256": captaincode.SHA256Hex(text)})
 	case "answered":
 		fs := flag.NewFlagSet("decision answered", flag.ExitOnError)
 		option := fs.String("option", "", "the chosen option id")
