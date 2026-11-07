@@ -1903,6 +1903,21 @@ func callbackContract(ws captaincode.Workspace, leg captaincode.Leg) string {
 		" Never end a turn promising to report later; either finish the work inside this turn or arm that callback and say you armed it.", replyTo(ws, leg), leg)
 }
 
+// landingContract asks each worker to clean up what it landed. On
+// 2026-11-07 one repository held 91 merged worktrees and 183 merged branches
+// that workers had left behind; `captain sweep` removes leftovers daily, and
+// this line keeps them from piling up between sweeps.
+// CAPTAIN_WORKER_LANDING=0 drops it.
+func landingContract() string {
+	if os.Getenv("CAPTAIN_WORKER_LANDING") == "0" {
+		return ""
+	}
+	return "\n\n[captain] Clean up what you land: once your branch is merged into the main branch, remove the worktree you made for it (`git worktree remove <path>`, then `git worktree prune`)" +
+		" and delete the merged branch (`git branch -d <branch>`) - unless `git config captain.sweep.branches` is false in that repository, which keeps every branch." +
+		" Never remove a worktree that still holds uncommitted or unlanded work; say where it is instead." +
+		" A checkout a record cites stays: `git worktree lock --reason \"<why>\" <path>`. `captain sweep` removes merged leftovers daily."
+}
+
 // securityContract makes security the worker's starting posture rather than a
 // review that may or may not come later ("all agents should be conscious
 // about security first, in particular when they code or add libraries",
