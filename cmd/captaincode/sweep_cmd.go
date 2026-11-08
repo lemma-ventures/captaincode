@@ -4,7 +4,7 @@ package main
 // (pkg sweep.go). A dry run by default; a daily LaunchAgent runs it with
 // --apply on each Mac.
 //
-//	captain sweep                      list what would go, under ~/Gits
+//	captain sweep                      list what would go, under $CAPTAIN_REPOS_ROOT (default ~/Gits)
 //	captain sweep --apply              remove it, and log to ~/.captaincode/sweep.jsonl
 //	captain sweep --root DIR           repositories directly under DIR (repeatable)
 //	captain sweep --repo DIR           one repository
@@ -36,12 +36,11 @@ func cmdSweep(args []string) {
 	idle := fs.Duration("idle", 2*time.Hour, "keep worktrees git touched within this long")
 	verbose := fs.Bool("verbose", false, "list kept worktrees with their reason")
 	var roots, repos sweepRoots
-	fs.Var(&roots, "root", "a folder whose direct subfolders are repositories (default ~/Gits)")
+	fs.Var(&roots, "root", "a folder whose direct subfolders are repositories (default $CAPTAIN_REPOS_ROOT, else ~/Gits)")
 	fs.Var(&repos, "repo", "one repository")
 	_ = fs.Parse(args)
 	if len(roots) == 0 && len(repos) == 0 {
-		home, _ := os.UserHomeDir()
-		roots = append(roots, filepath.Join(home, "Gits"))
+		roots = append(roots, reposRoot())
 	}
 	for _, root := range roots {
 		entries, err := os.ReadDir(root)
@@ -135,4 +134,19 @@ func processCwds() []string {
 		}
 	}
 	return cwds
+}
+
+// reposRoot is the folder whose direct subfolders are the repositories:
+// CAPTAIN_REPOS_ROOT (set in ~/.config/captain/env, which every captain
+// command loads), else ~/Gits. The cockpit reads the same setting.
+func reposRoot() string {
+	if v := strings.TrimSpace(os.Getenv("CAPTAIN_REPOS_ROOT")); v != "" {
+		if strings.HasPrefix(v, "~/") {
+			home, _ := os.UserHomeDir()
+			v = filepath.Join(home, v[2:])
+		}
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Gits")
 }
