@@ -1079,7 +1079,7 @@ a single model runs it in all three bands, at that band's effort.
 |---|---|---|---|
 | `claude` | `sonnet` (Sonnet 5) | Claude Code default (Opus 5.5) | `opus` at max |
 | `codex-cli` | `gpt-6-sol` | `gpt-6-astra` | `gpt-6-astra` at xhigh |
-| `codex` | `gpt-6-luna` | `gpt-6.1-sol-fast` | `gpt-6-astra` |
+| `codex` | `gpt-6-luna` | `gpt-6.1-sol` | `gpt-6-astra` |
 | `cursor` | `composer-2.5` | `grok-4.7-<effort>` | `grok-4.7-xhigh` |
 | `grok` | `grok-build-0.1` | `grok-build-0.1` | `grok-4.7` |
 | `gemini` | `gemini-3.5-flash-lite` | `gemini-3.7-flash` | `gemini-3.8-flash` |
@@ -1141,18 +1141,27 @@ OpenAI's GPT-6 family covers three tiers on one ChatGPT login, as three legs:
 
 | Tier | Leg | Model | Override |
 |---|---|---|---|
-| Cheap | `luna` | `gpt-6-luna` | `CAPTAIN_LUNA_MODEL` |
-| Quality | `codex` | `gpt-6.1-sol-fast` (directs as `gpt-6.1-sol`) | `CAPTAIN_CODEX_MODEL` |
+| Cheap | `luna` | `gpt-6-luna` through `codex exec` | `CAPTAIN_LUNA_MODEL` |
+| Quality | `codex` | `gpt-6.1-sol` through `codex exec` | `CAPTAIN_CODEX_MODEL` |
 | Frontier | `codex-cli` | `gpt-6-astra` through `codex exec` | `CAPTAIN_CODEX_CLI_MODEL` |
 
-All three draw on the same subscription windows. `codex` runs Sol in fast
-mode for interactive latency, which draws that quota at twice the rate;
-`CAPTAIN_CODEX_MODEL=gpt-6.1-sol` trades the speed back for quota. Until
-Artificial Analysis scores GPT-6.1 Sol, the ranking reads the GPT-6 Sol row.
+All three draw on the same subscription windows and, since 10 November 2026,
+the same login: the Codex CLI's (`codex login`, `~/.codex/auth.json`), which
+renews itself. Before that, `codex` and `luna` ran through opencode's own
+OpenAI login, a second login that could expire on one Mac while the CLI's kept
+working. Until Artificial Analysis scores GPT-6.1 Sol, the ranking reads the
+GPT-6 Sol row.
 
-`codex-cli` stays on Astra. On 2026-09-30, `codex exec` refused `gpt-6.1-sol`
-for ChatGPT accounts ("not supported when using Codex with a ChatGPT
-account"), while opencode, which the `codex` leg runs through, served it.
+`codex exec` serves `gpt-6.1-sol` on a ChatGPT login (checked 10 November
+2026; it refused it on 30 September). It still refuses `gpt-6.1-sol-fast`, so
+`codex` runs Sol at standard speed. An agent CLI starts an agent and reads the
+repository before it answers, so `luna` is no longer a `/speed` candidate on
+trivial work.
+
+`codex-openrouter` (GPT-6.1 Sol through paid OpenRouter, named only) was
+removed the same day. `codex` no longer directs: a director judges without
+tools, and no OpenAI leg does that now. A `CAPTAIN_DIRECTOR` list that names
+`codex` skips it.
 
 ### Effort
 

@@ -446,15 +446,22 @@ func TestDirectorLadder_DemotesThroughChoicesAndReverts(t *testing.T) {
 }
 
 func TestDirectorLadderFromEnv(t *testing.T) {
-	t.Setenv("CAPTAIN_DIRECTOR", "claude,codex,grok")
+	t.Setenv("CAPTAIN_DIRECTOR", "claude,glm,grok")
 	got := directorLadderFromEnv()
-	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude, captaincode.LegCodex, captaincode.LegGrok}, got[:3],
+	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude, captaincode.LegGLM, captaincode.LegGrok}, got[:3],
 		"the stated preference leads, in order")
+
+	// codex runs through the Codex CLI since 2026-11-10 and cannot judge: a
+	// ladder that still names it skips it.
+	t.Setenv("CAPTAIN_DIRECTOR", "claude,codex,grok")
+	got = directorLadderFromEnv()
+	assert.Equal(t, []captaincode.Leg{captaincode.LegClaude, captaincode.LegGrok}, got[:2])
+	assert.NotContains(t, got, captaincode.LegCodex)
 
 	t.Setenv("CAPTAIN_DIRECTOR", "claude")
 	got = directorLadderFromEnv()
 	assert.Equal(t, captaincode.LegClaude, got[0])
-	assert.Contains(t, got, captaincode.LegCodex, "defaults fill the ladder so there is always a fallback")
+	assert.Contains(t, got, captaincode.LegGrok, "defaults fill the ladder so there is always a fallback")
 }
 
 // ── automatic worker reroute (xAI capacity errors, 2026-07-19) ──

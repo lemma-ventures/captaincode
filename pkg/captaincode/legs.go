@@ -453,10 +453,6 @@ func applyLegModelEnv() {
 // cursorFrontierModel().
 var directorModels = map[Leg]struct{ Provider, Model string }{
 	LegGrok: {"xai", "grok-4.7"},
-	// gpt-6.1-sol, the standard-speed twin of the worker's gpt-6.1-sol-fast:
-	// a judge answers in one short turn, so fast mode would only double the
-	// quota it draws (2026-09-30; gpt-6-sol from 2026-09-22, gpt-5.5 before).
-	LegCodex: {"openai", "gpt-6.1-sol"},
 }
 
 // ModelSpec returns the opencode provider/model a worker leg runs, so a
@@ -528,6 +524,26 @@ func codexCLIModel(effort Effort) string {
 		return m
 	}
 	return "gpt-6-astra"
+}
+
+// codexLegModel is the codex exec -m for a Codex CLI leg: codex-cli follows
+// codexCLIModel; codex and luna (one login, 2026-11-10) take their effort's
+// tier, else CAPTAIN_<LEG>_MODEL, else the registry's model.
+func codexLegModel(l Leg, effort Effort) string {
+	if l == LegCodexCLI || l == "" {
+		return codexCLIModel(effort)
+	}
+	if m := tierModel(l, TierOf(effort)); m != "" {
+		return m
+	}
+	s := specs[l]
+	if m := strings.TrimSpace(os.Getenv(s.EnvPrefix() + "_MODEL")); m != "" {
+		return m
+	}
+	if s.Model != "" {
+		return s.Model
+	}
+	return codexCLIModel(effort)
 }
 
 // cursorModel picks the cursor-agent --model for this request. Empty means
@@ -655,7 +671,7 @@ func ModelIDAt(l Leg, effort Effort) string {
 			return "claude-" + strings.TrimPrefix(m, "claude-")
 		}
 	case TransportCodexCLI:
-		return codexCLIModel(effort)
+		return codexLegModel(l, effort)
 	case TransportGrokCLI:
 		return grokCLIModel()
 	}
@@ -708,7 +724,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 		// Same wrapper the streaming path uses: it classifies its own
 		// failures (classifyCodexCLIFailure), so a dead `codex login` arrives
 		// as a typed provider fault instead of an opaque dead end.
-		return runCodexCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
+		return runCodexCLIStreamLeg(leg, d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Effort, d.Steer)
 	case TransportGrokCLI:
 		return runGrokCLIStream(d.Dir, task, d.Timeout, d.Ceiling, d.OnDelta, d.OnStatus, d.Steer)
 	case TransportOpencodeShell:
@@ -2057,7 +2073,7 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		res, err := runCursorStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer, cursorModel(ws.Effort))
 		return emptyIsFailure(leg, res, err)
 	case TransportCodexCLI:
-		res, err := runCodexCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
+		res, err := runCodexCLIStreamLeg(leg, ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort, ws.Steer)
 		return emptyIsFailure(leg, res, err)
 	case TransportGrokCLI:
 		res, err := runGrokCLIStream(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Steer)

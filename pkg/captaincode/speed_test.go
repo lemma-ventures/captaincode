@@ -19,17 +19,18 @@ func timedRuns(leg Leg, c Class, ms int64, n int) []Event {
 // 16 s, Cursor's Composer 53 s.
 func TestSpeedPickTakesTheFastestMeasuredLeg(t *testing.T) {
 	var ev []Event
-	ev = append(ev, timedRuns(LegLuna, ClassTrivial, 2_700, 21)...)
+	ev = append(ev, timedRuns(LegGrok, ClassTrivial, 2_700, 21)...)
 	ev = append(ev, timedRuns(LegStep, ClassTrivial, 16_000, 46)...)
 	ev = append(ev, timedRuns(LegCursor, ClassTrivial, 1_000, 12)...) // even if it were fast
 	ev = append(ev, timedRuns(LegCursor, ClassMedium, 60_000, 5)...)
 	st := statsOf(ev)
-	assert.Equal(t, SpeedStat{N: 21, MedianMs: 2_700}, st[LegLuna].Speed[ClassTrivial])
+	assert.Equal(t, SpeedStat{N: 21, MedianMs: 2_700}, st[LegGrok].Speed[ClassTrivial])
 
-	pick, ok := SpeedPick([]Leg{LegCursor, LegStep, LegLuna}, st, ClassTrivial, 0)
+	pick, ok := SpeedPick([]Leg{LegCursor, LegStep, LegGrok}, st, ClassTrivial, 0)
 	require.True(t, ok)
-	assert.Equal(t, LegLuna, pick.Leg)
+	assert.Equal(t, LegGrok, pick.Leg)
 	assert.NotContains(t, pick.Band, LegCursor, "an agent CLI is never the fast leg on trivial work")
+	assert.True(t, IsAgentCLI(LegLuna), "luna runs through the Codex CLI since 2026-11-10: an agent, not the fast lane")
 	assert.Contains(t, pick.Reason, "median 2.7 s over 21 runs")
 
 	pick, _ = SpeedPick([]Leg{LegCursor, LegStep}, st, ClassMedium, 0)

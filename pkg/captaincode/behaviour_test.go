@@ -14,25 +14,25 @@ import (
 func TestBehaviourReportNamesWhatNeedsAChange(t *testing.T) {
 	l := NewLedger(filepath.Join(t.TempDir(), "state.json"))
 	for i := 0; i < 5; i++ {
-		l.Record(Event{Leg: LegLuna, Class: ClassTrivial, Outcome: "ok", Duration: 2700})
+		l.Record(Event{Leg: LegGrok, Class: ClassTrivial, Outcome: "ok", Duration: 2700})
 		l.Record(Event{Leg: LegStep, Class: ClassTrivial, Outcome: "ok", Duration: 16000})
 	}
-	in := func(leg Leg) bool { return leg != LegLuna }
+	in := func(leg Leg) bool { return leg != LegGrok }
 	b := BuildBehaviour(l, in, time.Now())
 	assert.Equal(t, 10, b.Events)
 	require.NotEmpty(t, b.Notes)
-	assert.Contains(t, strings.Join(b.Notes, "\n"), "luna is the fastest leg measured on trivial work (2.7 s) and CAPTAIN_LEGS leaves it out")
-	var luna LegBehaviour
+	assert.Contains(t, strings.Join(b.Notes, "\n"), "grok is the fastest leg measured on trivial work (2.7 s) and CAPTAIN_LEGS leaves it out")
+	var fast LegBehaviour
 	for _, lb := range b.Legs {
-		if lb.Leg == LegLuna {
-			luna = lb
+		if lb.Leg == LegGrok {
+			fast = lb
 		}
 	}
-	assert.False(t, luna.InLegs)
-	assert.Equal(t, SpeedStat{N: 5, MedianMs: 2700}, luna.Speed[ClassTrivial])
-	assert.Contains(t, luna.Tiers["frontier"], "@max")
+	assert.False(t, fast.InLegs)
+	assert.Equal(t, SpeedStat{N: 5, MedianMs: 2700}, fast.Speed[ClassTrivial])
+	assert.Contains(t, fast.Tiers["frontier"], "@max")
 	md := b.Markdown()
-	assert.Contains(t, md, "| luna | no |")
+	assert.Contains(t, md, "| grok | no |")
 	assert.Contains(t, md, "## Tiers")
 }
 

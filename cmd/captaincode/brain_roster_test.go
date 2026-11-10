@@ -46,7 +46,7 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	// Harness × provenance (2026-10-03): a CLI by its name, a model opencode
 	// serves by family-provider. Two legs on one family and provider share it.
 	assert.Equal(t, "codex-cli", byLeg["codex-cli"].Label, "the CLI leg")
-	assert.Equal(t, "gpt-openai", byLeg["codex"].Label, "an OpenAI model through opencode's openai provider")
+	assert.Equal(t, "codex-cli", byLeg["codex"].Label, "codex runs through the Codex CLI (2026-11-10)")
 	assert.Equal(t, "codex-cli", byLeg["luna"].Label, "luna is a version of codex-cli, not its own harness")
 	assert.Equal(t, "openshell-nvidia", out.Harness["openshell"])
 	assert.Equal(t, "gpt-oss-openrouter", out.Harness["gpt-oss"])

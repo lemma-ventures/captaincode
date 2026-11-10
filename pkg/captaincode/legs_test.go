@@ -65,7 +65,7 @@ func TestContextOverflowIsClassified(t *testing.T) {
 	defer srv.Close()
 
 	d := &OpencodeDispatcher{BaseURL: srv.URL, SessionID: "ses_1", Client: srv.Client(), Spawn: false}
-	_, err := d.Run(LegCodex, "huge replayed conversation")
+	_, err := d.Run(LegGrok, "huge replayed conversation")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrContextOverflow)
 	assert.NotErrorIs(t, err, ErrRateLimited)

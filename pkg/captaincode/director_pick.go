@@ -90,7 +90,8 @@ func directorPerf(l Leg) (float64, string) {
 		}
 		// Unlisted (a model released today): scored as the leg itself, but it
 		// still directs with the override - naming the worker model here told
-		// "/captain codex-cli" that codex directs as gpt-6-sol-fast (2026-09-22).
+		// "/captain codex-cli" that codex directs as gpt-6-sol-fast (2026-09-22;
+		// codex runs through the Codex CLI and cannot judge since 2026-11-10).
 		return perfOrPrior(l), dm.Model
 	}
 	spec, _ := Spec(l)
@@ -129,12 +130,12 @@ func DirectorCandidates() []DirectorCandidate {
 }
 
 // judgeTwins names, for each agent leg, the judge that runs the same
-// vendor's models on the same credential: codex exec is gpt-6-astra on the
-// ChatGPT subscription, and the codex leg directs as gpt-6-sol on that same
-// subscription with tools off. Cursor's Composer is served nowhere else, so
-// it has no twin. Used to answer "/captain codex-cli" with the nearest thing
-// that CAN direct instead of a flat refusal (2026-09-22).
-var judgeTwins = map[Leg]Leg{LegCodexCLI: LegCodex}
+// vendor's models on the same credential, so "/captain <agent leg>" pins the
+// nearest thing that CAN direct instead of a flat refusal (2026-09-22).
+// codex-cli had the codex leg as its twin until codex moved to the Codex CLI
+// too (2026-11-10): no OpenAI leg judges without tools now. Cursor's Composer
+// is served nowhere else.
+var judgeTwins = map[Leg]Leg{}
 
 // JudgeTwin returns the director-capable sibling of an agent leg.
 func JudgeTwin(l Leg) (Leg, bool) {

@@ -59,19 +59,33 @@ func legBudgetMultiplier(l Leg) time.Duration {
 // pins the worker to the request's workspace (cmd.Dir does too; the
 // flag is what codex reports as its working root).
 func codexCLICmdArgs(dir, task string, effort Effort) []string {
-	model := codexCLIModel(effort)
-	// The request's effort (effort.go), xhigh when none was decided - the
-	// leg is frontier-class and used to run at xhigh always; a pinned
-	// CAPTAIN_CODEX_CLI_EFFORT still wins.
-	flag := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_EFFORT"))
-	if flag == "" {
-		flag = "xhigh"
-		if effort != "" {
-			flag = effort.CodexFlag()
+	return codexCLICmdArgsLeg(LegCodexCLI, dir, task, effort)
+}
+
+// codexCLICmdArgsLeg is codexCLICmdArgs for any Codex CLI leg, with the
+// leg's model (codexLegModel). codex-cli keeps its effort rule below; codex
+// and luna pass the request's effort, or leave codex's own default.
+func codexCLICmdArgsLeg(leg Leg, dir, task string, effort Effort) []string {
+	model := codexLegModel(leg, effort)
+	var flag string
+	if leg == LegCodexCLI {
+		// The request's effort (effort.go), xhigh when none was decided - the
+		// leg is frontier-class and used to run at xhigh always; a pinned
+		// CAPTAIN_CODEX_CLI_EFFORT still wins.
+		flag = strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_EFFORT"))
+		if flag == "" {
+			flag = "xhigh"
+			if effort != "" {
+				flag = effort.CodexFlag()
+			}
 		}
+	} else if effort != "" {
+		flag = effort.CodexFlag()
 	}
-	args := []string{"exec", "--json", "--skip-git-repo-check",
-		"-m", model, "-c", "model_reasoning_effort=" + flag}
+	args := []string{"exec", "--json", "--skip-git-repo-check", "-m", model}
+	if flag != "" {
+		args = append(args, "-c", "model_reasoning_effort="+flag)
+	}
 	if dir != "" {
 		args = append(args, "-C", dir)
 	}
@@ -211,14 +225,18 @@ func codexCLIOutage(msg string) bool {
 // classifyCodexCLIFailure maps a turn.failed / exit message to the leg error
 // classes the reroute net understands.
 func classifyCodexCLIFailure(msg string) error {
+	return classifyCodexCLIFailureLeg(LegCodexCLI, msg)
+}
+
+func classifyCodexCLIFailureLeg(leg Leg, msg string) error {
 	switch {
 	case codexCLIRateLimited(msg):
-		return rateLimited(LegCodexCLI, msg)
+		return rateLimited(leg, msg)
 	case codexCLIAuthError(msg):
 		// A LoginError is provider-down, so a routed task reroutes and the
 		// user still gets an answer; harnessFault() keeps it off the model's
 		// reliability stats.
-		return loginNeeded(LegCodexCLI, "codex login", msg)
+		return loginNeeded(leg, "codex login", msg)
 	case transientProviderError(msg) || codexCLIOutage(msg):
 		return fmt.Errorf("codex exec: %w: %s", ErrProviderDown, truncateStr(msg, 160))
 	}
@@ -233,6 +251,12 @@ func classifyCodexCLIFailure(msg string) error {
 // the pipe is closed on ctx.Done() and the wait is bounded (a grandchild
 // holding stdout/stderr would otherwise block past the deadline).
 func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), effort Effort, steer *Steer) (result Result, runErr error) {
+	return runCodexCLIStreamLeg(LegCodexCLI, dir, task, base, ceil, onDelta, onStatus, effort, steer)
+}
+
+// runCodexCLIStreamLeg runs one codex exec turn for a Codex CLI leg (codex-cli,
+// codex, luna): one login, the leg's own model and error attribution.
+func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), effort Effort, steer *Steer) (result Result, runErr error) {
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}
@@ -244,11 +268,11 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		ctx, cancel, prog, capped = progressCtx(base, ceil)
 		defer cancel()
 	}
-	ctx, stopped, detachStop := interruptible(ctx, steer, LegCodexCLI) // /interrupt keeps what streamed
+	ctx, stopped, detachStop := interruptible(ctx, steer, leg) // /interrupt keeps what streamed
 	defer detachStop()
-	cmd := exec.CommandContext(ctx, "codex", codexCLICmdArgs(dir, task, effort)...)
+	cmd := exec.CommandContext(ctx, "codex", codexCLICmdArgsLeg(leg, dir, task, effort)...)
 	cmd.Dir = dir
-	cmd.Env = append(append(os.Environ(), GateWorkerEnv(LegCodexCLI, task, steer.Task())...), WorkerGuardEnv(task)...) // workerguard.go
+	cmd.Env = append(append(os.Environ(), GateWorkerEnv(leg, task, steer.Task())...), WorkerGuardEnv(task)...) // workerguard.go
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
@@ -390,7 +414,7 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 		return Result{}, fmt.Errorf("codex exec did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
 	}
 	if haveFailed {
-		err := classifyCodexCLIFailure(failed)
+		err := classifyCodexCLIFailureLeg(leg, failed)
 		if errors.Is(err, ErrRateLimited) {
 			return partialResult(acc.String(), failed, start, onDelta), err
 		}
@@ -399,7 +423,7 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 	if waitErr != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			if transientProviderError(msg) || codexCLIAuthError(msg) || codexCLIRateLimited(msg) {
-				return Result{}, classifyCodexCLIFailure(msg)
+				return Result{}, classifyCodexCLIFailureLeg(leg, msg)
 			}
 			return Result{}, fmt.Errorf("codex exec: %w: %s", waitErr, truncateStr(msg, 300))
 		}

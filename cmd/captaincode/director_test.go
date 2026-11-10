@@ -76,7 +76,7 @@ func TestSetDirector_RebuildsLadderAndResetsFallback(t *testing.T) {
 func TestDirectorLadderFromEnvWith_PrimaryFirst(t *testing.T) {
 	got := directorLadderFromEnvWith(captaincode.LegGLM)
 	assert.Equal(t, captaincode.LegGLM, got[0], "explicit primary is first")
-	assert.Contains(t, got, captaincode.LegCodex, "codex is a fallback")
+	assert.NotContains(t, got, captaincode.LegCodex, "codex runs through the Codex CLI and cannot judge")
 	assert.Contains(t, got, captaincode.LegGrok, "grok is a fallback")
 }
 

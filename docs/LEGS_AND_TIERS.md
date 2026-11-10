@@ -100,7 +100,7 @@ on whichever leg the lane balancer picks next".
 | `claude` | `claude-cli` | sonnet · sonnet · opus (default) · opus at max | `/claude` |
 | `frontier` (pseudo-leg) | - | - | `/frontier`, now a tier |
 | `codex-cli` | `codex-cli` | gpt-6-sol · gpt-6-sol · gpt-6-astra · gpt-6-astra at xhigh | - |
-| `codex` | `codex` | gpt-6-luna · gpt-6.1-sol-fast · gpt-6.1-sol · gpt-6-astra | - |
+| `codex` | `codex-cli` | gpt-6-luna · gpt-6.1-sol · gpt-6.1-sol · gpt-6-astra | - |
 | `luna` | `codex` | (folded into `codex:cheap`) | `/luna` = `/codex:cheap` |
 | `cursor` | `cursor-cli` | composer-2.5 · composer-2.5 · grok-4.7 at the task's effort · grok-4.7-xhigh | `/cursor` |
 | `grok` | `grok` | grok-build-0.1 · grok-build-0.1 · grok-4.7 · grok-4.7 at max | - |
@@ -217,7 +217,7 @@ warning in the meantime.
 ## Open questions
 
 - Should the `fast` slot be filled on every leg, or only where a
-  latency-optimised variant exists (`gpt-6.1-sol-fast`, Composer,
+  latency-optimised variant exists (Composer,
   grok-build)? Filling it with the quality model elsewhere keeps `/speed`
   working everywhere but blurs what fast means.
 - Is `nemotron` the right name for `free`? The name `free` describes the

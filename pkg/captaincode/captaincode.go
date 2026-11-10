@@ -26,7 +26,7 @@ const (
 	LegQwen    Leg = "qwen"    // opencode serve -> Scaleway self-hosted Qwen (OSS coder)
 	LegGPTOSS  Leg = "gpt-oss" // opencode serve -> gpt-oss-120b via OpenRouter, pinned to Cerebras: the ADI-green open-weight leg (adi.go)
 	LegGrok    Leg = "grok"    // opencode serve -> SuperGrok OAuth (burn-first sub: daily reset)
-	LegCodex   Leg = "codex"   // opencode serve -> ChatGPT-subscription OAuth
+	LegCodex   Leg = "codex"   // codex exec -m gpt-6.1-sol (Codex CLI, ~/.codex/auth.json)
 	LegGLM     Leg = "glm"     // opencode serve -> GLM-5.3 via NVIDIA NIM (free; cheap tier GLM-5.3 Flash)
 	LegMiniMax Leg = "minimax" // opencode serve -> MiniMax M3 via OpenRouter (NIM retired it 2026-09-09)
 	LegClaude  Leg = "claude"  // claude -p headless (Claude Max)
@@ -52,7 +52,7 @@ const (
 	// luna (2026-09-22): GPT-6 Luna, OpenAI's cheap fast tier, on the same
 	// ChatGPT credential as codex (GPT-6 Sol, the quality tier) and codex-cli
 	// (GPT-6 Astra, the frontier tier) - one vendor, three price points.
-	LegLuna Leg = "luna" // opencode serve -> openai/gpt-6-luna (ChatGPT sub)
+	LegLuna Leg = "luna" // codex exec -m gpt-6-luna (Codex CLI, ChatGPT sub)
 	// mistral (2026-10-06): Mistral Large 4 ("Le Chonk"), Mistral's 1T-param
 	// (49B active), natively multimodal open-weights model on OpenRouter. New
 	// and unbenchmarked, so it starts below the scored open-weight legs and
@@ -81,15 +81,14 @@ const (
 	// never applied to the checkout. Requires CAPTAIN_OPENSHELL_PREPARED,
 	// CAPTAIN_OPENSHELL_PILOT, CAPTAIN_OPENSHELL_ALLOWED and CAPTAIN_OPENSHELL_VERIFY.
 	LegOpenShell Leg = "openshell"
-	// grok-cli and codex-openrouter (2026-10-13): a model pinned to a route,
-	// named like the words that force them (<model>-<route>, legwords.go).
-	// grok-cli is Grok Build, xAI's own CLI on this host (grokcli.go), on
-	// its own credential store (~/.grok/auth.json); codex-openrouter is
-	// GPT-6.1 Sol through OpenRouter, paid per token. Both run only when
-	// named: a pin is the user's choice, not the router's.
-	LegGrokCLI         Leg = "grok-cli"         // grok -p headless (Grok Build CLI)
-	LegCodexOpenRouter Leg = "codex-openrouter" // opencode serve -> openrouter/openai/gpt-6.1-sol
-	LegCarbon          Leg = "carbon"
+	// grok-cli (2026-10-13): a model pinned to a route, named like the
+	// words that force it (<model>-<route>, legwords.go). Grok Build, xAI's
+	// own CLI on this host (grokcli.go), on its own credential store
+	// (~/.grok/auth.json); it runs only when named. codex-openrouter, GPT-6.1
+	// Sol through paid OpenRouter, was removed on 2026-11-10: the Codex CLI
+	// login on each Mac carries the OpenAI legs.
+	LegGrokCLI Leg = "grok-cli" // grok -p headless (Grok Build CLI)
+	LegCarbon  Leg = "carbon"
 )
 
 // AllLegs is every ACTIVE leg in ascending prior order - derived from the

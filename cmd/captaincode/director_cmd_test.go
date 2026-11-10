@@ -17,25 +17,17 @@ func TestAnAgentDirectorPinsItsJudgeTwinAndSaysSo(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	defer captaincode.SetDirector(captaincode.LegGrok)
 	b := teamBrain()
-	pick, mode, err := b.switchDirector("codex-cli")
-	require.NoError(t, err)
-	assert.Equal(t, "fixed", mode)
-	assert.Equal(t, captaincode.LegCodex, pick.Leg)
-	assert.Equal(t, captaincode.LegCodex, b.effectiveDirector())
-	assert.Contains(t, pick.Reason, "codex-cli runs as an agent with tools and cannot direct")
-	assert.Contains(t, pick.Reason, "directs as gpt-6.1-sol", "the twin's director model is named - the standard twin, not the fast worker")
-
-	twin, ok := captaincode.JudgeTwin(captaincode.LegCodexCLI)
-	require.True(t, ok)
-	assert.Equal(t, captaincode.LegCodex, twin)
-	_, ok = captaincode.JudgeTwin(captaincode.LegCursor)
-	assert.False(t, ok, "Composer is served nowhere else")
-
-	// Cursor has no twin: refused, and the refusal says the helm is unchanged.
-	_, _, err = b.switchDirector("cursor")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot direct")
-	assert.Contains(t, err.Error(), "The helm is unchanged: codex")
+	captaincode.SetDirector(captaincode.LegGrok)
+	// codex-cli lost its twin when codex moved to the Codex CLI (2026-11-10):
+	// no OpenAI leg judges without tools, so it is refused like cursor.
+	for _, agent := range []captaincode.Leg{captaincode.LegCodexCLI, captaincode.LegCursor, captaincode.LegCodex} {
+		_, ok := captaincode.JudgeTwin(agent)
+		assert.False(t, ok, "%s has no judge twin", agent)
+		_, _, err := b.switchDirector(string(agent))
+		require.Error(t, err, agent)
+		assert.Contains(t, err.Error(), "cannot direct")
+		assert.Contains(t, err.Error(), "The helm is unchanged: grok")
+	}
 }
 
 // The sidebar prints harness names (grok-xai, claude-cli, cursor-cli), so

@@ -13,7 +13,7 @@ func TestHarnessNamesTheHarnessAndTheProvenance(t *testing.T) {
 	for leg, want := range map[Leg]string{
 		LegClaude: "claude-cli", LegCodexCLI: "codex-cli", LegCursor: "cursor-cli",
 		"grok": "grok-xai", "grok-max": "grok-xai",
-		"codex": "gpt-openai", "luna": "codex-cli",
+		"codex": "codex-cli", "luna": "codex-cli", // one Codex CLI login (2026-11-10)
 		"kimi": "kimi-openrouter", "glm": "glm-nim", "ds-flash": "deepseek-nim",
 		"ds4-flash": "deepseek-hf", "step": "step-hf",
 		"gemini": "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter", "qwen": "qwen-openrouter",
@@ -56,7 +56,7 @@ func TestEffortModelsGroupTheEffortsThatPickAModel(t *testing.T) {
 // A sidebar name reads back to its legs, in ladder order (2026-10-13).
 func TestLegsByHarnessReadsTheSidebarBack(t *testing.T) {
 	assert.ElementsMatch(t, []Leg{"grok", "grok-max"}, LegsByHarness("grok-xai"))
-	assert.ElementsMatch(t, []Leg{LegCodexCLI, "luna"}, LegsByHarness(" Codex-CLI "))
+	assert.ElementsMatch(t, []Leg{LegCodexCLI, LegCodex, LegLuna}, LegsByHarness(" Codex-CLI "))
 	assert.Equal(t, []Leg{LegClaude}, LegsByHarness("claude-cli"))
 	assert.Empty(t, LegsByHarness("grok-nope"))
 }

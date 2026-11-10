@@ -56,7 +56,7 @@ func TestFrontierRankingUsesLiveScores(t *testing.T) {
 func TestFrontierPoolHonorsRegistryOptOuts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legs.json")
 	require.NoError(t, SaveRegistryOverlay(path, registryOverlay{
-		Legs:    []LegSpec{{ID: LegCarbon, NamedOnly: true}},
+		Legs: []LegSpec{{ID: LegCarbon, NamedOnly: true}},
 	}))
 	t.Cleanup(func() { _, _ = LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
 	_, err := LoadRegistry(path)

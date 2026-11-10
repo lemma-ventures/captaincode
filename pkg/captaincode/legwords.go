@@ -1,9 +1,9 @@
 package captaincode
 
 // Route words: a leg's model and the route it runs on, named the way the
-// legs added for a route are (grok-cli, codex-cli, codex-openrouter). A leg
-// id names the model only - /codex is GPT-6.1 Sol through opencode, /grok is
-// xAI through opencode - so every leg also answers to <id>-<route>:
+// legs added for a route are (grok-cli, codex-cli). A leg id names the model
+// only - /codex is GPT-6.1 Sol through the Codex CLI, /grok is xAI through
+// opencode - so every leg also answers to <id>-<route>:
 //
 //	-cli         the vendor's own CLI on this host (claude -p, cursor-agent, codex exec, grok -p)
 //	-openrouter  opencode, through OpenRouter

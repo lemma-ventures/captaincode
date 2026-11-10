@@ -448,13 +448,13 @@ func TestSpeedLanePicksTheFastestMeasuredLeg(t *testing.T) {
 			b.ledger.Events = append(b.ledger.Events, captaincode.Event{Leg: leg, Class: captaincode.ClassTrivial, Outcome: "ok", Duration: ms})
 		}
 	}
-	add(captaincode.LegLuna, 2_700, 21)
+	add(captaincode.LegFree, 2_700, 21)
 	add(captaincode.LegStep, 16_000, 46)
 	add(captaincode.LegCursor, 53_000, 12)
 	resp := routeBody(t, b, "fix the typo in the README", map[string]any{"prefer": "speed"})
-	assert.Equal(t, "luna", resp["leg"])
-	assert.Contains(t, resp["rationale"], "speed lane: luna")
+	assert.Equal(t, "free", resp["leg"])
+	assert.Contains(t, resp["rationale"], "speed lane: free")
 	assert.Equal(t, "low", resp["effort"])
 	resp = routeBody(t, b, "/speed fix the typo in the README", nil)
-	assert.Equal(t, "luna", resp["leg"], "…also as a word in the prompt")
+	assert.Equal(t, "free", resp["leg"], "…also as a word in the prompt")
 }

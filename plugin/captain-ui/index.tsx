@@ -282,7 +282,7 @@ function View(props: { api: TuiPluginApi }) {
   // of that harness, not a row.
   const HARNESS_FALLBACK: Record<string, string> = {
     claude: "claude-cli", "codex-cli": "codex-cli", cursor: "cursor-cli", luna: "codex-cli",
-    codex: "gpt-openai", grok: "grok-xai", "grok-max": "grok-xai",
+    codex: "codex-cli", grok: "grok-xai", "grok-max": "grok-xai",
     kimi: "kimi-nim", glm: "glm-nim", "ds-flash": "deepseek-nim", "ds4-flash": "deepseek-hf",
     step: "step-hf", gemini: "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter",
     qwen: "qwen-openrouter", minimax: "minimax-openrouter", deepseek: "deepseek-openrouter",

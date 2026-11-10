@@ -31,7 +31,7 @@ func TestEveryLegResolvesThreeTiers(t *testing.T) {
 	}{
 		{LegClaude, "claude-sonnet", "claude-opus", "claude-opus-frontier"},
 		{LegCodexCLI, "gpt-6-sol", "gpt-6-astra", "gpt-6-astra"},
-		{LegCodex, "gpt-6-luna", "gpt-6.1-sol-fast", "gpt-6-astra"},
+		{LegCodex, "gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"},
 		{LegLuna, "gpt-6-luna", "gpt-6-luna", "gpt-6-luna"},
 		{LegCursor, "composer-2.5", "grok-4.7-medium", "grok-4.7-xhigh"},
 		{LegGrok, "grok-build-0.1", "grok-build-0.1", "grok-4.7"},
@@ -52,16 +52,14 @@ func TestEveryLegResolvesThreeTiers(t *testing.T) {
 
 func TestTierEnvPinsAndCheapSwitch(t *testing.T) {
 	t.Setenv("CAPTAIN_CODEX_CHEAP_MODEL", "gpt-5.6-luna-fast")
-	mm, _ := modelForEffort(LegCodex, false, EffortLow)
-	assert.Equal(t, "gpt-5.6-luna-fast", mm.Model, "<PREFIX>_CHEAP_MODEL pins the band")
+	assert.Equal(t, "gpt-5.6-luna-fast", codexLegModel(LegCodex, EffortLow), "<PREFIX>_CHEAP_MODEL pins the band")
 	t.Setenv("CAPTAIN_CLAUDE_FRONTIER_MODEL", "fable")
 	assert.Equal(t, "fable", FrontierModel())
 	t.Setenv("CAPTAIN_FRONTIER_MODEL", "claude-opus-5-5")
 	assert.Equal(t, "claude-opus-5-5", FrontierModel(), "the legacy name still wins")
 
 	t.Setenv("CAPTAIN_CHEAP_TIER", "0")
-	mm, _ = modelForEffort(LegCodex, false, EffortLow)
-	assert.Equal(t, "gpt-6.1-sol-fast", mm.Model, "CAPTAIN_CHEAP_TIER=0 keeps the leg's own model at low")
+	assert.Equal(t, "gpt-6.1-sol", codexLegModel(LegCodex, EffortLow), "CAPTAIN_CHEAP_TIER=0 keeps the leg's own model at low")
 	assert.Equal(t, "grok-4.7-low", cursorModel(EffortLow), "cursor falls back to the family's low rung")
 	assert.Empty(t, claudeModel(EffortLow))
 }

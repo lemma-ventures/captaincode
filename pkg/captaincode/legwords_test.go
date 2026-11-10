@@ -10,7 +10,7 @@ func TestRouteWordsNameTheRoute(t *testing.T) {
 	want := map[string]Leg{
 		"claude-cli":          LegClaude,
 		"cursor-cli":          LegCursor,
-		"codex-opencode":      LegCodex,
+		"luna-cli":            LegLuna,
 		"grok-opencode":       LegGrok,
 		"grok-max-opencode":   LegGrokMax,
 		"deepseek-openrouter": LegDeepSeek,
@@ -25,7 +25,7 @@ func TestRouteWordsNameTheRoute(t *testing.T) {
 		}
 	}
 	// A leg already named for its route has no second word.
-	for _, l := range []Leg{LegCodexCLI, LegGrokCLI, LegCodexOpenRouter} {
+	for _, l := range []Leg{LegCodexCLI, LegGrokCLI} {
 		if w := RouteWord(l); w != "" {
 			t.Errorf("RouteWord(%s) = %q, want none", l, w)
 		}
@@ -42,15 +42,20 @@ func TestRouteWordsNameTheRoute(t *testing.T) {
 func TestResolveLegWord(t *testing.T) {
 	for in, want := range map[string]Leg{
 		"codex":              LegCodex,
-		"/Codex-Opencode":    LegCodex,
 		"grok-cli":           LegGrokCLI,
-		"codex-openrouter":   LegCodexOpenRouter,
 		"carbon":             LegCarbon,
 		"/carbon-openrouter": LegCarbon,
 		"codex-cli":          LegCodexCLI,
 	} {
 		if got, ok := ResolveLegWord(in); !ok || got != want {
 			t.Errorf("ResolveLegWord(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+	// codex runs through the Codex CLI (2026-11-10): codex-cli names the
+	// codex-cli leg, and the old opencode and OpenRouter words are gone.
+	for _, gone := range []string{"codex-opencode", "codex-openrouter"} {
+		if _, ok := ResolveLegWord(gone); ok {
+			t.Errorf("%s still resolves", gone)
 		}
 	}
 	if _, ok := ResolveLegWord("codex-nope"); ok {
@@ -60,11 +65,11 @@ func TestResolveLegWord(t *testing.T) {
 
 func TestCanonicalLegWords(t *testing.T) {
 	for in, want := range map[string]string{
-		"/codex-opencode fix it":                            "/codex fix it",
+		"/grok-max-opencode fix it":                         "/grok-max fix it",
 		"/claude-cli: review":                               "/claude: review",
 		"/grok-opencode fix A + /deepseek-openrouter fix B": "/grok fix A + /deepseek fix B",
 		"/grok-opencode review X > /claude-cli":             "/grok review X > /claude",
-		"/team /codex-opencode /claude-cli audit":           "/team /codex /claude audit",
+		"/team /kimi-openrouter /claude-cli audit":          "/team /kimi /claude audit",
 		"/grok-cli fix it":                                  "/grok-cli fix it", // a leg id stays
 		"read /Users/me/codex-opencode/main.go":             "read /Users/me/codex-opencode/main.go",
 		"/codex-opencoder fix":                              "/codex-opencoder fix",
@@ -76,7 +81,7 @@ func TestCanonicalLegWords(t *testing.T) {
 }
 
 func TestNamedOnlyLegsStayOffTheRouter(t *testing.T) {
-	for _, l := range []Leg{LegGrokCLI, LegCodexOpenRouter} {
+	for _, l := range []Leg{LegGrokCLI} {
 		if !KnownLeg(l) {
 			t.Fatalf("%s is not registered", l)
 		}
@@ -92,16 +97,11 @@ func TestNamedOnlyLegsStayOffTheRouter(t *testing.T) {
 			t.Errorf("%s takes no task", l)
 		}
 	}
-	for _, c := range DirectorCandidates() {
-		if c.Leg == LegCodexOpenRouter {
-			t.Errorf("a director mode may pick the paid %s leg", c.Leg)
-		}
-	}
 }
 
 func TestSlashCommandsListRouteWords(t *testing.T) {
 	all := strings.Join(SlashCommands(), " ")
-	for _, w := range []string{"grok-cli", "codex-openrouter", "codex-opencode", "claude-cli"} {
+	for _, w := range []string{"grok-cli", "luna-cli", "grok-opencode", "claude-cli"} {
 		if !strings.Contains(" "+all+" ", " "+w+" ") {
 			t.Errorf("SlashCommands lacks %q", w)
 		}

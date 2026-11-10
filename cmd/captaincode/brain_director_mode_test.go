@@ -39,7 +39,7 @@ func TestCaptainWordSwitchesTheDirector(t *testing.T) {
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain quality"))
 	assert.Contains(t, rec.Body.String(), "tier 2")
-	assert.Equal(t, captaincode.LegCodex, b.effectiveDirector(), "the best of tier 2 on the compiled ranking: codex directs as gpt-6-sol, read off 5.6 Sol (47), below the band under Opus 5.5, above grok-4.7 (46)")
+	assert.Equal(t, captaincode.LegGLM, b.effectiveDirector(), "the best of tier 2 on the compiled ranking; codex runs through the Codex CLI and no longer judges (2026-11-10)")
 	assert.Equal(t, "quality", b.ledger.DirectorMode)
 
 	rec = httptest.NewRecorder()
@@ -55,11 +55,11 @@ func TestCaptainWordSwitchesTheDirector(t *testing.T) {
 	b.chatCompletions(rec, captainReq("/captain cursor"))
 	assert.Contains(t, rec.Body.String(), "cannot direct", "an agent CLI is not a judge")
 
+	before := b.effectiveDirector()
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain codex-cli"))
-	assert.Contains(t, rec.Body.String(), "Director → codex", "an agent CLI with a judge twin pins the twin")
-	assert.Contains(t, rec.Body.String(), "cannot direct", "and says codex-cli is not the one directing")
-	assert.Equal(t, captaincode.LegCodex, b.effectiveDirector())
+	assert.Contains(t, rec.Body.String(), "cannot direct", "codex-cli has no judge twin since codex runs through the Codex CLI")
+	assert.Equal(t, before, b.effectiveDirector(), "the helm is unchanged")
 
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain grok-xai"))
@@ -90,7 +90,7 @@ func TestDirectorModeSurvivesARestart(t *testing.T) {
 	b2 := teamBrain()
 	b2.ledger.DirectorMode = saved
 	b2.restoreDirectorMode()
-	assert.Equal(t, captaincode.LegCodex, b2.effectiveDirector(), "the best of tier 2 on the compiled ranking")
+	assert.Equal(t, captaincode.LegGLM, b2.effectiveDirector(), "the best of tier 2 on the compiled ranking")
 	assert.Equal(t, "quality", b2.directorModeName())
 
 	// CAPTAIN_DIRECTOR=auto seeds the mode when nothing is persisted.
