@@ -51,7 +51,14 @@ type Workspace struct {
 	// (workerguard.go).
 	MayPublish  bool
 	DirtyBefore bool
-	Effort      Effort       // how hard the worker thinks on this request ("" = the transport's default); see effort.go
+	Effort      Effort // how hard the worker thinks on this request ("" = the transport's default); see effort.go
+	// Class is the request's triage class ("" = not triaged). The claude
+	// leg reads it to pick Fable for high-complexity work at max effort
+	// (fable.go).
+	Class Class
+	// ClaudeModel pins claude -p --model for this run ("" = the leg's own
+	// choice): Fable 5.2 for /fable or high-complexity work (fable.go).
+	ClaudeModel string
 	Brains      []string     // other repositories the task names, whose brains are read alongside Dir's (reporefs.go)
 	Steer       *Steer       // the turn's /btw handle: notes sent while a worker runs reach it here (steer.go); nil = none
 	Pool        Pool         // the turn's /oss and /deterministic constraints (pool.go)
@@ -2065,7 +2072,7 @@ func (ws Workspace) RunWorkerStreamHooks(leg Leg, task string, port int, onDelta
 		// Max effort on the claude leg IS the frontier configuration (the
 		// strongest alias, --effort max): "/claude /frontier X" and a
 		// workflow stage under /frontier run exactly what /frontier runs.
-		res, err := runClaudeStreamOpts(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort == EffortMax, ws.Effort, ws.Steer)
+		res, err := runClaudeStreamModel(ws.Dir, task, base, ceil, onDelta, onStatus, ws.Effort == EffortMax, ws.Effort, ws.Steer, ws.ClaudeModel)
 		return emptyIsFailure(leg, res, err)
 	case TransportCursorCLI:
 		// Effort lives in the model id on cursor-agent (grok-4.7-xhigh etc.);
@@ -2276,7 +2283,7 @@ func (ws Workspace) RunClaudeFrontierStream(task string, onDelta, onStatus func(
 	if effort == "" {
 		effort = EffortMax
 	}
-	return runClaudeStreamOpts(ws.Dir, task, 2*workerTimeout(), 2*workerCeiling(), onDelta, onStatus, true, effort, ws.Steer)
+	return runClaudeStreamModel(ws.Dir, task, 2*workerTimeout(), 2*workerCeiling(), onDelta, onStatus, true, effort, ws.Steer, ws.ClaudeModel)
 }
 
 // claudeStreamLine is one newline-delimited JSON event from `claude -p
@@ -2395,6 +2402,13 @@ func runClaudeStreamPA(dir, task string, base, ceil time.Duration, onDelta, onSt
 
 // dir is the workspace every runner below executes in ("" = the brain's cwd).
 func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta, onStatus func(string), frontier bool, effort Effort, steer *Steer) (result Result, runErr error) {
+	return runClaudeStreamModel(dir, task, timeout, ceil, onDelta, onStatus, frontier, effort, steer, "")
+}
+
+// runClaudeStreamModel is runClaudeStreamOpts with a pinned --model ("" =
+// the leg's tier and /frontier choice): Fable 5.2 for /fable and for
+// high-complexity work at max effort (fable.go). The effort is the request's.
+func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta, onStatus func(string), frontier bool, effort Effort, steer *Steer, model string) (result Result, runErr error) {
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}
@@ -2420,7 +2434,15 @@ func runClaudeStreamOpts(dir, task string, timeout, ceil time.Duration, onDelta,
 	if frontier {
 		var fargs []string
 		fargs, fenv = frontierCmdConfig(effort)
+		if model != "" && len(fargs) > 1 && fargs[0] == "--model" {
+			fargs[1] = model // the pinned model at the frontier's effort
+		}
 		args = append(args, fargs...)
+	} else if model != "" {
+		args = append(args, "--model", model)
+		if effort != "" {
+			args = append(args, "--effort", effort.ClaudeFlag())
+		}
 	} else {
 		// The request's band (tiers.go): low effort runs the cheap tier's
 		// model; otherwise claude's own default unless CAPTAIN_CLAUDE_MODEL

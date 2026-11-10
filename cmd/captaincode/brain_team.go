@@ -599,6 +599,12 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// lane evens out its recent turns (140 on claude, 13 on codex-cli, 12-23
 	// September, every one of the 13 a reroute), and says so on the turn.
 	pick := b.frontierLead(lastUserTurn(prompt))
+	// /frontier /fable pins claude on Fable 5.2 (fable.go), whatever the
+	// lane would have picked.
+	if req.ws.ClaudeModel != "" {
+		pick = captaincode.LanePick{Leg: captaincode.LegClaude, Band: []captaincode.Leg{captaincode.LegClaude},
+			Reason: "frontier: claude-cli:" + captaincode.ModelShort(req.ws.ClaudeModel) + " (/fable)"}
+	}
 	// The frontier model at the effort the task's class needs (TierEffort):
 	// a one-line fix does not need max.
 	tr := captaincode.TriageTask(lastUserTurn(prompt))

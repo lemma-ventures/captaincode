@@ -15,9 +15,10 @@ Everything below narrows or steers that.
 | Word | What it does |
 |---|---|
 | `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/carbon` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/mistral` `/mimo` `/kolibri` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
-| `/<leg>-cli` `/<leg>-openrouter` `/<leg>-opencode` | The same leg, named by its route: `-cli` is the vendor's own CLI on this host, `-openrouter` is opencode through OpenRouter, `-opencode` is opencode on the provider's own credential. `/claude-cli` is `/claude`, `/codex-opencode` is `/codex`, `/grok-opencode` is `/grok`, `/deepseek-openrouter` is `/deepseek`. A leg whose id already names its route (`/codex-cli`) has no second word. Words appear in the TUI after `captain init` |
+| `/<leg>-cli` `/<leg>-openrouter` `/<leg>-opencode` | The same leg, named by its route: `-cli` is the vendor's own CLI on this host, `-openrouter` is opencode through OpenRouter, `-opencode` is opencode on the provider's own credential. `/claude-cli` is `/claude`, `/luna-cli` is `/luna`, `/grok-opencode` is `/grok`, `/deepseek-openrouter` is `/deepseek`. A leg whose id already names its route (`/codex-cli`) has no second word. Words appear in the TUI after `captain init` |
 | `/grok-cli` | Named-only route: Grok Build (`grok -p`, its own `grok login`). `/codex`, `/luna` and `/codex-cli` all run through the Codex CLI on its ChatGPT login (10 November 2026). `CAPTAIN_GROK_CLI_MODEL` and `CAPTAIN_GROK_CLI_EFFORT` pin the CLI model and effort |
-| `/frontier <task>` | Carbon, Opus, Astra and Grok 4.7 form the pool. High-complexity work uses the highest-performance eligible leg at max effort. Other work can share the lane at high or xhigh effort. `/frontier /codex …` pins that leg instead. See the unreleased update below |
+| `/frontier /fable <task>` · `/claude-cli /fable <task>` | Claude Fable 5.2 on the claude leg for this turn, through the local `claude -p` login. A bare `/fable` reads as `/claude /fable` |
+| `/frontier <task>` | Carbon, Claude (Opus, or Fable on high-complexity work), Astra and Grok 4.7 form the pool. High-complexity work uses the highest-performance eligible leg at max effort. Other work can share the lane at high or xhigh effort. `/frontier /codex …` pins that leg instead. See the unreleased update below |
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |
 | `/team /openshell <task>` | Sandbox-only team: the tool-less director splits the task into 1-4 assignments that run as one parallel OpenShell stage (experimental; see [CONFIGURATION](CONFIGURATION.md#openshell-workers)) |
@@ -34,7 +35,10 @@ A turn that starts with a `/word` captain does not know is refused before anythi
 
 **Unreleased, 10 November 2026:** `/carbon` runs Gemini 4 Carbon through paid
 OpenRouter and joins `/frontier`. High-complexity frontier tasks select by
-performance before rotation or speed.
+performance before rotation or speed. Fable 5.2 is a model of the claude leg,
+not a leg: captain runs it for high-complexity work at max effort, and the
+run line reads `claude-cli:fable-5.2@effort:max`. A Fable limit or the spend
+cap reruns the turn on Opus and keeps Fable closed until it resets.
 
 Other frontier work, `/quality` and `/save` can share turns among eligible
 legs within 85% of the lane's best. Forced legs keep the user's choice.

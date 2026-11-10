@@ -200,7 +200,7 @@ func messageText(raw json.RawMessage) string {
 // list silently lagged the roster - deepseek/gemini/kimi were missing, so
 // "/gemini do X" reached the worker with its prefix (found 2026-09-09).
 var captainDirective = regexp.MustCompile(`(?i)^\s*/(` +
-	strings.Join(longestFirst(append(append([]string{"quality", "q", "best", "speed", "fast", "save", "cheap", "team", "frontier", "btw", "interrupt", "noslop"}, captaincode.PoolWords...), legIDs()...)), "|") +
+	strings.Join(longestFirst(append(append([]string{"quality", "q", "best", "speed", "fast", "save", "cheap", "team", "frontier", "btw", "interrupt", "noslop", "fable"}, captaincode.PoolWords...), legIDs()...)), "|") +
 	`)\b[\s:]+`)
 
 // longestFirst orders alternation so a hyphenated name (codex-cli) is tried
@@ -593,6 +593,16 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			prefer = "frontier"
 		}
 		tr0 := captaincode.TriageTask(lastUserTurn(prompt))
+		// /fable (fable.go): Fable 5.2 on the claude leg for this turn. After
+		// /frontier or /claude-cli it pins the model; alone it reads as
+		// /claude /fable.
+		if captaincode.MidPromptFable(lastUserRaw(req.Messages)) {
+			req.ws.ClaudeModel = captaincode.FableModel()
+			if req.Model == "" || req.Model == "auto" {
+				req.Model = string(captaincode.LegClaude)
+			}
+		}
+		req.ws.Class = tr0.Class
 		req.ws.Effort = captaincode.DecideEffort(prefer, tr0.Class, captaincode.Leg(req.Model), tr0.Irreversible, 1)
 		// /oss and /deterministic: which legs the turn may run on (pool.go).
 		req.ws.Pool = captaincode.MidPromptPool(lastUserRaw(req.Messages))

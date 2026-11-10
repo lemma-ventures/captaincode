@@ -1582,6 +1582,27 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 	// leg going down; spending a second leg to name a conversation is waste,
 	// and it is what made a /frontier turn look like it ran on the free leg.
 	titleRun := captaincode.IsTitlePrompt(prompt)
+	// Fable 5.2 on the claude leg (fable.go): pinned by /fable, or picked for
+	// high-complexity work at max effort. A Fable closed by a limit runs Opus.
+	claudeRun := leg == captaincode.LegClaude || leg == captaincode.LegFrontier
+	maxed := ws.Effort == captaincode.EffortMax || (leg == captaincode.LegFrontier && ws.Effort == "")
+	if !titleRun && claudeRun && ws.ClaudeModel == "" && captaincode.FableFor(ws.Class, captaincode.EffortMax) && maxed {
+		ws.ClaudeModel = captaincode.FableModel()
+	}
+	if ws.ClaudeModel != "" && (!claudeRun || titleRun) {
+		ws.ClaudeModel = "" // another leg, or a title: Fable is the claude leg's
+	}
+	if ws.ClaudeModel != "" {
+		if until, closed := b.fableClosed(); closed {
+			fmt.Printf("captain brain: Fable limited until %s - running Opus\n", until.Format("15:04"))
+			if onStatus != nil {
+				onStatus(fmt.Sprintf("Fable limited until %s → Opus", until.Format("15:04")))
+			}
+			ws.ClaudeModel = ""
+		} else if onStatus != nil {
+			onStatus("claude-cli:" + captaincode.ModelShort(ws.ClaudeModel) + " (Fable for this turn)")
+		}
+	}
 	var runOneRaw func(l captaincode.Leg, od, os_ func(string)) (captaincode.Leg, captaincode.Result, error)
 	runOne := func(l captaincode.Leg, od, os_ func(string)) (captaincode.Leg, captaincode.Result, error) {
 		if err := b.presenceBudget(ws, taskID); err != nil {
@@ -1745,6 +1766,24 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 	ranLeg, res, err := runOne(cur, onDelta, onStatus)
 	b.reconcileAttempt(taskID, res.BilledUSD())
 	b.recordQuotaFromHeaders(ranLeg, res)
+	// Fable refused by its own limit (its tier, or the extra-usage spend cap
+	// it is metered on): the same turn on Opus, and Fable stays closed until
+	// the limit resets (fable.go). An account-wide window is the reroute
+	// net's, as for any claude run.
+	if ws.ClaudeModel != "" && (ranLeg == captaincode.LegClaude || ranLeg == captaincode.LegFrontier) && !titleRun && !captaincode.WorthKeeping(res, err) {
+		var rl *captaincode.RateLimitError
+		if errors.As(err, &rl) && fableLimit(rl) && b.reserveAttempt(taskID) {
+			until := b.closeFable(rl)
+			fmt.Printf("captain brain: Fable limited (%s) until %s → Opus for this turn\n", promptPeek(rl.Msg), until.Format("15:04"))
+			if onStatus != nil {
+				onStatus(fmt.Sprintf("Fable limited until %s → Opus", until.Format("15:04")))
+			}
+			ws.ClaudeModel = ""
+			ranLeg, res, err = runOne(cur, onDelta, onStatus)
+			b.reconcileAttempt(taskID, res.BilledUSD())
+			b.recordQuotaFromHeaders(ranLeg, res)
+		}
+	}
 	// The claude leg at max effort refused by the frontier tier's own limit
 	// (spend cap, "your Fable limit"): that is the tier's to wear, and claude
 	// at standard settings is the first fallback - the same turn, one rung

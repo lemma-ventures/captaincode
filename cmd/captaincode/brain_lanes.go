@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -148,10 +149,26 @@ func (b *brain) frontierLead(task string) captaincode.LanePick {
 		legs = append(legs, c.Leg)
 	}
 	if tr.Class == captaincode.ClassHigh && len(cands) > 0 {
+		// claude runs Fable 5.2 on this work (fable.go), so it is scored
+		// as Fable while Fable is open.
+		fableOpen := false
+		if captaincode.FableFor(tr.Class, captaincode.EffortMax) {
+			if until, ok := b.ledger.Cooldowns[captaincode.FableCooldownKey]; !ok || !now.Before(until) {
+				if p, ok := captaincode.FablePerf(); ok {
+					fableOpen = true
+					for i := range cands {
+						if cands[i].Leg == captaincode.LegClaude && p > cands[i].Score {
+							cands[i].Score = p
+						}
+					}
+					sort.SliceStable(cands, func(i, j int) bool { return cands[i].Score > cands[j].Score })
+				}
+			}
+		}
 		best := cands[0]
 		b.ledger.NoteLane(captaincode.LaneFrontier, best.Leg, now)
 		return captaincode.LanePick{Leg: best.Leg, Band: legs, Reason: fmt.Sprintf(
-			"frontier lane: %s (highest performance for high complexity; perf %.1f)", best.Leg, best.Score)}
+			"frontier lane: %s (highest performance for high complexity; perf %.1f)%s", best.Leg, best.Score, fableNote(best.Leg, fableOpen))}
 	}
 	if tp, ok := b.decidePick(legs, tr.Domain); ok {
 		b.ledger.NoteLane(captaincode.LaneFrontier, tp.Leg, now)

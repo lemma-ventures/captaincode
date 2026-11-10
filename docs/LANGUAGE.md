@@ -1,6 +1,6 @@
 # The Captain command language
 
-Version **3.1** · normative · implementation: `pkg/captaincode/language.go`
+Version **3.2** · normative · implementation: `pkg/captaincode/language.go`
 
 Every line typed into a Captain session is a program in this language: a task, plus the words
 that say who runs it, how, how often, and in what order. This document defines the language.
@@ -104,10 +104,11 @@ repeat-control = ( "status" | "show" | "watch" | "stop" | "finish" | "wrapup" | 
 repeat-edit   = ( "edit" | "add" ) , [ "last" | thread-id ] , ":" , text ;
 thread-id     = ( "rp_" | "ch_" ) , hex-digits ;
 
-modifier      = lane | pool | skill | "/frontier" ;
+modifier      = lane | pool | skill | model | "/frontier" ;
 lane          = "/quality" | "/q" | "/best" | "/speed" | "/fast" | "/save" | "/cheap" ;
 pool          = "/oss" | "/open" | "/deterministic" | "/det" | "/adi" ;
 skill         = "/noslop" | skill-ask ;
+model         = "/fable" ;                         (* Fable 5.2 on the claude leg; alone it reads as /claude /fable *)
 skill-ask     = "/skill" , 1*( skill-name , [ "," ] ) ;   (* "/skill rdkit,pymc" - commas, no spaces *)
 skill-name    = lowercase-word ;
 leg           = "/" , leg-id ;                       (* the registered legs, and /frontier *)
@@ -207,6 +208,7 @@ Text with no head is routed ([ROUTING.md](ROUTING.md)). `/auto` asks for routing
 | `/oss` `/open` | pool | Open-weight models only. |
 | `/deterministic` `/det` `/adi` | pool | Legs green in the Agentic Determinism Index only ([ADI.md](ADI.md)). |
 | `/noslop` | skill | The plain-writing rules for every worker of the turn. |
+| `/fable` | model | Claude Fable 5.2 on the claude leg for this turn (`/frontier /fable`, `/claude-cli /fable`). Alone it reads as `/claude /fable`. Captain also picks Fable for high-complexity work at max effort ([CONFIGURATION.md](CONFIGURATION.md)). |
 | `/skill rdkit,pymc` | skill | Stock the named synced skills for the turn, whatever the task's words select. A space after a comma ends the list. |
 
 ### 6.4 Workflows (Captain Workflow Language)
@@ -324,6 +326,7 @@ Every slash word in the table is reserved. A new leg may not take one of these n
 | `/quality` `/q` `/best` `/speed` `/fast` `/save` `/cheap` | Lanes |
 | `/oss` `/open` `/deterministic` `/det` `/adi` | Pools |
 | `/noslop` `/skill` | Skill |
+| `/fable` | Model |
 | `/btw` `/interrupt` `/init` `/context` `/euclid` `/private` `/captain` `/help` `/rename` | Control lines |
 | `/wf` `/workflow` `/run` `/wfrun` | Workflow commands |
 
@@ -382,6 +385,7 @@ says why and the version moves.
 
 | Version | Date | Change |
 |---|---|---|
+| 3.2 | 2026-11-10 | `/fable` is a modifier: Claude Fable 5.2 on the claude leg for the turn, after `/frontier` or `/claude-cli`, or alone as `/claude /fable`. Every line that parsed before reads the same; `/fable` was refused as an unknown word. |
 | 3.1 | 2026-11-02 | `/repeat edit:` and `/repeat add:` change a running loop's prompt from its next round on. Every line that parsed before reads the same: without the colon, `edit` and `add` still start a task. |
 | 3.0 | 2026-10-11 | Gates count only as separate words outside backtick code on the last line of the first paragraph. Quoted reports on earlier lines stay text. Invalid literal command names are refused before work starts. LF and CRLF paragraph breaks have the same meaning. Use `sh -c` for shell expressions. This correction intentionally has no legacy mode: that mode would execute pasted prose as commands. It adds no turn or re-entry path; the existing turn-budget proofs still apply. |
 | 2.0 | 2026-10-07 | Programs (WORKFLOW_LANGUAGE §11) replace chains: `\|\|` fallbacks, `until:` loop checks, backtick code that is never syntax, and groups that open only at a step start. Readings that changed: `/openshell` cannot be a program step (it was a chain step); a `/team` or lane step with no text is an error; a lane step shows as `lane` and a group as `group` in parse trees. The formal model now covers the program scanner and programs' turn budget. |

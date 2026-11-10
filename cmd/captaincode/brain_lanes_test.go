@@ -161,6 +161,7 @@ func TestComplexFrontierChoosesPerformanceBeforeRotationAndTime(t *testing.T) {
 
 func TestComplexFrontierIncludesNewModelsAndHonorsAvailability(t *testing.T) {
 	t.Setenv("CAPTAIN_LANES", "1")
+	t.Setenv("CAPTAIN_FABLE", "0") // claude as Opus; Fable's ranking is TestFrontierLaneScoresClaudeAsFable
 	b := teamBrain()
 	task := "audit the security architecture and prove the concurrency invariants"
 	carbon := captaincode.LegCarbon
