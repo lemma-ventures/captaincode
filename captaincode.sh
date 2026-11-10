@@ -5,6 +5,57 @@ set -euo pipefail
 # entry, a script, a CI shell) saw NO opencode binary - and every opencode leg
 # reported itself missing while the install was fine (2026-09-22).
 export PATH="$HOME/.opencode/bin:$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+# `captaincode.sh new [name] [TUI flags]`: another TUI on this repository, in
+# its own git worktree (<main checkout>/.worktrees/tui-<name>, branch
+# tui/<name> from the HEAD of the folder it runs in). The brain keys a TUI by
+# its folder (inbox, session, busy checks), so a second TUI in the same
+# checkout shared one inbox and wrote one tree with the first. In its own
+# worktree it is a sibling: every worker sees what the other TUIs of the
+# repository run and hold uncommitted, and warns them before taking shared
+# ground (cmd/captaincode/brain_siblings.go). The name defaults to the time.
+if [ "${1:-}" = "new" ]; then
+  shift
+  name=""
+  if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then name="$1"; shift; fi
+  [ -n "$name" ] || name="$(date +%m%d-%H%M%S)"
+  case "$name" in
+    .*|*[!A-Za-z0-9._-]*) echo "✗ name the TUI with letters, digits, . _ - (got: $name)" >&2; exit 1 ;;
+  esac
+  git rev-parse --show-toplevel >/dev/null 2>&1 || { echo "✗ captaincode.sh new runs inside a git repository" >&2; exit 1; }
+  common="$(git rev-parse --path-format=absolute --git-common-dir)"
+  main_checkout="$(dirname "$common")"
+  [ "$(basename "$common")" = ".git" ] || main_checkout="$(git rev-parse --show-toplevel)"
+  wt="$main_checkout/.worktrees/tui-$name"
+  if [ -d "$wt" ]; then
+    echo "→ reopening the sibling TUI in $wt"
+  else
+    base="$(git rev-parse HEAD)"
+    if git -C "$main_checkout" show-ref --verify --quiet "refs/heads/tui/$name"; then
+      git -C "$main_checkout" worktree add "$wt" "tui/$name"
+    else
+      git -C "$main_checkout" worktree add -b "tui/$name" "$wt" "$base"
+    fi
+    # A worktree has none of the main checkout's untracked files. The
+    # launcher sources <folder>/.env, and the repository's Euclid brain is
+    # <checkout>/.euclid (without one the worktree gets a fresh, empty brain
+    # at launch). Link both to the main checkout's: one copy, shared by the
+    # siblings. A link stays only when git ignores the link itself - a
+    # `.euclid/` pattern matches a folder, not a link to one, and a worker's
+    # `git add -A` would commit it.
+    for keep in .env .euclid; do
+      [ -e "$main_checkout/$keep" ] && [ ! -e "$wt/$keep" ] || continue
+      ln -s "$main_checkout/$keep" "$wt/$keep"
+      if ! git -C "$wt" check-ignore -q "$keep"; then
+        rm -f "$wt/$keep"
+        echo "  ($keep is not linked: git does not ignore a link named $keep in this repository - add \`/$keep\` to .gitignore to share it)"
+      fi
+    done
+    echo "→ new sibling TUI in $wt (branch tui/$name) - land it through that branch"
+  fi
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  cd "$wt"
+  exec "$self" "$@"
+fi
 # The PHYSICAL path: opencode records a session under the resolved folder,
 # so a TUI launched through a symlink to a nested checkout found none of its
 # sessions with -c and started fresh every time (2026-09-17). Every cwd-keyed

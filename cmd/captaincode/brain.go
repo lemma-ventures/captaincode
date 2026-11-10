@@ -1864,7 +1864,7 @@ func (b *brain) workerContext(ws captaincode.Workspace, task, taskID string) str
 		_ = b.ledger.Save()
 		b.mu.Unlock()
 	}
-	return contextLead(ws.Dir) + view.Text
+	return contextLead(ws.Dir) + view.Text + b.siblingContract(ws)
 }
 
 // sentTurnContract tells a worker that the turn it answers was sent by

@@ -104,6 +104,27 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 `/repeat` control words take an optional `last`, `all` or `rp_…` thread id. Anything
 wordier is a task: `/repeat watch the queue` repeats that task.
 
+## Two TUIs on one repository
+
+Run `captaincode.sh new [name]` in the repository to open another TUI on it. The
+TUI opens in its own git worktree, `<repo>/.worktrees/tui-<name>`, on the branch
+`tui/<name>`, which starts at the current commit. If you leave out the name, the
+current time is used. Running the command again with the same name reopens that
+worktree. A second TUI in the same folder would share the first one's inbox and
+write to the same files, so `new` always uses a separate worktree.
+The worktree links `.env` and `.euclid` to the main checkout's copies, so both
+TUIs use the same settings and the same project memory. A link is made only when
+git ignores it.
+
+Every worker prompt lists the other TUIs open on the same repository on this
+machine. For each one it gives the folder, the branch, the task running there
+and the files with uncommitted changes. A worker leaves those files to their
+TUI. Before it takes something both TUIs could need (one of those files, the
+main branch, a lockfile, a shared config), it warns each TUI that has a worker
+running. The warning is a one-way `/btw [sibling notice]` sent with `captain send
+--cwd <folder>`. A TUI that gets a notice acknowledges it and does not reply.
+`CAPTAIN_WORKER_SIBLINGS=0` removes this section from worker prompts.
+
 ## Inbox
 
 Click **inbox** in the right panel to review held messages for this folder.
