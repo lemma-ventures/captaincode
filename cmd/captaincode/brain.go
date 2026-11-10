@@ -170,7 +170,8 @@ func cmdBrain(args []string) {
 	if skipped := unreadyLegs(b.legReady); skipped != "" {
 		fmt.Printf("captain brain: legs that cannot run here - %s\n", skipped)
 	}
-	b.restoreDirectorMode() // after the roster: a mode resolves against the ranking
+	b.restoreDirectorMode()            // after the roster: a mode resolves against the ranking
+	b.restoreActivity(workerLogsDir()) // Last Runs survives a restart (brain_activity.go)
 	// A brain with no persisted helm picks the first runnable preference now, so
 	// health, /v1/director and the worker ladder agree from the first prompt
 	// instead of naming the compiled default the machine cannot run.
@@ -569,6 +570,9 @@ type brain struct {
 
 	amu  sync.Mutex // guards acts only (kept off the main mu so worker runs can log while a route holds mu)
 	acts []activity // recent activity feed for the sidebar (routing picks + per-worker run/done)
+	// recordRuns counts decision-record runs in flight per folder and leg, so
+	// their done lines are tagged too (brain_activity.go). Guarded by amu.
+	recordRuns map[string]int
 
 	bmu sync.Mutex // guards budget mutations (M2.4): reserve/reconcile across concurrent workers
 
@@ -2487,6 +2491,9 @@ type activity struct {
 	Effort string `json:"effort,omitempty"` // how hard the worker thinks on this run (a run's routing decision, effort.go)
 	Label  string `json:"label,omitempty"`  // harness:model@effort for Last Runs and the session header
 	Dir    string `json:"-"`                // the workspace it happened in ("" = machine-wide, shown to every TUI)
+	// Record marks a decision-record run (its route, run and done lines):
+	// the feed folds a burst of them into one line (brain_activity.go).
+	Record bool `json:"record,omitempty"`
 }
 
 // pushActivity appends to the feed (capped) with its own lock so a worker run can
@@ -2501,10 +2508,8 @@ func (b *brain) pushActivity(a activity) {
 		}
 	}
 	b.amu.Lock()
-	b.acts = append(b.acts, a)
-	if len(b.acts) > 60 {
-		b.acts = b.acts[len(b.acts)-60:]
-	}
+	b.markRecord(&a)
+	b.acts = capActs(append(b.acts, a))
 	b.amu.Unlock()
 }
 
@@ -2515,13 +2520,13 @@ func (b *brain) activityFeed(w http.ResponseWriter, r *http.Request) {
 	out := make([]activity, 0, len(b.acts))
 	for i := len(b.acts) - 1; i >= 0; i-- { // newest first
 		a := b.acts[i]
-		if mine && a.Dir != "" && a.Dir != dir {
+		if mine && !actInFolder(a.Dir, dir) {
 			continue // another TUI's project
 		}
 		out = append(out, a)
 	}
 	b.amu.Unlock()
-	writeJSON(w, 200, map[string]any{"activity": out})
+	writeJSON(w, 200, map[string]any{"activity": foldRecords(out)})
 }
 
 // filterAllowed keeps only legs in the CAPTAIN_LEGS allowlist (all if empty).
