@@ -199,7 +199,7 @@ var defaultLegSpecs = []LegSpec{
 		Note:  "GPT-6.1 Sol in fast mode on the ChatGPT sub (5h+weekly windows): OpenAI's quality tier, close to GPT-6 Astra on agentic coding at a fifth of its price (OpenAI, 2026-09-29; reads the GPT-6 Sol AA row until AA scores 6.1 Sol) - real features, refactors and debugging; directs as gpt-6.1-sol. The cheap OpenAI lane is luna, the frontier one codex-cli. gpt-5.3-codex-spark was refused for ChatGPT accounts from 2026-09-15"},
 	{ID: LegGrokMax, Transport: TransportOpencode, Provider: "xai", Model: "grok-4.7", AA: "grok-4-7",
 		PriceIn: 2, PriceOut: 6, Ctx: 500000, Vision: true, Frontier: true, Subscription: true, Prior: 8.7, Display: "Grok Max (captain · opencode, grok-4.7)",
-		Note: "grok-4.7, xAI's flagship reasoning model on the SuperGrok credential (reads the grok-4.6 AA row when the feed lacks 4.7); frontier-class: 2× budget, hard reasoning and architecture, third in the /frontier failover; not for routine edits (that is the grok leg)"},
+		Note: "grok-4.7 on the SuperGrok credential; frontier-class with 2× time budget. The performance index sets its /frontier order. The grok leg handles routine edits"},
 	{ID: LegCodexCLI, Transport: TransportCodexCLI, Model: "gpt-6-astra", AA: "gpt-6-astra-xhigh",
 		Ctx: 1050000, Vision: true, Frontier: true, Subscription: true, Prior: 9.3, Display: "Codex CLI (captain · codex exec, gpt-6-astra)",
 		Tiers: map[Tier]string{TierCheap: "gpt-6-sol"},
@@ -218,6 +218,10 @@ var defaultLegSpecs = []LegSpec{
 		PriceIn: 2, PriceOut: 10, Ctx: 1050000, Vision: true, NamedOnly: true, Display: "Codex via OpenRouter (captain · opencode, gpt-6.1-sol)",
 		Tiers: map[Tier]string{TierCheap: "openai/gpt-6-luna", TierFrontier: "openai/gpt-6-astra"},
 		Note:  "GPT-6.1 Sol through OpenRouter, paid per token ($2/M in, $10/M out): the codex model off the ChatGPT subscription, for when its 5h or weekly window is spent; runs only when named (/codex-openrouter)"},
+	{ID: LegCarbon, Transport: TransportOpencode, Provider: "openrouter", Model: "google/gemini-4-carbon", AA: "gemini-4-carbon",
+		PriceIn: 2, PriceOut: 10, Ctx: 1048576, Vision: true, Open: boolp(false), Frontier: true, Prior: 9.5,
+		Display: "Gemini 4 Carbon (captain · OpenRouter)",
+		Note:    "Gemini 4 Carbon via OpenRouter, paid per token ($2/M in, $10/M out introductory on 2026-11-10). Frontier-class with 2× time budget and 1,048,576 context. Joins /frontier; /carbon selects it directly. The gemini leg stays Flash"},
 	// openshell carries no prior (0): it is a sandbox around a worker, not a
 	// model, so it sits at the foot of AllLegs and AutoRoutes keeps it off the
 	// ladder and the failover chain.

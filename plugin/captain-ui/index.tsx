@@ -286,7 +286,7 @@ function View(props: { api: TuiPluginApi }) {
     kimi: "kimi-nim", glm: "glm-nim", "ds-flash": "deepseek-nim", "ds4-flash": "deepseek-hf",
     step: "step-hf", gemini: "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter",
     qwen: "qwen-openrouter", minimax: "minimax-openrouter", deepseek: "deepseek-openrouter",
-    mistral: "mistral-openrouter",
+    mistral: "mistral-openrouter", carbon: "gemini-openrouter",
     free: "nemotron-opencode", openshell: "openshell-nvidia",
   }
   const harnessOf = (leg: string) => {

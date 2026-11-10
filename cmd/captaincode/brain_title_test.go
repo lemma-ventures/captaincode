@@ -134,6 +134,7 @@ func TestTitleMarkerInsideOldConversationDoesNotMakeATitleTurn(t *testing.T) {
 	t.Setenv("CAPTAIN_TRIAGE", "0")
 	t.Setenv("CAPTAIN_WORKER_LOGS", "0")
 	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true}
 	var ranLeg captaincode.Leg
 	var ranPrompt string
 	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {

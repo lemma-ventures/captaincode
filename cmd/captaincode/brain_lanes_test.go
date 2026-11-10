@@ -87,7 +87,7 @@ func TestFrontierLaneTakesTurnsAcrossTheFrontierLegs(t *testing.T) {
 	turn := func() {
 		t.Helper()
 		body, _ := json.Marshal(map[string]any{"model": "frontier", "stream": false,
-			"messages": []map[string]string{{"role": "user", "content": "refactor the lexer"}}})
+			"messages": []map[string]string{{"role": "user", "content": "implement a lexer test"}}})
 		rec := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 		r.Header.Set(workspaceHeader, dir)
@@ -99,7 +99,7 @@ func TestFrontierLaneTakesTurnsAcrossTheFrontierLegs(t *testing.T) {
 	}
 	mu.Lock()
 	assert.Equal(t, []captaincode.Leg{lead, lead, other, lead}, ran)
-	assert.Equal(t, captaincode.EffortMax, effort, "codex-cli runs at its frontier setting (xhigh)")
+	assert.Equal(t, captaincode.EffortXHigh, effort, "medium-complexity frontier work uses xhigh")
 	mu.Unlock()
 	counts, n := laneTotal(b, captaincode.LaneFrontier)
 	assert.Equal(t, map[captaincode.Leg]int{lead: 3, other: 1}, counts)
@@ -133,6 +133,90 @@ func TestFrontierLaneSkipsAClosedLeg(t *testing.T) {
 	assert.Contains(t, p.Reason, "no frontier leg is open")
 	_, n := laneTotal(b, captaincode.LaneFrontier)
 	assert.Equal(t, 3, n, "the fallback is not a lane turn")
+}
+
+func TestComplexFrontierChoosesPerformanceBeforeRotationAndTime(t *testing.T) {
+	for _, mode := range []string{"off", "on"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv(captaincode.PickModeEnv, mode)
+			t.Setenv("CAPTAIN_LANES", "1")
+			t.Setenv("CAPTAIN_LANE_FLOOR", "0.5")
+			b := teamBrain()
+			b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true, captaincode.LegCodexCLI: true}
+			task := "audit the security architecture and prove the concurrency invariants"
+			require.Equal(t, captaincode.ClassHigh, captaincode.TriageTask(task).Class)
+			best := captaincode.RankByPerf([]captaincode.Leg{captaincode.LegClaude, captaincode.LegCodexCLI})[0]
+			for i := 0; i < 12; i++ {
+				b.ledger.NoteLane(captaincode.LaneFrontier, best, time.Now())
+			}
+			for i := 0; i < 6; i++ {
+				pick := b.frontierLead(task)
+				assert.Equal(t, best, pick.Leg)
+				assert.Contains(t, pick.Reason, "highest performance for high complexity")
+				assert.Nil(t, pick.Time)
+			}
+		})
+	}
+}
+
+func TestComplexFrontierIncludesNewModelsAndHonorsAvailability(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "1")
+	b := teamBrain()
+	task := "audit the security architecture and prove the concurrency invariants"
+	carbon := captaincode.LegCarbon
+	b.allowed = map[captaincode.Leg]bool{
+		carbon: true, captaincode.LegClaude: true,
+		captaincode.LegCodexCLI: true, captaincode.LegGrokMax: true,
+	}
+	assert.Equal(t, carbon, b.frontierLead(task).Leg)
+	b.ledger.Cooldowns[carbon] = time.Now().Add(time.Hour)
+	assert.Equal(t, captaincode.LegClaude, b.frontierLead(task).Leg)
+	delete(b.ledger.Cooldowns, carbon)
+	delete(b.allowed, carbon)
+	assert.Equal(t, captaincode.LegClaude, b.frontierLead(task).Leg)
+	b.ledger.Events = append(b.ledger.Events,
+		captaincode.Event{Leg: captaincode.LegClaude, Outcome: "error"},
+		captaincode.Event{Leg: captaincode.LegClaude, Outcome: "error"})
+	assert.Equal(t, captaincode.LegCodexCLI, b.frontierLead(task).Leg)
+}
+
+func TestNewFrontierModelsDispatchAtMaxEffortWithContracts(t *testing.T) {
+	t.Setenv("CAPTAIN_LANES", "1")
+	for _, leg := range []captaincode.Leg{captaincode.LegCarbon} {
+		t.Run(string(leg), func(t *testing.T) {
+			b := teamBrain()
+			b.allowed = map[captaincode.Leg]bool{leg: true}
+			b.runWorkerFn = func(got captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+				assert.Equal(t, leg, got)
+				assert.Equal(t, captaincode.EffortMax, b.active.snapshot()[got].effort)
+				assert.Contains(t, prompt, deliverableContract)
+				assert.Contains(t, prompt, securityContract())
+				return got, captaincode.Result{Text: "The architecture checks pass.", DurationMs: 5}, nil
+			}
+			body, err := json.Marshal(map[string]any{"model": "frontier", "stream": false,
+				"messages": []map[string]string{{"role": "user", "content": "audit the security architecture and prove the concurrency invariants"}}})
+			require.NoError(t, err)
+			rec := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+			r.Header.Set(workspaceHeader, t.TempDir())
+			b.chatCompletions(rec, r)
+			require.Equal(t, 200, rec.Code, rec.Body.String())
+			assert.Contains(t, rec.Body.String(), "The architecture checks pass.")
+			require.Eventually(t, func() bool {
+				b.mu.Lock()
+				defer b.mu.Unlock()
+				return len(b.ledger.Events) > 0
+			}, 10*time.Second, 20*time.Millisecond)
+			b.mu.Lock()
+			defer b.mu.Unlock()
+			require.NotEmpty(t, b.ledger.Decisions)
+			d := b.ledger.Decisions[len(b.ledger.Decisions)-1]
+			assert.Equal(t, leg, d.Chosen)
+			assert.Equal(t, captaincode.ClassHigh, d.Class)
+			assert.Equal(t, captaincode.EffortMax, d.Effort)
+			assert.Equal(t, 1.0, d.Propensities[leg])
+		})
+	}
 }
 
 // /save ran the cheapest row of the whole ladder, subscription legs

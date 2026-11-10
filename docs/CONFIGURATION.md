@@ -37,7 +37,7 @@ task, what it ran, files changed, the last error, the handoff), see
 | `CAPTAIN_DIRECTOR_TIER_BAND` | `0.10` | `quality` treats judges within this fraction of the best as tier 1 and picks the best below it. |
 | `CAPTAIN_DIRECTOR_PICK` | on (`0` restores the plan) | On the director path the judge answers a **typed choice** over the value-ranked menu (`{"leg","class"}`) instead of writing a plan and a rationale: a few hundred prompt tokens, one call, no brief. Named legs (`/team`, "have grok and codex …") keep the plan path. |
 | `CAPTAIN_DIRECTOR_PICK_TIMEOUT` | `8s` | The pick's cap; past it the menu's first row runs and the decision says so (`director pick failed … → value #1`). |
-| `CAPTAIN_LANES` | on (`0` disables) | `/frontier`, `/quality` and `/save` spread their turns across the legs that qualify instead of the top row every time (see *Lanes* below). Off, `/frontier` is claude, `/quality` and `/save` go back to the director, and `/save` runs at low effort. |
+| `CAPTAIN_LANES` | on (`0` disables) | Enables the lane rules below. High-complexity `/frontier` work uses the highest-performance eligible leg. Other frontier work, `/quality` and `/save` can share turns. Off, `/frontier` is claude, `/quality` and `/save` go back to the director, and `/save` runs at low effort. |
 | `CAPTAIN_LANE_WINDOW` | `40` | How many of a lane's recent turns the balancer counts. |
 | `CAPTAIN_LANE_FLOOR` | `0.85` | A leg shares a lane when its score is at least this fraction of the lane's best (perf index on the frontier lane, blended quality on the others). |
 | `CAPTAIN_DIRECTOR_SELF` | on (`0` keeps it off) | A **high**-class task's menu includes the judge's own leg when it takes tasks and is open, so the hardest work can reach the best model even when that model directs. Trivial and medium menus never carry it. |
@@ -74,12 +74,16 @@ The director then prefers legs that close the gap between recent routes and the 
 
 ### Lanes: /frontier, /quality, /save, /speed
 
-A stated preference names a lane, not a leg. Each lane counts where its last `CAPTAIN_LANE_WINDOW` turns went (`lane_runs` in `state.json`, noted when the turn is dispatched) and sends the next to the leg furthest behind an equal share. Only legs scoring within `CAPTAIN_LANE_FLOOR` of the lane's best take part. A lower-ranked leg goes next only once it is a full run behind, so the best leg runs a lane's first turns and wins ties, and over a full window each leg has its share. A leg that keeps failing (two or more provider faults, a third of its runs) sits out unless every leg in the lane does.
+A stated preference names a lane, not a leg. Balanced lanes count their last `CAPTAIN_LANE_WINDOW` turns (`lane_runs` in `state.json`, recorded at dispatch). A lower-ranked leg goes next when it is a full run behind an equal share and scores within `CAPTAIN_LANE_FLOOR` of the best. A leg that keeps failing sits out unless every candidate does.
+
+**Unreleased, 10 November 2026:** `/frontier` includes Gemini 4 Carbon (`carbon`), Opus 5.5 (`claude`), GPT-6 Astra (`codex-cli`) and Grok 4.7 (`grok-max`). High-complexity frontier work picks the highest performance score among eligible candidates, before rotation or `CAPTAIN_PICK`'s time rule. It uses max effort, fitted to the model's supported settings. The allowlist, cooldowns, capability checks, class caps and failure filter still apply.
+
+Carbon uses a paid OpenRouter route. Add `carbon` to an existing `CAPTAIN_LEGS` list to admit it. The compiled frontier intelligence scores were checked against [Artificial Analysis](https://artificialanalysis.ai/models) on 10 November: Carbon 60, Opus 59, Astra xhigh 55 and Grok 35. A live or cached row takes precedence; a missing row falls back to the compiled snapshot. This is a benchmark ranking, not a guarantee for a particular task. Other snapshot scores retain their original date.
 
 | Lane | Legs | Runs at |
 |---|---|---|
-| `frontier` | The frontier-class legs and claude, ranked by perf index (claude and codex-cli today; grok-max sits below the floor) | claude as the frontier pseudo-leg (pinned strongest model); any other leg on its frontier model. Effort by the task's class: high, xhigh or max (see *Effort*) |
-| `quality` | The legs within 85% of the best by blended quality. Legs that run a frontier model at this effort stay out: `codex-cli`, `grok-max`, and claude while it runs Opus (`CAPTAIN_CLAUDE_MODEL=sonnet` brings it back) | medium on trivial work, else high |
+| `frontier` | The frontier-class legs and claude, ranked by perf index. High-complexity tasks use the highest eligible score; other tasks can share the lane | claude as the frontier pseudo-leg; other legs under their own names. Effort by class: trivial high, medium xhigh, high max (see *Effort*) |
+| `quality` | The legs within 85% of the best by blended quality. Legs that run a frontier model at this effort stay out: `carbon`, `codex-cli`, `grok-max`, and claude while it runs Opus (`CAPTAIN_CLAUDE_MODEL=sonnet` brings it back) | medium on trivial work, else high |
 | `cheap` (`/save`) | Open-weight legs that clear the class's quality bar (`CAPTAIN_VALUE_TAU`) | medium effort: the leg's own model, not its flash sibling |
 | `speed` (`/speed`) | Not balanced: the fastest leg, by the median time of its own runs of the task's class on the host it runs on now (all its runs when it has fewer than three of that class). It must clear the class's quality bar and not keep failing. On trivial work the agent CLIs (claude, codex-cli, cursor) stay out: they start an agent before they answer. One turn in ten tries a leg with no timing yet | low effort |
 
@@ -1090,6 +1094,8 @@ a single model runs it in all three bands, at that band's effort.
 and on claude it now pins `claude -p --model` too. A registry overlay entry
 sets them with `"tiers": {"cheap": "…", "frontier": "…"}`.
 `glm` (both bands) and `ds-flash` (`deepseek-ai/deepseek-v4.1-flash`) run on NVIDIA NIM at $0. `kimi` is Kimi K3.1 Pro on OpenRouter (`moonshotai/kimi-k3.1-pro`, $2/M in, $10/M out), pinned to Moonshot's mxfp4 endpoint. `deepseek` stays the paid OpenRouter V4 Pro leg. `ds4-flash` stays DeepSeek V4 Flash on Hugging Face.
+
+The unreleased frontier additions above use [Gemini 4 Carbon](https://openrouter.ai/google/gemini-4-carbon) (`google/gemini-4-carbon`, introductory $2/M input and $10/M output). The price was checked on 10 November 2026. `/carbon` selects it directly. The `gemini` leg stays Flash, and the `claude` leg keeps Opus on its subscription. Idle upgrades stay inside each model family.
 
 OpenRouter serves an open-weight model from many hosts at different
 quantizations and, by default, favours the cheapest. A registry overlay entry

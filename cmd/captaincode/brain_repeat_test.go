@@ -480,6 +480,7 @@ func TestRepeatControlOutOfBandReachesTheWatcher(t *testing.T) {
 func TestRepeatOnAutoIsNotRoutedAsATask(t *testing.T) {
 	t.Setenv("CAPTAIN_TRIAGE", "0")
 	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true} // the frontier round is claude's, not the lane's top score
 	b.roundSummaryFn = func(text string) string { return text }
 	directorCalls := 0
 	b.planFn = func(task string, class captaincode.Class, prefer string, open []captaincode.Leg, stats map[captaincode.Leg]captaincode.LegStats, teams map[string]captaincode.TeamStat, allowFanOut bool) (captaincode.Plan, error) {

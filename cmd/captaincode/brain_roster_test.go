@@ -33,7 +33,7 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
 	assert.Equal(t, "snapshot", out.PerfSource, "no key in tests: the compiled snapshot")
 	require.NotEmpty(t, out.Legs)
-	assert.Equal(t, "claude", out.Legs[0].Leg, "ranked by perf: the Opus 5.5 row leads the compiled snapshot of 2026-09-22")
+	assert.Equal(t, "carbon", out.Legs[0].Leg, "ranked by the compiled frontier scores")
 	assert.True(t, out.Legs[0].Frontier)
 	byLeg := map[string]rosterLeg{}
 	for _, l := range out.Legs {
@@ -41,6 +41,8 @@ func TestRosterRanksFrontierFirstAndFlagsUpgrades(t *testing.T) {
 		assert.NotEqual(t, "frontier", l.Leg, "the pseudo-leg is a mode, not a roster row")
 	}
 	assert.True(t, byLeg["grok-max"].Frontier)
+	assert.True(t, byLeg["carbon"].Frontier)
+	assert.Equal(t, 60.0, byLeg["carbon"].Perf)
 	// Harness × provenance (2026-10-03): a CLI by its name, a model opencode
 	// serves by family-provider. Two legs on one family and provider share it.
 	assert.Equal(t, "codex-cli", byLeg["codex-cli"].Label, "the CLI leg")
@@ -111,7 +113,7 @@ func TestPerfRefreshAnnouncesWhatTheFeedChanged(t *testing.T) {
 		texts += a.Text + "\n"
 	}
 	assert.Contains(t, texts, "new on the ranking: grok-4-8 (49)")
-	assert.Contains(t, texts, "⇡ grok-max: grok-4-8 (49) outscores grok-4-7 (46)", "a newer family member outscoring the pin is a ⇡ with what to do about it")
+	assert.Contains(t, texts, "⇡ grok-max: grok-4-8 (49) outscores grok-4-7 (35)", "a newer family member outscoring the pin is a ⇡ with what to do about it")
 	assert.Contains(t, texts, "captain upgrade --models")
 
 	b.acts = nil

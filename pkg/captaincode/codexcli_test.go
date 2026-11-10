@@ -16,10 +16,10 @@ import (
 // is opencode → gpt-5.3-codex-spark (a latency-optimized model on a different
 // credential store), and blending the two would make both scorecards lie.
 
-func TestCodexCLIIsARealLegAtTheTopOfTheLadder(t *testing.T) {
+func TestCodexCLIIsARealFrontierLeg(t *testing.T) {
 	assert.True(t, KnownLeg(LegCodexCLI))
-	assert.Equal(t, LegClaude, AllLegs[len(AllLegs)-1], "claude stays the apex rung")
-	assert.Equal(t, LegCodexCLI, AllLegs[len(AllLegs)-2], "codex-cli sits directly below claude")
+	assert.Contains(t, Rungs, LegCodexCLI)
+	assert.Contains(t, FrontierLegs(), LegCodexCLI)
 	assert.Less(t, QualityPrior(LegCodexCLI), QualityPrior(LegClaude), "claude remains the quality apex")
 	assert.Greater(t, QualityPrior(LegCodexCLI), QualityPrior(LegCursor), "frontier-class outranks the standard tier")
 	assert.True(t, IsFrontierClass(LegCodexCLI))

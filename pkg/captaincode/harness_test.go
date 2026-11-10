@@ -18,9 +18,13 @@ func TestHarnessNamesTheHarnessAndTheProvenance(t *testing.T) {
 		"ds4-flash": "deepseek-hf", "step": "step-hf",
 		"gemini": "gemini-openrouter", "gpt-oss": "gpt-oss-openrouter", "qwen": "qwen-openrouter",
 		"openshell": "openshell-nvidia",
+		// Carbon is a Gemini version on the gemini-openrouter row, as grok-max
+		// is on grok-xai.
+		LegCarbon: "gemini-openrouter",
 	} {
 		assert.Equal(t, want, Harness(leg), "leg %s", leg)
 	}
+	assert.Equal(t, "gemini-openrouter:gemini-4-carbon@effort:max", RunLabel(LegCarbon, EffortMax))
 }
 
 func TestModelShortReadsLikeAVersion(t *testing.T) {

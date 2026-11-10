@@ -14,10 +14,10 @@ Everything below narrows or steers that.
 
 | Word | What it does |
 |---|---|
-| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/mistral` `/mimo` `/kolibri` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
+| `/claude` `/codex` `/codex-cli` `/cursor` `/grok` `/grok-max` `/gemini` `/carbon` `/deepseek` `/ds-flash` `/kimi` `/glm` `/minimax` `/mistral` `/mimo` `/kolibri` `/qwen` `/step` `/gpt-oss` `/ds4-flash` `/luna` `/free` | Force one leg for this turn (`captain legs` lists yours; a leg added with `captain legs add` gets its word after `captain init`) |
 | `/<leg>-cli` `/<leg>-openrouter` `/<leg>-opencode` | The same leg, named by its route: `-cli` is the vendor's own CLI on this host, `-openrouter` is opencode through OpenRouter, `-opencode` is opencode on the provider's own credential. `/claude-cli` is `/claude`, `/codex-opencode` is `/codex`, `/grok-opencode` is `/grok`, `/deepseek-openrouter` is `/deepseek`. A leg whose id already names its route (`/codex-cli`) has no second word. Words appear in the TUI after `captain init` |
-| `/grok-cli` · `/codex-openrouter` | Legs that pin a model to a route and run only when named: Grok Build, xAI's own CLI (`grok -p`, its own `grok login`; `CAPTAIN_GROK_CLI_MODEL` and `CAPTAIN_GROK_CLI_EFFORT` pin model and reasoning effort), and GPT-6.1 Sol through OpenRouter, paid per token |
-| `/frontier <task>` | The frontier lane at maximum effort: the frontier legs near the top of the perf index (claude and codex-cli today) take turns; `/frontier /codex …` runs that leg's frontier model instead |
+| `/grok-cli` · `/codex-openrouter` | Named-only routes: Grok Build (`grok -p`, its own `grok login`) and GPT-6.1 Sol through paid OpenRouter. `CAPTAIN_GROK_CLI_MODEL` and `CAPTAIN_GROK_CLI_EFFORT` pin the CLI model and effort |
+| `/frontier <task>` | Carbon, Opus, Astra and Grok 4.7 form the pool. High-complexity work uses the highest-performance eligible leg at max effort. Other work can share the lane at high or xhigh effort. `/frontier /codex …` pins that leg instead. See the unreleased update below |
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |
 | `/team /openshell <task>` | Sandbox-only team: the tool-less director splits the task into 1-4 assignments that run as one parallel OpenShell stage (experimental; see [CONFIGURATION](CONFIGURATION.md#openshell-workers)) |
@@ -32,11 +32,13 @@ A turn that starts with a `/word` captain does not know is refused before anythi
 
 `/private` reviews the private-names list: what captain added on its own, the names it suggests from the folders you work in, grouped by project. `/private add <names>` keeps names out of public repositories, any word included; `/private dismiss <names>` stops a suggestion; `/private remove <names>` takes a name off the list. Nothing in it reaches a worker or a model.
 
-`/frontier`, `/quality` and `/save` are lanes: each counts where its last 40
-turns went and sends the next to the leg furthest behind an equal share, among
-the legs scoring within 85% of the lane's best. The best leg runs a lane's
-first turns and wins ties. A forced leg, or legs named in the prompt, are
-never balanced. See [CONFIGURATION.md](CONFIGURATION.md#lanes-frontier-quality-save).
+**Unreleased, 10 November 2026:** `/carbon` runs Gemini 4 Carbon through paid
+OpenRouter and joins `/frontier`. High-complexity frontier tasks select by
+performance before rotation or speed.
+
+Other frontier work, `/quality` and `/save` can share turns among eligible
+legs within 85% of the lane's best. Forced legs keep the user's choice.
+See [CONFIGURATION.md](CONFIGURATION.md#lanes-frontier-quality-save-speed).
 
 ## Steer the director
 

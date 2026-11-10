@@ -44,7 +44,7 @@ func TestCaptainWordSwitchesTheDirector(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain frontier"))
-	assert.Equal(t, captaincode.LegClaude, b.effectiveDirector())
+	assert.Equal(t, captaincode.LegCarbon, b.effectiveDirector(), "Carbon (60) tops the compiled frontier scores, above Opus 5.5 (59)")
 
 	rec = httptest.NewRecorder()
 	b.chatCompletions(rec, captainReq("/captain auto"))

@@ -89,6 +89,7 @@ const (
 	// named: a pin is the user's choice, not the router's.
 	LegGrokCLI         Leg = "grok-cli"         // grok -p headless (Grok Build CLI)
 	LegCodexOpenRouter Leg = "codex-openrouter" // opencode serve -> openrouter/openai/gpt-6.1-sol
+	LegCarbon          Leg = "carbon"
 )
 
 // AllLegs is every ACTIVE leg in ascending prior order - derived from the

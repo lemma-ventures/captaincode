@@ -1,13 +1,50 @@
 {
  "source": "snapshot",
  "snapshot_date": "2026-09-22",
+ "frontier_update": {
+  "as_of": "2026-11-10",
+  "index": "Artificial Analysis Intelligence Index v5.0.1",
+  "sources": [
+   "https://artificialanalysis.ai/models/claude-fable-5-2",
+   "https://artificialanalysis.ai/models/gemini-4-carbon",
+   "https://artificialanalysis.ai/models",
+   "https://artificialanalysis.ai/models/gpt-6-astra-xhigh",
+   "https://artificialanalysis.ai/models/grok-4-7"
+  ],
+  "slugs": ["claude-fable-5-2", "gemini-4-carbon", "claude-opus-5-5", "gpt-6-astra-xhigh", "grok-4-7"],
+  "scope": "Intelligence scores for these five rows only. Other scores retain the snapshot date."
+ },
  "models": [
+  {
+   "name": "Claude Fable 5.2 (Max, Default Fallback)",
+   "slug": "claude-fable-5-2",
+   "creator": "Anthropic",
+   "released": "2026-11-09",
+   "intelligence": 65,
+   "coding": 0,
+   "math": 0,
+   "price_in": 8,
+   "price_out": 40,
+   "tps": 0
+  },
+  {
+   "name": "Gemini 4 Carbon (High)",
+   "slug": "gemini-4-carbon",
+   "creator": "Google",
+   "released": "2026-10-28",
+   "intelligence": 60,
+   "coding": 0,
+   "math": 0,
+   "price_in": 4,
+   "price_out": 20,
+   "tps": 0
+  },
   {
    "name": "Claude Opus 5.5 (Adaptive Reasoning, Max Effort, Default Fallback)",
    "slug": "claude-opus-5-5",
    "creator": "Anthropic",
    "released": "2026-09-22",
-   "intelligence": 57.6,
+   "intelligence": 59,
    "coding": 0,
    "math": 0,
    "price_in": 4,
@@ -79,7 +116,7 @@
    "slug": "gpt-6-astra-xhigh",
    "creator": "OpenAI",
    "released": "2026-09-03",
-   "intelligence": 52.4,
+   "intelligence": 55,
    "coding": 75.9,
    "math": 0,
    "price_in": 10,
@@ -235,7 +272,7 @@
    "slug": "grok-4-7",
    "creator": "SpaceXAI",
    "released": "2026-09-21",
-   "intelligence": 46.4,
+   "intelligence": 35,
    "coding": 0,
    "math": 0,
    "price_in": 2,

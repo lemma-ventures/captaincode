@@ -1,11 +1,71 @@
 package captaincode
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFrontierPoolIncludesCurrentModels(t *testing.T) {
+	for leg, model := range map[Leg]string{
+		LegCarbon:   "google/gemini-4-carbon",
+		LegCodexCLI: "gpt-6-astra",
+		LegGrokMax:  "grok-4.7",
+	} {
+		t.Run(string(leg), func(t *testing.T) {
+			require.True(t, KnownLeg(leg))
+			assert.True(t, AutoRoutes(leg))
+			assert.True(t, IsFrontierClass(leg))
+			assert.Contains(t, FrontierLegs(), leg)
+			assert.Contains(t, FrontierChain(LegClaude), leg)
+			assert.Equal(t, model, ModelIDAt(leg, EffortMax))
+		})
+	}
+	assert.Contains(t, FrontierLegs(), LegClaude)
+}
+
+func TestFrontierRankingKeepsNewModelsWhenCachePredatesRelease(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(PerfResetToSnapshot)
+	require.NoError(t, SetPerfModels(perfFeedBefore()))
+	PerfResetToSnapshot()
+	require.True(t, LoadPerfCache())
+	for leg, want := range map[Leg]float64{LegCarbon: 60} {
+		row, ok := PerfFor(leg)
+		require.True(t, ok, "%s keeps its compiled score when absent from an old cache", leg)
+		assert.Equal(t, want, row.Perf)
+	}
+	assert.Equal(t, LegCarbon, FrontierLegs()[0])
+}
+
+func TestFrontierRankingUsesLiveScores(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(PerfResetToSnapshot)
+	require.NoError(t, SetPerfModels([]AAModel{
+		{Slug: "claude-opus-5-5", IntelligenceIndex: 61},
+		{Slug: "gemini-4-carbon", IntelligenceIndex: 58},
+	}))
+	assert.Equal(t, LegClaude, FrontierLegs()[0])
+	row, ok := PerfFor(LegCarbon)
+	require.True(t, ok)
+	assert.Equal(t, 58.0, row.Perf)
+}
+
+func TestFrontierPoolHonorsRegistryOptOuts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legs.json")
+	require.NoError(t, SaveRegistryOverlay(path, registryOverlay{
+		Legs:    []LegSpec{{ID: LegCarbon, NamedOnly: true}},
+	}))
+	t.Cleanup(func() { _, _ = LoadRegistry(filepath.Join(t.TempDir(), "none.json")) })
+	_, err := LoadRegistry(path)
+	require.NoError(t, err)
+	for _, leg := range []Leg{LegCarbon} {
+		assert.NotContains(t, FrontierLegs(), leg)
+		assert.NotContains(t, FrontierChain(LegClaude), leg)
+	}
+}
 
 // The compiled snapshot ranks the roster the same way everywhere: the
 // frontier section, the /frontier chain, the upgrade flags.
@@ -17,21 +77,37 @@ func TestPerfFamilyStripsVersionsAndEffort(t *testing.T) {
 	assert.Equal(t, "glm-flash", perfFamily("glm-5-3-flash"), "flash is its own family")
 	assert.Equal(t, "grok-build", perfFamily("grok-build-0-1-06-16"))
 	assert.NotEqual(t, perfFamily("grok-4-6"), perfFamily("grok-build-0-1-06-16"))
+	assert.Equal(t, "gemini-carbon", perfFamily("gemini-4-carbon"))
+	assert.Equal(t, "gemini-flash", perfFamily("gemini-3-7-flash"))
+	assert.NotEqual(t, perfFamily("gemini-4-carbon"), perfFamily("gemini-3-7-flash"))
+}
+
+func TestCarbonDoesNotUpgradeTheFlashLeg(t *testing.T) {
+	feed := append(perfFeedBefore(), AAModel{
+		Slug: "gemini-4-carbon", Name: "Gemini 4 Carbon", Creator: "Google",
+		Released: "2026-11-10", IntelligenceIndex: 60, CodingIndex: 80,
+		PriceIn: 2, PriceOut: 10,
+	})
+	up, ok := UpgradeIn(feed, LegGemini)
+	assert.False(t, ok, "Carbon is another family; the flash leg stays put")
+	assert.Empty(t, up.Slug)
+	cur, ok := MatchAA(feed, LegCarbon)
+	require.True(t, ok)
+	assert.Equal(t, "gemini-4-carbon", cur.Slug)
+	_, ok = UpgradeIn(feed, LegCarbon)
+	assert.False(t, ok, "the carbon pin already reads the carbon row")
 }
 
 func TestFrontierLegsAreRankedByPerf(t *testing.T) {
 	fl := FrontierLegs()
-	// The snapshot of 2026-09-22 lists Opus 5.5 (57.6) above astra-xhigh
-	// (52.4) and Grok 4.7 (46.4); this order is the roster's frontier section
-	// and the failover.
-	require.Equal(t, []Leg{LegClaude, LegCodexCLI, LegGrokMax}, fl, "opus 5.5, astra, grok-4.7 - the index order")
+	require.Equal(t, []Leg{LegCarbon, LegClaude, LegCodexCLI, LegGrokMax}, fl)
 	chain := FrontierChain(LegFrontier)
 	assert.Equal(t, LegClaude, chain[0], "the tier closed, not the CLI: claude at standard settings leads whatever the index says")
-	assert.ElementsMatch(t, fl, chain[:3], "the chain opens with the frontier legs")
+	assert.ElementsMatch(t, fl, chain[:len(fl)], "the chain opens with the frontier legs")
 	assert.NotContains(t, chain, LegFrontier)
-	assert.Equal(t, LegCodexCLI, FrontierChain(LegClaude)[0], "claude itself failed: the next frontier leg by index")
-	assert.Equal(t, LegCodex, chain[3], "then the next most capable model by index - GPT-6 Sol, on the 5.6 Sol row (47) until AA scores it")
-	assert.Equal(t, LegGLM, chain[4], "then the best open-weights one")
+	assert.Equal(t, LegCarbon, FrontierChain(LegClaude)[0], "claude itself failed: the next frontier leg by index")
+	assert.Equal(t, LegCodex, chain[len(fl)], "then the next most capable model by index - GPT-6 Sol, on the 5.6 Sol row (47) until AA scores it")
+	assert.Equal(t, LegGLM, chain[len(fl)+1], "then the best open-weights one")
 	assert.Equal(t, LegGPTOSS, chain[len(chain)-1], "gpt-oss-120b ranks under the free leg's nemotron on the compiled index")
 	assert.NotContains(t, FrontierChain(LegClaude), LegClaude, "the failed leg is left out")
 }

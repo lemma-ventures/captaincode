@@ -84,6 +84,7 @@ func TestSoloAndFrontierWorkersHoldTheSecuritySkill(t *testing.T) {
 		t.Run(model, func(t *testing.T) {
 			dir := t.TempDir()
 			b := teamBrain()
+			b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true, captaincode.LegGrok: true}
 			b.assessFn = func(task, output, objective string) (captaincode.Assessment, error) {
 				return captaincode.Assessment{Quality: 9, Verdict: "good"}, nil
 			}

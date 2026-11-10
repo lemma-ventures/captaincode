@@ -256,6 +256,7 @@ func TestBrainRoute_ForcedFrontier(t *testing.T) {
 
 func TestFrontierChat_RunsAndRecordsUnderClaude(t *testing.T) {
 	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true}
 	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {
 		return captaincode.Result{Text: "FRONTIER-ANSWER: deep result with plenty of substance to pass gates", Tokens: 900, DurationMs: 60_000}, nil
 	}
@@ -352,6 +353,7 @@ func TestTeamPrefer(t *testing.T) {
 func TestFrontierChat_ReroutesWhenClaudeIsRateLimited(t *testing.T) {
 	t.Setenv("CAPTAIN_WORKER_LOGS", "0")
 	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true, captaincode.LegCodexCLI: true}
 	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {
 		return captaincode.Result{}, fmt.Errorf("claude: %w: You've reached your Fable limit", captaincode.ErrRateLimited)
 	}
@@ -382,6 +384,7 @@ func TestFrontierChat_ReroutesWhenClaudeIsRateLimited(t *testing.T) {
 func TestFrontierTierLimitBenchesTheTierNotClaude(t *testing.T) {
 	t.Setenv("CAPTAIN_WORKER_LOGS", "0")
 	b := teamBrain()
+	b.allowed = map[captaincode.Leg]bool{captaincode.LegClaude: true}
 	frontierCalls := 0
 	b.frontierFn = func(task string, onDelta, onStatus func(string)) (captaincode.Result, error) {
 		frontierCalls++

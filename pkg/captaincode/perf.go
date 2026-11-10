@@ -82,18 +82,20 @@ var perf struct {
 	asOf   string // date the ranking reflects
 }
 
+var perfSnapshot = func() perfFile {
+	var f perfFile
+	_ = json.Unmarshal(perfDefaultJSON, &f)
+	return f
+}()
+
 func init() { PerfResetToSnapshot() }
 
 // PerfResetToSnapshot puts the compiled snapshot back as the active ranking
 // (tests that install a fixture feed restore it with this).
 func PerfResetToSnapshot() {
-	var f perfFile
-	if err := json.Unmarshal(perfDefaultJSON, &f); err != nil {
-		return
-	}
 	perf.mu.Lock()
 	defer perf.mu.Unlock()
-	perf.models, perf.source, perf.asOf = f.rows(), "snapshot", f.SnapshotDate
+	perf.models, perf.source, perf.asOf = perfSnapshot.rows(), "snapshot", perfSnapshot.SnapshotDate
 }
 
 // PerfCachePath is where a live fetch is kept between brain starts.
@@ -178,12 +180,21 @@ func rowOf(m AAModel) PerfRow {
 // PerfFor is the benchmark row of the model a leg runs. ok=false when the
 // feed does not list it (cursor's Composer, the rotating free model).
 func PerfFor(leg Leg) (PerfRow, bool) {
-	models, _, _ := PerfModels()
-	m, ok := MatchAA(models, leg)
+	m, _, ok := perfMatch(leg)
 	if !ok {
 		return PerfRow{}, false
 	}
 	return rowOf(m), true
+}
+
+func perfMatch(leg Leg) (AAModel, []AAModel, bool) {
+	models, _, _ := PerfModels()
+	m, ok := MatchAA(models, leg)
+	if !ok {
+		models = perfSnapshot.rows()
+		m, ok = MatchAA(models, leg)
+	}
+	return m, models, ok
 }
 
 // perfOrPrior ranks a leg by its perf index, falling back to its prior on
@@ -203,8 +214,7 @@ func perfOrPrior(leg Leg) float64 {
 // no row for that effort - the caller falls back to the plain index and
 // must not present it as effort-specific.
 func EffortIndex(leg Leg, effort Effort) (float64, bool) {
-	models, _, _ := PerfModels()
-	m, ok := MatchAA(models, leg)
+	m, models, ok := perfMatch(leg)
 	if !ok {
 		return 0, false
 	}
@@ -240,7 +250,7 @@ func RankByPerf(legs []Leg) []Leg {
 func FrontierLegs() []Leg {
 	var out []Leg
 	for _, l := range AllLegs {
-		if IsFrontierClass(l) || l == LegClaude {
+		if AutoRoutes(l) && (IsFrontierClass(l) || l == LegClaude) {
 			out = append(out, l)
 		}
 	}

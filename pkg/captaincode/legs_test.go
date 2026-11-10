@@ -820,6 +820,7 @@ func TestOpenRouterLegs(t *testing.T) {
 		LegDeepSeek: {"openrouter", "deepseek/deepseek-v4-pro"},
 		LegGemini:   {"openrouter", "google/gemini-3.7-flash"},
 		LegKimi:     {"openrouter", "moonshotai/kimi-k3.1-pro"},
+		LegCarbon:   {"openrouter", "google/gemini-4-carbon"},
 	} {
 		assert.True(t, KnownLeg(leg))
 		assert.Equal(t, want.Provider, legModels[leg].Provider)
@@ -836,6 +837,13 @@ func TestOpenRouterLegs(t *testing.T) {
 	assert.Equal(t, 2.0, specs[LegKimi].PriceIn)
 	assert.Equal(t, 10.0, specs[LegKimi].PriceOut)
 	assert.False(t, OpenWeights(LegKimi), "weights are not public until 2026-11-04")
+	assert.Equal(t, 2.0, specs[LegCarbon].PriceIn)
+	assert.Equal(t, 10.0, specs[LegCarbon].PriceOut)
+	assert.Equal(t, 1048576, specs[LegCarbon].Ctx)
+	assert.False(t, specs[LegCarbon].NamedOnly)
+	assert.True(t, specs[LegCarbon].Vision)
+	assert.False(t, OpenWeights(LegCarbon))
+	assert.True(t, AutoRoutes(LegCarbon))
 }
 
 // A refusal is not a successful run: the leg is healthy but its POLICY does

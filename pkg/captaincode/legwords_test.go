@@ -30,6 +30,9 @@ func TestRouteWordsNameTheRoute(t *testing.T) {
 			t.Errorf("RouteWord(%s) = %q, want none", l, w)
 		}
 	}
+	if w := RouteWord(LegCarbon); w != "carbon-openrouter" {
+		t.Errorf("RouteWord(carbon) = %q, want carbon-openrouter", w)
+	}
 	// A decision leg takes no task, so no word forces it.
 	if w := RouteWord(LegJev); w != "" {
 		t.Errorf("RouteWord(jev) = %q", w)
@@ -38,11 +41,13 @@ func TestRouteWordsNameTheRoute(t *testing.T) {
 
 func TestResolveLegWord(t *testing.T) {
 	for in, want := range map[string]Leg{
-		"codex":            LegCodex,
-		"/Codex-Opencode":  LegCodex,
-		"grok-cli":         LegGrokCLI,
-		"codex-openrouter": LegCodexOpenRouter,
-		"codex-cli":        LegCodexCLI,
+		"codex":              LegCodex,
+		"/Codex-Opencode":    LegCodex,
+		"grok-cli":           LegGrokCLI,
+		"codex-openrouter":   LegCodexOpenRouter,
+		"carbon":             LegCarbon,
+		"/carbon-openrouter": LegCarbon,
+		"codex-cli":          LegCodexCLI,
 	} {
 		if got, ok := ResolveLegWord(in); !ok || got != want {
 			t.Errorf("ResolveLegWord(%q) = %q, %v; want %q", in, got, ok, want)
@@ -89,7 +94,7 @@ func TestNamedOnlyLegsStayOffTheRouter(t *testing.T) {
 	}
 	for _, c := range DirectorCandidates() {
 		if c.Leg == LegCodexOpenRouter {
-			t.Error("a director mode may pick the paid codex-openrouter leg")
+			t.Errorf("a director mode may pick the paid %s leg", c.Leg)
 		}
 	}
 }

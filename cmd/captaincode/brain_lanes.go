@@ -7,6 +7,7 @@ package main
 // on the leg that was behind.
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
@@ -134,20 +135,25 @@ func (b *brain) frontierLead(task string) captaincode.LanePick {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := time.Now()
+	tr := captaincode.TriageTask(task)
 	var cands []captaincode.LaneCandidate
 	for _, c := range captaincode.FrontierLane(r) {
-		if b.laneOpen(c.Leg, now) {
+		if b.laneOpen(c.Leg, now) && captaincode.ClassCap(c.Leg, tr.Class) == "" {
 			cands = append(cands, c)
 		}
 	}
 	cands = reliableLane(cands, b.ledger.Stats())
-	// CAPTAIN_PICK=on: the lane chose the frontier legs; the time rule
-	// picks among them (SCORING.md Phase 3).
 	var legs []captaincode.Leg
 	for _, c := range cands {
 		legs = append(legs, c.Leg)
 	}
-	if tp, ok := b.decidePick(legs, captaincode.TriageTask(task).Domain); ok {
+	if tr.Class == captaincode.ClassHigh && len(cands) > 0 {
+		best := cands[0]
+		b.ledger.NoteLane(captaincode.LaneFrontier, best.Leg, now)
+		return captaincode.LanePick{Leg: best.Leg, Band: legs, Reason: fmt.Sprintf(
+			"frontier lane: %s (highest performance for high complexity; perf %.1f)", best.Leg, best.Score)}
+	}
+	if tp, ok := b.decidePick(legs, tr.Domain); ok {
 		b.ledger.NoteLane(captaincode.LaneFrontier, tp.Leg, now)
 		return captaincode.LanePick{Leg: tp.Leg, Band: legs, Reason: "frontier " + tp.Reason, Time: &tp}
 	}
