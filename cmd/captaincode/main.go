@@ -41,6 +41,10 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "secrets" {
+		cmdSecrets(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "review" {
 		cmdReview(os.Args[2:])
 		return
@@ -201,6 +205,9 @@ func main() {
 			return
 		case "presence":
 			cmdPresence(os.Args[2:])
+			return
+		case "secrets": // credential inventory and the secrets-file split
+			cmdSecrets(os.Args[2:])
 			return
 		case "send":
 			cmdSend(os.Args[2:])
