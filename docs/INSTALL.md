@@ -86,8 +86,42 @@ remain subject to the gates in [CONFIGURATION.md](CONFIGURATION.md).
 Use `captain secrets list` separately on each machine for variable names and
 file modes. That inventory does not establish credential validity or ownership.
 Use fresh provider logins or scoped API credentials on the destination. Never
-copy a login store or `secrets.env`. Worker environment isolation and the pinned
-installation bundle remain separate work.
+copy a login store or `secrets.env`. Worker environment isolation remains
+separate work.
+
+## Installing from a pinned bundle
+
+A bundle is one directory: the built `captain` binary and a `bundle.json`
+manifest with each artifact's SHA-256, size, mode, the source revision and the
+platform. Build one on a machine you trust:
+
+```sh
+captain bundle create ~/capsule          # runs go build from the checkout
+captain bundle create ~/capsule --binary ./captain   # wrap a binary you built
+```
+
+Move the directory to the new account by any channel. Before anything runs,
+verify it offline - the check reads the directory and nothing else:
+
+```sh
+captain bundle verify ~/capsule
+```
+
+Verification fails closed: a changed byte, size, permission, a symlink, an
+unlisted file, an unknown manifest field or a traversal path in the manifest is
+refused. `create` and `verify` print the manifest's own SHA-256; compare that
+digest over a channel the bundle did not travel through. The manifest is not
+signed, so that comparison is what binds the bundle to its builder.
+
+```sh
+captain bundle install ~/capsule   # verifies again, then deploys
+```
+
+Install is terminal-only: a sent turn, a worker or the jail never replaces the
+machine's captain binary. It refuses a bundle built for another platform,
+stages the binary beside the destination and renames it into place
+([Recipes](#recipes-macos-and-linux), "Deploy the brain atomically"). A
+tampered bundle leaves the installed binary untouched.
 
 ## Captain's own version
 

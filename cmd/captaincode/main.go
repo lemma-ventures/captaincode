@@ -45,6 +45,10 @@ func main() {
 		cmdSecrets(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "bundle" {
+		cmdBundle(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "review" {
 		cmdReview(os.Args[2:])
 		return
