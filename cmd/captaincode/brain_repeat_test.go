@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +38,70 @@ func TestParseRepeat(t *testing.T) {
 
 	_, _, ok = parseRepeat("please repeat that")
 	assert.False(t, ok, "only the leading control word counts")
+}
+
+func TestFormatRepeatDecisionContextUsesLatestAnsweredDecisionsForRepo(t *testing.T) {
+	now := time.Now().UTC()
+	decisions := []captaincode.OwnerDecision{
+		{ID: "dq-old", Repo: "/repo/a", Status: captaincode.DecisionAnswered, Title: "Older", Question: "Older choice?", Options: []captaincode.DecisionOption{{ID: "a", Label: "Old choice"}}, Answer: &captaincode.DecisionAnswer{Option: "a", At: now.Add(-time.Hour)}},
+		{ID: "dq-new", Repo: "/repo/a", Status: captaincode.DecisionAnswered, Title: "Latest", Question: "Latest choice?", Options: []captaincode.DecisionOption{{ID: "b", Label: "Keep the current design", Detail: "Do not add a fallback"}}, Answer: &captaincode.DecisionAnswer{Option: "b", Note: "Preserve the existing boundary", At: now}},
+		{ID: "dq-other", Repo: "/repo/b", Status: captaincode.DecisionAnswered, Title: "Other repo", Question: "Other?", Options: []captaincode.DecisionOption{{ID: "a", Label: "Other"}}, Answer: &captaincode.DecisionAnswer{Option: "a", At: now.Add(time.Hour)}},
+		{ID: "dq-open", Repo: "/repo/a", Status: captaincode.DecisionOpen, Title: "Open", Question: "Open?", Options: []captaincode.DecisionOption{{ID: "a", Label: "Open"}}, Answer: &captaincode.DecisionAnswer{Option: "a", At: now.Add(2 * time.Hour)}},
+	}
+
+	got := formatRepeatDecisionContext("/repo/a", decisions)
+	assert.Contains(t, got, "Latest choice?")
+	assert.Contains(t, got, "Keep the current design")
+	assert.Contains(t, got, "Preserve the existing boundary")
+	assert.Contains(t, got, "Older choice?")
+	assert.NotContains(t, got, "Other repo")
+	assert.NotContains(t, got, "Open?")
+	assert.Less(t, strings.Index(got, "Latest choice?"), strings.Index(got, "Older choice?"))
+}
+
+func TestRepeatPassesDecisionAnsweredDuringRoundToNextRound(t *testing.T) {
+	t.Setenv(captaincode.DecisionsDirEnv, filepath.Join(t.TempDir(), "decisions"))
+	repo := captaincode.RepoRoot(os.Getenv("CAPTAIN_CWD"))
+	require.NotEmpty(t, repo)
+	b := teamBrain()
+	b.roundSummaryFn = func(string) string { return "made progress" }
+	var prompts []string
+	var promptMu sync.Mutex
+	b.runWorkerFn = func(leg captaincode.Leg, prompt string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		promptMu.Lock()
+		prompts = append(prompts, prompt)
+		round := len(prompts)
+		promptMu.Unlock()
+		if round == 1 {
+			d, err := captaincode.PostDecision(captaincode.OwnerDecision{
+				Repo: repo, Title: "Choose behavior", Question: "Which behavior should the worker use?",
+				Options: []captaincode.DecisionOption{{ID: "a", Label: "Keep the current behavior"}, {ID: "b", Label: "Change the behavior"}},
+			})
+			if err != nil {
+				return leg, captaincode.Result{}, err
+			}
+			if _, err := captaincode.AnswerDecision(d.ID, "b", "Use the new behavior", "", "test"); err != nil {
+				return leg, captaincode.Result{}, err
+			}
+		}
+		return leg, captaincode.Result{Text: "progress", DurationMs: 5}, nil
+	}
+
+	req := repeatReq("/repeat 2 implement the behavior")
+	req.Header.Set(workspaceHeader, repo)
+	go b.chatCompletions(httptest.NewRecorder(), req)
+	require.Eventually(t, func() bool {
+		promptMu.Lock()
+		defer promptMu.Unlock()
+		return len(prompts) == 2
+	}, 30*time.Second, 50*time.Millisecond)
+	promptMu.Lock()
+	got := append([]string(nil), prompts...)
+	promptMu.Unlock()
+	assert.NotContains(t, got[0], "Which behavior should the worker use?")
+	assert.Contains(t, got[1], "Which behavior should the worker use?")
+	assert.Contains(t, got[1], "Change the behavior")
+	assert.Contains(t, got[1], "Use the new behavior")
 }
 
 func repeatReq(text string) *http.Request {

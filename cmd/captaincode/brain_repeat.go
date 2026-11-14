@@ -228,6 +228,86 @@ func summaryInput(text string) string {
 	return captaincode.CutHead(text, head) + "\n…\n" + captaincode.CutTail(text, tail)
 }
 
+const repeatDecisionLimit = 5
+const repeatDecisionContextLimit = 6000
+
+func repeatDecisionContext(dir string) string {
+	repo := captaincode.RepoRoot(dir)
+	if repo == "" {
+		return ""
+	}
+	decisions, err := captaincode.ListDecisions(captaincode.DecisionAnswered)
+	if err != nil {
+		return ""
+	}
+	return formatRepeatDecisionContext(repo, decisions)
+}
+
+func formatRepeatDecisionContext(repo string, decisions []captaincode.OwnerDecision) string {
+	repo = filepath.Clean(repo)
+	matches := make([]captaincode.OwnerDecision, 0, len(decisions))
+	for _, d := range decisions {
+		if d.Status == captaincode.DecisionAnswered && d.Answer != nil && filepath.Clean(d.Repo) == repo {
+			matches = append(matches, d)
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Answer.At.After(matches[j].Answer.At)
+	})
+	if len(matches) > repeatDecisionLimit {
+		matches = matches[:repeatDecisionLimit]
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("[captain] Recent user decisions for this repository. Apply them to this work where relevant; do not ask the user to choose again.\n")
+	for _, d := range matches {
+		o, ok := repeatDecisionOption(d, d.Answer.Option)
+		if !ok {
+			continue
+		}
+		entry := fmt.Sprintf("- %s: %s — %s", repeatDecisionLabel(d), d.Title, d.Question)
+		entry += fmt.Sprintf(" Chosen: %s", o.Label)
+		if o.Detail != "" {
+			entry += " — " + o.Detail
+		}
+		if note := strings.TrimSpace(d.Answer.Note); note != "" {
+			entry += ". User note: " + note
+		}
+		entry += "\n"
+		if b.Len()+len(entry) > repeatDecisionContextLimit {
+			remaining := repeatDecisionContextLimit - b.Len()
+			if remaining > 4 {
+				b.WriteString(entry[:remaining-1])
+				b.WriteString("…\n")
+			}
+			break
+		}
+		b.WriteString(entry)
+	}
+	if b.Len() == len("[captain] Recent user decisions for this repository. Apply them to this work where relevant; do not ask the user to choose again.\n") {
+		return ""
+	}
+	return "\n\n" + strings.TrimSpace(b.String())
+}
+
+func repeatDecisionOption(d captaincode.OwnerDecision, id string) (captaincode.DecisionOption, bool) {
+	for _, o := range d.Options {
+		if o.ID == id {
+			return o, true
+		}
+	}
+	return captaincode.DecisionOption{}, false
+}
+
+func repeatDecisionLabel(d captaincode.OwnerDecision) string {
+	if d.Ref != "" {
+		return d.Ref
+	}
+	return d.ID
+}
+
 // roundFinal is the round's final answer from run history: the newest run
 // of this task recorded since the round started, or "" when there is none.
 func roundFinal(task string, since time.Time) string {
@@ -1029,6 +1109,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 			fmt.Printf("captain brain: repeat %s stopped - %s\n", th.id, th.stopReason)
 			break
 		}
+		decisionContext := repeatDecisionContext(iter.ws.Dir)
 		start := time.Now()
 		b.rmu.Lock()
 		th.live, th.roundFrom, th.inFlight = nil, start, true
@@ -1037,7 +1118,7 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 		// loop of 2-4 h rounds could only be changed by stopping it).
 		round := iter
 		round.Model = th.model
-		text := th.task + roundContract
+		text := th.task + roundContract + decisionContext
 		// A round that deferred is not a state the next round may inherit
 		// silently: name it, in the task itself.
 		if n := len(th.rounds); n > 0 && th.rounds[n-1].noop {
