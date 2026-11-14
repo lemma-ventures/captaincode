@@ -294,6 +294,141 @@ func TestEnsureProjectOverlays(t *testing.T) {
 	})
 }
 
+func TestPrepareProjectRoots(t *testing.T) {
+	t.Run("a root that is not there prepares nothing", func(t *testing.T) {
+		changed, notes, err := PrepareProject(filepath.Join(t.TempDir(), "absent"), true)
+		require.NoError(t, err)
+		assert.False(t, changed)
+		assert.Empty(t, notes)
+	})
+	t.Run("a symlinked root is refused", func(t *testing.T) {
+		base := t.TempDir()
+		real := filepath.Join(base, "real")
+		require.NoError(t, os.MkdirAll(real, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(real, "opencode.json"), []byte(`{"mcp": {}}`), 0o644))
+		link := filepath.Join(base, "link")
+		require.NoError(t, os.Symlink(real, link))
+
+		changed, notes, err := PrepareProject(link, true)
+		require.Error(t, err, "a linked root moves the writes into another tree")
+		assert.Contains(t, err.Error(), "symlink")
+		assert.False(t, changed)
+		assert.Empty(t, notes)
+		b, readErr := os.ReadFile(filepath.Join(real, "opencode.json"))
+		require.NoError(t, readErr)
+		assert.Equal(t, `{"mcp": {}}`, string(b), "the linked target must stay untouched")
+	})
+	t.Run("a root replaced by a file is refused", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "repo")
+		require.NoError(t, os.WriteFile(file, []byte("not a directory\n"), 0o644))
+
+		_, _, err := PrepareProject(file, true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a directory")
+		b, readErr := os.ReadFile(file)
+		require.NoError(t, readErr)
+		assert.Equal(t, "not a directory\n", string(b))
+	})
+}
+
+func TestPrepareProjectWritesNothingOutside(t *testing.T) {
+	base := t.TempDir()
+	outside := filepath.Join(base, "outside")
+	require.NoError(t, os.MkdirAll(outside, 0o755))
+	trap := filepath.Join(outside, "opencode.jsonc")
+	trapBody := `{"permission": {"doom_loop": "ask", "*": "allow"}}`
+	require.NoError(t, os.WriteFile(trap, []byte(trapBody), 0o644))
+
+	proj := filepath.Join(base, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o755))
+	require.NoError(t, os.Symlink(outside, filepath.Join(proj, ".opencode")))
+
+	changed, notes, err := PrepareProject(proj, true)
+	require.Error(t, err, "an overlay that leaves the root must be refused")
+	assert.False(t, changed)
+	assert.Empty(t, notes)
+
+	b, readErr := os.ReadFile(trap)
+	require.NoError(t, readErr)
+	assert.Equal(t, trapBody, string(b), "the file outside the root must be byte-identical")
+
+	entries, dirErr := os.ReadDir(proj)
+	require.NoError(t, dirErr)
+	assert.Len(t, entries, 1, "the project must gain no file")
+	assert.Equal(t, ".opencode", entries[0].Name())
+}
+
+func TestPrepareProjectSecondCallChangesNothing(t *testing.T) {
+	base := t.TempDir()
+	proj := filepath.Join(base, "proj")
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, ".opencode"), 0o755))
+	overlay := filepath.Join(proj, ".opencode", "opencode.jsonc")
+	trapBody := `{
+  "permission": { "*": "allow", "doom_loop": "ask" },
+  "agent": { "build": { "permission": { "*": "allow" } } }
+}`
+	require.NoError(t, os.WriteFile(overlay, []byte(trapBody), 0o600))
+	user := filepath.Join(proj, "notes.md")
+	require.NoError(t, os.WriteFile(user, []byte("mine\n"), 0o644))
+	plain := filepath.Join(proj, "opencode.json")
+	plainBody := `{"mcp": {"x": {"type": "local"}}}`
+	require.NoError(t, os.WriteFile(plain, []byte(plainBody), 0o644))
+
+	changed, notes, err := PrepareProject(proj, true)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.NotEmpty(t, notes)
+	first, readErr := os.ReadFile(overlay)
+	require.NoError(t, readErr)
+	assert.NotContains(t, string(first), `"*"`)
+
+	changed2, notes2, err := PrepareProject(proj, true)
+	require.NoError(t, err, "a second call must not fail")
+	assert.False(t, changed2, "a second call changes nothing")
+	assert.Empty(t, notes2, "a second call reports nothing to do")
+	second, readErr := os.ReadFile(overlay)
+	require.NoError(t, readErr)
+	assert.Equal(t, first, second)
+
+	st, statErr := os.Stat(overlay)
+	require.NoError(t, statErr)
+	assert.Equal(t, os.FileMode(0o600), st.Mode().Perm(), "the owner's file mode stays")
+
+	b, readErr := os.ReadFile(user)
+	require.NoError(t, readErr)
+	assert.Equal(t, "mine\n", string(b), "user files stay")
+	b, readErr = os.ReadFile(plain)
+	require.NoError(t, readErr)
+	assert.Equal(t, plainBody, string(b), "an overlay without a permission surface stays byte-identical")
+
+	entries, dirErr := os.ReadDir(proj)
+	require.NoError(t, dirErr)
+	assert.Len(t, entries, 3, "no file is added to the project")
+}
+
+func TestRunInitPreparesTheProject(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "project")
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, ".opencode"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(proj, ".opencode", "opencode.jsonc"),
+		[]byte(`{"permission": {"doom_loop": "ask"}}`), 0o644))
+
+	report, changed, err := RunInit(InitOptions{
+		Apply:        true,
+		OpencodePath: filepath.Join(dir, "opencode.jsonc"),
+		EnvPath:      filepath.Join(dir, "env"),
+		ProjectDir:   proj,
+	})
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Contains(t, report, "project overlays", "the report must name the project pass")
+	assert.Contains(t, report, filepath.Join(proj, ".opencode", "opencode.jsonc"))
+
+	cfg := readCfg(t, filepath.Join(proj, ".opencode", "opencode.jsonc"))
+	assert.Equal(t, "deny", cfg["permission"].(map[string]any)["doom_loop"])
+}
+
 func TestEnsureCaptainEnv(t *testing.T) {
 	t.Run("scaffolds when missing", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "env")

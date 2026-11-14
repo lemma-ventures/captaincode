@@ -67,6 +67,28 @@ captain init && ./captaincode.sh
 checkout lives anywhere else. Anything the terminal can do, the brain can be
 asked to do directly.
 
+## Settings for a new machine
+
+Run `captain secrets template` to print reviewed non-secret settings. It works
+before machine setup. It does not read the source machine's env file, secrets,
+registry or ledger. Unknown settings and source values are never exported.
+
+```sh
+captain secrets template > captain-env.example
+```
+
+Review the example before installing it as the new account's Captain `env`
+file. Preserve an existing file. The example enables automatic model and CLI
+updates, masking, and the loopback provider proxy. It contains no model
+allowlist, provider endpoint, local path, login or credential. Automatic updates
+remain subject to the gates in [CONFIGURATION.md](CONFIGURATION.md).
+
+Use `captain secrets list` separately on each machine for variable names and
+file modes. That inventory does not establish credential validity or ownership.
+Use fresh provider logins or scoped API credentials on the destination. Never
+copy a login store or `secrets.env`. Worker environment isolation and the pinned
+installation bundle remain separate work.
+
 ## Captain's own version
 
 The adapters are half the contract. The other half is the software doing the

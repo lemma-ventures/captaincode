@@ -22,6 +22,7 @@ package captaincode
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -633,24 +634,91 @@ func normalizePermissionSurface(cfg map[string]any, setTopLevel bool) (changed b
 	return changed, notes
 }
 
+// PrepareProject runs the project half of captain init: every Captain write
+// that belongs to one repository root, and nothing machine-wide. Machine-wide
+// config stays in RunInit, so a remote caller can prepare a repository
+// without touching the host that runs it.
+//
+// The root it writes must be a real directory. A symlink or a plain file is
+// refused: a linked root moves the writes into another tree. A root that is
+// not there yet is nothing to prepare, not an error.
+func PrepareProject(root string, apply bool) (changed bool, notes []string, err error) {
+	if root == "" {
+		return false, nil, nil
+	}
+	// Lstat, not Stat: os.OpenRoot accepts a symlinked root happily, and the
+	// root itself is exactly the component that must not move.
+	info, statErr := os.Lstat(root)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return false, nil, nil
+		}
+		return false, nil, statErr
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return false, nil, fmt.Errorf("project root %s is a symlink - point captain at the real directory", root)
+	}
+	if !info.IsDir() {
+		return false, nil, fmt.Errorf("project root %s is not a directory", root)
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return false, nil, err
+	}
+	defer r.Close()
+	return ensureProjectOverlaysIn(r, root, apply)
+}
+
 // EnsureProjectOverlays normalizes the permission surface of any opencode
 // config the project directory carries (.opencode/opencode.json[c] or
 // opencode.json[c] at the root) - these merge OVER the global config, so a
 // stray overlay reintroduces every trap init just removed (live 2026-08-13: a
 // worker-written overlay in the active repo did exactly that). Overlays are
-// never created, and TUI command entries are never added to them.
+// never created, and TUI command entries are never added to them. It is the
+// same pass as PrepareProject without the root check.
 func EnsureProjectOverlays(dir string, apply bool) (changed bool, notes []string, err error) {
 	if dir == "" {
 		return false, nil, nil
 	}
-	candidates := []string{
-		filepath.Join(dir, ".opencode", "opencode.jsonc"),
-		filepath.Join(dir, ".opencode", "opencode.json"),
-		filepath.Join(dir, "opencode.jsonc"),
-		filepath.Join(dir, "opencode.json"),
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil, nil
+		}
+		return false, nil, err
 	}
-	for _, path := range candidates {
-		raw, readErr := os.ReadFile(path)
+	defer r.Close()
+	return ensureProjectOverlaysIn(r, dir, apply)
+}
+
+// projectOverlayCands, in try order: the first two live in .opencode, the
+// last two at the project root.
+var projectOverlayCands = []string{
+	".opencode/opencode.jsonc",
+	".opencode/opencode.json",
+	"opencode.jsonc",
+	"opencode.json",
+}
+
+// ensureProjectOverlaysIn runs the overlay pass inside r, with every read
+// and write confined to that root. A path that leaves the root, usually
+// through a linked folder, is refused rather than skipped: its permission
+// surface cannot be rewritten, so the trap would stay in effect.
+func ensureProjectOverlaysIn(r *os.Root, root string, apply bool) (changed bool, notes []string, err error) {
+	for _, rel := range projectOverlayCands {
+		path := filepath.Join(root, rel)
+		st, statErr := r.Lstat(rel)
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			return changed, notes, fmt.Errorf("project overlay %s cannot be reached inside the root - left untouched: %w", path, statErr)
+		}
+		if !st.Mode().IsRegular() {
+			notes = append(notes, "⚠ "+path+" is not a regular file - left untouched")
+			continue
+		}
+		raw, readErr := readFileIn(r, rel)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {
 				continue
@@ -670,12 +738,43 @@ func EnsureProjectOverlays(dir string, apply bool) (changed bool, notes []string
 		notes = append(notes, "project overlay "+path+":")
 		notes = append(notes, fileNotes...)
 		if apply {
-			if err := writeConfig(path, cfg); err != nil {
+			if err := writeConfigIn(r, rel, cfg); err != nil {
 				return changed, notes, err
 			}
 		}
 	}
 	return changed, notes, nil
+}
+
+// readFileIn reads rel inside r in full. The file was just stat-ed as a
+// regular file, so a read error here is a real failure, not an empty file.
+func readFileIn(r *os.Root, rel string) ([]byte, error) {
+	f, err := r.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
+}
+
+// writeConfigIn writes a config at rel, inside r. It only runs after a
+// successful read of that same file, so the parent folder exists and the
+// file is created in place, never elsewhere.
+func writeConfigIn(r *os.Root, rel string, cfg map[string]any) error {
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	f, err := r.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, writeErr := f.Write(append(b, '\n'))
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 func writeConfig(path string, cfg map[string]any) error {
@@ -790,7 +889,7 @@ func RunInit(opts InitOptions) (report string, changed bool, err error) {
 	if projDir == "" {
 		projDir, _ = os.Getwd()
 	}
-	projChanged, projNotes, projErr := EnsureProjectOverlays(projDir, opts.Apply)
+	projChanged, projNotes, projErr := PrepareProject(projDir, opts.Apply)
 	if projErr != nil {
 		return "", false, projErr
 	}
