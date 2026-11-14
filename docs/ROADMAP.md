@@ -11,6 +11,27 @@ pilot baseline publication, cost-attributed re-runs against an accounting brain,
 productized host extensions, and TUI correction UI. Dates below are planning
 guides, not release promises.
 
+### Fleet continuation queue (14 November 2026)
+
+This queue covers first-prompt setup and clean-machine installation. It does
+not replace the build queue below for unrelated runtime work. Start with local
+validation and complete the browser-to-brain path before provisioning a host.
+
+| ID | Next result | Status and exit evidence |
+|---|---|---|
+| F1 | Refuse unsafe credential files before loading values | Implemented, not released. Descriptor checks reuse the existing no-follow pattern. Six negative fixtures, an exact-size fixture and a benchmark are added. The three documented checks pass on the development Mac (14 November 2026): tests in 0.36 s, benchmark 14.4–19.4 µs and 9 allocations per call, clean `go vet ./...`. The container-based isolated runner is still unavailable locally; see [SECRETS.md](SECRETS.md#the-separate-secrets-file). |
+| F2 | First signed browser prompt prepares an eligible repository | Browser caller side implemented 14 November 2026: the Galaxy prototype reads `GET /presence/projects` for the selected machine, offers each repository by name, state and project ID, and signs the prepare envelope (`prepare`, the project ID as the envelope folder, no parent, never `remote`) through the existing review dialog; the relay refuses a bad ID, a name that does not match the discovered row, and a list it cannot trust, before it calls the brain again. The first prompt is walked in a virtual-passkey browser check (`check_presence.py`). Still owed for this row: exact retry, conflicting retry, setup failure and restart recovery evidence through the caller, a rebuilt brain process carrying the step 2 routes, and the two-host tests. |
+| F3 | Rebuild non-secret machine settings without copying credentials | Template and guarded inventory implemented, not released (14 November 2026). `captain secrets template` prints five fixed settings without loading source configuration, credentials, registry or ledger. `secrets list` now reuses F1's guarded reader for both files and prints sorted, unique ASCII variable names. Isolated Linux tests reproduce the prior output-injection bug and pass after the fix, including seven unsafe-file cases. Inventory benchmark: 2.20–2.28 µs, 1,040 B and 9 allocations per call; `go vet ./...` passes. See [SECRETS.md](SECRETS.md#inventory-assurance). The two-machine inventory and provider login health checks remain. Never export arbitrary env values as a safe template. |
+| F4 | Install a pinned headless bundle on a clean account | After F2 and F3: reuse the existing install recipes and supervisor. Verify artifact hashes, fresh identity, fresh logins and reboot recovery. No release or host deployment is implied. |
+| F5 | Qualify the first Linux host | After F4: reuse tagged discovery, existing infrastructure modules and OpenShell qualification. Keep code tasks blocked until qualification passes. Record spend authorization and teardown before launch. |
+| F6 | Add hub transport and scoped credential delivery | Review the existing hub security and link branches first. Reuse their protocol and the existing broker lifecycle rules. Confidential key custody and a self-hosted network control plane remain later gated work. |
+
+Next execution order: finish F2's caller retry and recovery checks, then run
+F2/F3 acceptance on both hosts with a build that includes these routes. Build
+the offline hash-verification and install path for F4 next. Keep cloud launch
+behind F4/F5's existing spend and containment gates. This round changed F3
+only; it did not deploy a brain, alter host credentials, or change network policy.
+
 ### Open items (honest remaining)
 
 | Item | Why it is still open |
@@ -39,8 +60,8 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | Q5 | A workflow gate repair or escalation is charged once, at the billed amount | M2.4 | done (7 October; the repair also counted its cost twice, and an escalation with no target settled an attempt with no call) |
 | Q6 | Host workflow stages hand over their tree; one cumulative apply at the end | M3.2 | done (7 October, Q6 pass) |
 | Q7 | Host `/team` rules once per conflict group | M3.2 | done (7 October; workflow `+` stages use the same path, and semantic-conflict owners are also worker ids) |
-| Q8 | Run records keep the full tool input and every prompt a worker received | M1.2, M3.5 | next |
-| Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | queued |
+| Q8 | Run records keep the full tool input and every prompt a worker received | M1.2, M3.5 | done (14 November 2026; the input rides the status line to the log, and every run writes a masked 0600 `.prompt.md` beside it) |
+| Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | next |
 | Q10 | A new Euclid MCP server ends when its parent or its folder is gone | Euclid adapter | queued |
 | Q11 | M1 pilot: blind review without arm names; evaluation section in the release report | M1.3, M1.5 | queued |
 | Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | queued |
