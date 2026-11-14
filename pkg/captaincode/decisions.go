@@ -14,7 +14,9 @@ package captaincode
 // one text and gets another signed can at most pick a different one of
 // those options.
 //
-// One JSON file per decision under ~/.captaincode/decisions, mode 0600.
+// One JSON file per decision under ~/.captaincode/decisions, mode 0600. Each
+// post, answer and withdrawal also appends to the repository's committed
+// decision log (decisions_log.go).
 
 import (
 	"crypto/rand"
@@ -65,8 +67,13 @@ type DecisionAnswer struct {
 type OwnerDecision struct {
 	ID string `json:"id"`
 	// Ref is the repository's own id for it (OD-52, D10), when it has one.
-	Ref      string           `json:"ref,omitempty"`
+	Ref string `json:"ref,omitempty"`
+	// Repo is the main checkout. Checkout is the linked worktree the
+	// question was posted from, when it was not Repo, and Branch is the
+	// branch it was posted on (decisions_log.go).
 	Repo     string           `json:"repo"`
+	Checkout string           `json:"checkout,omitempty"`
+	Branch   string           `json:"branch,omitempty"`
 	Title    string           `json:"title"`
 	Question string           `json:"question"`
 	Context  string           `json:"context,omitempty"`
@@ -262,7 +269,11 @@ func DecisionRecordPrompt(d OwnerDecision, option, note string) (string, error) 
 	if d.Record != "" {
 		fmt.Fprintf(&b, " (%s)", d.Record)
 	}
-	b.WriteString(", in the format and wording that file already uses, and mark the question closed wherever it is listed as open. Change nothing else. Commit only if this repository's rules say decision records are committed.")
+	b.WriteString(", in the format and wording that file already uses, and mark the question closed wherever it is listed as open.")
+	if d.Branch != "" {
+		fmt.Fprintf(&b, " The question was asked on branch %s: make the change on that branch (in its worktree, if it has one).", d.Branch)
+	}
+	b.WriteString(decisionCommitStep)
 	if d.GitHub != "" {
 		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decision and the chosen option.", d.GitHub)
 	}
@@ -271,6 +282,11 @@ func DecisionRecordPrompt(d OwnerDecision, option, note string) (string, error) 
 	// cockpit marks the item answered when the signature is accepted.
 	return b.String(), nil
 }
+
+// decisionCommitStep asks the record worker to commit the answer with the
+// repository's decision log, which `captain decision answered` has already
+// appended to (decisions_log.go).
+const decisionCommitStep = " Captain adds the answer to " + DecisionLogRel + ", the repository's decision log. Commit the record together with that log if it changed, by path, and change nothing else."
 
 // DecisionChoice is one answer in a bundle.
 type DecisionChoice struct {
@@ -324,6 +340,7 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 	}
 	fmt.Fprintf(&b, "Record the user's %d %s for %s.\n", len(items), noun, filepath.Base(repo))
 	records, notes := []string{}, []string{}
+	branches := false
 	for i, it := range items {
 		name := it.d.ID
 		if it.d.Ref != "" {
@@ -340,6 +357,10 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 		if it.n != "" {
 			fmt.Fprintf(&b, "   The user's note: %s\n", it.n)
 		}
+		if it.d.Branch != "" {
+			fmt.Fprintf(&b, "   Asked on branch %s.\n", it.d.Branch)
+			branches = true
+		}
 		if it.d.Record != "" && !containsString(records, it.d.Record) {
 			records = append(records, it.d.Record)
 		}
@@ -351,7 +372,11 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 	if len(records) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(records, "; "))
 	}
-	b.WriteString(", in the format and wording that file already uses, and mark each question closed wherever it is listed as open. Change nothing else. Commit only if this repository's rules say decision records are committed.")
+	b.WriteString(", in the format and wording that file already uses, and mark each question closed wherever it is listed as open.")
+	if branches {
+		b.WriteString(" Make each change on the branch its question was asked on (in that branch's worktree, if it has one).")
+	}
+	b.WriteString(decisionCommitStep)
 	if len(notes) > 0 {
 		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decisions and the chosen options.", strings.Join(notes, ", "))
 	}

@@ -13,6 +13,10 @@ package main
 //	captain decision bundle < [{"id":ID,"option":"a","note":N},...]   one prompt for several, same repository
 //	captain decision answered ID --option a [--note N] [--via V]
 //	captain decision withdraw ID --reason R
+//
+// post, answered and withdraw each append an entry to .captaincode/decisions.md
+// in the checkout the question was posted from (decisions_log.go); the worker
+// commits it with its work, and the record worker with the answer.
 
 import (
 	"encoding/json"
@@ -152,19 +156,28 @@ func cmdDecision(args []string) {
 		via := fs.String("via", "", "where the answer came from (galaxy, tui, record worker)")
 		sha := fs.String("prompt-sha256", "", "SHA-256 of the signed record prompt")
 		id := decisionID(fs, args)
+		before, err := captaincode.GetDecision(id)
+		if err != nil {
+			fatal(err)
+		}
 		d, err := captaincode.AnswerDecision(id, *option, *note, *sha, *via)
 		if err != nil {
 			fatal(err)
 		}
-		fmt.Printf("%s answered: option %s\n", d.ID, d.Answer.Option)
+		logged := ""
+		if before.Status == captaincode.DecisionOpen {
+			logged = loggedIn(logDecision(d, captaincode.DecisionAnswered))
+		}
+		fmt.Printf("%s answered: option %s%s\n", d.ID, d.Answer.Option, logged)
 	case "withdraw":
 		fs := flag.NewFlagSet("decision withdraw", flag.ExitOnError)
 		reason := fs.String("reason", "", "why the question no longer needs the user")
 		id := decisionID(fs, args)
-		if _, err := captaincode.WithdrawDecision(id, *reason); err != nil {
+		d, err := captaincode.WithdrawDecision(id, *reason)
+		if err != nil {
 			fatal(err)
 		}
-		fmt.Printf("%s withdrawn\n", id)
+		fmt.Printf("%s withdrawn%s\n", id, loggedIn(logDecision(d, captaincode.DecisionWithdrawn)))
 	default:
 		fmt.Fprintf(os.Stderr, "captain decision: unknown subcommand %q\n", sub)
 		os.Exit(2)
@@ -201,7 +214,7 @@ func decisionPost(args []string) {
 	fs.StringVar(&d.Record, "record", "", "the repository file the answer belongs in")
 	fs.StringVar(&d.GitHub, "github", "", "issue or pull request that gets a note: owner/repo#n")
 	fs.StringVar(&d.NeededBefore, "needed-before", "", "what waits for it")
-	cwd := fs.String("cwd", "", "the repository (default: this folder's git root)")
+	cwd := fs.String("cwd", "", "the checkout you commit in (default: this folder's); a worktree is filed under its main checkout")
 	logName := fs.String("log", "", "the worker log name (default: found by folder and leg)")
 	asJSON := fs.Bool("json", false, "print the stored decision as JSON")
 	_ = fs.Parse(args)
@@ -211,17 +224,18 @@ func decisionPost(args []string) {
 		dir, _ = os.Getwd()
 	}
 	dir, _ = filepath.Abs(dir)
-	if root := captaincode.GitRoot(dir); root != "" {
-		dir = root
-	}
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
-	}
-	d.Repo = dir
+	// A worker in a linked worktree files the question under the main
+	// checkout, the folder its TUI runs in and a signature binds; the log
+	// entry goes in the worktree, where the worker commits.
+	d.Repo, d.Checkout, d.Branch = captaincode.DecisionPlace(dir)
 	d.PostedBy.Leg = os.Getenv(captaincode.GateLegEnv)
 	d.PostedBy.Log = *logName
 	if d.PostedBy.Log == "" && d.PostedBy.Leg != "" {
-		d.PostedBy.Log = captaincode.FindRunLog(workerLogsDir(), dir, d.PostedBy.Leg)
+		for _, at := range []string{d.Repo, d.Checkout} {
+			if d.PostedBy.Log == "" && at != "" {
+				d.PostedBy.Log = captaincode.FindRunLog(workerLogsDir(), at, d.PostedBy.Leg)
+			}
+		}
 	}
 	if d.Title == "" {
 		d.Title = d.Question
@@ -230,11 +244,45 @@ func decisionPost(args []string) {
 	if err != nil {
 		fatal(err)
 	}
+	logged := logDecision(stored, captaincode.DecisionOpen)
+	commit := ""
+	if logged != "" {
+		commit = "added to " + logged + ": commit that file with your work"
+	}
 	if *asJSON {
 		printJSON(stored)
+		if commit != "" {
+			fmt.Fprintln(os.Stderr, "captain decision: "+commit)
+		}
 		return
 	}
 	fmt.Printf("posted %s - the user answers it in the cockpit or with `captain decision prompt %s --option <id>`\n", stored.ID, stored.ID)
+	if commit != "" {
+		fmt.Println(commit)
+	}
+}
+
+// logDecision appends d's event to its repository's decision log and returns
+// the log's path, or "" when there is no checkout to log in. A failed write is
+// reported but does not fail the command: the register entry stands.
+func logDecision(d captaincode.OwnerDecision, event string) string {
+	dir := captaincode.DecisionCheckout(d)
+	if dir == "" {
+		return ""
+	}
+	path, err := captaincode.AppendDecisionLog(dir, d, event)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "captain decision: %s was not updated: %v\n", captaincode.DecisionLogRel, err)
+		return ""
+	}
+	return path
+}
+
+func loggedIn(path string) string {
+	if path == "" {
+		return ""
+	}
+	return " (logged in " + path + ")"
 }
 
 func printJSON(v any) {
