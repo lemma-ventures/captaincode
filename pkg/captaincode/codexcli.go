@@ -366,7 +366,7 @@ func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, o
 				continue
 			}
 			if ev.Type == "item.started" && onStatus != nil {
-				if s := codexItemStatus(it.Type, ev.Item); s != "" {
+				if s := StatusInput(codexItemStatus(it.Type, ev.Item), string(ev.Item)); s != "" {
 					onStatus(s)
 				}
 			}

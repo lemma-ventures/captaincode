@@ -376,7 +376,7 @@ func TestWorkflowWritesAFullTranscript(t *testing.T) {
 	b.chatCompletions(rec, wfReq(false, "/grok analyse it > /claude review it"))
 	require.Equal(t, 200, rec.Code)
 
-	matches, err := filepath.Glob(filepath.Join(home, ".captaincode", "runs", "*.md"))
+	matches, err := filepath.Glob(filepath.Join(home, ".captaincode", "runs", "wf_*.md"))
 	require.NoError(t, err)
 	require.Len(t, matches, 1, "one transcript per workflow")
 	body, err := os.ReadFile(matches[0])

@@ -15,6 +15,7 @@ import (
 // 2026-09-22).
 func TestAnAgentDirectorPinsItsJudgeTwinAndSaysSo(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAPTAIN_DIRECTOR", "") // the ladder would otherwise start from this machine's own env
 	defer captaincode.SetDirector(captaincode.LegGrok)
 	b := teamBrain()
 	captaincode.SetDirector(captaincode.LegGrok)

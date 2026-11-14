@@ -1319,7 +1319,7 @@ func (d *OpencodeDispatcher) streamEvents(ctx context.Context, conn chan<- bool)
 				toolSeen[p.ID] = true
 				detail := opencodeToolDetail(p.State.Title, p.State.Input)
 				if d.OnStatus != nil {
-					d.OnStatus(workerStatus(p.Tool, detail)) // brain progress feed → the TUI
+					d.OnStatus(StatusInput(workerStatus(p.Tool, detail), string(p.State.Input))) // brain progress feed → the TUI
 				} else {
 					fmt.Fprintf(os.Stderr, "\n  ⚙ %s %s\n", p.Tool, detail)
 				}
@@ -2679,7 +2679,7 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 				if onStatus == nil {
 					continue
 				}
-				if s := workerStatus(blk.Name, claudeToolDetail(blk.Input)); s != "" {
+				if s := StatusInput(workerStatus(blk.Name, claudeToolDetail(blk.Input)), string(blk.Input)); s != "" {
 					onStatus(s)
 				}
 			}
@@ -2911,7 +2911,7 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 			if ev.Subtype != "started" || onStatus == nil {
 				continue
 			}
-			if s := cursorToolStatus(ev.ToolCall); s != "" {
+			if s := StatusInput(cursorToolStatus(ev.ToolCall), string(ev.ToolCall)); s != "" {
 				onStatus(s)
 			}
 		case "result":

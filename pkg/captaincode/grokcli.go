@@ -247,7 +247,7 @@ func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSta
 			prog.toolStart()
 			afterTool = true
 			if onStatus != nil {
-				if s := grokToolStatus(ev); s != "" {
+				if s := StatusInput(grokToolStatus(ev), string(ev.RawInput)); s != "" {
 					onStatus(s)
 				}
 			}

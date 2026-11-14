@@ -12,7 +12,7 @@ it ran, which files changed, the last error, and what the next agent was handed.
 | Question | Where it is | How to read it |
 |---|---|---|
 | **Which agent got the task, and why** | `routing.jsonl` (one `decision` row per task: chosen leg, routing path, rationale, every candidate and why the others were excluded), `state.json` `events` (leg, model, effort, outcome, tokens, cost) | `captain why` (the last decision), `captain runs --leg <leg>`, `captain task inspect <task-id>` |
-| **What it ran** | `runs/<run-id>-<leg>.log`: the worker's full answer text as it streamed, plus one line per tool call (`[42s] ⚙ Bash go test ./...`) with elapsed time | `captain show <run-id>`, or open the log (the history record names it under `logs`) |
+| **What it ran** | `runs/<run-id>-<leg>.log`: the worker's full answer text as it streamed, plus one line per tool call (`[42s] ⚙ Bash go test ./...`) with elapsed time, and an `input:` line under each with the full tool input | `captain show <run-id>`, or open the log (the history record names it under `logs`) |
 | **Which files changed** | Solo turns: `diffs/solo-<leg>.<digest>.diff` plus `changed_files` and `diff_digest` on the attempt in `state.json`. `/team` and workflows: one manifest per worker (files, diff, gate result) and `runs/diffs/<leg>.<digest>.diff` | `captain task artifacts <task-id>` (also shows the director's ruling when two workers edited the same file) |
 | **The last error** | The history record's `error` and each worker's `error`; the log's closing lines (`failed in 3m12s`, `error: …`); `events[].error`; the handoff brief's failed checks (command, exit code, output) | `captain runs --failed`, `captain show <run-id>`, `captain task inspect <task-id>` |
 | **What the next handoff received** | `state.json` `handoffs`: one brief per task with the requirements, each attempt's leg and outcome, the verified artifacts, failed checks, remaining actions and anything uncertain. Workflows also write `runs/wf_<id>-<name>.md` with every stage's full output, in order | `captain task inspect <task-id>` prints the brief; open the `.md` for a workflow |
@@ -29,7 +29,8 @@ grep '"kind":"decision"' ~/.captaincode/routing.jsonl | grep 'words from the pro
 | Path | One line per | Kept |
 |---|---|---|
 | `history/<date>.jsonl` | Turn: kind (solo, team, workflow, frontier), legs, model, the task, full output, error, duration, each worker's text and error, log paths | Forever, one file per day |
-| `runs/<run-id>-<leg>.log` | Worker run: leg, start time, working directory, the task, then everything it said and every tool it called, then the outcome and error | Forever (`CAPTAIN_WORKER_LOGS=0` stops writing them). Mode 0600 |
+| `runs/<run-id>-<leg>.log` | Worker run: leg, start time, working directory, the task, then everything it said and every tool it called with its full input on an `input:` line, then the outcome and error | Forever (`CAPTAIN_WORKER_LOGS=0` stops writing them). Mode 0600 |
+| `runs/<run-id>-<leg>.prompt.md` | The exact prompt this worker received: first dispatch, reroute, gate repair, escalation or stage assignment | Forever, next to its log (`CAPTAIN_WORKER_LOGS=0` stops writing them). Mode 0600 |
 | `runs/wf_<id>-<name>.md` | Workflow: each stage's leg, duration, full output or error, and the review | Forever |
 | `routing.jsonl` | Decision, run event or settled outcome, append-only | Up to 64 MB, then the newest half (`CAPTAIN_ROUTING_LOG=0` turns it off) |
 | `state.json` | The ledger: decisions, events, charges, task and attempt lifecycle, budgets, handoff briefs, cooldowns | Ring buffers: the last 500 events, 200 decisions, 500 lifecycle states, 200 handoff briefs |
@@ -184,21 +185,24 @@ handoff label it **verified unchanged snapshot** and offer nothing to apply.
 An edit followed by a review still exports the earlier edits against the original
 revision. Review text is evidence to read, not an automated approval gate.
 
-## What is not recorded exactly (yet)
+## Tool inputs and prompts, exactly
 
-Two answers are partial today. Both are known, and both are on the list.
+Two things used to be cut short. Both are recorded in full now.
 
-- **The exact command.** A tool-call line in the worker log is cut to 80
-  characters and its whitespace collapsed, so a long command or a heredoc is
-  shortened. The full command is in the agent CLI's own transcript (Claude Code
-  under `~/.claude/projects/`, Codex under `~/.codex/sessions/`), which Captain
-  does not link to yet.
-- **The full prompt a rerouted or escalated worker received.** When a leg fails
-  and the same task moves to the next leg, or a failed gate hands the task on
-  with its output, the next worker's log shows only the first 600 characters of
-  the user's request, not the whole prompt. The handoff brief and the
-  workflow transcript record the failure that caused the handoff; the log does
-  not repeat it.
+- **The exact tool input.** The tool line in the log stays one short line for
+  the TUI. Under it an `input:` line holds the whole input: the full command,
+  the full argument object. It is masked like everything else
+  ([SECRETS.md](SECRETS.md)) and cut at 16 KiB with a `[cut N bytes]` marker.
+  The agent CLI's own transcript (Claude Code under `~/.claude/projects/`,
+  Codex under `~/.codex/sessions/`) is still separate; Captain does not link
+  to it yet.
+- **The exact prompt each worker received.** Every worker run writes
+  `runs/<run-id>-<leg>.prompt.md` beside its log. It holds the whole prompt as
+  the worker got it: the first dispatch, a reroute after a leg failed, a gate
+  repair, an escalation and a stage assignment. It is masked, written with
+  mode 0600 and cut at 256 KiB with the same marker. The log's header names
+  the file. The log's `task:` line stays a short peek, so the Last Runs feed
+  does not fill up with prompt text.
 
 One more thing to know when reading "files changed" for a solo turn: it is the
 working tree against `HEAD` after the turn. Edits you had not committed before

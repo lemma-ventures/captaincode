@@ -64,6 +64,7 @@ func cmdBrain(args []string) {
 		processID:  captaincode.CurrentProcessID(),
 		cancelTree: captaincode.NewCancelTree(),
 	}
+	b.roster.lastBusy = time.Now()
 	// CAPTAIN_LEGS=free,codex restricts the worker pool to models the fork's
 	// opencode can actually run (unset = all). The director never picks a leg
 	// outside this set, so it can't route to an unconfigured provider.
@@ -1613,6 +1614,7 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 			return l, captaincode.Result{}, err
 		}
 		b.inflightRuns.Add(1)
+		b.markLastBusy()
 		defer b.inflightRuns.Add(-1)
 		defer b.active.begin(ws, l, prompt)()
 		// /interrupt typed while the turn was still being prepared (compaction,
@@ -1649,11 +1651,16 @@ func (b *brain) runWorkerReroutedHeld(ws captaincode.Workspace, leg captaincode.
 			} else {
 				od = wl.delta
 			}
+		}
+		// A status can carry the full tool input behind a separator (Q8): the
+		// log keeps it, every display sees the short line only.
+		if wl != nil || os_ != nil {
 			innerS := os_
 			os_ = func(s string) {
+				show, _ := captaincode.StatusParts(s)
 				wl.status(s)
 				if innerS != nil {
-					innerS(s)
+					innerS(show)
 				}
 			}
 		}
@@ -1964,13 +1971,19 @@ func landingContract() string {
 // decisionContract sends a question only the user can settle to the
 // register (decisions.go) instead of a log line: on 2026-11-07 "D10 still
 // blocks a cloud run" sat in a worker log and the user found it by reading
-// the log. CAPTAIN_WORKER_DECISIONS=0 drops it.
+// the log. The same day a worker the user had asked to "ask me for
+// decisions" put six questions in its final message only, so the cockpit
+// showed none; such a request is named here, and each post also goes in the
+// repository's committed log (decisions_log.go). CAPTAIN_WORKER_DECISIONS=0
+// drops it.
 func decisionContract() string {
 	if os.Getenv("CAPTAIN_WORKER_DECISIONS") == "0" {
 		return ""
 	}
-	return "\n\n[captain] Decisions for the user: when work needs a choice that only the user can make (spending, naming a person, accepting a rule or contract change, a product direction the repository says is the owner's), do not only write it in a document or your final message." +
-		" Post it once: `captain decision post --ref <the repo's id, if any> --title \"...\" --question \"...\" --context \"<what they need to know, 2-4 sentences>\" --option a=\"...\" --option b=\"...\" --recommend <id> --why \"<one line>\" --record <the file the answer belongs in>` (add --github owner/repo#n when an issue or pull request tracks it)." +
+	return "\n\n[captain] Decisions for the user: when work needs a choice that only the user can make (spending, naming a person, accepting a rule or contract change, a product direction the repository says is the owner's), or the user asks you to bring decisions to them, post each question once, from the checkout you commit in." +
+		" A question that is only in a document or your final message does not reach the user's cockpit." +
+		" Post with `captain decision post --ref <the repo's id, if any> --title \"...\" --question \"...\" --context \"<what they need to know, 2-4 sentences>\" --option a=\"...\" --option b=\"...\" --recommend <id> --why \"<one line>\" --record <the file the answer belongs in>` (add --github owner/repo#n when an issue or pull request tracks it)." +
+		" Captain lists it in the cockpit's Decisions panel and appends it to " + captaincode.DecisionLogRel + " in that checkout: commit that file, by path, with your work. In a public repository that file is public, so write the question without private names." +
 		" Check `captain decision list` first and do not post a question that is already open. Keep working around it where you can, and decide routine choices yourself."
 }
 

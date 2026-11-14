@@ -77,6 +77,17 @@ func fakeBin(t *testing.T, name, script string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+// statusLines splits each recorded status back to the line every display
+// shows; the full tool input rides behind it for the worker log (Q8).
+func statusLines(statuses []string) []string {
+	lines := make([]string, 0, len(statuses))
+	for _, s := range statuses {
+		show, _ := StatusParts(s)
+		lines = append(lines, show)
+	}
+	return lines
+}
+
 func TestClaudeStreamReportsToolActivity(t *testing.T) {
 	fakeBin(t, "claude", `#!/bin/sh
 cat <<'EOF'
@@ -93,7 +104,9 @@ EOF
 		func(s string) { statuses = append(statuses, s) }, false, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", res.Text)
-	assert.Equal(t, []string{"⚙ Read pkg/x.go", "⚙ Bash go test ./..."}, statuses)
+	assert.Equal(t, []string{"⚙ Read pkg/x.go", "⚙ Bash go test ./..."}, statusLines(statuses))
+	_, input := StatusParts(statuses[1])
+	assert.Contains(t, input, `"command":"go test ./..."`, "the full input rides behind the line")
 	assert.Equal(t, "hello", answer.String(), "tool activity must stay off the answer stream")
 }
 
@@ -113,7 +126,9 @@ EOF
 		func(s string) { statuses = append(statuses, s) }, nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ok", res.Text)
-	assert.Equal(t, []string{"⚙ shell Print ok"}, statuses, "only tool STARTS are reported, once each")
+	assert.Equal(t, []string{"⚙ shell Print ok"}, statusLines(statuses), "only tool STARTS are reported, once each")
+	_, input := StatusParts(statuses[0])
+	assert.Contains(t, input, `"command":"echo ok"`, "the full input rides behind the line")
 	assert.Equal(t, "ok", answer.String())
 }
 

@@ -29,6 +29,8 @@ func TestDecisionContractTellsWorkersToPost(t *testing.T) {
 	assert.Contains(t, c, "captain decision post")
 	assert.Contains(t, c, "--recommend")
 	assert.Contains(t, c, "only the user", "routine choices stay with the worker")
+	assert.Contains(t, c, "asks you to bring decisions", "a requested round of questions is posted too")
+	assert.Contains(t, c, ".captaincode/decisions.md", "the repository log is committed with the work")
 	t.Setenv("CAPTAIN_WORKER_DECISIONS", "0")
 	assert.Empty(t, decisionContract())
 }

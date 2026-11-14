@@ -81,8 +81,10 @@ func TestCodexCLIStreamParsesCodexEvents(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "I’ll read note.txt.\n\nhello", res.Text, "every agent message, in order, blank-line separated")
 	assert.Equal(t, []string{"I’ll read note.txt.\n", "\nhello"}, deltas, "messages stream as they land")
-	assert.Equal(t, []string{"⚙ shell cat note.txt", "⚙ edit pkg/x.go"}, statuses,
+	assert.Equal(t, []string{"⚙ shell cat note.txt", "⚙ edit pkg/x.go"}, statusLines(statuses),
 		"only the started edge, with the zsh -lc wrapper stripped; completions would double every line")
+	_, input := StatusParts(statuses[0])
+	assert.Contains(t, input, "cat note.txt", "the full input rides behind the line")
 	assert.Equal(t, 33968+54, res.Tokens, "input + output (cached is a subset of input)")
 	require.NotNil(t, res.TokenUsage)
 	assert.Equal(t, 33968-28288, *res.TokenUsage.Input)

@@ -2,6 +2,7 @@ package captaincode
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -34,6 +35,46 @@ func workerStatus(tool, detail string) string {
 		return "⚙ " + detail
 	}
 	return "⚙ " + tool + " " + detail
+}
+
+// statusInputSep separates a short status line from the full tool input it
+// stands for. The status channel carries one string per tool start, so the
+// input rides on that string: every display reads the part before the
+// separator, the worker log keeps the part after it (ROADMAP Q8).
+const statusInputSep = "\x1f"
+
+// statusInputMax bounds one recorded tool input at 16 KiB.
+const statusInputMax = 16 << 10
+
+// StatusInput pairs a status line with the full tool input behind it. The
+// input is masked with MaskSecrets and cut at 16 KiB with a "[cut N bytes]"
+// marker, so a log line can hold a heredoc without leaking a key. A status
+// with no input, or an input with no status, comes back unchanged.
+func StatusInput(status, input string) string {
+	if status == "" || input == "" {
+		return status
+	}
+	status = strings.ReplaceAll(status, statusInputSep, " ") // the short line never hides a separator
+	masked, _ := MaskSecrets(input, "[secret]")
+	if len(masked) > statusInputMax {
+		cut := statusInputMax
+		for cut > 0 && (masked[cut]&0xC0) == 0x80 {
+			cut--
+		}
+		masked = masked[:cut] + fmt.Sprintf("\n[cut %d bytes]", len(masked)-cut)
+	}
+	return status + statusInputSep + masked
+}
+
+// StatusParts splits what StatusInput paired: the line every display shows
+// and the full input only a worker log records. A plain status passes
+// through with an empty input.
+func StatusParts(s string) (string, string) {
+	i := strings.Index(s, statusInputSep)
+	if i < 0 {
+		return s, ""
+	}
+	return s[:i], s[i+1:]
 }
 
 // pickDetail returns the first non-empty string field of a tool's argument

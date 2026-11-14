@@ -27,6 +27,9 @@ type workerLog struct {
 	started time.Time
 }
 
+// promptFileMax bounds one saved run prompt at 256 KiB.
+const promptFileMax = 256 << 10
+
 // workerLogsDir is where worker logs live (next to workflow transcripts).
 func workerLogsDir() string {
 	home, err := os.UserHomeDir()
@@ -34,6 +37,24 @@ func workerLogsDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".captaincode", "runs")
+}
+
+// writePromptFile keeps the exact prompt a worker received beside its log:
+// masked with MaskSecrets, mode 0600, cut at 256 KiB with a "[cut N bytes]"
+// marker. It reports whether the file was written.
+func writePromptFile(path, task string) bool {
+	if strings.TrimSpace(task) == "" {
+		return false
+	}
+	text, _ := captaincode.MaskSecrets(task, "[secret]")
+	if len(text) > promptFileMax {
+		cut := promptFileMax
+		for cut > 0 && (text[cut]&0xC0) == 0x80 {
+			cut--
+		}
+		text = text[:cut] + fmt.Sprintf("\n[cut %d bytes]", len(text)-cut)
+	}
+	return os.WriteFile(path, []byte(text), 0o600) == nil
 }
 
 // openWorkerLog creates the log for one run; nil when logging is impossible
@@ -48,20 +69,28 @@ func openWorkerLog(ws captaincode.Workspace, leg captaincode.Leg, task string) *
 	}
 	now := time.Now()
 	name := fmt.Sprintf("%s-%s.log", newRunID(now), strings.ReplaceAll(string(leg), "/", "_"))
-	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	path := filepath.Join(dir, name)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil
 	}
-	l := &workerLog{path: f.Name(), f: f, started: now}
+	l := &workerLog{path: path, f: f, started: now}
 	from := ""
 	if ws.Origin != "" && filepath.Clean(ws.Origin) != filepath.Clean(ws.Dir) {
 		from = "origin: " + ws.Origin + "\n" // the TUI that started it, when the task moved the run elsewhere
 	}
+	// The full prompt beside the log: a reroute, a gate repair and an
+	// escalation each send a prompt the header's task line cannot hold.
+	promptPath := strings.TrimSuffix(path, ".log") + ".prompt.md"
+	promptLine := ""
+	if writePromptFile(promptPath, task) {
+		promptLine = "prompt: " + promptPath + "\n"
+	}
 	// The model the leg dispatches at this effort: "frontier" or "quality"
 	// alone does not say which model ran.
 	model := captaincode.ModelIDAt(leg, ws.Effort)
-	fmt.Fprintf(f, "# captain worker log\nleg: %s\nmodel: %s\nstarted: %s\ncwd: %s\n%stask: %s\n---\n",
-		leg, model, now.Format(time.RFC3339), ws.Dir, from, truncate(strings.Join(strings.Fields(lastUserTurn(task)), " "), 600))
+	fmt.Fprintf(f, "# captain worker log\nleg: %s\nmodel: %s\nstarted: %s\ncwd: %s\n%stask: %s\n%s---\n",
+		leg, model, now.Format(time.RFC3339), ws.Dir, from, truncate(strings.Join(strings.Fields(lastUserTurn(task)), " "), 600), promptLine)
 	return l
 }
 
@@ -75,13 +104,20 @@ func (l *workerLog) delta(d string) {
 	_, _ = l.f.WriteString(d)
 }
 
+// status writes one status line. A status carrying a full tool input gets a
+// second `input:` line under the short line, so the log keeps what the TUI's
+// one-line view leaves out.
 func (l *workerLog) status(s string) {
 	if l == nil || strings.TrimSpace(s) == "" {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = fmt.Fprintf(l.f, "\n[%s] %s\n", time.Since(l.started).Round(time.Second), strings.TrimSpace(s))
+	show, input := captaincode.StatusParts(s)
+	_, _ = fmt.Fprintf(l.f, "\n[%s] %s\n", time.Since(l.started).Round(time.Second), strings.TrimSpace(show))
+	if input != "" {
+		_, _ = fmt.Fprintf(l.f, "input: %s\n", strings.TrimRight(input, "\n"))
+	}
 }
 
 // close writes the outcome (and the full text when nothing streamed) and
