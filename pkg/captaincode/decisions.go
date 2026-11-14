@@ -273,7 +273,7 @@ func DecisionRecordPrompt(d OwnerDecision, option, note string) (string, error) 
 	if d.Branch != "" {
 		fmt.Fprintf(&b, " The question was asked on branch %s: make the change on that branch (in its worktree, if it has one).", d.Branch)
 	}
-	b.WriteString(decisionCommitStep)
+	b.WriteString(decisionCommitStep([]string{DecisionCheckout(d)}))
 	if d.GitHub != "" {
 		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decision and the chosen option.", d.GitHub)
 	}
@@ -284,9 +284,43 @@ func DecisionRecordPrompt(d OwnerDecision, option, note string) (string, error) 
 }
 
 // decisionCommitStep asks the record worker to commit the answer with the
-// repository's decision log, which `captain decision answered` has already
-// appended to (decisions_log.go).
-const decisionCommitStep = " Captain adds the answer to " + DecisionLogRel + ", the repository's decision log. Commit the record together with that log if it changed, by path, and change nothing else."
+// decision log `captain decision answered` appends to (decisions_log.go),
+// naming the checkout that log is in. Without the folder the worker
+// committed the log of the branch it worked on, while the answer had gone to
+// the main checkout's copy, which then sat untracked (14 Nov).
+func decisionCommitStep(logDirs []string) string {
+	var dirs []string
+	for _, d := range logDirs {
+		if d != "" && !containsString(dirs, d) {
+			dirs = append(dirs, d)
+		}
+	}
+	if len(dirs) == 0 {
+		return " Captain adds the answer to " + DecisionLogRel + ", the repository's decision log. Commit the record together with that log if it changed, by path, and change nothing else."
+	}
+	return " Captain adds the answer to the decision log " + DecisionLogRel + " in " + strings.Join(dirs, " and in ") +
+		". Commit that log there, by path, together with the record if it is in the same checkout, and change nothing else."
+}
+
+// DecisionHome is the repository a decision is signed for and the linked
+// worktree it was asked in ("" when that is the repository itself). A
+// decision posted before Checkout existed stored the worktree as Repo: a
+// bundle of one repository's decisions then split into one signature per
+// worktree (14 Nov). A removed worktree still maps by its path.
+func DecisionHome(d OwnerDecision) (repo, checkout string) {
+	if d.Checkout != "" {
+		return d.Repo, d.Checkout
+	}
+	if st, err := os.Stat(d.Repo); err == nil && st.IsDir() {
+		if r, c, _ := DecisionPlace(d.Repo); r != "" {
+			return r, c
+		}
+	}
+	if i := strings.Index(d.Repo, string(filepath.Separator)+".worktrees"+string(filepath.Separator)); i > 0 {
+		return d.Repo[:i], d.Repo
+	}
+	return d.Repo, ""
+}
 
 // DecisionChoice is one answer in a bundle.
 type DecisionChoice struct {
@@ -326,9 +360,10 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("decision %s: %q is not one of its options", d.ID, c.Option)
 		}
+		home, _ := DecisionHome(d)
 		if repo == "" {
-			repo = d.Repo
-		} else if d.Repo != repo {
+			repo = home
+		} else if home != repo {
 			return "", errors.New("decision bundle: all decisions must belong to one repository")
 		}
 		items = append(items, item{d, o, strings.TrimSpace(c.Note)})
@@ -339,7 +374,7 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 		noun = "decision"
 	}
 	fmt.Fprintf(&b, "Record the user's %d %s for %s.\n", len(items), noun, filepath.Base(repo))
-	records, notes := []string{}, []string{}
+	records, notes, logDirs := []string{}, []string{}, []string{}
 	branches := false
 	for i, it := range items {
 		name := it.d.ID
@@ -361,6 +396,11 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 			fmt.Fprintf(&b, "   Asked on branch %s.\n", it.d.Branch)
 			branches = true
 		}
+		if _, wt := DecisionHome(it.d); wt != "" && it.d.Branch == "" {
+			fmt.Fprintf(&b, "   Asked in the worktree %s.\n", wt)
+			branches = true
+		}
+		logDirs = append(logDirs, DecisionCheckout(it.d))
 		if it.d.Record != "" && !containsString(records, it.d.Record) {
 			records = append(records, it.d.Record)
 		}
@@ -376,7 +416,7 @@ func DecisionBundlePrompt(choices []DecisionChoice) (string, error) {
 	if branches {
 		b.WriteString(" Make each change on the branch its question was asked on (in that branch's worktree, if it has one).")
 	}
-	b.WriteString(decisionCommitStep)
+	b.WriteString(decisionCommitStep(logDirs))
 	if len(notes) > 0 {
 		fmt.Fprintf(&b, " Then leave a short comment on %s that names the decisions and the chosen options.", strings.Join(notes, ", "))
 	}

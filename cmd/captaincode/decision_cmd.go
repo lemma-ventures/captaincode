@@ -134,7 +134,8 @@ func cmdDecision(args []string) {
 			fatal(err)
 		}
 		if *asJSON {
-			printJSON(map[string]string{"id": d.ID, "repo": d.Repo, "text": text, "text_sha256": captaincode.SHA256Hex(text)})
+			home, _ := captaincode.DecisionHome(d)
+			printJSON(map[string]string{"id": d.ID, "repo": home, "text": text, "text_sha256": captaincode.SHA256Hex(text)})
 			return
 		}
 		fmt.Println(text)
@@ -148,7 +149,8 @@ func cmdDecision(args []string) {
 			fatal(err)
 		}
 		first, _ := captaincode.GetDecision(choices[0].ID)
-		printJSON(map[string]string{"repo": first.Repo, "text": text, "text_sha256": captaincode.SHA256Hex(text)})
+		home, _ := captaincode.DecisionHome(first) // the repository the bundle is signed for
+		printJSON(map[string]string{"repo": home, "text": text, "text_sha256": captaincode.SHA256Hex(text)})
 	case "answered":
 		fs := flag.NewFlagSet("decision answered", flag.ExitOnError)
 		option := fs.String("option", "", "the chosen option id")

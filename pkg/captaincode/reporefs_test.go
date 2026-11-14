@@ -122,3 +122,18 @@ func TestRepoRefsSeveralReposAreAllNamed(t *testing.T) {
 	t.Setenv("CAPTAIN_REPO_REFS", "0")
 	assert.Empty(t, RepoRefs("in captaincode do x", cwd), "opt-out")
 }
+
+// A decision record prompt names the log by its relative path; the hidden
+// folder is not the captaincode repository, which it moved every record
+// worker into (14 Nov). An absolute path still names its repository.
+func TestRepoRefsAHiddenFolderIsNotARepository(t *testing.T) {
+	root := fakeWorkspaceRoot(t)
+	cwd := filepath.Join(root, "QMX")
+	task := "Record the answer. Captain adds it to .captaincode/decisions.md, the repository's decision log. Commit it with `.captaincode` by path."
+	assert.Empty(t, RepoRefs(task, cwd))
+	assert.False(t, RepoNamedFirmly(task, filepath.Join(root, "captaincode")))
+	assert.Equal(t, []string{filepath.Join(root, "captaincode")}, RepoRefs("in captaincode, fix .captaincode/decisions.md", cwd),
+		"the name said on its own still counts")
+	assert.Equal(t, []string{filepath.Join(root, "ash")}, RepoRefs("see "+root+"/ash/.captaincode/decisions.md", cwd),
+		"an absolute path into a hidden folder names its repository")
+}

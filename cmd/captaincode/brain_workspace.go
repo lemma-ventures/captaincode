@@ -127,6 +127,13 @@ func defaultWorkspace() captaincode.Workspace {
 // elsewhere must never be a surprise. A name spelt only as prose ("Buzz
 // Finance" for acme-ledger) does not move the worker (RepoNamedFirmly).
 func (b *brain) followTask(ws captaincode.Workspace, task string) captaincode.Workspace {
+	// A decision record runs where it was signed for: the signature binds
+	// that folder, and the record prompt names the worktree and branch
+	// itself. A question that mentions another project by name ("profile 8
+	// of <other repo>") moved an answer's record into that project (9 Nov).
+	if isRecordTask(task) {
+		return ws
+	}
 	refs := captaincode.RepoRefs(task, ws.Dir)
 	switch len(refs) {
 	case 0:

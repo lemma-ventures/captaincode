@@ -166,8 +166,10 @@ func RepoRefs(task, cwd string) []string {
 			add(root, 1<<10)
 		}
 	}
-	// Names.
-	lower := " " + strings.ToLower(collapseName(task)) + " "
+	// Names. A hidden folder is not a repository: ".captaincode/decisions.md"
+	// in a decision record prompt moved every record worker into
+	// ~/Gits/captaincode (14 Nov).
+	lower := " " + strings.ToLower(collapseName(withoutHiddenFolders(task))) + " "
 	for _, root := range KnownRepos() {
 		name := filepath.Base(root)
 		parts := nameTokens(name)
@@ -306,6 +308,17 @@ func nameTokens(name string) []string {
 
 // collapseName makes a prompt comparable to a folder name: separators
 // become spaces, punctuation goes.
+// hiddenFolderRe is a dot-folder or dot-file name: on its own, as a relative
+// path (".captaincode/decisions.md", "`.euclid`") or inside an absolute path.
+// The name rules skip it; the path rules still read an absolute path to its
+// repository.
+var hiddenFolderRe = regexp.MustCompile("(^|[\\s\"'`(\\[/])\\.[A-Za-z0-9][A-Za-z0-9_-]*")
+
+// withoutHiddenFolders blanks those names, keeping what precedes them.
+func withoutHiddenFolders(s string) string {
+	return hiddenFolderRe.ReplaceAllString(s, "$1 ")
+}
+
 func collapseName(s string) string {
 	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
@@ -322,7 +335,7 @@ func RepoNamedFirmly(task, root string) bool {
 	if nearCue(task, name) || nearCue(task, strings.Join(nameTokens(name), " ")) {
 		return true
 	}
-	if regexp.MustCompile(`(?i)(?:^|[^\w-])` + regexp.QuoteMeta(name) + `(?:$|[^\w-])`).MatchString(task) {
+	if regexp.MustCompile(`(?i)(?:^|[^\w-])` + regexp.QuoteMeta(name) + `(?:$|[^\w-])`).MatchString(withoutHiddenFolders(task)) {
 		return true
 	}
 	for _, tok := range pathTokenRe.FindAllString(task, -1) {

@@ -208,3 +208,45 @@ func TestDecisionBundlePrompt(t *testing.T) {
 		t.Fatal("a bundle across repositories was accepted; a signature binds one folder")
 	}
 }
+
+// A decision posted before Checkout existed stored its worktree as Repo; it
+// bundles with the rest of its repository under one signature, and the
+// prompt names that worktree and the folders whose decision log got the
+// answers (14 Nov).
+func TestDecisionBundleTakesAnOldWorktreeRecordIntoItsRepository(t *testing.T) {
+	a, _ := PostDecision(decisionFixture(t))
+	dir := os.Getenv(DecisionsDirEnv)
+	old := decisionFixture(t)
+	old.Ref, old.Title = "D12", "Old worktree record"
+	old.Repo = filepath.Join(a.Repo, ".worktrees", "gone-20261108")
+	old.Checkout, old.Branch = "", ""
+	t.Setenv(DecisionsDirEnv, dir)
+	b, err := PostDecision(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if home, wt := DecisionHome(b); home != a.Repo || wt != old.Repo {
+		t.Fatalf("DecisionHome = %q, %q; want %q, %q", home, wt, a.Repo, old.Repo)
+	}
+	text, err := DecisionBundlePrompt([]DecisionChoice{{ID: a.ID, Option: "a"}, {ID: b.ID, Option: "c"}})
+	if err != nil {
+		t.Fatalf("one repository's decisions were refused as one bundle: %v", err)
+	}
+	for _, want := range []string{"Asked in the worktree " + old.Repo, "Captain adds the answer to"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("bundle lacks %q:\n%s", want, text)
+		}
+	}
+}
+
+// The commit step names the checkout whose log got the answer, once each.
+func TestDecisionCommitStepNamesTheLogFolder(t *testing.T) {
+	got := decisionCommitStep([]string{"/g/repo-a", "", "/g/repo-a/.worktrees/x", "/g/repo-a"})
+	want := " Captain adds the answer to the decision log " + DecisionLogRel + " in /g/repo-a and in /g/repo-a/.worktrees/x."
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(decisionCommitStep(nil), "the repository's decision log") {
+		t.Fatal("no folder known: the plain wording")
+	}
+}

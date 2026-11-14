@@ -385,3 +385,25 @@ func TestFollowTaskStaysForANameSpeltAsProse(t *testing.T) {
 		assert.Equal(t, ledger, b.followTask(home, task).Dir, task)
 	}
 }
+
+// A decision record stays in the folder it was signed for, even when the
+// question names another repository (9 Nov) - and its own log path never
+// reads as the captaincode repository (14 Nov).
+func TestFollowTaskKeepsADecisionRecordWhereItWasSigned(t *testing.T) {
+	root := t.TempDir()
+	for _, r := range []string{"QMX", "captaincode"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, r, ".git"), 0o755))
+	}
+	t.Setenv("CAPTAIN_WORKSPACE_ROOT", root)
+	t.Setenv("EUCLID_HOME", filepath.Join(root, ".euclid-main"))
+	captaincode.ResetKnownReposForTest()
+	b := &brain{}
+	home := captaincode.Workspace{Dir: filepath.Join(root, "QMX")}
+	for _, task := range []string{
+		"Record the user's decision dq-261109-000001: Which host runs the pilot? Question: Which host must the captaincode profile run on?",
+		"Record the user's 2 decisions for QMX.\n\n1. dq-1: in captaincode, rename the flag\n\nCaptain adds the answer to .captaincode/decisions.md.",
+	} {
+		assert.Equal(t, home.Dir, b.followTask(home, task).Dir, task)
+	}
+	assert.NotEqual(t, home.Dir, b.followTask(home, "make /repeat finish gracefully in captaincode").Dir, "other prompts still follow")
+}
