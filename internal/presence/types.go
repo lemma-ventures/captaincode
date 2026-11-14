@@ -22,6 +22,10 @@ type Error struct{ Code string }
 
 func (e *Error) Error() string { return "presence: " + e.Code }
 func fail(code string) error   { return &Error{code} }
+
+// Err is a presence error a caller outside the package can raise with a
+// presence error code, so the HTTP layer answers with the code it chose.
+func Err(code string) error { return fail(code) }
 func Code(err error) string {
 	if e, ok := err.(*Error); ok {
 		return e.Code
@@ -37,6 +41,11 @@ type Envelope struct {
 	IssuedAt   int64  `json:"issued_at"`
 	ExpiresAt  int64  `json:"expires_at"`
 	Nonce      string `json:"nonce"`
+	// Prepare says the folder field names a discovered project (a repository
+	// under an allowed root) the host prepares before the prompt runs. It is
+	// part of the envelope hash, so a signed prompt cannot be retargeted from
+	// a linked folder to a project or back.
+	Prepare bool `json:"prepare,omitempty"`
 }
 
 type Assertion struct {
@@ -84,7 +93,14 @@ type Config struct {
 	Tickets   map[string]Ticket   `json:"enrollment_tickets,omitempty"`
 	Grants    map[string]Grant    `json:"grants,omitempty"`
 	Decisions map[string]Decision `json:"decisions,omitempty"`
-	Audit     []Event             `json:"audit,omitempty"`
+	// Roots are the directory trees the owner allowed, from a terminal only,
+	// inside which a signed prepare prompt may set a repository up.
+	Roots map[string]string `json:"roots,omitempty"`
+	// Projects are the repositories found under the roots, by stable ID.
+	Projects map[string]Project `json:"projects,omitempty"`
+	// Admissions are the prepare receipts (LM-16): one per prompt nonce.
+	Admissions map[string]Admission `json:"admissions,omitempty"`
+	Audit      []Event              `json:"audit,omitempty"`
 }
 
 type Grant struct {
@@ -113,6 +129,36 @@ type Decision struct {
 	Action   string `json:"action"`
 	Expires  int64  `json:"expires_at"`
 	Approved bool   `json:"approved"`
+}
+
+// BindingVersion is the prepare binding: it says how a project ID maps to a
+// directory under an allowed root. A bump refuses every old prepare prompt,
+// so a change in the mapping cannot replay an old approval onto a new tree.
+const BindingVersion = 1
+
+// Project is one repository found under an allowed root. State is discovered
+// (seen in a scan), initializing (a prepare prompt is setting it up), ready
+// (prepared; prompts run there) or setup_failed (the last prepare failed; a
+// new prompt may retry).
+type Project struct {
+	ID      string `json:"id"`
+	Dir     string `json:"dir"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
+	Binding int    `json:"binding"`
+	At      int64  `json:"at"`
+}
+
+// Admission is the receipt for one prepare prompt (LM-16): the same nonce with
+// the same content returns its state; the same nonce with different content is
+// refused. Content is the envelope's text hash, so the receipt binds the exact
+// prompt that was admitted.
+type Admission struct {
+	Nonce   string `json:"nonce"`
+	Project string `json:"project"`
+	Content string `json:"content"`
+	State   string `json:"state"`
+	At      int64  `json:"at"`
 }
 
 var labelRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
@@ -159,7 +205,15 @@ func (c *Config) checkEnvelope(e Envelope, text string, now int64) ([]byte, erro
 	if e.Machine != c.Machine {
 		return nil, fail("wrong_machine")
 	}
-	if c.Folders[e.Folder] == "" {
+	if e.Prepare {
+		p, ok := c.Projects[e.Folder]
+		if !ok || p.Binding != BindingVersion {
+			return nil, fail("unknown_project")
+		}
+		if !underRoots(c.Roots, p.Dir) {
+			return nil, fail("project_not_allowed")
+		}
+	} else if c.Folders[e.Folder] == "" {
 		return nil, fail("unknown_folder")
 	}
 	if text == "" || len(text) > MaxBody/2 || HashText(text) != e.TextSHA256 {

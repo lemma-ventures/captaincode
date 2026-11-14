@@ -138,6 +138,7 @@ func prune(c *Config, now int64) {
 			delete(c.Decisions, k)
 		}
 	}
+	pruneAdmissions(c, now)
 }
 func (s *Store) ValidatePrompt(e Envelope, text string) error {
 	return s.transaction(false, func(c *Config) error { _, err := c.checkEnvelope(e, text, nowUnix()); return err })
@@ -177,6 +178,9 @@ func (s *Store) VerifyPrompt(p Signed) (Grant, error) {
 			return e
 		}
 		dir := c.Folders[p.Envelope.Folder]
+		if p.Envelope.Prepare {
+			dir = c.Projects[p.Envelope.Folder].Dir
+		}
 		st, e := os.Stat(dir)
 		if e != nil || !st.IsDir() {
 			return fail("unknown_folder")

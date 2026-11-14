@@ -8,7 +8,9 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	pres "github.com/lemma-ventures/captaincode/internal/presence"
@@ -50,11 +52,22 @@ func (b *brain) presenceHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s := pres.DefaultStore()
 	route := strings.TrimPrefix(r.URL.Path, "/v1/presence/")
-	if route == "enroll" || route == "import" || route == "remove" {
+	if route == "enroll" || route == "import" || route == "remove" || route == "allow-root" {
 		writeJSON(w, 403, map[string]string{"error": "terminal_required"})
 		return
 	}
 	switch route {
+	case "projects":
+		if r.Method != http.MethodGet {
+			writeErr(w, 405, "GET")
+			return
+		}
+		items, e := s.ScanProjects()
+		if e != nil {
+			presenceError(w, e)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"items": items})
 	case "info":
 		if r.Method != http.MethodGet {
 			writeErr(w, 405, "GET")
@@ -231,6 +244,12 @@ func (b *brain) signedInbox(w http.ResponseWriter, p pres.Signed) {
 			return
 		}
 	}
+	if p.Envelope.Prepare {
+		if e := prepareSignedProject(p); e != nil {
+			presenceError(w, e)
+			return
+		}
+	}
 	g, e := pres.DefaultStore().VerifyPrompt(p)
 	if e != nil {
 		presenceError(w, e)
@@ -251,6 +270,54 @@ func (b *brain) signedInbox(w http.ResponseWriter, p pres.Signed) {
 	fmt.Printf("captain presence: verified user=%q device=%q machine=%q folder=%q text_sha256=%s\n", g.User, g.Label, g.Machine, g.Folder, g.TextSHA256)
 	writeJSON(w, 200, map[string]any{"ok": true, "id": it.ID, "pending": len(b.inbox.items[g.Dir]), "trust": "typed"})
 }
+
+// projectMu locks the setup of one project: two prepare prompts for the same
+// repository must not write it at once (the same rule as the queue's one
+// prompt per folder).
+var projectMu sync.Map
+
+// prepareSignedProject runs before the queue claim: it admits the prompt
+// (receipt, LM-16), prepares the repository it names if it is not ready, and
+// leaves the project ready for the worker. A setup that failed answers with
+// setup_failed; a new prompt may retry.
+func prepareSignedProject(p pres.Signed) error {
+	id := p.Envelope.Folder
+	nonce := p.Envelope.Nonce
+	s := pres.DefaultStore()
+	state, e := s.AdmitProject(nonce, id, p.Envelope.TextSHA256)
+	if e != nil {
+		return e
+	}
+	if state == "ready" {
+		return nil
+	}
+	if state == "setup_failed" {
+		return pres.Err("setup_failed")
+	}
+	mu, _ := projectMu.LoadOrStore(id, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	defer m.Unlock()
+	if state, e := s.AdmitProject(nonce, id, p.Envelope.TextSHA256); e == nil && state == "ready" {
+		return nil
+	}
+	proj, ok := s.Project(id)
+	if !ok || proj.Dir == "" {
+		return pres.Err("unknown_project")
+	}
+	_, _, err := captaincode.PrepareProject(proj.Dir, true)
+	if err != nil {
+		fmt.Printf("captain presence: project %s setup failed: %v\n", id, err)
+		_ = s.FinishAdmission(nonce, "setup_failed")
+		return pres.Err("setup_failed")
+	}
+	if e := s.FinishAdmission(nonce, "ready"); e != nil {
+		return e
+	}
+	fmt.Printf("captain presence: project %s prepared at %s\n", id, filepath.Base(proj.Dir))
+	return nil
+}
+
 func (b *brain) detectSignedInbox(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodOptions {
 		if presenceCORS(w, r) {

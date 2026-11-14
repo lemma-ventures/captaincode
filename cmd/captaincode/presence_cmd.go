@@ -32,10 +32,10 @@ func presenceTerminal() error {
 }
 func runPresence(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: captain presence enroll|export|import|list|remove|link|origin|window")
+		return fmt.Errorf("usage: captain presence enroll|export|import|list|remove|link|origin|window|allow-root|projects")
 	}
 	s := pres.DefaultStore()
-	if args[0] != "list" && args[0] != "export" {
+	if args[0] != "list" && args[0] != "export" && args[0] != "projects" {
 		if e := presenceTerminal(); e != nil {
 			return e
 		}
@@ -153,6 +153,27 @@ func runPresence(args []string) error {
 			}
 			return nil
 		})
+	case "allow-root":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: captain presence allow-root <dir>")
+		}
+		if e := s.AllowRoot(args[1]); e != nil {
+			return e
+		}
+		fmt.Printf("allowed; repositories under it are found by `captain presence projects`\n")
+		return nil
+	case "projects":
+		items, e := s.ScanProjects()
+		if e != nil {
+			return e
+		}
+		for _, p := range items {
+			fmt.Printf("%s\t%s\t%s\n", p.ID, p.Name, p.State)
+		}
+		if len(items) == 0 {
+			fmt.Println("no repositories under the allowed roots; `captain presence allow-root <dir>` adds one")
+		}
+		return nil
 	case "window":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: captain presence window <seconds>")

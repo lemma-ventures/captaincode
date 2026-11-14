@@ -153,6 +153,10 @@ The canonical JSON has exactly these fields, in this order, without spaces:
 {"v":1,"machine":"MACHINE_ID","folder":"repo","text_sha256":"LOWERCASE_SHA256_HEX","issued_at":1792670400,"expires_at":1792671300,"nonce":"BASE64URL_RANDOM_NONCE"}
 ```
 
+A prepare prompt adds `"prepare":true` at the end and names a project ID, not
+a linked folder label, in `folder`. The flag is part of the hashed bytes, so a
+signed prompt cannot be retargeted between a folder and a project.
+
 Time values are integer Unix seconds. The nonce contains 16 to 64 random
 bytes; clients should use 32. The challenge is the SHA-256 of these UTF-8 JSON
 bytes. Strings in this envelope are ASCII. Duplicate keys, extra fields,
@@ -174,6 +178,36 @@ ES256 uses P-256 and an ASN.1 DER ECDSA signature over SHA-256 of
 `authenticatorData || SHA256(clientDataJSON)`. Ed25519 verifies that same
 concatenation directly. Both-zero counters are accepted. If either the saved
 or supplied counter is nonzero, the supplied value must be greater.
+
+## Prepare prompts and projects
+
+A repository the brain has not prepared can receive its first prompt without
+a TUI. The owner allows repository roots from a terminal only:
+
+```sh
+captain presence allow-root ~/Gits        # terminal only; a sent turn cannot
+captain presence projects                 # lists ID, name, state; never a path
+```
+
+`GET /v1/presence/projects` lists the git repositories under the allowed
+roots the same way: by stable ID, name and state. A scan is bounded (depth 3,
+4096 directories, 256 repositories); it enters no dot-prefixed directory and
+follows no symlink. Roots may not overlap.
+
+A signed prompt with `prepare: true` names one of those project IDs. Before
+the prompt is verified and queued, the brain:
+
+1. Admits it once per nonce (receipt, LM-16): the same nonce with the same
+   text hash returns the recorded state; the same nonce with different text
+   is refused (`admission_conflict`).
+2. Prepares the repository with `PrepareProject` under a per-project lock:
+   project files only, never machine-wide config.
+3. Records the project `ready`, or `setup_failed` and refuses the prompt
+   (`setup_failed`). A new prompt retries a failed setup.
+
+Project states are `discovered`, `initializing`, `ready`, `setup_failed`.
+Binding version 1 ties a project ID to its directory under an allowed root;
+a bump refuses every old prepare prompt.
 
 ## Browser calls
 
@@ -442,6 +476,7 @@ Unsupported methods return 405. Unknown presence routes return 404.
 | `terminal_required`, `invalid_user`, `invalid_import` | Local management request refused. |
 | `expired_registration`, `invalid_enrollment_code`, `enrollment_proof_required`, `invalid_attestation`, `unsupported_attestation` | Registration proof failed. |
 | `held_text_mismatch`, `expired_grant`, `unknown_decision` | Held item, execution grant, or decision no longer valid. |
+| `unknown_project`, `project_not_allowed`, `admission_conflict`, `setup_failed`, `unknown_admission`, `invalid_state`, `root_not_found`, `root_not_directory`, `root_overlaps` | Project discovery, allowed roots, or the prepare admission failed. |
 
 Tool refusals use `signed_decision_required: ID`. They do not execute the
 action. Store failures refuse instead of falling back to full trust. The
