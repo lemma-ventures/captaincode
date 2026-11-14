@@ -379,6 +379,89 @@ func UpgradeIn(models []AAModel, leg Leg) (PerfRow, bool) {
 	return rowOf(best), true
 }
 
+// AutoAddFrontierLegsFromFeed adds overlay entries for high-ranking models in
+// the feed that have no leg yet. It uses openrouter transport and marks them
+// Frontier so /frontier and named /<short> can use them. Returns the IDs added.
+func AutoAddFrontierLegsFromFeed() []Leg {
+	models, _, _ := PerfModels()
+	if len(models) == 0 {
+		return nil
+	}
+	var added []Leg
+	seen := map[string]bool{}
+	for _, l := range AllLegs {
+		if s, ok := specs[l]; ok && s.AA != "" {
+			seen[strings.ToLower(s.AA)] = true
+		}
+		for _, p := range aaPatterns(l) {
+			seen[p] = true
+		}
+	}
+	for _, m := range models {
+		if m.IntelligenceIndex < 58 && m.CodingIndex < 58 {
+			continue
+		}
+		sl := strings.ToLower(m.Slug)
+		if seen[sl] {
+			continue
+		}
+		if isEffortVariant(sl) {
+			continue
+		}
+		id := shortLegID(sl, m.Creator)
+		if id == "" || reservedLegName(id) {
+			continue
+		}
+		if _, exists := specs[Leg(id)]; exists {
+			continue
+		}
+		spec := LegSpec{
+			ID:        Leg(id),
+			Transport: TransportOpencode,
+			Provider:  "openrouter",
+			Model:     m.Slug,
+			AA:        m.Slug,
+			Frontier:  true,
+			Vision:    true,
+			Ctx:       1 << 20,
+			PriceIn:   m.PriceIn,
+			PriceOut:  m.PriceOut,
+			Prior:     9.0,
+			Display:   m.Name + " (auto via OpenRouter)",
+			Note:      "Auto-discovered frontier model from perf feed. Highest performance for complex tasks.",
+		}
+		if err := AddLeg("", spec); err != nil {
+			continue
+		}
+		added = append(added, Leg(id))
+		seen[sl] = true
+	}
+	return added
+}
+
+func shortLegID(slug, creator string) string {
+	s := strings.ToLower(slug)
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	s = effortSuffix.ReplaceAllString(s, "")
+	s = versionBits.ReplaceAllString(s, "")
+	s = dashRuns.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	switch {
+	case strings.Contains(s, "fable"):
+		return "fable"
+	case strings.Contains(s, "carbon"):
+		return "carbon"
+	case strings.Contains(s, "opus"):
+		return "opus"
+	}
+	if len(s) > 0 && len(s) <= 16 && !strings.Contains(s, "-") {
+		return s
+	}
+	return ""
+}
+
 // ── what a refresh changed ───────────────────────────────────────────────────
 //
 // A refresh is only useful if someone hears what moved. Three things can: a

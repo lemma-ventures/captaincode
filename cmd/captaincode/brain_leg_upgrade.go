@@ -45,6 +45,7 @@ func (b *brain) noteLegUpgrades(changed bool) {
 			b.pushActivity(activity{Kind: "feed", Leg: string(f.Leg), Text: fmt.Sprintf("⇡ %s: %s (%.0f) outscores %s (%.0f) - click ⇡ or `captain upgrade --models`", f.Leg, f.Upgrade.Slug, f.Upgrade.Perf, f.Current.Slug, f.Current.Perf)})
 		}
 	}
+	b.autoAddNewLegs()
 	b.maybeAutoApply(!b.roster.upgradeArmed)
 }
 
@@ -61,6 +62,25 @@ func (b *brain) maybeAutoApply(announceWait bool) {
 		b.pushActivity(activity{Kind: "feed", Leg: "ranking", Text: "auto-upgrade waiting for idle (CAPTAIN_AUTO_UPGRADE)"})
 	}
 	b.armIdleUpgrade()
+}
+
+func (b *brain) autoAddNewLegs() bool {
+	if !shouldAutoApply() || !captaincode.AutoUpgradeFromEnv().Models {
+		return false
+	}
+	added := captaincode.AutoAddFrontierLegsFromFeed()
+	if len(added) == 0 {
+		return false
+	}
+	for _, id := range added {
+		line := fmt.Sprintf("auto-added frontier leg /%s from perf feed", id)
+		fmt.Println("captain brain: " + line)
+		b.pushActivity(activity{Kind: "feed", Leg: string(id), Text: line})
+	}
+	b.roster.mu.Lock()
+	b.roster.newLegsNeedRestart = true
+	b.roster.mu.Unlock()
+	return true
 }
 
 // applyReadyPins writes every unheld model pin. It returns true when a pin
@@ -161,10 +181,18 @@ func (b *brain) armIdleUpgrade() {
 				return
 			case <-tick.C:
 				mode := captaincode.AutoUpgradeFromEnv()
+				b.autoAddNewLegs()
 				if mode.Models && b.idleForUpgrade() {
 					if waiting := b.applyReadyPins(); !waiting {
 						if mode.CLI {
 							_ = b.upgradeCLIs()
+						}
+						if b.roster.newLegsNeedRestart && b.sustainedIdle(90*time.Second) {
+							b.roster.mu.Lock()
+							b.roster.newLegsNeedRestart = false
+							b.roster.mu.Unlock()
+							fmt.Println("captain brain: no runners for 90s - restarting to integrate new model legs")
+							go doAutoRestart()
 						}
 						return
 					}
@@ -172,6 +200,14 @@ func (b *brain) armIdleUpgrade() {
 					if !b.upgradeCLIs() {
 						return
 					}
+				}
+				if b.roster.newLegsNeedRestart && b.sustainedIdle(90*time.Second) {
+					b.roster.mu.Lock()
+					b.roster.newLegsNeedRestart = false
+					b.roster.mu.Unlock()
+					fmt.Println("captain brain: no runners for 90s - restarting to integrate new model legs")
+					go doAutoRestart()
+					return
 				}
 			}
 		}
@@ -238,17 +274,20 @@ func (b *brain) upgradeCLIs() bool {
 
 func (b *brain) idleForUpgrade() bool {
 	if b.inflightRuns.Load() != 0 {
+		b.markLastBusy()
 		return false
 	}
 	b.wmu.Lock()
 	for _, l := range b.liveBy {
 		if l != nil && l.endedAt.IsZero() {
 			b.wmu.Unlock()
+			b.markLastBusy()
 			return false
 		}
 	}
 	if b.live != nil && b.live.endedAt.IsZero() {
 		b.wmu.Unlock()
+		b.markLastBusy()
 		return false
 	}
 	b.wmu.Unlock()
@@ -256,6 +295,7 @@ func (b *brain) idleForUpgrade() bool {
 	for _, th := range b.repeats {
 		if th != nil && !th.finished {
 			b.rmu.Unlock()
+			b.markLastBusy()
 			return false
 		}
 	}
@@ -264,10 +304,30 @@ func (b *brain) idleForUpgrade() bool {
 	defer b.pmu.Unlock()
 	for _, p := range b.parallels {
 		if p != nil && !p.done {
+			b.markLastBusy()
 			return false
 		}
 	}
 	return true
+}
+
+func (b *brain) markLastBusy() {
+	b.roster.mu.Lock()
+	b.roster.lastBusy = time.Now()
+	b.roster.mu.Unlock()
+}
+
+func (b *brain) sustainedIdle(d time.Duration) bool {
+	if !b.idleForUpgrade() {
+		return false
+	}
+	b.roster.mu.RLock()
+	t := b.roster.lastBusy
+	b.roster.mu.RUnlock()
+	if t.IsZero() {
+		return false
+	}
+	return time.Since(t) >= d
 }
 
 func upgradeProposals() []upgradeProposal {
@@ -302,4 +362,12 @@ func safeModelID(id string) bool {
 		return false
 	}
 	return !strings.ContainsAny(id, " \t\r\n\\'\"`$;&|<>")
+}
+
+func doAutoRestart() {
+	// pkill lets the supervisor (captaincode.sh) respawn the brain with current
+	// binary and fresh env. Only called after 90s sustained idle and only for
+	// new model legs discovered by auto-upgrade.
+	_ = exec.Command("pkill", "-f", "opencode serve --port 14096").Run()
+	_ = exec.Command("pkill", "-f", "captain brain").Run()
 }

@@ -98,11 +98,13 @@ type rosterState struct {
 	keyWarned bool                                            // the missing-key line is said once per brain
 	// catalogue resolves a benchmark slug to a provider model id. Nil uses
 	// models.dev. Tests set it so a refresh never calls the network.
-	catalogue     func() (map[string][]string, error)
-	upgradesNoted bool
-	upgradeArmed  bool
-	upgradeMu     sync.Mutex
-	cliAnnounced  map[string]string
+	catalogue          func() (map[string][]string, error)
+	upgradesNoted      bool
+	upgradeArmed       bool
+	upgradeMu          sync.Mutex
+	cliAnnounced       map[string]string
+	lastBusy           time.Time
+	newLegsNeedRestart bool
 }
 
 func (rs *rosterState) aaKey() string {
