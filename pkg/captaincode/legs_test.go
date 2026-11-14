@@ -968,6 +968,16 @@ func TestIdleWindowFollowsHowLongTheModelThinks(t *testing.T) {
 	assert.Equal(t, 252*time.Second, idleWindow(168*time.Second), "a model that thought 2m48s gets half again")
 }
 
+// Carbon went quiet past 90s after reading many files and was killed 19-23
+// minutes in with nothing kept (11-14 Nov); it gets a 5-minute floor.
+func TestCarbonHasItsOwnIdleFloor(t *testing.T) {
+	t.Setenv("CAPTAIN_WORKER_IDLE_TIMEOUT", "")
+	assert.Equal(t, 5*time.Minute, idleWindowFor(LegCarbon, 0))
+	assert.Equal(t, 6*time.Minute, idleWindowFor(LegCarbon, 4*time.Minute), "a longer think still stretches it")
+	assert.Equal(t, 90*time.Second, idleWindowFor(LegGLM, 0), "other legs keep the default")
+	assert.Greater(t, legIdleFloor(LegCarbon), workerStallTimeout(), "the floor outlasts the 4m no-activity cap, which it raises")
+}
+
 // timedEvents streams each event at its offset from the connection, then
 // holds the stream open.
 func timedEvents(session string, events []struct {

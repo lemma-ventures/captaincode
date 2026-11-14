@@ -216,8 +216,13 @@ var defaultLegSpecs = []LegSpec{
 		Note: "xAI's own Grok Build CLI on this host (grok -p, grok-4.7 - its default once signed in, the model grok-max runs; grok-4.7-build-fast and grok-4.6 are also offered, CAPTAIN_GROK_CLI_MODEL pins one), on its own login (~/.grok/auth.json, `grok login`) or XAI_API_KEY; runs only when named (/grok-cli). The grok and grok-max legs are xAI through opencode"},
 	{ID: LegCarbon, Transport: TransportOpencode, Provider: "openrouter", Model: "google/gemini-4-carbon", AA: "gemini-4-carbon",
 		PriceIn: 2, PriceOut: 10, Ctx: 1048576, Vision: true, Open: boolp(false), Frontier: true, Prior: 9.5,
-		Display: "Gemini 4 Carbon (captain · OpenRouter)",
-		Note:    "Gemini 4 Carbon via OpenRouter, paid per token ($2/M in, $10/M out introductory on 2026-11-10). Frontier-class with 2× time budget and 1,048,576 context. Joins /frontier; /carbon selects it directly. The gemini leg stays Flash"},
+		// Medium work at most: Carbon tops the frontier scores, so the
+		// high-complexity pick sent it every long task, and nine of those
+		// failed with nothing kept (stall kills, and Google's 400 on a request
+		// ending with a model turn, 11-14 Nov). /carbon still forces it.
+		MaxClass: ClassMedium,
+		Display:  "Gemini 4 Carbon (captain · OpenRouter)",
+		Note:     "Gemini 4 Carbon via OpenRouter, paid per token ($2/M in, $10/M out introductory on 2026-11-10). Frontier-class with 2× time budget and 1,048,576 context. Joins /frontier for medium work and below (max_class medium: long high-complexity runs failed); /carbon selects it directly at any class. The gemini leg stays Flash"},
 	// openshell carries no prior (0): it is a sandbox around a worker, not a
 	// model, so it sits at the foot of AllLegs and AutoRoutes keeps it off the
 	// ladder and the failover chain.

@@ -232,6 +232,26 @@ func idleWindow(longestGap time.Duration) time.Duration {
 	return idleTimeout()
 }
 
+// legIdleFloor is a leg's own minimum idle window, for a model known to
+// think for minutes between steps. Gemini 4 Carbon on OpenRouter goes quiet
+// for more than 90s after reading a large batch of files: five long runs were
+// killed 19-23 minutes in with nothing kept (11-14 Nov). The floor also raises
+// that leg's no-activity window, which otherwise caps the idle one.
+func legIdleFloor(leg Leg) time.Duration {
+	if leg == LegCarbon {
+		return 5 * time.Minute
+	}
+	return 0
+}
+
+// idleWindowFor is idleWindow, raised to the leg's own floor.
+func idleWindowFor(leg Leg, longestGap time.Duration) time.Duration {
+	if w, f := idleWindow(longestGap), legIdleFloor(leg); f > w {
+		return f
+	}
+	return idleWindow(longestGap)
+}
+
 func idleTimeout() time.Duration {
 	if v := os.Getenv("CAPTAIN_WORKER_IDLE_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -882,7 +902,7 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 						// quiet after 90s. The fixed window cut a ledger-app
 						// run at 26m30s, 99s into a think, after earlier
 						// three-minute gaps (2026-10-03).
-						window := idleWindow(time.Duration(d.maxGap.Load()))
+						window := idleWindowFor(leg, time.Duration(d.maxGap.Load()))
 						if d.activeTools.Load() > 0 {
 							window = toolRunTimeout()
 						}
@@ -947,15 +967,19 @@ func (d *OpencodeDispatcher) Run(leg Leg, task string) (Result, error) {
 					//     itself bounds a tool at 10m - past that it is wedged.
 					//     (`cargo test --release` used to be aborted at 4m, live
 					//     2026-09-12.)
-					window, kind := d.StallTimeout, stallKindSilent
+					silent := d.StallTimeout
+					if f := legIdleFloor(leg); f > silent {
+						silent = f
+					}
+					window, kind := silent, stallKindSilent
 					switch {
 					case !d.sawOutput.Load():
 						window, kind = firstEventTimeout(), stallKindFirst
 					case d.activeTools.Load() <= 0:
-						window, kind = idleWindow(time.Duration(d.maxGap.Load())), stallKindIdle
+						window, kind = idleWindowFor(leg, time.Duration(d.maxGap.Load())), stallKindIdle
 					}
-					if window >= d.StallTimeout {
-						window, kind = d.StallTimeout, stallKindSilent // the full window fired, whatever the phase
+					if window >= silent {
+						window, kind = silent, stallKindSilent // the full window fired, whatever the phase
 					}
 					if d.sawOutput.Load() && d.activeTools.Load() > 0 && toolRunTimeout() > window {
 						window, kind = toolRunTimeout(), stallKindSilent

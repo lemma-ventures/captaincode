@@ -35,7 +35,8 @@ A turn that starts with a `/word` captain does not know is refused before anythi
 
 **Unreleased, 10 November 2026:** `/carbon` runs Gemini 4 Carbon through paid
 OpenRouter and joins `/frontier`. High-complexity frontier tasks select by
-performance before rotation or speed. Fable 5.2 is a model of the claude leg,
+performance before rotation or speed. Since 14 November, Carbon takes medium
+work at most; `/carbon` still forces it. Fable 5.2 is a model of the claude leg,
 not a leg: captain runs it for high-complexity work at max effort, and the
 run line reads `claude-cli:fable-5.2@effort:max`. A Fable limit or the spend
 cap reruns the turn on Opus and keeps Fable closed until it resets.

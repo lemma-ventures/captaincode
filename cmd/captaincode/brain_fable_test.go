@@ -85,7 +85,8 @@ func TestFableLimitReadsTheSpendCap(t *testing.T) {
 }
 
 // The frontier lane scores claude as Fable on high-complexity work, so it
-// leads Carbon; with Fable closed, Carbon leads again.
+// leads; with Fable closed it still leads as Opus, since Carbon is capped at
+// medium work (its long runs failed with nothing kept, 11-14 Nov).
 func TestFrontierLaneScoresClaudeAsFable(t *testing.T) {
 	t.Setenv("CAPTAIN_LANES", "1")
 	b := teamBrain()
@@ -97,7 +98,7 @@ func TestFrontierLaneScoresClaudeAsFable(t *testing.T) {
 	assert.Contains(t, pick.Reason, "on fable-5.2")
 	b.ledger.Cooldowns[captaincode.FableCooldownKey] = time.Now().Add(time.Hour)
 	pick = b.frontierLead(task)
-	assert.Equal(t, captaincode.LegCarbon, pick.Leg, "Fable closed: claude is Opus (59), below Carbon (60)")
+	assert.Equal(t, captaincode.LegClaude, pick.Leg, "Fable closed: claude as Opus (59); Carbon (60) is capped at medium work")
 	assert.NotContains(t, pick.Reason, "fable")
 }
 

@@ -169,10 +169,14 @@ func TestComplexFrontierIncludesNewModelsAndHonorsAvailability(t *testing.T) {
 		carbon: true, captaincode.LegClaude: true,
 		captaincode.LegCodexCLI: true, captaincode.LegGrokMax: true,
 	}
-	assert.Equal(t, carbon, b.frontierLead(task).Leg)
-	b.ledger.Cooldowns[carbon] = time.Now().Add(time.Hour)
-	assert.Equal(t, captaincode.LegClaude, b.frontierLead(task).Leg)
-	delete(b.ledger.Cooldowns, carbon)
+	// Carbon tops the scores but is capped at medium work: its long runs
+	// stalled or hit Google's 400 with nothing kept (11-14 Nov).
+	pick := b.frontierLead(task)
+	assert.Equal(t, captaincode.LegClaude, pick.Leg)
+	assert.NotContains(t, pick.Band, carbon, "high-complexity work never reaches carbon")
+	medium := "write a unit test for the ledger Save function"
+	require.Equal(t, captaincode.ClassMedium, captaincode.TriageTask(medium).Class)
+	assert.Contains(t, b.frontierLead(medium).Band, carbon, "medium work still may")
 	delete(b.allowed, carbon)
 	assert.Equal(t, captaincode.LegClaude, b.frontierLead(task).Leg)
 	b.ledger.Events = append(b.ledger.Events,
@@ -194,8 +198,11 @@ func TestNewFrontierModelsDispatchAtMaxEffortWithContracts(t *testing.T) {
 				assert.Contains(t, prompt, securityContract())
 				return got, captaincode.Result{Text: "The architecture checks pass.", DurationMs: 5}, nil
 			}
+			// Named: Carbon is capped at medium work, so high-complexity
+			// /frontier work reaches it only when the turn names it (a
+			// forced leg records no routing decision).
 			body, err := json.Marshal(map[string]any{"model": "frontier", "stream": false,
-				"messages": []map[string]string{{"role": "user", "content": "audit the security architecture and prove the concurrency invariants"}}})
+				"messages": []map[string]string{{"role": "user", "content": "/frontier /" + string(leg) + " audit the security architecture and prove the concurrency invariants"}}})
 			require.NoError(t, err)
 			rec := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
@@ -210,12 +217,7 @@ func TestNewFrontierModelsDispatchAtMaxEffortWithContracts(t *testing.T) {
 			}, 10*time.Second, 20*time.Millisecond)
 			b.mu.Lock()
 			defer b.mu.Unlock()
-			require.NotEmpty(t, b.ledger.Decisions)
-			d := b.ledger.Decisions[len(b.ledger.Decisions)-1]
-			assert.Equal(t, leg, d.Chosen)
-			assert.Equal(t, captaincode.ClassHigh, d.Class)
-			assert.Equal(t, captaincode.EffortMax, d.Effort)
-			assert.Equal(t, 1.0, d.Propensities[leg])
+			assert.Equal(t, leg, b.ledger.Events[len(b.ledger.Events)-1].Leg)
 		})
 	}
 }
