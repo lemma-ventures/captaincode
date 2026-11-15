@@ -30,9 +30,9 @@ Next execution order: rebuild the brain process with the step 2 routes and run
 F2/F3 acceptance on both hosts with that build. The
 offline hash-verification and install path for F4 is built; its clean-account
 run is next. Keep cloud launch behind F4/F5's existing spend and containment
-gates. This round committed the fleet work (F1-F3 plus the bundle path) and
-built F4's verification path; it did not deploy a brain, alter host
-credentials, or change network policy.
+gates. The Q12–Q16, BB1 and BB2 work is committed (15 November 2026,
+`3188c8d`: both full suites, vet, gofmt and the 25 plugin tests green). No
+brain deployment, host credential or network policy changed in that commit.
 
 ### Open items (honest remaining)
 
@@ -66,7 +66,10 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | done (15 November 2026; the brain and plugin share the host list, pass-through commands cover Captain turn words, and `/help`/`/q` stay with opencode; full `go test ./...`, `go vet ./...` and 17 plugin tests pass; unknown-word validation measured 42.0–42.4 µs, 49.9 KB and 230 allocations per call) |
 | Q10 | A new Euclid MCP server ends when its parent or its folder is gone | Euclid adapter | done (15 November 2026; new servers check the parent and folder every 60 seconds between requests, idle exit is opt-in, and doctor reports process count, resident memory and missing folders; full `go test ./...`, focused race checks and `go vet ./...` pass; five synthetic lifecycle-check benchmarks measured 3.55–7.02 ns and zero allocations) |
 | Q11 | M1 pilot: blind review without arm names; evaluation section in the release report | M1.3, M1.5 | done (15 November 2026; alias-only snapshots, redacted review packets with a separate 0600 key, release evaluation sections with lower-bound unknown cost, and per-arm accounting preflight; the five Q11 tests, full `go test ./...` and `go vet ./...` pass) |
-| Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | done (15 November 2026; accepted requires an accepted outcome, rejected includes regressions, terminal tasks without a verdict are unreviewed, and the table reports all four counts; focused tests and race checks and `go vet ./...` pass. The full suite reaches an unrelated persistent `TestEscalationPromptSaved` failure: a missing Codex login reroutes to Carbon and leaves two prompt records instead of three.) |
+| Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | done (15 November 2026; accepted requires an accepted outcome, rejected includes regressions, terminal tasks without a verdict are unreviewed, and the table reports all four counts; focused tests and race checks and `go vet ./...` pass. A 15 November note
+reported a persistent `TestEscalationPromptSaved` failure in the full suite;
+both full suites now pass clean (15 November 2026, 379 s and 249 s), so that
+failure no longer reproduces on this tree.) |
 | Q13 | Outcome commands in the TUI | M5.1 | done (15 November 2026; `/accept [note]`, `/reject <reason>`, `/correction <minutes> [reason]` and `/regressed <reason>` act out of band on the last task the session started, the brain sends `X-Captain-Task-ID` on solo, team, frontier, workflow and openshell completions, the sidebar shows the last task's outcome via `GET /v1/outcome/last`, the reviewer is `tui:<OS user>`, and the words are control lines in LANGUAGE.md 3.3; the five new Go tests, full `go test ./cmd/captaincode`, full `go test ./pkg/captaincode` and `go vet` pass) |
 | Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | done (15 November 2026; opt-in stdio transport, schema-gated fallback, steer/interrupt/refusal/malformed-input/16-MiB-limit and settings-parity tests; focused race checks, the complete Codex test set and `go vet ./...` pass. Settings construction benchmark: 658.7–740.8 ns, 1,144 B and 14 allocations per call. Exec remains the default pending live qualification) |
 | Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | done (15 November 2026; all five gates pass against an in-process brain, including startup reconciliation and interrupted-attempt resume; exact-retry recovery also passes through the external CLI path. Changed retries now conflict, root limits and submit fingerprints survive a ledger reload, and Cursor/VS Code/Zed JSON recipes use an absolute binary path. Full `go test ./...`, focused race checks and `go vet ./...` pass; editor JSON generation measured 1,996–5,915 ns, 1,443 B and 16 allocations per call over three 10,000-run samples) |
