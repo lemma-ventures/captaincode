@@ -256,6 +256,7 @@ type EvalExecution struct {
 	Prompt   string            `json:"prompt,omitempty"`
 	Arm      string            `json:"arm"`
 	ArmAlias string            `json:"arm_alias"`
+	Revision string            `json:"revision,omitempty"`
 	Repeat   int               `json:"repeat"`
 	Status   string            `json:"status"`
 	Reason   string            `json:"reason,omitempty"`
@@ -325,6 +326,11 @@ func RunSuite(ctx context.Context, s *EvalSuite, o EvalOptions) (*EvalResult, er
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return nil, err
 	}
+	if o.Ledger != nil {
+		if err := probeEvalAccounting(ctx, s, work, o.Ledger); err != nil {
+			return nil, err
+		}
+	}
 	baselines, err := VerifySuite(ctx, s, work, o.Only)
 	if err != nil {
 		return nil, err
@@ -364,14 +370,47 @@ func RunSuite(ctx context.Context, s *EvalSuite, o EvalOptions) (*EvalResult, er
 	return res, nil
 }
 
+func probeEvalAccounting(ctx context.Context, s *EvalSuite, work string, ledger *Ledger) error {
+	for _, arm := range s.Arms {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		dir, err := os.MkdirTemp(work, "accounting-probe-")
+		if err != nil {
+			return err
+		}
+		run := make([]string, len(arm.Run))
+		for i, word := range arm.Run {
+			run[i] = strings.ReplaceAll(word, "{prompt}", "Accounting preflight only. Reply exactly OK. Do not inspect or change files.")
+		}
+		before := chargeIDs(ledger)
+		out, code, runErr := runIn(ctx, dir, run, arm.Env, 2*time.Minute)
+		_, totals := newCharges(ledger, before)
+		removeErr := os.RemoveAll(dir)
+		if runErr != nil {
+			return fmt.Errorf("arm %s accounting preflight: %w", arm.Name, runErr)
+		}
+		if code != 0 {
+			return fmt.Errorf("arm %s accounting preflight exited %d: %s", arm.Name, code, tail(out))
+		}
+		if removeErr != nil {
+			return fmt.Errorf("arm %s accounting preflight cleanup: %w", arm.Name, removeErr)
+		}
+		if totals.Calls == 0 {
+			return fmt.Errorf("arm %s accounting preflight recorded no charges; use a brain with task accounting before running the suite", arm.Name)
+		}
+	}
+	return nil
+}
+
 // runOne snapshots, runs the arm, then decides acceptance. Every early return
 // carries a reason: a report whose failures say only "error" cannot be acted
 // on.
 func runOne(ctx context.Context, t EvalTask, a EvalArm, repeat int, work string, ledger *Ledger) (ex EvalExecution) {
-	ex = EvalExecution{TaskID: t.ID, Family: t.Family, Prompt: t.Prompt, Arm: a.Name, ArmAlias: a.Alias, Repeat: repeat, StartedAt: time.Now()}
+	ex = EvalExecution{TaskID: t.ID, Family: t.Family, Prompt: t.Prompt, Arm: a.Name, ArmAlias: a.Alias, Revision: t.Revision, Repeat: repeat, StartedAt: time.Now()}
 	defer func() { ex.DurationMs = time.Since(ex.StartedAt).Milliseconds() }()
 
-	dir, err := os.MkdirTemp(work, fmt.Sprintf("%s.%s.%d-", t.ID, a.Name, repeat))
+	dir, err := os.MkdirTemp(work, fmt.Sprintf("%s.%s.%d-", t.ID, a.Alias, repeat))
 	if err != nil {
 		ex.Status, ex.Reason = EvalError, "snapshot directory: "+err.Error()
 		return ex

@@ -68,6 +68,21 @@ func readGateSessions() []GateSession {
 // lands just after the run's own end is stamped.
 const gateSessionSlack = 5 * time.Second
 
+// GateTaskForSession names the task whose run held this session at the given
+// moment, for a security record's correlation. Empty when nothing matches or
+// the session is unknown: an ID is never guessed.
+func GateTaskForSession(session string, at time.Time) string {
+	if session == "" {
+		return ""
+	}
+	for _, s := range readGateSessions() {
+		if s.Session == session && !at.Before(s.Start.Add(-gateSessionSlack)) && !at.After(s.End.Add(gateSessionSlack)) {
+			return s.TaskID
+		}
+	}
+	return ""
+}
+
 // ResolveGateTasks gives a task identity to every screening that has a
 // session but no task: the task whose run held that session when the
 // screening was made. It returns how many it resolved.

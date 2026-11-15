@@ -20,6 +20,7 @@ package main
 //	captain host cert --host pi        # certify a specific host
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -39,6 +40,8 @@ func cmdHost(args []string) {
 		cmdHostJido(args[1:])
 	case "cert":
 		cmdHostCert(args[1:])
+	case "editor":
+		cmdHostEditor(args[1:])
 	default:
 		printHostHelp()
 	}
@@ -58,6 +61,8 @@ usage:
   captain host jido recover             recover persisted tasks after restart
 
   captain host cert [--host pi|jido|editor]   run the certification checklist
+  captain host cert --dynamic --brain <url> [--allow-live-brain]
+  captain host editor config <cursor|vscode|zed>
 
 the host adapters speak the task API (POST /v1/task) to the brain at
 CAPTAIN_BRAIN_URL (default http://127.0.0.1:14097). Set CAPTAIN_TASK_TOKEN
@@ -123,13 +128,28 @@ func cmdHostJido(args []string) {
 }
 
 func cmdHostCert(args []string) {
-	hostKind := "pi"
-	if len(args) > 0 && args[0] == "--host" && len(args) > 1 {
-		hostKind = args[1]
+	flags := flag.NewFlagSet("host cert", flag.ContinueOnError)
+	hostKind := flags.String("host", "pi", "host adapter")
+	dynamic := flags.Bool("dynamic", false, "run mutating lifecycle gates")
+	brainURL := flags.String("brain", "", "test brain URL")
+	allowLive := flags.Bool("allow-live-brain", false, "allow the default live brain")
+	if err := flags.Parse(args); err != nil {
+		fatal(err)
+	}
+	if *dynamic && *brainURL == "" {
+		fatal(fmt.Errorf("dynamic certification requires --brain <url>"))
+	}
+	if *dynamic {
+		if err := validateHostCertBrain(*brainURL, *allowLive); err != nil {
+			fatal(err)
+		}
 	}
 	client := captaincode.DefaultTaskClient()
+	if *brainURL != "" {
+		client = captaincode.NewTaskClient(*brainURL, os.Getenv("CAPTAIN_TASK_TOKEN"))
+	}
 	var adapter captaincode.HostAdapter
-	switch captaincode.HostKind(hostKind) {
+	switch captaincode.HostKind(*hostKind) {
 	case captaincode.HostPi:
 		adapter = captaincode.NewPiAdapter(client)
 	case captaincode.HostJido:
@@ -137,7 +157,7 @@ func cmdHostCert(args []string) {
 	case captaincode.HostEditor:
 		adapter = captaincode.NewEditorAdapter(client, "", nil)
 	default:
-		fatal(fmt.Errorf("unknown host %q (pi, jido, editor)", hostKind))
+		fatal(fmt.Errorf("unknown host %q (pi, jido, editor)", *hostKind))
 	}
 	cert := captaincode.NewCertChecklist(adapter)
 	failed := false
@@ -166,6 +186,17 @@ func cmdHostCert(args []string) {
 		failed = true
 	} else {
 		fmt.Println("PASS  delegation depth")
+	}
+	if *dynamic {
+		report := runHostCertDynamic(client, root, nil)
+		for _, step := range report.Steps {
+			fmt.Printf("%s  %s", step.Status, step.Name)
+			if step.Detail != "" {
+				fmt.Printf(": %s", step.Detail)
+			}
+			fmt.Println()
+		}
+		failed = failed || report.Failed > 0
 	}
 	if failed {
 		os.Exit(1)

@@ -74,6 +74,20 @@ func TestCheaperCapableTieRespectsExplicitQuality(t *testing.T) {
 	require.NotNil(t, d.ChosenFrontier)
 }
 
+func TestEfficiencyRecordCarriesSchema(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CAPTAIN_EFFICIENCY_LOG", "")
+	schema := &ToolSchemaUsage{Profile: "lean", Count: 2, Bytes: 1234, EstimatedTokens: 309, Source: "euclid_definitions_estimate"}
+	l := &Ledger{}
+	l.Record(Event{TaskID: "task-schema", Leg: LegClaude, Outcome: "ok", ToolSchema: schema})
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), ".captaincode", "efficiency.jsonl"))
+	require.NoError(t, err)
+	var record EfficiencyRecord
+	require.NoError(t, json.Unmarshal(raw, &record))
+	require.Equal(t, "routing", record.Kind)
+	require.Equal(t, schema, record.Schema)
+}
+
 func TestClaudeUsagePresence(t *testing.T) {
 	var event claudeStreamLine
 	require.NoError(t, json.Unmarshal([]byte(`{"type":"result","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}`), &event))

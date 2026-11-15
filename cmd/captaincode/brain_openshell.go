@@ -183,6 +183,7 @@ func (b *brain) openShellChat(w http.ResponseWriter, r *http.Request, req oaiCha
 	})
 	w.Header().Set("X-Captain-Task-ID", taskID)
 	w.Header().Set("X-Captain-Attempt-ID", attemptID)
+	b.noteTurnTask(r.Header.Get(turnHeader), taskID) // Q13: the session's outcome words act on it
 	stop := context.AfterFunc(ctx, func() { req.ws.Steer.Interrupt("OpenShell request cancelled") })
 	defer stop()
 	emit, status, finish := newCompletionWriter(w, req, string(captaincode.LegOpenShell))

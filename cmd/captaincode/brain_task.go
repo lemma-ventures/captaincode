@@ -17,6 +17,8 @@ package main
 // editor hosts.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -116,10 +118,27 @@ func (b *brain) taskSubmit(w http.ResponseWriter, _ *http.Request, req captainco
 		writeJSON(w, 403, taskAPIError(e.Code, e.Message))
 		return
 	}
+	canonical, err := json.Marshal(body)
+	if err != nil {
+		writeJSON(w, 400, taskAPIError(captaincode.ErrBadRequest, "bad submit body: "+err.Error()))
+		return
+	}
+	digest := sha256.Sum256(canonical)
+	bodyHash := hex.EncodeToString(digest[:])
 	if req.TaskID != "" {
 		b.mu.Lock()
 		ts := b.ledger.TaskStateFor(req.TaskID)
+		submission := b.ledger.SubmissionFor(req.TaskID)
+		mismatch := submission != nil && submission.BodySHA256 != bodyHash
+		attemptID := ""
+		if attempts := b.ledger.AttemptStatesFor(req.TaskID); len(attempts) > 0 {
+			attemptID = attempts[0].AttemptID
+		}
 		b.mu.Unlock()
+		if mismatch {
+			writeJSON(w, 409, taskAPIError(captaincode.ErrConflict, "task retry differs from the admitted request"))
+			return
+		}
 		if ts != nil {
 			if ts.State.IsTerminal() {
 				writeJSON(w, 409, taskAPIError(captaincode.ErrAlreadyTerminal,
@@ -127,7 +146,7 @@ func (b *brain) taskSubmit(w http.ResponseWriter, _ *http.Request, req captainco
 				return
 			}
 			b.writeTaskOK(w, req, captaincode.OpSubmit, req.TaskID, captaincode.SubmitResponse{
-				TaskID: req.TaskID, State: ts.State,
+				TaskID: req.TaskID, State: ts.State, Attempt: attemptID,
 			})
 			return
 		}
@@ -136,16 +155,34 @@ func (b *brain) taskSubmit(w http.ResponseWriter, _ *http.Request, req captainco
 	if taskID == "" {
 		taskID = captaincode.NewTaskID()
 	}
+	attemptID := captaincode.NewChargeID(captaincode.KindAttempt)
+	now := time.Now()
+	budget := captaincode.NewBudget(taskID, body.Prompt, captaincode.BudgetOpts{
+		MaxAttempts: body.Limits.MaxAttempts,
+		MaxCostUSD:  body.Limits.MaxCostUSD,
+		MaxWallMs:   body.Limits.MaxWallMs,
+		Strict:      captaincode.DefaultBudgetOpts().Strict,
+	})
 	b.mu.Lock()
 	b.ledger.RecordTaskState(captaincode.TaskState{
 		TaskID:    taskID,
+		Label:     body.Prompt,
 		State:     captaincode.StateAdmitted,
-		StartedAt: time.Now(),
+		StartedAt: now,
 	})
+	b.ledger.RecordAttemptState(captaincode.AttemptState{
+		TaskID:    taskID,
+		AttemptID: attemptID,
+		Leg:       body.Leg,
+		State:     captaincode.StateAdmitted,
+		StartedAt: now,
+	})
+	b.ledger.RecordBudget(budget)
+	b.ledger.RecordSubmission(captaincode.TaskSubmission{TaskID: taskID, RequestID: req.RequestID, BodySHA256: bodyHash})
 	b.ledger.Save()
 	b.mu.Unlock()
 	b.writeTaskOK(w, req, captaincode.OpSubmit, taskID, captaincode.SubmitResponse{
-		TaskID: taskID, State: captaincode.StateAdmitted,
+		TaskID: taskID, State: captaincode.StateAdmitted, Attempt: attemptID,
 	})
 }
 

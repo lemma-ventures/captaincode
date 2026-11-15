@@ -42,6 +42,7 @@ const captainHelp = `### Captain Code - commands
 - ` + "`/parallel <task>`" + ` - run a second task beside this chat · ` + "`/parallel show|status|stop`" + `
 - ` + "`/btw <note>`" + ` - tell the worker that is already running something more (claude and the opencode legs take it mid-run; codex and cursor get it as the next turn)
 - ` + "`/interrupt [reason]`" + ` - stop the running worker without losing its work: it writes a handoff (done / left / how to resume) and ends; codex and cursor are stopped with what they streamed; the handoff goes to memory
+- ` + "`/accept [note]`" + ` · ` + "`/reject <reason>`" + ` · ` + "`/correction <minutes> [reason]`" + ` · ` + "`/regressed <reason>`" + ` - record the outcome of the last task this session started; the sidebar shows it (` + "`captain outcomes <task>`" + ` prints the record)
 
 **Settings & housekeeping**
 - ` + "`/init`" + ` - regenerate worker permissions (web, edits, bash; .env stays denied)

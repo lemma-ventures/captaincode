@@ -35,7 +35,9 @@ type doctorOpts struct {
 	// serve is what a running opencode would report. nil = probe the live
 	// serve; non-nil = use as-is (tests pass &ServeRoster{} so a local brain
 	// cannot flip a leg to ready).
-	serve *captaincode.ServeRoster
+	serve          *captaincode.ServeRoster
+	mcpProcesses   func() ([]mcpProcess, error)
+	codexAppServer func() error
 }
 
 // rankingReport is the doctor's ranking line(s): the cache when there is one
@@ -192,6 +194,7 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 
 	// Memory: the main brain and the local brain of the project doctor runs in.
 	fmt.Fprint(w, captaincode.RenderBrainChecks(captaincode.CheckBrains(euclidCwd())))
+	fmt.Fprintln(w, doctorMCPLine(o.mcpProcesses))
 
 	// Config files. Their absence is a fixable state, not an error.
 	cfg, cfgErr := os.ReadFile(o.opencodeConfig)
@@ -304,6 +307,16 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		}
 		fmt.Fprintln(w, strings.TrimRight(fmt.Sprintf("  %s %-13s %-11s tested %-10s  %s",
 			toolMark(s), s.Pin.Bin, found, s.Pin.Tested, s.Detail), " "))
+	}
+	if captaincode.CodexAppServerRequested() {
+		if o.codexAppServer == nil {
+			o.codexAppServer = captaincode.CheckCodexAppServer
+		}
+		if err := o.codexAppServer(); err != nil {
+			fmt.Fprintf(w, "codex      ~ app-server schema check failed (%v); using exec\n", err)
+		} else {
+			fmt.Fprintln(w, "codex      ✓ app-server schema supports steering; CAPTAIN_CODEX_TRANSPORT=app-server")
+		}
 	}
 
 	probed := map[string]captaincode.ToolStatus{}

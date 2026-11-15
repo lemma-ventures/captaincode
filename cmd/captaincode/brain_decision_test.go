@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -130,6 +131,43 @@ func TestWhyPrintsTheDecisionEvidence(t *testing.T) {
 	assert.Contains(t, out, "no observed duration")
 	assert.Contains(t, out, "✗ codex-cli frontier-class")
 	assert.NotContains(t, out, "✗ gemini", "an eligible candidate was printed as an exclusion")
+}
+
+func TestWhyShareExcludesExplicitChoices(t *testing.T) {
+	now := time.Date(2026, time.November, 15, 12, 0, 0, 0, time.UTC)
+	l := &captaincode.Ledger{}
+	for _, d := range []captaincode.Decision{
+		{TaskID: "auto-frontier", At: now.Add(-24 * time.Hour), Path: captaincode.PathValue, Chosen: captaincode.LegCodexCLI, TiePolicy: "cheap-capable-v1"},
+		{TaskID: "auto-cheap", At: now.Add(-48 * time.Hour), Path: captaincode.PathValue, Chosen: captaincode.LegGLM, TiePolicy: "cheap-capable-v1"},
+		{TaskID: "forced", At: now.Add(-time.Hour), Path: captaincode.PathForced, Chosen: captaincode.LegCodexCLI},
+		{TaskID: "lane", At: now.Add(-time.Hour), Path: captaincode.PathLane, Chosen: captaincode.LegGLM},
+		{TaskID: "preference", At: now.Add(-time.Hour), Path: captaincode.PathValue, Chosen: captaincode.LegGLM, Preference: "quality"},
+		{TaskID: "month-frontier", At: now.Add(-20 * 24 * time.Hour), Path: captaincode.PathDirector, Chosen: captaincode.LegCodexCLI},
+		{TaskID: "first-rule", At: now.Add(-40 * 24 * time.Hour), Path: captaincode.PathValue, Chosen: captaincode.LegGLM, TiePolicy: "cheap-capable-v1"},
+	} {
+		l.RecordDecision(d)
+	}
+
+	out := formatFrontierShare(l, []int{7, 30}, now)
+	assert.Contains(t, out, "7 days: 1/2 automatic decisions on frontier legs (50.0%)")
+	assert.Contains(t, out, "30 days: 2/3 automatic decisions on frontier legs (66.7%)")
+	assert.Contains(t, out, "cheap-capable-v1 first recorded: 2026-10-06")
+}
+
+func BenchmarkFormatFrontierShare(b *testing.B) {
+	now := time.Date(2026, time.November, 15, 12, 0, 0, 0, time.UTC)
+	l := &captaincode.Ledger{}
+	for i := 0; i < 120; i++ {
+		leg := captaincode.LegGLM
+		if i%3 == 0 {
+			leg = captaincode.LegCodexCLI
+		}
+		l.RecordDecision(captaincode.Decision{TaskID: fmt.Sprintf("task-%d", i), At: now.Add(-time.Duration(i%60) * 24 * time.Hour), Path: captaincode.PathValue, Chosen: leg, TiePolicy: "cheap-capable-v1"})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = formatFrontierShare(l, []int{7, 30}, now)
+	}
 }
 
 func captureStdout(t *testing.T, fn func()) string {

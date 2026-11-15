@@ -209,6 +209,31 @@ type SubmitRequest struct {
 	Leg          Leg              `json:"leg,omitempty"`
 }
 
+type TaskSubmission struct {
+	TaskID     string `json:"task_id"`
+	RequestID  string `json:"request_id"`
+	BodySHA256 string `json:"body_sha256"`
+}
+
+func (l *Ledger) RecordSubmission(submission TaskSubmission) {
+	for i, existing := range l.Submissions {
+		if existing.TaskID == submission.TaskID {
+			l.Submissions[i] = submission
+			return
+		}
+	}
+	l.Submissions = append(l.Submissions, submission)
+}
+
+func (l *Ledger) SubmissionFor(taskID string) *TaskSubmission {
+	for i, submission := range l.Submissions {
+		if submission.TaskID == taskID {
+			return &l.Submissions[i]
+		}
+	}
+	return nil
+}
+
 // SubmitResponse returns the durable task ID and the initial lifecycle state.
 type SubmitResponse struct {
 	TaskID  string         `json:"task_id"`

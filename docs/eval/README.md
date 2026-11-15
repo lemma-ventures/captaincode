@@ -10,7 +10,9 @@ captain eval plan     suite.json                     # what would run, in what o
 captain eval run      suite.json --out res.json      # run it, serially
 captain eval report   res.json                       # aggregate a finished run
 captain eval review   res.json                       # what still owes a verdict
+captain eval review   res.json --export review-export
 captain eval review   res.json --accept t1/arm-A/1 --by you --note why
+captain release report --eval res.json                # release evidence with evaluation totals
 ```
 
 ## What the harness guarantees
@@ -46,12 +48,30 @@ exports include `baselines` with check results, durations and snapshot paths.
 Preflight uses separate snapshots and is excluded from per-arm execution time.
 A standalone `verify` remains useful for inspecting fixtures without running arms.
 
-**Every execution starts pristine.** Each task/arm/repeat gets its own clone
+**Run checks accounting before fixtures.** `captain eval run` makes one short
+stub call for each arm before it verifies or runs a fixture. The arm must add at
+least one charge to the ledger. A missing charge stops the run before fixture
+snapshots or task executions. These preflight calls validate the accounting
+connection; their cost and time are not evaluation task measurements.
+
+**Every execution starts pristine.** Each task/alias/repeat gets its own clone
 of the pinned revision. The source repository is only ever read: a developer's
 dirty worktree survives an evaluation run untouched, and no repeat inherits
 the previous one's tree. Task IDs and arm names must be single portable path
 components. Verification and execution allocate unique snapshot directories,
 including when reusing `--work`; earlier artifacts are never deleted by a rerun.
+Execution directory names contain the task, alias and repeat, never the arm name.
+
+**A review packet separates evidence from identity.** `captain eval review
+res.json --export review-export` creates a new `review-export/packet` directory.
+Each pending execution gets a text file named by task, alias and repeat. It
+contains the check output and the Git diff, including untracked files. Arm, leg
+and model names are redacted from packet names and content. The separate
+`review-export/alias-key.json` file maps each alias to its arm and has mode 0600.
+Keep that key outside the material sent to the reviewer. The export directory
+must not already exist, so an export cannot overwrite or mix with earlier
+evidence. Results from older builds need a pinned source revision in each
+execution before their diffs can be exported.
 
 **Acceptance is decided by commands.** A check is an argv and the exit code it
 must produce in the snapshot afterwards, plus `must_change` / `must_not_change`
@@ -101,6 +121,12 @@ and why a parallel runner is not offered — concurrent arms would make the
 attribution a guess. An arm whose calls were never recorded prints `-`, not
 `$0`; a total containing unknown-usage calls is marked `*` and labelled *not a
 billed total*.
+
+`captain release report --eval res.json` adds the same evaluation evidence to
+the release report. It separates check-decided and review-decided acceptance
+and shows total seconds and known cost for each arm. If any run has unknown
+usage, cost reads `at least $X; N runs unknown`. The known sum is a lower bound,
+not a billed total.
 
 ## Suite format
 

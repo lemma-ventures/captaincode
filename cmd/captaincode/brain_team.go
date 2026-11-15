@@ -293,6 +293,8 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		shelf := b.stockShelf(req.ws, task)     // M3.9: one worker, the user's own directory
 		defer shelf.Remove()
 		taskID := b.openTask(task)
+		w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
+		b.noteTurnTask(req.turn, taskID)
 		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg, taskID), nil, feed.note)
 		feed.close()
 		if r2, e2, note := b.salvagePartial(leg, res, err); note != "" {
@@ -325,7 +327,9 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	// one task each. The identity adopts what routing already spent on the
 	// plan that chose this team (ROADMAP M1.2).
 	taskID := b.openTask(task)
-	req.ws.Steer.SetTask(taskID) // a note's shadow joins this task's outcome (brain_shadow.go)
+	req.ws.Steer.SetTask(taskID)                // a note's shadow joins this task's outcome (brain_shadow.go)
+	w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
+	b.noteTurnTask(req.turn, taskID)
 	stageID := b.chargeStage(taskID, "team:"+teamKey)
 	// M3.4: register the team's root context so cancellation cascades.
 	teamCtx, teamCancel := b.cancelTree.Register(taskID, "team", "team:"+teamKey, context.Background())
@@ -622,6 +626,10 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	if task := lastUserTurn(prompt); !req.internal {
 		b.recordDecision(task, frontierDecision(task, pick))
 		taskID = b.openTask(task)
+		if taskID != "" { // Q13: the session's outcome words act on it
+			w.Header().Set("X-Captain-Task-ID", taskID)
+			b.noteTurnTask(req.turn, taskID)
+		}
 	}
 	b.pushActivity(frontierActivity(req.ws.Dir, "route", pick.Leg, effort, pick.Reason, 0))
 	status(pick.Reason + "\n")

@@ -30,11 +30,12 @@ type Ledger struct {
 	Budgets       []Budget             `json:"budgets,omitempty"`        // shared resource envelopes per root task (budget.go, M2.4)
 	TaskStates    []TaskState          `json:"task_states,omitempty"`    // durable lifecycle per task (lifecycle.go, M3.3)
 	AttemptStates []AttemptState       `json:"attempt_states,omitempty"` // durable lifecycle per attempt (lifecycle.go, M3.3)
-	Handoffs      []HandoffBrief       `json:"handoffs,omitempty"`       // structured handoff briefs per task (handoff.go, M3.5)
-	Outcomes      []OutcomeEvidence    `json:"outcomes,omitempty"`       // task-wide acceptance evidence (outcome.go, M5.1)
-	SkillUses     []SkillUse           `json:"skill_uses,omitempty"`     // what each stocked skill was worth (skilluse.go, M3.9)
-	Snapshots     []PolicySnapshot     `json:"snapshots,omitempty"`      // versioned policy snapshots (policy.go, M5.4)
-	Canaries      []Canary             `json:"canaries,omitempty"`       // bounded opt-in canaries (policy.go, M5.4)
+	Submissions   []TaskSubmission     `json:"submissions,omitempty"`
+	Handoffs      []HandoffBrief       `json:"handoffs,omitempty"`   // structured handoff briefs per task (handoff.go, M3.5)
+	Outcomes      []OutcomeEvidence    `json:"outcomes,omitempty"`   // task-wide acceptance evidence (outcome.go, M5.1)
+	SkillUses     []SkillUse           `json:"skill_uses,omitempty"` // what each stocked skill was worth (skilluse.go, M3.9)
+	Snapshots     []PolicySnapshot     `json:"snapshots,omitempty"`  // versioned policy snapshots (policy.go, M5.4)
+	Canaries      []Canary             `json:"canaries,omitempty"`   // bounded opt-in canaries (policy.go, M5.4)
 	// DirectorMode is the standing director policy (director_pick.go):
 	// "frontier" | "quality" | "auto", or "fixed:<leg>" for a pinned leg;
 	// "" means the env/default director. Set by /captain <word>, kept across
@@ -658,6 +659,22 @@ func (l *Ledger) prepareSave() ([]byte, error) {
 	}
 	l.AttemptStates = trimLifecycle(l.AttemptStates, maxAttemptStates, func(a AttemptState) bool { return a.State.IsTerminal() })
 	l.TaskStates = trimLifecycle(l.TaskStates, maxTaskStates, func(t TaskState) bool { return t.State.IsTerminal() })
+	if len(l.Submissions) > maxTaskStates {
+		tasks := make(map[string]bool, len(l.TaskStates))
+		for _, task := range l.TaskStates {
+			tasks[task.TaskID] = true
+		}
+		kept := l.Submissions[:0]
+		for _, submission := range l.Submissions {
+			if tasks[submission.TaskID] {
+				kept = append(kept, submission)
+			}
+		}
+		if len(kept) > maxTaskStates {
+			kept = kept[len(kept)-maxTaskStates:]
+		}
+		l.Submissions = kept
+	}
 	l.Handoffs = trimLifecycle(l.Handoffs, maxHandoffs, func(HandoffBrief) bool { return true })
 	l.Outcomes = trimLifecycle(l.Outcomes, maxOutcomes, func(OutcomeEvidence) bool { return true })
 	l.capFileLists() // filecap.go
@@ -740,6 +757,7 @@ func (l *Ledger) mergeFromDisk() {
 		func(t TaskState) time.Time { return t.UpdatedAt })
 	l.AttemptStates = mergeNewest(l.AttemptStates, disk.AttemptStates, func(a AttemptState) string { return a.AttemptID },
 		func(a AttemptState) time.Time { return a.UpdatedAt })
+	l.Submissions = mergeByKey(l.Submissions, disk.Submissions, func(s TaskSubmission) string { return s.TaskID })
 	l.Handoffs = mergeByKey(l.Handoffs, disk.Handoffs, func(h HandoffBrief) string { return h.TaskID })
 	l.Outcomes = mergeByKey(l.Outcomes, disk.Outcomes, func(o OutcomeEvidence) string { return o.TaskID })
 	l.Snapshots = mergeByKey(l.Snapshots, disk.Snapshots, func(s PolicySnapshot) string { return s.ID })
@@ -828,6 +846,9 @@ func (l *Ledger) Record(e Event) {
 	}
 	l.Events = append(l.Events, e)
 	l.journal(RoutingRecord{Kind: RoutingKindEvent, TaskID: e.TaskID, Event: &e})
+	if e.ToolSchema != nil {
+		LogEfficiency(EfficiencyRecord{Kind: "routing", Leg: e.Leg, OK: e.Outcome == "ok", DurationMS: e.Duration, Tokens: e.Tokens, Usage: e.TokenUsage, TTFTMs: e.TTFTMs, Schema: e.ToolSchema})
+	}
 	l.benchHostAfter(e)
 }
 

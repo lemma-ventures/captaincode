@@ -237,12 +237,16 @@ func cmdBrain(args []string) {
 	// OpenAI-compatible surface: opencode calls these to run captain's own
 	// model wrappers (claude via claude -p). See brain_openai.go.
 	mux.HandleFunc("/v1/chat/completions", b.chatCompletions)
+	// Q13: the TUI's outcome words act on the session's last task, out of
+	// band; the sidebar reads that task's status back.
+	mux.HandleFunc("/v1/outcome/word", b.outcomeWordHTTP)
+	mux.HandleFunc("/v1/outcome/last", b.outcomeLastHTTP)
 	mux.HandleFunc("/v1/models", b.models)
 	// Every /word a turn may start with, for the plugin's unknown-command check.
 	mux.HandleFunc("/v1/commands", func(w http.ResponseWriter, _ *http.Request) {
 		// words: each route word and the leg it forces (legwords.go), so the
 		// plugin forces /grok-opencode as grok.
-		writeJSON(w, 200, map[string]any{"commands": captaincode.SlashCommands(), "words": captaincode.RouteWords()})
+		writeJSON(w, 200, map[string]any{"commands": captaincode.SlashCommands(), "opencode": captaincode.OpencodeCommands(), "words": captaincode.RouteWords()})
 	})
 	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		// cwd is the brain's own folder. It no longer pins anything: every
@@ -460,6 +464,11 @@ type brain struct {
 	steers steerBook
 	// inbox holds prompts for a folder's open TUI (brain_inbox.go).
 	inbox inbox
+
+	// otmu guards lastTaskByTurn: the newest task each TUI session started,
+	// so an outcome word from that session acts on it (brain_outcome_word.go).
+	otmu           sync.Mutex
+	lastTaskByTurn map[string]string
 
 	// autoDistill throttles background consolidation of the Euclid journal.
 	autoDistill autoDistillState

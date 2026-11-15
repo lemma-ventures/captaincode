@@ -3,6 +3,8 @@ package captaincode
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,6 +24,59 @@ func blindedResult(t *testing.T) *EvalResult {
 		t.Fatalf("want 1 pending execution, got %d", len(res.Pending()))
 	}
 	return res
+}
+
+func TestReviewPacketHasNoArmNames(t *testing.T) {
+	res := blindedResult(t)
+	res.Executions[0].Checks = []EvalCheckResult{{Name: "review", Output: "fixer claude model-secret"}}
+	res.Executions[0].Charges = []Charge{{Leg: LegClaude, Model: "model-secret"}}
+	root := filepath.Join(t.TempDir(), "export")
+	if err := ExportReviewPacket(context.Background(), res, root); err != nil {
+		t.Fatal(err)
+	}
+	packet := filepath.Join(root, "packet")
+	forbidden := []string{"fixer", "claude", "model-secret"}
+	err := filepath.WalkDir(packet, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		for _, word := range forbidden {
+			if strings.Contains(strings.ToLower(entry.Name()), word) {
+				t.Errorf("packet file name leaks %q: %s", word, entry.Name())
+			}
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, word := range forbidden {
+			if strings.Contains(strings.ToLower(string(body)), word) {
+				t.Errorf("packet content leaks %q: %s", word, path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(root, "alias-key.json")
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("alias key mode is %o", info.Mode().Perm())
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(key), "fixer") {
+		t.Fatal("separate key does not map the alias to its arm")
+	}
 }
 
 func TestPendingItemShowsTheWorkButNotTheArm(t *testing.T) {

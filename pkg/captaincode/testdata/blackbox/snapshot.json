@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "id": "fixture",
+  "source": "synthetic",
+  "revision": "rev-1",
+  "categories": {
+    "dependency": true,
+    "protected_path": true,
+    "secret_exposure": true,
+    "pattern": true
+  },
+  "packages": [
+    {
+      "id": "pkg-exact",
+      "ecosystem": "npm",
+      "name": "example-package",
+      "version": "1.2.3",
+      "kind": "known_malware",
+      "severity": "critical"
+    },
+    {
+      "id": "pkg-all",
+      "ecosystem": "pypi",
+      "name": "example-python",
+      "version": "*",
+      "kind": "known_malware",
+      "severity": "critical"
+    }
+  ],
+  "paths": [
+    {
+      "id": "path-exact",
+      "path": "config/private/**",
+      "kind": "protected_path",
+      "severity": "critical"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "pattern-one",
+      "category": "pattern",
+      "pattern": "dangerous-example",
+      "kind": "heuristic",
+      "severity": "warning"
+    }
+  ]
+}

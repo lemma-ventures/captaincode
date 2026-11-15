@@ -190,6 +190,20 @@ fix the login bug /speed
 /private add acme
 = (control private "add acme")
 
+# Outcome words are control lines (3.3): they own their line and never start a turn
+
+/accept the patch landed cleanly
+= (control accept "the patch landed cleanly")
+
+/reject wrong file, the imports are missing
+= (control reject "wrong file, the imports are missing")
+
+/correction 12 hand-fixed the tests
+= (control correction "12 hand-fixed the tests")
+
+/regressed it broke the login flow
+= (control regressed "it broke the login flow")
+
 # Prose stays prose
 
 check that x > y holds for all n

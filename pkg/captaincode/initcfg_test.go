@@ -294,6 +294,21 @@ func TestEnsureProjectOverlays(t *testing.T) {
 	})
 }
 
+func TestInitWritesEuclidToolProfile(t *testing.T) {
+	t.Setenv("CAPTAIN_EUCLID_TOOL_PROFILE", "lean")
+	path := filepath.Join(t.TempDir(), "opencode.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o600))
+	changed, err := EnsureEuclidMCP(path, "/usr/local/bin/captain")
+	require.NoError(t, err)
+	require.True(t, changed)
+	cfg := readCfg(t, path)
+	euclid := cfg["mcp"].(map[string]any)["euclid"].(map[string]any)
+	require.Equal(t, map[string]any{"CAPTAIN_EUCLID_TOOL_PROFILE": "lean"}, euclid["environment"])
+	changed, err = EnsureEuclidMCP(path, "/elsewhere/captain")
+	require.NoError(t, err)
+	require.False(t, changed)
+}
+
 func TestPrepareProjectRoots(t *testing.T) {
 	t.Run("a root that is not there prepares nothing", func(t *testing.T) {
 		changed, notes, err := PrepareProject(filepath.Join(t.TempDir(), "absent"), true)

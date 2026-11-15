@@ -257,6 +257,13 @@ func runCodexCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSt
 // runCodexCLIStreamLeg runs one codex exec turn for a Codex CLI leg (codex-cli,
 // codex, luna): one login, the leg's own model and error attribution.
 func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), effort Effort, steer *Steer) (result Result, runErr error) {
+	if CodexAppServerRequested() {
+		if err := CheckCodexAppServer(); err == nil {
+			return runCodexAppServerStreamLeg(leg, dir, task, base, ceil, onDelta, onStatus, effort, steer)
+		} else if onStatus != nil {
+			onStatus("codex app-server unavailable (" + truncateStr(err.Error(), 240) + "); using exec")
+		}
+	}
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}

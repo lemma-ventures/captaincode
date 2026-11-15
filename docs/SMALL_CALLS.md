@@ -114,8 +114,10 @@ at most the first MiB, retaining at most 128 entries for 24 hours in process mem
 The log stores byte counts only. It stores no prompt text, paths, keys, or hashes.
 Restarts start a new baseline. Replayed answers do not produce dispatch samples.
 
-`~/.captaincode/efficiency.jsonl` stores these counts and local helper usage. It
-rotates at 16 MiB and uses mode `0600`. Set `CAPTAIN_EFFICIENCY_LOG=0` to disable it.
+`~/.captaincode/efficiency.jsonl` stores these counts and local helper usage. A
+routing event with `tool_schema` also writes a `routing` record with the same
+schema counts. The log does not store prompts, answers, paths, keys or hashes.
+It rotates at 16 MiB and uses mode `0600`. Set `CAPTAIN_EFFICIENCY_LOG=0` to disable it.
 
 Set `CAPTAIN_EUCLID_TOOL_PROFILE=lean` to expose only `search` and `code_search` in
 Captain's Euclid MCP server. The default `full` profile retains all tools. Calls
@@ -123,10 +125,14 @@ to omitted tools are also refused. The setting is forwarded to CLI worker MCP
 configuration. Claude and Codex worker events record the offered Euclid tool count,
 JSON bytes, and an estimate of tokens (rounded-up bytes / 4). This excludes other
 worker tools and is not a tokenizer measurement or a bill for every model turn.
+A new OpenCode Euclid MCP entry also carries the setting in its `environment`.
+An existing operator-managed entry stays unchanged.
 
 ## Abstention and routing comparisons
 
 `examples/evals/abstention.json` contains missing-context and missing-fact cases.
+The local scorer accepts `abstain: true` only with an empty answer or
+`CANNOT_TELL` and no citations. A test loads this file and scores both probes.
 Local qualification exercises both. The Euclid recall benchmark also scores
 abstention separately from retrieval recall. Without supplied answers, its result
 is **unmeasured**, never a pass. In the updated Euclid engine:
@@ -144,8 +150,16 @@ Director prompts now state `cheap-capable-v1`: among equally capable and safe
 choices, prefer lower estimated cost, then lower subscription pressure, then lower
 latency. Doubt about capability or safety is not a tie. Explicit user choices win.
 Decision records mark the policy only when that director path actually answered
-without an explicit preference. The dashboard compares seven- and thirty-day
-cohorts and excludes explicit preferences, forced models, and lanes.
+without an explicit preference. Measure the two cohorts with:
+
+```sh
+captain why --share --days 7,30
+```
+
+The command reads durable routing history. It excludes explicit preferences,
+forced models, named sequences, workflows, lanes and reroutes. It prints each
+sample size and the first date on which `cheap-capable-v1` appears. An empty
+sample reports `n/a`, not zero percent.
 
 This supplies future evidence. It does not prove savings, faster reviews, or a
 lower frontier share. Compare acceptance and repair outcomes with cost before

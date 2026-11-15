@@ -183,6 +183,46 @@ func TestFormatReleaseReport(t *testing.T) {
 	}
 }
 
+func TestReleaseReportEvalSection(t *testing.T) {
+	deps := ReleaseDeps{
+		ReadFile:  stubReadFile(map[string]string{}),
+		BuildInfo: func() (string, bool, bool) { return "abc1234", false, true },
+	}
+	res := &EvalResult{Suite: "pilot", Executions: []EvalExecution{
+		{TaskID: "checks", Family: "edit", Arm: "fixed", Status: EvalAccepted, DurationMs: 1000, Totals: Totals{Calls: 1, Measured: 1, CostUSD: 1}},
+		{TaskID: "review", Family: "review", Arm: "fixed", Status: EvalAccepted, DurationMs: 2000, Review: &EvalReview{Verdict: ReviewAccept}, Totals: Totals{Calls: 1, Measured: 1, CostUSD: 2}},
+	}}
+	r := BuildReleaseReportWithEval(deps, res)
+	if r.Evaluation == nil || len(r.Evaluation.Arms) != 1 {
+		t.Fatalf("missing evaluation: %+v", r.Evaluation)
+	}
+	arm := r.Evaluation.Arms[0]
+	if arm.Accepted != 2 || arm.ReviewAccepted != 1 || arm.TotalSeconds != 3 || arm.TotalCostUSD != 3 {
+		t.Fatalf("wrong evaluation totals: %+v", arm)
+	}
+	out := FormatReleaseReport(r)
+	for _, want := range []string{"evaluation", "checks", "review", "$3.0000", "3.0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("release report missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestReleaseReportNoTotalWithUnknownUsage(t *testing.T) {
+	deps := ReleaseDeps{
+		ReadFile:  stubReadFile(map[string]string{}),
+		BuildInfo: func() (string, bool, bool) { return "abc1234", false, true },
+	}
+	res := &EvalResult{Suite: "pilot", Executions: []EvalExecution{
+		{TaskID: "known", Arm: "fixed", Status: EvalAccepted, Totals: Totals{Calls: 1, Measured: 1, CostUSD: 1}},
+		{TaskID: "unknown", Arm: "fixed", Status: EvalRejected, Totals: Totals{Calls: 1, Unknown: 1, CostUSD: 0.25}},
+	}}
+	out := FormatReleaseReport(BuildReleaseReportWithEval(deps, res))
+	if !strings.Contains(out, "at least $1.2500; 1 runs unknown") {
+		t.Fatalf("unknown usage was not marked as a lower bound:\n%s", out)
+	}
+}
+
 func TestReleaseJSON(t *testing.T) {
 	deps := ReleaseDeps{
 		ReadFile:  stubReadFile(map[string]string{}),

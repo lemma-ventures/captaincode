@@ -257,6 +257,81 @@ Captain-owned process for the same evaluator with authenticated local IPC.
 That is a later measured choice. Do not introduce a new network listener in
 the first release.
 
+#### BB1 offline evaluator delivered 15 November 2026
+
+`captain blackbox check --snapshot <file>` reads one normalized action from
+standard input and writes one JSON result. The command returns before Captain
+loads provider credentials, the model registry or the ledger. It uses no
+network, model, subprocess or persistent security record. It is not connected
+to a worker hook and cannot block an action.
+
+The first schema covers exact package/version rules, path patterns, Go regular
+expression patterns and secret-exposure warnings. A path rule ending in `/**`
+matches that directory and its descendants. Other path rules use Go's
+`path.Match` semantics. Secret detection reuses Captain's existing patterns. Results contain rule IDs, categories, kinds,
+severities and fixed reason codes. They do not contain action text, paths,
+commands, URLs or secret values. Disabled categories produce no findings.
+
+`pkg/captaincode/testdata/blackbox/parity.json` is the required host-mapping
+fixture. All 11 cases run without skips. It records the expected differences
+from the pinned Python and TypeScript references: `filePath` support,
+Captain-owned secret patterns, Go regular-expression rejection, and explicit
+unsupported shell coverage. The fixture does not claim that an upstream test
+suite ran. No upstream source was copied into the implementation.
+
+Limits are 1 MiB per action, 4 MiB per snapshot, 1,024 rules, 256 targets of
+each type, 256 KiB per text field, 16 JSON levels, 2,048 argument nodes and
+1,024 emitted findings. The CLI applies a 250 ms evaluation deadline. Unknown
+tools, omitted fields, truncation, unsupported package syntax, shell
+substitution and `go get` produce incomplete coverage. Empty selected rule
+categories are incomplete, not clean. Invalid snapshots and unsupported Go
+regular expressions fail closed. Only `source: synthetic` is accepted in BB1;
+the computed snapshot SHA-256 identifies bytes but does not authenticate a
+publisher.
+
+The normalized action, snapshot, finding, coverage and result schemas live in
+`pkg/captaincode/blackbox_types.go`. BB2 must map the final restored host input
+into this schema and must preserve the explicit coverage gaps. BB3 owns real
+rule authority and authenticated snapshots. BB5 owns enforcement.
+
+#### BB2 OpenCode audit hook delivered 15 November 2026
+
+`captain blackbox hook --mode audit [--snapshot <file>]` reads one plugin
+event from standard input (`tool`, `args`, `cwd`, `session`, `phase`,
+`output`), normalizes the final restored arguments through the BB1 schema,
+evaluates against the snapshot at `$CAPTAIN_BLACKBOX_SNAPSHOT` or
+`~/.config/captain/blackbox-snapshot.json`, and files one bounded record in
+`~/.captaincode/security.jsonl` (`CAPTAIN_BLACKBOX_STATE` moves it). Like
+`check`, it runs before Captain loads provider credentials. It never refuses:
+`enforce` is rejected as unbuilt, every screened event exits 0, and a failed
+record write reports `degraded` on stdout without failing the tool.
+
+The plugin hook in `plugin/captain.ts` calls it after secret restoration and
+before the gate and jail wrapping, on the arguments that will actually run,
+with `CAPTAIN_BLACKBOX=audit` opt-in (default `off`). It is independent of
+`CAPTAIN_ROUTE_PLUGIN`, `CAPTAIN_ACTION_GATE`, `gateConfigured()`,
+`GATED_TOOLS` and `CAPTAIN_REDACT`. The post-tool path records
+`observed_after_execution` on the already-masked output, bounded to 16 KiB,
+separately from the pre-tool decision. A broken or absent captain binary
+never breaks a tool call.
+
+Each record carries schema, event ID, time, workspace ID (a path-free hash of
+the folder), session, task (joined through the gate-session ledger), run and
+tool-call IDs where present, phase, tool, mode, disposition
+(`evaluated`, `would_block`, `degraded`, `observed_after_execution`), status,
+per-category coverage, at most 8 finding summaries (rule ID, category, kind,
+severity, reason - never action text), the true finding count, snapshot ID and
+digest, duration and reason codes. No commands, paths, URLs, package names,
+prompts, outputs or secret values reach the stream. The stream rotates at
+1 MiB to two bounded generations; concurrent processes append one line each
+and a hostile ID is dropped and named as omitted, never recorded.
+
+Still owed for BB2: hook invocation proven inside the combined fixture
+runtime (its workers run tools in fake CLI processes, so a new fixture path
+is needed for a live opencode tool call), the two-workspace live run, and a
+real snapshot from BB3's export contract. The audit findings cannot grant
+permission or block an action: that stays true by construction until BB5.
+
 ### Normalized action
 
 Carry these fields independently:

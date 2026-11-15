@@ -57,6 +57,7 @@ review flags:
   --by <name>       the reviewer; required with a verdict, and recorded with it
   --note <text>     why; printed in the result record beside the verdict
   --amend           replace an existing verdict instead of refusing
+  --export <dir>    write a blinded packet and a separate alias-to-arm key
 
 verify flags:
   --work <dir>      where baseline snapshots are made (default a temp dir)
@@ -233,6 +234,7 @@ func evalReview(args []string) {
 	}
 	path := args[0]
 	verdict, key, by, note, amend := "", "", "", "", false
+	exportDir := ""
 	for i := 1; i < len(args); i++ {
 		next := func() string {
 			i++
@@ -252,10 +254,22 @@ func evalReview(args []string) {
 			note = next()
 		case "--amend":
 			amend = true
+		case "--export":
+			exportDir = next()
 		}
 	}
 
 	res := mustLoadResult(path)
+	if exportDir != "" {
+		if verdict != "" {
+			fatal(fmt.Errorf("--export cannot be combined with a verdict"))
+		}
+		if err := captaincode.ExportReviewPacket(context.Background(), res, exportDir); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("wrote review packet in %s/packet; alias-to-arm key is %s/alias-key.json (0600)\n", exportDir, exportDir)
+		return
+	}
 	if verdict == "" {
 		pending := res.Pending()
 		if len(pending) == 0 {

@@ -1,6 +1,8 @@
 package captaincode
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -58,5 +60,67 @@ func TestSlashCommandsHoldEveryWordTheBrainActsOn(t *testing.T) {
 				t.Errorf("/%s is parsed by %s but missing from SlashCommands", w, m)
 			}
 		}
+	}
+}
+
+func TestUnknownSlashRefusesATypoAndNamesTheNearest(t *testing.T) {
+	got := UnknownSlash("/fontier summarize the rounds", nil)
+	assert.Equal(t, "captain: /fontier is not a command - nothing was sent. Did you mean /frontier? To send it as plain text, remove the slash.", got)
+	assert.Contains(t, UnknownSlash("/codex-ai fix it", nil), "Did you mean /codex")
+	assert.NotContains(t, got, "summarize", "the refusal does not repeat the task")
+}
+
+func TestUnknownSlashLetsKnownWordsPathsAndCustomCommandsThrough(t *testing.T) {
+	for _, text := range []string{"/frontier do it", "/Quality do it", "/team /noslop do it", "/fast do it", "/compact", "/skills list", "/Users/me/notes.md is wrong", "fix /fontier in the docs"} {
+		assert.Empty(t, UnknownSlash(text, nil), text)
+	}
+	assert.Contains(t, UnknownSlash("/xyzzy go", nil), "Lanes: /quality /frontier")
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".opencode", "command"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".opencode", "command", "mycmd.md"), []byte("private fixture body"), 0o644))
+	words := CustomSlashWords(dir)
+	assert.Contains(t, words, "mycmd")
+	assert.Empty(t, UnknownSlash("/mycmd go", words))
+}
+
+func TestOpencodeWordListsMatch(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "plugin", "commands.ts"))
+	require.NoError(t, err)
+	match := regexp.MustCompile(`(?s)export const OPENCODE_WORDS = \[(.*?)\]`).FindSubmatch(body)
+	require.Len(t, match, 2)
+	quoted := regexp.MustCompile(`"([a-z-]+)"`).FindAllStringSubmatch(string(match[1]), -1)
+	fallback := make([]string, 0, len(quoted))
+	for _, word := range quoted {
+		fallback = append(fallback, word[1])
+	}
+	assert.ElementsMatch(t, OpencodeCommands(), fallback)
+}
+
+func TestDefaultCommandsCoverTurnWords(t *testing.T) {
+	commands := defaultCommands()
+	for _, word := range SlashCommands() {
+		if word == "help" || word == "q" {
+			assert.NotContains(t, commands, word)
+			continue
+		}
+		leg := Leg(word)
+		if KnownLeg(leg) && !ServesTasks(leg) {
+			assert.NotContains(t, commands, word)
+			continue
+		}
+		entry, ok := commands[word].(map[string]any)
+		require.True(t, ok, "/%s has no pass-through command", word)
+		want := "/" + word + " $ARGUMENTS"
+		if word == "best" {
+			want = "/quality $ARGUMENTS"
+		}
+		assert.Equal(t, want, entry["template"])
+	}
+}
+
+func BenchmarkUnknownSlash(b *testing.B) {
+	for b.Loop() {
+		UnknownSlash("/fontier summarize the rounds", nil)
 	}
 }

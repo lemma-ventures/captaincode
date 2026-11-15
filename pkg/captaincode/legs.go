@@ -363,6 +363,7 @@ func providerAuthError(msg string) bool {
 var ErrSessionNotFound = errors.New("opencode session not found")
 
 type Result struct {
+	SessionID         string
 	TokenUsage        *TokenUsage
 	TTFTMs            *int64 // first streamed text since dispatch; nil if not observed
 	FirstOutputMs     *int64 // completed-message timing, not TTFT

@@ -109,6 +109,8 @@ function View(props: { api: TuiPluginApi }) {
   // This folder's held sent prompts and why its inbox is closed: kept on the
   // panel until the user acts, since a toast is gone before they look.
   const [inboxWait, setInboxWait] = createSignal<{ waiting: number; closed: string }>({ waiting: 0, closed: "" })
+  // Q13: the last task this session started, and its outcome status.
+  const [lastOutcome, setLastOutcome] = createSignal<{ task: string; status: string } | null>(null)
   // The last retarget's outcome, shown under Models for a few seconds.
   const [upgradeNote, setUpgradeNote] = createSignal("")
   const retarget = async (leg: string) => {
@@ -245,7 +247,29 @@ function View(props: { api: TuiPluginApi }) {
       inboxPolling = false
     }
   }
-  const inboxTimer = setInterval(() => void pollInbox(), 2000)
+  const inboxTimer = setInterval(() => {
+    void pollInbox()
+    void pollOutcome()
+  }, 2000)
+  // The last task's outcome (Q13): pending, accepted, rejected or regressed,
+  // for the session this TUI is in. GET /v1/outcome/last names the session by
+  // its turn id; a session that started no task yet has no row.
+  const pollOutcome = async () => {
+    try {
+      const cur = props.api.route.current as { name: string; params?: { sessionID?: string } }
+      const id = cur?.name === "session" ? cur.params?.sessionID : ""
+      if (!id) return
+      const r = await fetch(brainURL(`/v1/outcome/last?turn=${encodeURIComponent(id)}`), { signal: AbortSignal.timeout(2500) })
+      if (!r.ok) return
+      const j = (await r.json()) as { task?: string; status?: string }
+      if (j?.task && j?.status) {
+        const next = { task: j.task, status: j.status }
+        if (JSON.stringify(next) !== JSON.stringify(lastOutcome())) setLastOutcome(next)
+      }
+    } catch {
+      /* brain down: the row keeps its last value */
+    }
+  }
   // The roster changes daily (a feed refresh, a CLI update), not per turn.
   const pollRoster = async () => {
     try {
@@ -531,6 +555,17 @@ function View(props: { api: TuiPluginApi }) {
             ]
               .filter(Boolean)
               .join(" · ")}
+          </text>
+        </box>
+      </Show>
+
+      {/* The last task's outcome (Q13) and the words that change it. */}
+      <Show when={lastOutcome() && !offline()}>
+        <box flexDirection="row" gap={1}>
+          <text fg={lastOutcome()!.status === "accepted" ? theme().success : lastOutcome()!.status === "pending" ? theme().textMuted : theme().warning}>●</text>
+          <text fg={theme().text}>outcome</text>
+          <text fg={theme().textMuted} wrapMode="word">
+            {lastOutcome()!.status === "pending" ? "pending · /accept /reject when you judge it" : `${lastOutcome()!.status} · ${lastOutcome()!.task}`}
           </text>
         </box>
       </Show>

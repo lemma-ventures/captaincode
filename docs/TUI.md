@@ -22,14 +22,16 @@ Everything below narrows or steers that.
 | `/team <task>` | The director plans an ensemble on one task and reviews it into one answer |
 | `/team /quality <task>` / `/team /frontier <task>` / `/team /codex-cli …` | Bind the ensemble to the best-rated legs, or make one member binding; the director fills the rest |
 | `/team /openshell <task>` | Sandbox-only team: the tool-less director splits the task into 1-4 assignments that run as one parallel OpenShell stage (experimental; see [CONFIGURATION](CONFIGURATION.md#openshell-workers)) |
-| `/quality` (`/q`, `/best`) · `/speed` (`/fast`) · `/save` (`/cheap`) | A preference for this turn, before or after a leg prefix. `/quality` takes turns across the legs within 85% of the best by blended quality, at high effort, leaving the frontier-class legs (`codex-cli`, `grok-max`) to `/frontier`; `/save` across the open-weight legs that clear the quality bar, each on its own model at medium effort rather than its flash sibling (the whole ladder only when no open-weight leg is open); the director picks inside `/speed` |
+| `/quality` (`/best`) · `/speed` (`/fast`) · `/save` (`/cheap`) | A preference for this turn, before or after a leg prefix. `/quality` takes turns across the legs within 85% of the best by blended quality, at high effort, leaving the frontier-class legs (`codex-cli`, `grok-max`) to `/frontier`; `/save` across the open-weight legs that clear the quality bar, each on its own model at medium effort rather than its flash sibling (the whole ladder only when no open-weight leg is open); the director picks inside `/speed` |
 | `/oss` (`/open`) | Open-weight models only |
 | `/deterministic` (`/det`, `/adi`) | Only legs green in the Agentic Determinism Index, pinned to the measured serving tuple ([ADI.md](ADI.md)) |
 | `/noslop` | Plain-writing rules for every worker of the turn, OpenShell sandboxes included. On by default; this word brings them back when `CAPTAIN_WORKER_NOSLOP=0` or a set `CAPTAIN_SKILLS_ALWAYS` drops them |
 
 Modifiers compose in any order: `/oss /repeat 5 <task>`, `/team /deterministic <task>`, `/noslop /openshell <task>`.
 
-A turn that starts with a `/word` captain does not know is refused before anything is sent, with the nearest commands: "/fontier is not a command - nothing was sent. Did you mean /frontier?". Remove the slash to send the text as is. opencode's own commands and your custom command files are never refused.
+A turn that starts with a `/word` captain does not know is refused before anything is sent, with the nearest commands: "/fontier is not a command - nothing was sent. Did you mean /frontier?". Remove the slash to send the text as is. The brain and the plugin enforce the same list, so another API client cannot bypass the check. opencode's own commands and your custom command files are never refused.
+
+The shared opencode list is: `/agents`, `/clear`, `/compact` (`/summarize`), `/connect`, `/debug`, `/details`, `/diff`, `/editor`, `/export`, `/help`, `/init`, `/mcp`, `/mcps`, `/models`, `/move`, `/new`, `/review`, `/sessions` (`/resume`, `/continue`), `/share`, `/unshare`, `/skills`, `/status`, `/themes`, `/thinking`, `/undo`, `/redo`, `/update` and `/warp`. A bare `/help` opens opencode's help dialog; use `/captain` for Captain's cheat sheet. `/exit` (`/quit`, `/q`) exits opencode, so `/q` is not a Captain quality command in the TUI.
 
 `/private` reviews the private-names list: what captain added on its own, the names it suggests from the folders you work in, grouped by project. `/private add <names>` keeps names out of public repositories, any word included; `/private dismiss <names>` stops a suggestion; `/private remove <names>` takes a name off the list. Nothing in it reaches a worker or a model.
 
@@ -105,11 +107,20 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 | `/repeat status` · `show` · `watch` | Loops in this folder · what recent rounds did · follow a loop live |
 | `/repeat stop` (`finish`, `wrapup`) · `/repeat abort` | End after the current round · kill it now |
 | `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop`. Typed while a turn runs, it starts at once instead of waiting in the queue |
-| `/btw <note>` | Tell the running worker more (claude and the opencode legs take it mid-run; codex and cursor get it as the next turn) |
+| `/btw <note>` | Tell the running worker more (claude and the opencode legs take it mid-run; codex-cli does too with `CAPTAIN_CODEX_TRANSPORT=app-server`; cursor gets it as the next turn) |
 | `/interrupt [reason]` | Stop the running worker and keep its work: a handoff (done, left, how to resume) or a marked partial |
+| `/accept [note]` | Record the last task this session started as accepted (the reviewer is `tui:<OS user>`) |
+| `/reject <reason>` | Record the session's last task as rejected |
+| `/correction <minutes> [reason]` | Record correction minutes on the session's last task |
+| `/regressed <reason>` | Mark the session's last accepted task as regressed |
 
 `/repeat` control words take an optional `last`, `all` or `rp_…` thread id. Anything
 wordier is a task: `/repeat watch the queue` repeats that task.
+
+The outcome words act the moment they are typed (they never queue behind a
+running turn) and act on the last task **this session** started, whatever its
+state. The sidebar shows that task's outcome: pending, accepted, rejected or
+regressed. `captain outcomes <task>` prints the full record.
 
 ## Two TUIs on one repository
 
@@ -148,7 +159,7 @@ to update the list. Press **Esc** to close it without changing messages.
 | `/init` | Regenerate worker permissions (web, edits, bash; `.env` stays denied) |
 | `/context status` · `publish on\|off` · `consume all\|none\|<path>` · `scrub` · `forget` | Cross-project context sharing (off by default) |
 | `/euclid status` · `/euclid distill [apply]` | Euclid memory: your brains, and register edits from the run journal ([EUCLID.md](EUCLID.md)) |
-| `/captain` (`/captain help`, `/help`) | The short cheat sheet |
+| `/captain` (`/captain help`) | The short cheat sheet. A bare `/help` opens opencode's help dialog |
 
 ## While a turn is streaming
 

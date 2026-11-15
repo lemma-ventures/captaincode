@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,35 @@ func TestChatWorkerRunsInTheRequestsWorkspace(t *testing.T) {
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	assert.Contains(t, seen, "repository at "+ash, "the worker is told it works in the TUI's folder")
 	assert.NotContains(t, seen, "repository at "+brainHome)
+}
+
+func TestUnknownSlashNeverStartsAWorker(t *testing.T) {
+	assertChatRefusal(t, "/fontier summarize the rounds", "Did you mean /frontier?")
+}
+
+func TestJevTurnRefused(t *testing.T) {
+	assertChatRefusal(t, "/jev classify this", "`captain jev classify")
+}
+
+func assertChatRefusal(t *testing.T, text, want string) {
+	t.Helper()
+	t.Setenv("CAPTAIN_TRIAGE", "0")
+	t.Setenv("CAPTAIN_WORKER_LOGS", "0")
+	b := teamBrain()
+	called := false
+	b.runWorkerFn = func(leg captaincode.Leg, brief string, onDelta, onStatus func(string)) (captaincode.Leg, captaincode.Result, error) {
+		called = true
+		return leg, captaincode.Result{Text: "should not run"}, nil
+	}
+	body, _ := json.Marshal(oaiChatReq{Model: "auto", Messages: []oaiMessage{{Role: "user", Content: json.RawMessage(strconv.Quote(text))}}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(body)))
+	req.Header.Set("X-Captain-Cwd", t.TempDir())
+	rec := httptest.NewRecorder()
+	b.chatCompletions(rec, req)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.False(t, called)
+	assert.Contains(t, rec.Body.String(), want)
+	assert.NotContains(t, rec.Body.String(), "classify this")
 }
 
 func TestEuclidStatusIsPerWorkspace(t *testing.T) {

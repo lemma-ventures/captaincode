@@ -194,6 +194,25 @@ captain euclid links [--apply]
 captain euclid mcp               # the MCP server (registered by `captain init`)
 ```
 
+### MCP server lifetime
+
+A newly started `captain euclid mcp` saves its absolute project folder and its
+parent process id. Every 60 seconds it checks both. It exits normally when the
+folder no longer exists or the parent process id changes. A tool call that is
+already running finishes before the server exits. Closing standard input still
+ends the server. These checks do not signal or stop an older server.
+
+Idle exit is off by default because OpenCode may not restart a server that
+exits. Set `CAPTAIN_EUCLID_MCP_IDLE` to a positive Go duration, such as `30m`,
+to exit after that long without a request. An empty, invalid or non-positive
+value leaves idle exit off.
+
+`captain doctor` prints one read-only inventory line for these servers: process
+count, total resident memory, and the number whose working folder is missing.
+It also reports when a folder cannot be inspected or the process list is
+unavailable. The line does not stop a process. The lifetime rules apply when
+OpenCode next starts a server from the new Captain binary.
+
 ## What a brain is not
 
 It is not a transcript store, and it is not memory that follows you between

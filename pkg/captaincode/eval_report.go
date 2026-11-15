@@ -36,12 +36,13 @@ type ArmReport struct {
 	AcceptRate     float64 `json:"accept_rate"`
 	// Defined is false when nothing was accepted: the two per-accepted-task
 	// ratios below are then meaningless and must not be printed as 0.
-	Defined       bool    `json:"defined"`
-	CostPerAccept float64 `json:"cost_per_accepted_usd"`
-	SecPerAccept  float64 `json:"seconds_per_accepted"`
-	TotalCostUSD  float64 `json:"total_cost_usd"`
-	TotalSeconds  float64 `json:"total_seconds"`
-	Coverage      Totals  `json:"coverage"`
+	Defined          bool    `json:"defined"`
+	CostPerAccept    float64 `json:"cost_per_accepted_usd"`
+	SecPerAccept     float64 `json:"seconds_per_accepted"`
+	TotalCostUSD     float64 `json:"total_cost_usd"`
+	TotalSeconds     float64 `json:"total_seconds"`
+	UnknownUsageRuns int     `json:"unknown_usage_runs"`
+	Coverage         Totals  `json:"coverage"`
 }
 
 // Complete reports whether this arm's money is a bill rather than a partial
@@ -87,6 +88,9 @@ func (r *EvalResult) Report() EvalReport {
 		a.Coverage.Estimated += e.Totals.Estimated
 		a.Coverage.Unknown += e.Totals.Unknown
 		a.Coverage.CostUSD += e.Totals.CostUSD
+		if e.Totals.Unknown > 0 {
+			a.UnknownUsageRuns++
+		}
 		switch e.Status {
 		case EvalAccepted:
 			a.Accepted++

@@ -40,6 +40,7 @@ func cmdRelease(args []string) {
 	}
 	fs := flag.NewFlagSet("release", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "output JSON")
+	evalPath := fs.String("eval", "", "include an evaluation result in the release report")
 	_ = fs.Parse(args[1:])
 
 	deps := releaseDeps()
@@ -84,7 +85,11 @@ func cmdRelease(args []string) {
 			os.Exit(1)
 		}
 	case "report":
-		r := captaincode.BuildReleaseReport(deps)
+		var result *captaincode.EvalResult
+		if *evalPath != "" {
+			result = mustLoadResult(*evalPath)
+		}
+		r := captaincode.BuildReleaseReportWithEval(deps, result)
 		if *asJSON {
 			body, _ := captaincode.ReleaseJSON(r)
 			fmt.Println(string(body))

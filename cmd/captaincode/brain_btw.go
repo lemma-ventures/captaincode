@@ -91,6 +91,7 @@ func (b *brain) btwDeliver(dir, text string) (took, deaf []captaincode.Leg, msg 
 
 func (b *brain) btwDeliverTurns(dir, text string, turns []*captaincode.Steer, record bool) (took, deaf []captaincode.Leg, msg string) {
 	seen := map[captaincode.Leg]bool{}
+	var deliveryErrors []string
 	held := 0
 	var routed string // how a multi-worker turn chose its addressees
 	for _, s := range turns {
@@ -114,6 +115,7 @@ func (b *brain) btwDeliverTurns(dir, text string, turns []*captaincode.Steer, re
 			only, note, why := b.routeNote(s, text, att)
 			legs, err := s.SendTo(note, only)
 			if err != nil {
+				deliveryErrors = append(deliveryErrors, err.Error())
 				fmt.Printf("captain brain: /btw not fully delivered: %v\n", err)
 			}
 			for _, l := range legs {
@@ -172,6 +174,9 @@ func (b *brain) btwDeliverTurns(dir, text string, turns []*captaincode.Steer, re
 		}
 	case len(deaf) > 0:
 		msg = fmt.Sprintf("%s is running and takes no notes mid-run - your note runs as the next turn, right after it finishes", legList(deaf))
+		if len(deliveryErrors) > 0 {
+			msg += " (" + strings.Join(deliveryErrors, "; ") + ")"
+		}
 	default:
 		msg = "no worker is running in " + filepath.Base(dir) + " - your note runs as a normal turn"
 	}
@@ -257,7 +262,7 @@ func (b *brain) handleBtw(w http.ResponseWriter, req oaiChatReq, raw string) boo
 	if text == "" {
 		emit, _, finish := newCompletionWriter(w, req, "captain")
 		defer finish()
-		emit("**/btw <note>** - a note for the worker that is already running: claude and the opencode legs take it mid-run, codex and cursor get it as the next turn.")
+		emit("**/btw <note>** - a note for the worker that is already running: claude, opencode legs and the opt-in codex app-server transport take it mid-run; other workers get it as the next turn.")
 		finish()
 		return true
 	}

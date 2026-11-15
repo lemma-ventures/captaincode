@@ -28,6 +28,7 @@ package captaincode
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -154,4 +155,29 @@ func EditorInspect(taskID string) error {
 	out, _ := json.MarshalIndent(resp, "", "  ")
 	fmt.Println(string(out))
 	return nil
+}
+
+func EditorMCPConfigJSON(editor, binary string) ([]byte, error) {
+	if !filepath.IsAbs(binary) {
+		return nil, fmt.Errorf("captain binary path must be absolute")
+	}
+	args := []string{"task", "mcp"}
+	var config any
+	switch editor {
+	case "cursor":
+		config = map[string]any{"mcpServers": map[string]any{
+			"captain": map[string]any{"command": binary, "args": args},
+		}}
+	case "vscode":
+		config = map[string]any{"servers": map[string]any{
+			"captain": map[string]any{"type": "stdio", "command": binary, "args": args},
+		}}
+	case "zed":
+		config = map[string]any{"context_servers": map[string]any{
+			"captain": map[string]any{"command": map[string]any{"path": binary, "args": args}},
+		}}
+	default:
+		return nil, fmt.Errorf("unknown editor %q (cursor, vscode, zed)", editor)
+	}
+	return json.MarshalIndent(config, "", "  ")
 }

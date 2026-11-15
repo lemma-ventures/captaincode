@@ -110,6 +110,37 @@ func runSuite(t *testing.T, s *EvalSuite) *EvalResult {
 	return res
 }
 
+func TestEvalSnapshotNamesUseAlias(t *testing.T) {
+	repo, rev := fixtureRepo(t)
+	s := baseSuite(repo, rev)
+	res := runSuite(t, s)
+	dir := filepath.Base(res.Executions[0].Dir)
+	if !strings.HasPrefix(dir, "t1.arm-A.1-") {
+		t.Fatalf("snapshot name does not use the alias: %s", dir)
+	}
+	if strings.Contains(dir, s.Arms[0].Name) {
+		t.Fatalf("snapshot name leaks the arm: %s", dir)
+	}
+}
+
+func TestEvalRunRefusesBrainWithoutCharges(t *testing.T) {
+	repo, rev := fixtureRepo(t)
+	s := baseSuite(repo, rev)
+	s.Arms[0].Run = []string{"true"}
+	work := filepath.Join(t.TempDir(), "work")
+	_, err := RunSuite(context.Background(), s, EvalOptions{WorkDir: work, Ledger: NewLedger("")})
+	if err == nil || !strings.Contains(err.Error(), "recorded no charges") {
+		t.Fatalf("run without accounting must stop before fixtures: %v", err)
+	}
+	entries, readErr := os.ReadDir(work)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("accounting refusal left fixture or probe artifacts: %v", entries)
+	}
+}
+
 func TestRunAcceptsWhenChecksPassAndLeavesSourceRepoClean(t *testing.T) {
 	repo, rev := fixtureRepo(t)
 	res := runSuite(t, baseSuite(repo, rev))

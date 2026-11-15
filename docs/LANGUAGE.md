@@ -1,6 +1,6 @@
 # The Captain command language
 
-Version **3.2** · normative · implementation: `pkg/captaincode/language.go`
+Version **3.3** · normative · implementation: `pkg/captaincode/language.go`
 
 Every line typed into a Captain session is a program in this language: a task, plus the words
 that say who runs it, how, how often, and in what order. This document defines the language.
@@ -77,7 +77,8 @@ line          = control-line | program | command ;
 (* §6.7: a word that takes the rest of the line as its argument *)
 control-line  = "/" , control-word , rest-of-line ;
 control-word  = "btw" | "interrupt" | "init" | "context" | "euclid" | "private"
-              | "captain" | "help" | "wf" | "workflow" | "run" | "wfrun" | "rename" ;
+              | "captain" | "help" | "wf" | "workflow" | "run" | "wfrun" | "rename"
+              | "accept" | "reject" | "correction" | "regressed" ;
 
 (* §6.5: programs join whole turns *)
 program       = alt ;
@@ -268,6 +269,10 @@ is not swapped for another one when its login is gone. The control words:
 | `/euclid status` · `/euclid distill [apply]` | Euclid memory ([EUCLID.md](EUCLID.md)). |
 | `/private [add\|dismiss\|remove <names>]` | The private-names list. |
 | `/rename <title>` | Rename the session (handled by the TUI). |
+| `/accept [note]` | Record the session's last task as accepted. |
+| `/reject <reason>` | Record the session's last task as rejected. |
+| `/correction <minutes> [reason]` | Record correction minutes on the session's last task. |
+| `/regressed <reason>` | Mark the session's last accepted task as regressed. |
 
 ## 7. Limits and errors
 
@@ -328,6 +333,7 @@ Every slash word in the table is reserved. A new leg may not take one of these n
 | `/noslop` `/skill` | Skill |
 | `/fable` | Model |
 | `/btw` `/interrupt` `/init` `/context` `/euclid` `/private` `/captain` `/help` `/rename` | Control lines |
+| `/accept` `/reject` `/correction` `/regressed` | Outcome words (control lines, Q13) |
 | `/wf` `/workflow` `/run` `/wfrun` | Workflow commands |
 
 `/repeat` reserves its control words: `status`, `show`, `watch`, `stop`, `finish`, `wrapup`,
@@ -385,6 +391,7 @@ says why and the version moves.
 
 | Version | Date | Change |
 |---|---|---|
+| 3.3 | 2026-11-15 | The outcome words `/accept`, `/reject`, `/correction` and `/regressed` are control lines that record a verdict on the session's last task. They never start a turn. Every line that parsed before reads the same; the words were refused as unknown words. |
 | 3.2 | 2026-11-10 | `/fable` is a modifier: Claude Fable 5.2 on the claude leg for the turn, after `/frontier` or `/claude-cli`, or alone as `/claude /fable`. Every line that parsed before reads the same; `/fable` was refused as an unknown word. |
 | 3.1 | 2026-11-02 | `/repeat edit:` and `/repeat add:` change a running loop's prompt from its next round on. Every line that parsed before reads the same: without the colon, `edit` and `add` still start a task. |
 | 3.0 | 2026-10-11 | Gates count only as separate words outside backtick code on the last line of the first paragraph. Quoted reports on earlier lines stay text. Invalid literal command names are refused before work starts. LF and CRLF paragraph breaks have the same meaning. Use `sh -c` for shell expressions. This correction intentionally has no legacy mode: that mode would execute pasted prose as commands. It adds no turn or re-entry path; the existing turn-budget proofs still apply. |

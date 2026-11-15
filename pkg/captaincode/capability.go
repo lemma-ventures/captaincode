@@ -127,8 +127,8 @@ var transportCaps = map[Transport]map[Capability]CapabilityFact{
 	},
 	TransportCodexCLI: {
 		CapTools:        {Support: SupportYes},
-		CapSessionReuse: {Support: SupportNo, Note: "each turn is a fresh `codex exec`"},
-		CapCancel:       {Support: SupportYes, Note: "the process is killed - a stop, but not a cooperative one: partial work is whatever reached the disk"},
+		CapSessionReuse: {Support: SupportNo, Note: "each turn is a fresh `codex exec`, or a fresh app-server thread with CAPTAIN_CODEX_TRANSPORT=app-server"},
+		CapCancel:       {Support: SupportYes, Note: "exec kills the process; app-server requests turn/interrupt, closes stdin, then kills after the grace period"},
 		CapUsage:        {Support: SupportYes, Note: "turn.completed carries input/cached/output tokens"},
 		CapCost:         {Support: SupportNo, Note: "ChatGPT-subscription quota, not a per-turn price"},
 		CapPermissions:  {Support: SupportYes, Note: "--sandbox with approval_policy=never"},

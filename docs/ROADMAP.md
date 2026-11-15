@@ -20,14 +20,14 @@ validation and complete the browser-to-brain path before provisioning a host.
 | ID | Next result | Status and exit evidence |
 |---|---|---|
 | F1 | Refuse unsafe credential files before loading values | Implemented, not released. Descriptor checks reuse the existing no-follow pattern. Six negative fixtures, an exact-size fixture and a benchmark are added. The three documented checks pass on the development Mac (14 November 2026): tests in 0.36 s, benchmark 14.4–19.4 µs and 9 allocations per call, clean `go vet ./...`. The container-based isolated runner is still unavailable locally; see [SECRETS.md](SECRETS.md#the-separate-secrets-file). |
-| F2 | First signed browser prompt prepares an eligible repository | Browser caller side implemented 14 November 2026: the Galaxy prototype reads `GET /presence/projects` for the selected machine, offers each repository by name, state and project ID, and signs the prepare envelope (`prepare`, the project ID as the envelope folder, no parent, never `remote`) through the existing review dialog; the relay refuses a bad ID, a name that does not match the discovered row, and a list it cannot trust, before it calls the brain again. The first prompt is walked in a virtual-passkey browser check (`check_presence.py`). Still owed for this row: exact retry, conflicting retry, setup failure and restart recovery evidence through the caller, a rebuilt brain process carrying the step 2 routes, and the two-host tests. |
+| F2 | First signed browser prompt prepares an eligible repository | Browser caller side implemented 14 November 2026: the Galaxy prototype reads `GET /presence/projects` for the selected machine, offers each repository by name, state and project ID, and signs the prepare envelope (`prepare`, the project ID as the envelope folder, no parent, never `remote`) through the existing review dialog; the relay refuses a bad ID, a name that does not match the discovered row, and a list it cannot trust, before it calls the brain again. The caller-side owed evidence landed 15 November 2026: transport failure is an unknown outcome that keeps the draft for one identical second signed attempt and never retries itself, a conflicting resubmission and every other host refusal (replayed nonce, admission conflict, failed setup, unknown project, expired envelope, screen required) show their exact meaning and queue nothing, and setup failure plus page-restart recovery are walked in `check_presence.py` (73 node tests, 39 relay tests, browser check green at 1280×800, 1024×768 and 390×844). Still owed for this row: a rebuilt brain process carrying the step 2 routes, and the two-host tests. |
 | F3 | Rebuild non-secret machine settings without copying credentials | Template and guarded inventory implemented, not released (14 November 2026). `captain secrets template` prints five fixed settings without loading source configuration, credentials, registry or ledger. `secrets list` now reuses F1's guarded reader for both files and prints sorted, unique ASCII variable names. Isolated Linux tests reproduce the prior output-injection bug and pass after the fix, including seven unsafe-file cases. Inventory benchmark: 2.20–2.28 µs, 1,040 B and 9 allocations per call; `go vet ./...` passes. See [SECRETS.md](SECRETS.md#inventory-assurance). The two-machine inventory and provider login health checks remain. Never export arbitrary env values as a safe template. |
 | F4 | Install a pinned headless bundle on a clean account | Offline hash-verification and install path implemented, not released (14 November 2026): `captain bundle create|verify|install` (`cmd/captaincode/bundle_cmd.go`). A bundle directory carries the binary and a manifest with each artifact's SHA-256, size, mode, source revision and platform; verify fails closed on any changed byte, mode, symlink, unlisted file, unknown manifest field or traversal path, works offline, and prints the manifest's own digest for out-of-band comparison; install re-verifies, is terminal-only, refuses a foreign platform and deploys by staged rename. Tests: round trip, nine tamper cases, nine manifest cases, atomic install, sent-turn refusal, plus a live go-build smoke on the development Mac. Still owed: the clean-account install run, fresh logins and reboot recovery. No release or host deployment is implied. |
 | F5 | Qualify the first Linux host | After F4: reuse tagged discovery, existing infrastructure modules and OpenShell qualification. Keep code tasks blocked until qualification passes. Record spend authorization and teardown before launch. |
 | F6 | Add hub transport and scoped credential delivery | Review the existing hub security and link branches first. Reuse their protocol and the existing broker lifecycle rules. Confidential key custody and a self-hosted network control plane remain later gated work. |
 
-Next execution order: finish F2's caller retry and recovery checks, then run
-F2/F3 acceptance on both hosts with a build that includes these routes. The
+Next execution order: rebuild the brain process with the step 2 routes and run
+F2/F3 acceptance on both hosts with that build. The
 offline hash-verification and install path for F4 is built; its clean-account
 run is next. Keep cloud launch behind F4/F5's existing spend and containment
 gates. This round committed the fleet work (F1-F3 plus the bundle path) and
@@ -40,12 +40,12 @@ credentials, or change network policy.
 |---|---|
 | M1.3 / M1.4 / M1.5 narrative | Pilot ran; blinded review + cost attribution + dated evidence report still owed |
 | M3.7 OpenShell brain integration | Solo CLI/HTTP, sandbox-only parallel and sequential workflows, director-planned sandbox teams (`/team /openshell`), no-change reviews, and explicit, task-linked and opt-in startup recovery qualified live on public fixtures on one host (Shield-measured spend from the sequential run on); wall-time limits, whole-plan attempt admission and terminal attempt reconciliation have controller tests only. Rerunning a stage a stop cut short passed live once on a public fixture; the brain's own stop path has unit tests only. Worker, repair and director counts settle once, with missing counts marked unknown. A brain stop leaves a checkpointed sequence resumable, and recovery runs the stopped stage again, counting the stopped run's attempts and spend. Multi-stage director plans passed one live public edit/review fixture, and strict dollar caps are enforced per request at each worker's Shield (see below). Sandbox model profiles are now generated from the compiled registry, limited to API-key legs on OpenRouter zero-data-retention endpoints (`captain openshell profiles`; 127 generated today), deduplicated against the seven hand-picked lanes (`nim`, `cerebras` and five gpt-oss OpenRouter lanes). Any profile, hand-picked or generated, must pass the 18-check fixture run 3 of 3 in the last 30 days (`captain openshell qualify`, one repair per run, same setting as a real task) before a new task may select it; `glm-cheap-z-ai-fp8` (GLM 5.3 Flash on Z.AI ZDR) is the default, and the `nim` profile qualifies but is slow (306-351 s worker time, occasional NIM 500/504 that Shield refuses). Prompt-time confirmation of the file list and test argv, a priced director reservation under a strict cap, Shield's committed spend on the ledger, recovery of a strict-capped sequence when that spend is known, and a rerun after a controller crash mid-stage are in source. Mixed host/sandbox stages refused by design: a sandbox stage's output cannot safely feed a host agent, and host edits from an agent that can read key files weaken the VM boundary. An advisory tool-less Claude review (`claude -p --safe-mode`) of the sandbox diff is in source and runs after every successful sandbox workflow (opt-out: `CAPTAIN_OPENSHELL_ADVISORY_REVIEW=0`). Open: the upstream VM-driver fix ([OpenShell #3940](https://github.com/NVIDIA/OpenShell/pull/3940)) the MicroVM runs still patch in locally |
-| M4 host productization | Go helpers + cert exist; Pi/Jido/editor drop-in packages do not |
+| M4 host productization | Go helpers, dynamic certification and the editor MCP recipe exist; Pi/Jido drop-in packages do not |
 | M5.1 TUI correction UI | CLI `outcome` commands ship; TUI surface does not |
 | M5.3 real numbers | Needs cost-attributed pilot data |
 | M3.2 host workflows | Stages hand over their tree and cumulative diff applies at end (Q6 done); host `/team` and `+` stages rule once per conflict group (Q7 done) |
-| M3.8 `/btw` on codex | Named, not built; the installed `codex app-server` (0.156.0) has `turn/steer` |
-| Optional Blackbox security checks | Plan reviewed; evaluator, host coverage, authenticated rule import and enforcement remain unbuilt. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
+| M3.8 `/btw` on codex | Opt-in app-server transport implemented 15 November 2026; fake-server steering, refusal, interrupt, malformed-input and schema-gate tests pass. Exec remains the default pending a live throwaway-session check |
+| Optional Blackbox security checks | Offline evaluator and coverage contract done (BB1, 15 November); host coverage, authenticated rule import and enforcement remain unbuilt. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
 
 ### Build queue (October 2026)
 
@@ -63,17 +63,17 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | Q6 | Host workflow stages hand over their tree; one cumulative apply at the end | M3.2 | done (7 October, Q6 pass) |
 | Q7 | Host `/team` rules once per conflict group | M3.2 | done (7 October; workflow `+` stages use the same path, and semantic-conflict owners are also worker ids) |
 | Q8 | Run records keep the full tool input and every prompt a worker received | M1.2, M3.5 | done (14 November 2026; the input rides the status line to the log, and every run writes a masked 0600 `.prompt.md` beside it) |
-| Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | next |
-| Q10 | A new Euclid MCP server ends when its parent or its folder is gone | Euclid adapter | queued |
-| Q11 | M1 pilot: blind review without arm names; evaluation section in the release report | M1.3, M1.5 | queued |
-| Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | queued |
-| Q13 | Outcome commands in the TUI | M5.1 | queued |
-| Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | queued |
-| Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | queued |
-| Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | queued |
+| Q9 | One slash namespace: brain refusal, one opencode word list, `/jev` refusal | TUI | done (15 November 2026; the brain and plugin share the host list, pass-through commands cover Captain turn words, and `/help`/`/q` stay with opencode; full `go test ./...`, `go vet ./...` and 17 plugin tests pass; unknown-word validation measured 42.0–42.4 µs, 49.9 KB and 230 allocations per call) |
+| Q10 | A new Euclid MCP server ends when its parent or its folder is gone | Euclid adapter | done (15 November 2026; new servers check the parent and folder every 60 seconds between requests, idle exit is opt-in, and doctor reports process count, resident memory and missing folders; full `go test ./...`, focused race checks and `go vet ./...` pass; five synthetic lifecycle-check benchmarks measured 3.55–7.02 ns and zero allocations) |
+| Q11 | M1 pilot: blind review without arm names; evaluation section in the release report | M1.3, M1.5 | done (15 November 2026; alias-only snapshots, redacted review packets with a separate 0600 key, release evaluation sections with lower-bound unknown cost, and per-arm accounting preflight; the five Q11 tests, full `go test ./...` and `go vet ./...` pass) |
+| Q12 | Role economics counts the M5.1 verdict, not a finished run | M5.3 | done (15 November 2026; accepted requires an accepted outcome, rejected includes regressions, terminal tasks without a verdict are unreviewed, and the table reports all four counts; focused tests and race checks and `go vet ./...` pass. The full suite reaches an unrelated persistent `TestEscalationPromptSaved` failure: a missing Codex login reroutes to Carbon and leaves two prompt records instead of three.) |
+| Q13 | Outcome commands in the TUI | M5.1 | done (15 November 2026; `/accept [note]`, `/reject <reason>`, `/correction <minutes> [reason]` and `/regressed <reason>` act out of band on the last task the session started, the brain sends `X-Captain-Task-ID` on solo, team, frontier, workflow and openshell completions, the sidebar shows the last task's outcome via `GET /v1/outcome/last`, the reviewer is `tui:<OS user>`, and the words are control lines in LANGUAGE.md 3.3; the five new Go tests, full `go test ./cmd/captaincode`, full `go test ./pkg/captaincode` and `go vet` pass) |
+| Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | done (15 November 2026; opt-in stdio transport, schema-gated fallback, steer/interrupt/refusal/malformed-input/16-MiB-limit and settings-parity tests; focused race checks, the complete Codex test set and `go vet ./...` pass. Settings construction benchmark: 658.7–740.8 ns, 1,144 B and 14 allocations per call. Exec remains the default pending live qualification) |
+| Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | done (15 November 2026; all five gates pass against an in-process brain, including startup reconciliation and interrupted-attempt resume; exact-retry recovery also passes through the external CLI path. Changed retries now conflict, root limits and submit fingerprints survive a ledger reload, and Cursor/VS Code/Zed JSON recipes use an absolute binary path. Full `go test ./...`, focused race checks and `go vet ./...` pass; editor JSON generation measured 1,996–5,915 ns, 1,443 B and 16 allocations per call over three 10,000-run samples) |
+| Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | done (15 November 2026; `captain why --share --days 7,30` reads durable decisions and excludes explicit choices, one scorer accepts only citation-free abstention with an empty/`CANNOT_TELL` answer, new OpenCode MCP entries carry the selected tool profile, and routing events fill `EfficiencyRecord.Schema`; the four Q16 tests, full `go test ./...`, `go vet ./...` and formatting pass. Five synthetic 120-decision report runs measured 173.4–192.6 µs, 400 KB and 285 allocations per call; W1 still needs seven days of real turns) |
 | Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
-| BB1 | Offline security evaluator and explicit detection coverage | M3/M4 | queued: contract and synthetic fixtures first |
-| BB2 | OpenCode audit hook and private security records | M3/M4 | blocked: BB1 |
+| BB1 | Offline security evaluator and explicit detection coverage | M3/M4 | done (15 November 2026; bounded Go evaluator, JSON CLI and 11 required host fixtures; full Go suite, focused race checks, vet and build pass) |
+| BB2 | OpenCode audit hook and private security records | M3/M4 | done (15 November 2026; `captain blackbox hook` normalizes the final restored arguments, files bounded records in `security.jsonl` with rotation and concurrent-append safety, and never refuses; the plugin hook runs after restoration and before the gate and jail wrap, opt-in via `CAPTAIN_BLACKBOX=audit`, independent of the routing plugin and gate; post-tool output is a separate `observed_after_execution` record. 9 Go store tests, 6 hook command tests and 6 plugin handler tests pass; full `go test ./pkg/captaincode` and `./cmd/captaincode`, `go vet ./...` and 25 plugin tests pass. Measured 17.5 ms per hook call end to end (50 runs). Still owed: hook invocation inside the combined fixture runtime - its workers run tools in fake CLI processes, so a new fixture path is needed - and the two-workspace live run) |
 | BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | blocked: export contract and BB1 |
 | BB4 | Claude hook parity and workspace security status | M4 | blocked: BB2; rule health uses BB3 |
 | BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: BB2–BB4 and enforcement evidence |
@@ -91,6 +91,12 @@ run `grep -n '^#### Q6\.' docs/ROADMAP.md`.
 | P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
 | P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | proposed |
+
+After BB2 (15 November 2026) no row is buildable without the user or another
+owner: BB3–BB5 wait on the rule export contract and BB2's combined-runtime
+evidence, N1/N2/N4/N5 are marked `needs you`, W1 waits on seven days of
+turns, and P1–P7 are proposals. The next round that needs a row should take
+a P-row after the user picks one, or the fleet queue's F5 after its gates.
 
 **Rules for a `/repeat` round.**
 
@@ -2560,10 +2566,18 @@ runnable without a live brain via a test server that speaks the task
 API envelope.
 
 The certification checklist covers the static gates (project root,
-base revision, delegation validation). The dynamic gates (cancel
-during execution, recover after restart, reject conflicting retries,
-retain root budget, deny scope widening) require a live brain and
-are exercised by the lifecycle tests against the test server.
+base revision, delegation validation) and five dynamic gates. On 15 November
+2026, `captain host cert --dynamic --brain <url>` added cancellation,
+exact-retry recovery, conflicting retries, root-budget retention and scope-
+widening refusal against a named test brain. The default live brain is refused
+unless the operator explicitly allows it. `TestHostCertDynamicGates` also
+reconciles an in-process brain at startup and resumes the interrupted attempt.
+Task submission now persists a canonical request fingerprint, one admitted
+attempt and the caller's root limits. An exact retry attaches; changed input,
+policy or limits conflict. The editor recipe is
+`captain host editor config <cursor|vscode|zed>`; it prints one stdio MCP entry
+with the absolute Captain binary path. See
+[`TASK_MCP_CONTRACT.md`](TASK_MCP_CONTRACT.md).
 
 **Host certification checklist.** The same fixture must complete with an inspected artifact,
 cancel during execution, recover after host and brain restart, reject conflicting retries,
@@ -2730,20 +2744,24 @@ what each task actually spent, not from the routing decision that started
 it — a task the director routed as economical but that escalated after a
 gate failure reads as `repair_escalation`, because that is what it cost.
 
-`RoleEconomics` aggregates per role: total tasks, accepted (lifecycle
-`succeeded`), total cost (from call rows), total time (call durations), and
-unknown-usage count — the same accounting-coverage discipline M1.2 enforces.
-`captain roles` and `/roles` print `FormatRoleEconomics`'s table, which
-shows `-` for cost/time per accepted when no task in a role was accepted
-(undefined, not zero) and marks totals containing unknown-usage calls.
+`RoleEconomics` aggregates per role: total tasks, finished, accepted,
+rejected and unreviewed, total cost (from call rows), total time (call
+durations), and unknown-usage count — the same accounting-coverage discipline
+M1.2 enforces. Since 15 November 2026, accepted requires outcome status
+`accepted`; `rejected` and `regressed` count as rejected; a terminal task with
+no outcome or a pending outcome is unreviewed. Lifecycle success alone never
+counts as acceptance. `captain roles` and `/roles` print
+`FormatRoleEconomics`'s table, which shows `-` for cost/time per accepted when
+no task in a role was accepted (undefined, not zero) and marks totals containing
+unknown-usage calls. Cost and time totals include every finished task's calls;
+only accepted tasks supply the denominator. A synthetic 1,000-task benchmark
+takes 0.83–0.90 ms per report (2,049 allocations); grouping charge and outcome
+lookups replaced repeated full-ledger scans that took 165–195 ms before the
+change. These are Apple M3 Max measurements, not coding-task results.
 
 Remaining for M5.3: the comparison needs the M1.3 pilot corpus to produce
-real numbers — the classification and aggregation are done, but the data
-they aggregate is the 12-task fixture set M1.3 has not yet written. (7 October
-2026: the corpus is written, `docs/eval/pilot-12.json`. What is missing is a
-pilot run with recorded charges, and `RoleEconomics` still counts a finished
-run as accepted instead of reading the M5.1 verdict. See Q11 and Q12 in the
-[build queue](#build-queue-october-2026).)
+real numbers. The corpus is written, `docs/eval/pilot-12.json`; a pilot run
+with recorded charges is still missing. Q11 and Q12 are done.
 
 **M5.4 status (14 September 2026).** Policy evaluation has landed in
 [`pkg/captaincode/policy.go`](../pkg/captaincode/policy.go), and with it
@@ -3711,7 +3729,7 @@ enforcement, not the audit experiment.
 
 | ID | Formalized | Specified | Implemented | Tested | Released |
 |---|---|---|---|---|---|
-| BB1 | not_applicable | draft | not_started | not_started | not_started |
+| BB1 | not_applicable | done | done | done | not_started |
 | BB2 | not_applicable | draft | not_started | not_started | not_started |
 | BB3 | not_started | draft | not_started | not_started | not_started |
 | BB4 | not_applicable | draft | not_started | not_started | not_started |
@@ -3741,6 +3759,29 @@ coverage. They must not report a clean check.
 reads, edits, fetches and MCP calls. Include synthetic secrets, benign examples,
 unsupported regexes, oversized inputs and detector failures. Record expected
 Python/TypeScript differences. Run required parity fixtures without skips.
+
+**Delivered 15 November 2026.** `pkg/captaincode/blackbox_*.go` implements the
+bounded normalized-action and synthetic-snapshot schemas, host mapping and
+offline evaluator. `cmd/captaincode/blackbox_cmd.go` adds
+`captain blackbox check --snapshot <file>` before provider, registry and ledger
+initialization. Exact dependency matches, selected path rules, Go patterns and
+Captain's secret patterns return safe findings. Unknown or incomplete input
+returns explicit coverage gaps. Disabled categories return no findings.
+Results never include action text, paths, commands, URLs or secret values.
+No worker hook, enforcement, network call, model call or security-record write
+is enabled. The integration plan records all limits and schema boundaries.
+
+Evidence: all 11 required host fixtures run without skips. Synthetic package,
+path, secret, benign, unsupported-regex, oversized-input, cancellation and CLI
+cases pass. The full `go test -p=1 -parallel=1 ./... -count=1` suite passes
+(66.859 s for the package and 149.936 s for the command). Focused race tests,
+`go vet ./...`, `go build ./...`, `gofmt -l` and `git diff --check` pass.
+Five Linux sandbox benchmarks with 1,024 package rules and 32 candidates took
+115.230–139.578 µs per call, 4,367–4,373 B and 28 allocations. The initial
+parallel run exhausted its process limit; the recorded suite used one package
+and one test at a time. Tests used no network, an empty allowlisted environment,
+read-only source and module cache, scratch-only writes, CPU, memory, process,
+file-size and wall-clock limits. No dependency changed. BB2 is next.
 
 #### BB2. OpenCode audit hook and private security records
 

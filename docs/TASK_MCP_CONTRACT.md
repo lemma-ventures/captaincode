@@ -148,3 +148,46 @@ go test ./cmd/captaincode/ -run TestTaskMCP -v
 A host adapter should verify it can complete the full lifecycle:
 initialize → tools/list → task-augmented tools/call → tasks/get →
 tasks/cancel (or tasks/result) → tasks/list.
+
+## Editor MCP configuration
+
+Generate one server entry with the absolute path of the installed Captain
+binary:
+
+```sh
+captain host editor config cursor
+captain host editor config vscode
+captain host editor config zed
+```
+
+Merge the printed object into the editor's MCP configuration:
+
+| Editor | Configuration root | Server root |
+|---|---|---|
+| Cursor | `.cursor/mcp.json` | `mcpServers` |
+| VS Code | `.vscode/mcp.json` | `servers` |
+| Zed | `settings.json` | `context_servers` |
+
+Each entry starts `captain task mcp` over stdio. The entry contains no token
+or other credential. The brain stays on loopback unless the operator sets a
+separate task API policy. Configure `CAPTAIN_BRAIN_URL` and
+`CAPTAIN_TASK_TOKEN` in the editor's environment only when the selected
+deployment needs them.
+
+## Host certification
+
+Run the static checks and five dynamic gates against a disposable test brain:
+
+```sh
+captain host cert --host editor --dynamic --brain http://127.0.0.1:24097
+```
+
+The dynamic gates cover cancellation, recovery, conflicting retries, the root
+budget and scope widening. They create and cancel certification tasks. The
+command requires an explicit `--brain` URL and refuses the default live brain
+on loopback port 14097. `--allow-live-brain` overrides that refusal.
+
+An external certification run checks exact-retry recovery after the host
+reconnects. `TestHostCertDynamicGates` also reconciles an in-process brain at
+startup and resumes its interrupted attempt. No provider worker or live
+shared brain is needed for that test.

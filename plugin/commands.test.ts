@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { unknownCommand } from "./commands"
+import { unknownCommand, parseOutcomeWord } from "./commands"
 
 const known = new Set(["frontier", "quality", "save", "speed", "team", "codex", "codex-cli", "claude", "grok", "grok-max", "repeat", "btw", "noslop", "openshell", "fast"])
 
@@ -15,6 +15,8 @@ test("known words, opencode's words, custom commands and paths go through", () =
   expect(unknownCommand("/Quality do it", known)).toBeNull()
   expect(unknownCommand("/team /noslop do it", known)).toBeNull()
   expect(unknownCommand("/compact", known)).toBeNull()
+  expect(unknownCommand("/skills list", known)).toBeNull()
+  expect(unknownCommand("/skills list", known, [], new Set(["skills"]))).toBeNull()
   expect(unknownCommand("/review the diff", known, ["review"])).toBeNull()
   expect(unknownCommand("/mycmd go", known, ["mycmd"])).toBeNull()
   expect(unknownCommand("/Users/me/notes.md is wrong", known)).toBeNull()
@@ -27,4 +29,20 @@ test("no list from the brain refuses nothing", () => {
 
 test("an unknown word with no near match lists the lanes", () => {
   expect(unknownCommand("/xyzzy go", known)).toContain("Lanes: /quality /frontier")
+})
+
+test("outcome words parse with their argument", () => {
+  expect(parseOutcomeWord("/accept")).toEqual({ word: "accept", text: "" })
+  expect(parseOutcomeWord("/Accept patch is good")).toEqual({ word: "accept", text: "patch is good" })
+  expect(parseOutcomeWord("/reject: wrong file")).toEqual({ word: "reject", text: "wrong file" })
+  expect(parseOutcomeWord("/correction 12 hand-fixed tests")).toEqual({ word: "correction", text: "12 hand-fixed tests" })
+  expect(parseOutcomeWord("  /regressed broke login  ")).toEqual({ word: "regressed", text: "broke login" })
+})
+
+test("other text is not an outcome word", () => {
+  expect(parseOutcomeWord("/accepted")).toBeNull()
+  expect(parseOutcomeWord("/acceptance criteria")).toBeNull()
+  expect(parseOutcomeWord("accept the terms")).toBeNull()
+  expect(parseOutcomeWord("/btw a note")).toBeNull()
+  expect(parseOutcomeWord("")).toBeNull()
 })

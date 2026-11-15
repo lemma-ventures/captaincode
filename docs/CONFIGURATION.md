@@ -251,6 +251,24 @@ tokens and refuses with `400 max_tokens_exceeded` rather than answering about
 two thirds of a command, while captain checks the size first and routes
 oversized calls to the backend that holds them.
 
+### The Blackbox audit hook
+
+`CAPTAIN_BLACKBOX=audit` turns on a local security screening of every tool
+call (default `off`). It runs in the workers' shared opencode process, after
+secret restoration and before the gate and jail wrap, on the arguments that
+will actually run - independent of the action gate, the routing plugin and
+`CAPTAIN_REDACT`. It is audit-only: findings are recorded, never enforced.
+
+Each screened event becomes one bounded line in `~/.captaincode/security.jsonl`
+(`CAPTAIN_BLACKBOX_STATE` moves it): correlation IDs, coverage, finding
+summaries and a disposition (`evaluated`, `would_block`, `degraded`,
+`observed_after_execution`). No commands, paths, prompts, outputs or secret
+values are stored. The stream rotates at 1 MiB. `CAPTAIN_BLACKBOX_SNAPSHOT`
+names the rule snapshot (default
+`~/.config/captain/blackbox-snapshot.json`); a missing or invalid snapshot
+degrades the record instead of claiming a clean screen. See
+[the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
+
 ### The action gate
 
 Captain runs its workers at full permission, on purpose. `claude
@@ -595,7 +613,7 @@ typed. `CAPTAIN_QUEUE_ORDER=off` always runs it as typed.
 
 ### Steering a running worker: `/btw`
 
-`/btw <note>` hands a note to the worker that is **already running** - a constraint you forgot, a mistake you spotted in its progress feed - so it complements or amends the prompt it started with instead of arriving as the next turn, after the wrong thing is done. Two transports take a note mid-run: **claude** (`claude -p` reads it on stdin and folds it into the running turn at its next tool boundary) and every **opencode-served leg** (glm, grok, kimi, gemini, codex, free… the note is merged into the busy session's turn). **codex-cli** and **cursor-agent** have no such channel: the note runs as the turn that follows, which is what the TUI would have done anyway. The plugin sends the note the moment it is typed (`POST /v1/btw?cwd=`) and, once the brain has taken it, refuses the message so the TUI does not queue a copy behind the running turn - the toast is the receipt. A note typed while the turn is still being prepared (compaction, routing) is held and is the worker's first input. Only a note nobody could take goes through as an ordinary turn. The turn shows the note where it landed: `> /btw → grok: …` in the streamed answer, with the reason when several workers were running - a team, a workflow - and the note went to the one it concerns: the worker you addressed (`/btw @grok …`, `/btw claude: …`), else the director's pick from the workers' briefs (one short judge call), else all of them. The progress feed shows `btw from the user taken: …` when the worker has it. There is nothing to configure.
+`/btw <note>` hands a note to the worker that is **already running** - a constraint you forgot, a mistake you spotted in its progress feed - so it complements or amends the prompt it started with instead of arriving as the next turn, after the wrong thing is done. Three transports take a note mid-run: **claude** (`claude -p` reads it on stdin and folds it into the running turn at its next tool boundary), every **opencode-served leg** (glm, grok, kimi, gemini, codex, free… the note is merged into the busy session's turn), and **codex-cli** when `CAPTAIN_CODEX_TRANSPORT=app-server` is set. The app-server transport is experimental and off by default. Each turn gets one stdio-only process and a fresh thread. Captain checks the generated schema for `thread/start`, `turn/start`, `turn/steer`, `expectedTurnId`, `additionalContext`, and `turn/interrupt` before using it. A failed check falls back to `codex exec`, and `captain doctor` prints the reason. A refused steering request also falls back to the next-turn behavior and reports the server's reason. The model, effort, workspace, sandbox, approval policy, MCP settings and proxy settings match the exec path. JSON lines are capped at 16 MiB. **cursor-agent** and the default **codex-cli** exec transport have no mid-run channel: the note runs as the turn that follows, which is what the TUI would have done anyway. The plugin sends the note the moment it is typed (`POST /v1/btw?cwd=`) and, once the brain has taken it, refuses the message so the TUI does not queue a copy behind the running turn - the toast is the receipt. A note typed while the turn is still being prepared (compaction, routing) is held and is the worker's first input. Only a note nobody could take goes through as an ordinary turn. The turn shows the note where it landed: `> /btw → grok: …` in the streamed answer, with the reason when several workers were running - a team, a workflow - and the note went to the one it concerns: the worker you addressed (`/btw @grok …`, `/btw claude: …`), else the director's pick from the workers' briefs (one short judge call), else all of them. The progress feed shows `btw from the user taken: …` when the worker has it.
 
 ### Naming the thread: `/rename`
 
@@ -1068,7 +1086,9 @@ Frontier legs additionally take `CAPTAIN_FRONTIER_MODEL` (default `opus`,
 the alias Claude Code resolves to its newest Opus: Claude Opus 5.5 on Claude
 Code 2.1.280 and later, Opus 5 before it; `fable` brings Claude Fable 5.1
 back, a full name freezes a version), `CAPTAIN_CODEX_CLI_MODEL` (default
-`gpt-6-astra`) and `CAPTAIN_CODEX_CLI_SANDBOX`.
+`gpt-6-astra`), `CAPTAIN_CODEX_CLI_SANDBOX` and `CAPTAIN_CODEX_TRANSPORT`
+(`exec` by default; `app-server` enables the experimental steering transport
+described under [Steering a running worker](#steering-a-running-worker-btw)).
 
 #### Tiers: cheap, quality, frontier on every leg
 

@@ -81,6 +81,24 @@ func opencodeConfigWithBareBlocks(t *testing.T, providers ...string) string {
 	return p
 }
 
+func TestDoctorCountsEuclidMCP(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "removed")
+	line := doctorMCPLine(func() ([]mcpProcess, error) {
+		return []mcpProcess{
+			{PID: 10, RSSKB: 2048, CWD: t.TempDir()},
+			{PID: 11, RSSKB: 1024, CWD: missing},
+		}, nil
+	})
+	assert.Contains(t, line, "mcp        2 processes")
+	assert.Contains(t, line, "3.0 MiB resident")
+	assert.Contains(t, line, "1 in a missing folder")
+}
+
+func TestDoctorCountsEuclidMCPUnavailable(t *testing.T) {
+	line := doctorMCPLine(func() ([]mcpProcess, error) { return nil, errors.New("fixture failure") })
+	assert.Contains(t, line, "mcp        unavailable")
+}
+
 func TestDoctorRefusesToCallAKeylessProviderReady(t *testing.T) {
 	// The regression that cost ninety seconds a run: a provider NAMED in the
 	// config is not a provider that can authenticate. doctor said grok was
@@ -446,8 +464,22 @@ func TestDoctorReportsTheRankingsAgeAndFlaggedLegs(t *testing.T) {
 	assert.Contains(t, sb.String(), "the brain refreshes it every 6h0m0s")
 }
 
-// CAPTAIN_DIRECTOR is a ladder: its first entry directs. Doctor compared the
-// whole list against one leg and warned on every run (2026-10-10).
+func TestDoctorReportsCodexAppServerSchemaFailure(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "app-server")
+	t.Setenv("PATH", t.TempDir())
+	clearProviderKeys(t)
+	var sb strings.Builder
+	runDoctor(&sb, doctorOpts{
+		opencodeConfig: filepath.Join(t.TempDir(), "missing.jsonc"),
+		brain:          func() (string, error) { return "", errors.New("offline") },
+		serve:          noServe(),
+		codexAppServer: func() error { return errors.New("TurnSteerParams.json lacks expectedTurnId") },
+	})
+	assert.Contains(t, sb.String(), "app-server schema check failed")
+	assert.Contains(t, sb.String(), "expectedTurnId")
+	assert.Contains(t, sb.String(), "using exec")
+}
+
 func TestDoctorReadsTheDirectorLadderByItsFirstEntry(t *testing.T) {
 	dir := t.TempDir()
 	fakeBin(t, dir, "opencode")

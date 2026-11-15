@@ -126,6 +126,18 @@ func defaultCommands() map[string]any {
 			c[w] = map[string]any{"description": "force " + string(l) + " - " + routeWordGloss(w), "template": "/" + w + " $ARGUMENTS"}
 		}
 	}
+	for _, word := range SlashCommands() {
+		if word == "help" || word == "q" {
+			continue
+		}
+		leg := Leg(word)
+		if KnownLeg(leg) && !ServesTasks(leg) {
+			continue
+		}
+		if _, has := c[word]; !has {
+			c[word] = map[string]any{"description": "Captain /" + word, "template": "/" + word + " $ARGUMENTS"}
+		}
+	}
 	return c
 }
 
@@ -1000,7 +1012,11 @@ func EnsureEuclidMCP(path, captainExe string) (bool, error) {
 	if captainExe == "" {
 		captainExe = "captain"
 	}
-	mcp["euclid"] = map[string]any{"type": "local", "command": []string{captainExe, "euclid", "mcp"}, "enabled": true}
+	entry := map[string]any{"type": "local", "command": []string{captainExe, "euclid", "mcp"}, "enabled": true}
+	if profile := strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_TOOL_PROFILE")); profile != "" {
+		entry["environment"] = map[string]string{"CAPTAIN_EUCLID_TOOL_PROFILE": profile}
+	}
+	mcp["euclid"] = entry
 	return true, writeConfig(path, cfg)
 }
 

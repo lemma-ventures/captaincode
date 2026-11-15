@@ -12,11 +12,13 @@ package captaincode
 //   - teams: a task with fan-out (stage charges or team events)
 //
 // The classification is from the charge tree, which is the durable record of
-// what each task actually spent. A task is "accepted" when its lifecycle
-// state is succeeded; cost and time come from the call rows the same charge
-// tree holds. The report refuses to present a cost-per-accepted figure when
-// no task in a role was accepted (undefined, not zero) and marks totals
-// containing unknown-usage calls — the same discipline M1.2 enforces.
+// what each task actually spent. A task is accepted only when its outcome
+// status is accepted; rejected and regressed outcomes never count as accepted.
+// Finished tasks without an accepted or rejected outcome are unreviewed.
+// Cost and time come from the call rows the same charge tree holds. The report
+// refuses to present a cost-per-accepted figure when no task in a role was
+// accepted (undefined, not zero) and marks totals containing unknown-usage
+// calls — the same discipline M1.2 enforces.
 
 import (
 	"fmt"
@@ -39,7 +41,10 @@ const (
 type RoleSummary struct {
 	Role         RoleKind `json:"role"`
 	Tasks        int      `json:"tasks"`
+	Finished     int      `json:"finished"`
 	Accepted     int      `json:"accepted"`
+	Rejected     int      `json:"rejected"`
+	Unreviewed   int      `json:"unreviewed"`
 	TotalCostUSD float64  `json:"total_cost_usd"`
 	TotalMs      int64    `json:"total_ms"`
 	Calls        int      `json:"calls"`
@@ -83,6 +88,22 @@ func RoleEconomics(l *Ledger) []RoleSummary {
 		return nil
 	}
 	taskIDs := tasksFromCharges(l.Charges)
+	chargesByTask := make(map[string][]Charge, len(taskIDs))
+	for _, charge := range l.Charges {
+		chargesByTask[charge.TaskID] = append(chargesByTask[charge.TaskID], charge)
+	}
+	states := make(map[string]LifecycleState, len(l.TaskStates))
+	for _, ts := range l.TaskStates {
+		if _, exists := states[ts.TaskID]; !exists {
+			states[ts.TaskID] = ts.State
+		}
+	}
+	outcomes := make(map[string]AcceptanceStatus, len(l.Outcomes))
+	for _, outcome := range l.Outcomes {
+		if _, exists := outcomes[outcome.TaskID]; !exists {
+			outcomes[outcome.TaskID] = outcome.Status
+		}
+	}
 	byRole := map[RoleKind]*RoleSummary{}
 	ensure := func(r RoleKind) *RoleSummary {
 		s, ok := byRole[r]
@@ -93,16 +114,28 @@ func RoleEconomics(l *Ledger) []RoleSummary {
 		return s
 	}
 	for _, taskID := range taskIDs {
-		role := classifyRole(l, taskID)
+		charges := chargesByTask[taskID]
+		role := classifyRole(charges)
 		s := ensure(role)
 		s.Tasks++
-		totals := l.TaskTotals(taskID)
+		totals := totalCalls(charges, "")
 		s.TotalCostUSD += totals.CostUSD
-		s.TotalMs += totalDurationMs(l.Charges, taskID)
+		s.TotalMs += totalDurationMs(charges, taskID)
 		s.Calls += totals.Calls
 		s.UnknownUsage += totals.Unknown
-		if ts := l.TaskStateFor(taskID); ts != nil && ts.State == StateSucceeded {
+		finished := states[taskID].IsTerminal()
+		if finished {
+			s.Finished++
+		}
+		switch outcomes[taskID] {
+		case AcceptanceAccepted:
 			s.Accepted++
+		case AcceptanceRejected, AcceptanceRegressed:
+			s.Rejected++
+		default:
+			if finished {
+				s.Unreviewed++
+			}
 		}
 	}
 	out := make([]RoleSummary, 0, len(byRole))
@@ -129,8 +162,7 @@ func roleOrder(r RoleKind) int {
 	return 99
 }
 
-func classifyRole(l *Ledger, taskID string) RoleKind {
-	charges := l.ChargesFor(taskID)
+func classifyRole(charges []Charge) RoleKind {
 	hasStage := false
 	hasRepair := false
 	hasEscalation := false
@@ -199,8 +231,8 @@ func FormatRoleEconomics(summaries []RoleSummary) string {
 		return "no task data.\n"
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-20s %5s %5s %9s %10s %5s %5s\n",
-		"role", "tasks", "accpt", "$/accpt", "time/accpt", "calls", "unk"))
+	sb.WriteString(fmt.Sprintf("%-20s %5s %5s %5s %5s %5s %9s %10s %5s %5s\n",
+		"role", "tasks", "done", "accpt", "rejct", "unrev", "$/accpt", "time/accpt", "calls", "unk"))
 	for _, r := range summaries {
 		costPer := "-"
 		if r.Accepted > 0 {
@@ -214,8 +246,8 @@ func FormatRoleEconomics(summaries []RoleSummary) string {
 		if r.HasUnknownUsage() {
 			unk = " *"
 		}
-		sb.WriteString(fmt.Sprintf("%-20s %5d %5d %9s %10s %5d %5d%s\n",
-			r.Role, r.Tasks, r.Accepted, costPer, timePer, r.Calls, r.UnknownUsage, unk))
+		sb.WriteString(fmt.Sprintf("%-20s %5d %5d %5d %5d %5d %9s %10s %5d %5d%s\n",
+			r.Role, r.Tasks, r.Finished, r.Accepted, r.Rejected, r.Unreviewed, costPer, timePer, r.Calls, r.UnknownUsage, unk))
 	}
 	sb.WriteString("\n  * = total includes calls with unknown usage (not a billed total)\n")
 	return sb.String()

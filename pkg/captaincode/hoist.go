@@ -9,6 +9,9 @@ package captaincode
 // all still see them; stripCaptainDirectives removes them for the worker).
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -149,6 +152,8 @@ var slashControlWords = []string{
 	"repeat", "parallel", "team", "wf", "workflow", "run", "wfrun", "openshell",
 	// the brain's and the plugin's own commands
 	"btw", "interrupt", "rename", "captain", "help", "init", "euclid", "context", "private",
+	// outcome words (Q13): a verdict on the session's last task, never a task
+	"accept", "reject", "correction", "regressed",
 }
 
 // SlashCommands is every /word a turn may start with: the control words,
@@ -168,4 +173,142 @@ func SlashCommands() []string {
 		}
 	}
 	return out
+}
+
+// OpenCode 1.18.34 palette names and aliases, plus the current documented aliases.
+var opencodeWords = []string{
+	"agents", "clear", "compact", "connect", "continue", "debug", "details",
+	"diff", "editor", "exit", "export", "help", "init", "mcp", "mcps", "models",
+	"move", "new", "q", "quit", "redo", "resume", "review", "sessions", "share",
+	"skills", "status", "summarize", "themes", "thinking", "unshare", "update",
+	"undo", "warp",
+}
+
+func OpencodeCommands() []string {
+	return append([]string(nil), opencodeWords...)
+}
+
+var slashWordRe = regexp.MustCompile(`(?i)^\s*/([A-Za-z][\w-]*)(?:\s|:|$)`)
+var customSlashNameRe = regexp.MustCompile(`(?i)^[A-Za-z][\w-]*\.md$`)
+
+func CustomSlashWords(dir string) []string {
+	var roots []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		roots = append(roots, filepath.Join(home, ".config", "opencode"))
+	}
+	if dir != "" {
+		roots = append(roots, filepath.Join(dir, ".opencode"))
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, root := range roots {
+		for _, sub := range []string{"command", "commands"} {
+			entries, err := os.ReadDir(filepath.Join(root, sub))
+			if err != nil {
+				continue
+			}
+			for _, entry := range entries {
+				name := entry.Name()
+				if entry.IsDir() || !customSlashNameRe.MatchString(name) {
+					continue
+				}
+				word := strings.ToLower(strings.TrimSuffix(name, filepath.Ext(name)))
+				if !seen[word] {
+					seen[word] = true
+					out = append(out, word)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func UnknownSlash(text string, custom []string) string {
+	match := slashWordRe.FindStringSubmatch(text)
+	if match == nil {
+		return ""
+	}
+	word := strings.ToLower(match[1])
+	if slashKnown(word, custom) {
+		return ""
+	}
+	near := nearestSlash(word, 3)
+	ask := "Lanes: /quality /frontier /save /speed /team; or name a leg."
+	if len(near) == 1 {
+		ask = "Did you mean " + near[0] + "?"
+	} else if len(near) > 1 {
+		ask = "Did you mean " + strings.Join(near[:len(near)-1], ", ") + " or " + near[len(near)-1] + "?"
+	}
+	return fmt.Sprintf("captain: /%s is not a command - nothing was sent. %s To send it as plain text, remove the slash.", word, ask)
+}
+
+func slashKnown(word string, custom []string) bool {
+	for _, words := range [][]string{SlashCommands(), opencodeWords, custom} {
+		for _, candidate := range words {
+			if strings.ToLower(candidate) == word {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func nearestSlash(word string, limit int) []string {
+	type hit struct {
+		word     string
+		distance int
+	}
+	maxDistance := 2
+	if len(word) <= 4 {
+		maxDistance = 1
+	}
+	var hits []hit
+	for _, candidate := range SlashCommands() {
+		distance := editDistance(word, candidate)
+		if strings.HasPrefix(candidate, word) || strings.HasPrefix(word, candidate) {
+			distance = 1
+		}
+		if distance <= maxDistance {
+			hits = append(hits, hit{candidate, distance})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].distance != hits[j].distance {
+			return hits[i].distance < hits[j].distance
+		}
+		if len(hits[i].word) != len(hits[j].word) {
+			return len(hits[i].word) < len(hits[j].word)
+		}
+		return hits[i].word < hits[j].word
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	out := make([]string, len(hits))
+	for i, hit := range hits {
+		out[i] = "/" + hit.word
+	}
+	return out
+}
+
+func editDistance(a, b string) int {
+	previous := make([]int, len(b)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		diagonal := previous[0]
+		previous[0] = i
+		for j := 1; j <= len(b); j++ {
+			up := previous[j]
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			previous[j] = min(min(previous[j]+1, previous[j-1]+1), diagonal+cost)
+			diagonal = up
+		}
+	}
+	return previous[len(b)]
 }

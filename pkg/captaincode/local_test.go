@@ -136,6 +136,39 @@ func TestLocalUsageAndAbstention(t *testing.T) {
 	require.True(t, localClassIs(`{"abstain":true}`, "", true))
 }
 
+func TestAbstentionFixtureScoresBothProbes(t *testing.T) {
+	raw, err := os.ReadFile("../../examples/evals/abstention.json")
+	require.NoError(t, err)
+	var fixture struct {
+		Version int `json:"version"`
+		Probes  []struct {
+			ID       string `json:"id"`
+			Purpose  string `json:"purpose"`
+			Input    string `json:"input"`
+			Expected struct {
+				Abstain   bool     `json:"abstain"`
+				Answer    string   `json:"answer"`
+				Citations []string `json:"citations"`
+			} `json:"expected"`
+		} `json:"probes"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &fixture))
+	require.Equal(t, 1, fixture.Version)
+	require.Len(t, fixture.Probes, 2)
+	answers := map[string]string{
+		"routing_missing_context": `{"abstain":true}`,
+		"retrieval_missing_fact":  "CANNOT_TELL",
+	}
+	for _, probe := range fixture.Probes {
+		require.True(t, probe.Expected.Abstain, probe.ID)
+		require.Empty(t, probe.Expected.Citations, probe.ID)
+		require.Contains(t, []string{"", "CANNOT_TELL"}, probe.Expected.Answer, probe.ID)
+		require.True(t, localAbstains(probe.Purpose, answers[probe.ID]), probe.ID)
+	}
+	require.False(t, localAbstains("classify", `{"abstain":true,"citations":["invented"]}`))
+	require.False(t, localAbstains("digest", "invented answer"))
+}
+
 func TestLocalRejectsRemoteAndChangedModel(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for _, tc := range []struct {

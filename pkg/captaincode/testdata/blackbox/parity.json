@@ -1,0 +1,22 @@
+{
+  "upstream_revision": "7d697683e0d56608cfe3fee374d6a6866702058a",
+  "reference_differences": [
+    "The TypeScript reference does not map filePath; this contract requires it.",
+    "The TypeScript reference does not cover the current Python secret detectors; this evaluator reuses Captain's secret patterns.",
+    "Go regular expressions reject lookaround and backreferences instead of executing them.",
+    "Unsupported go get and shell substitution syntax produce incomplete coverage."
+  ],
+  "cases": [
+    {"name":"opencode path","host":"opencode","tool":"write","input":{"filePath":"a.txt"},"kind":"file","paths":1,"packages":0,"incomplete":false},
+    {"name":"cli path","host":"cli","tool":"Read","input":{"file_path":"a.txt"},"kind":"file","paths":1,"packages":0,"incomplete":false},
+    {"name":"notebook","host":"cli","tool":"NotebookEdit","input":{"notebook_path":"a.ipynb"},"kind":"file","paths":1,"packages":0,"incomplete":false},
+    {"name":"nested edits","host":"opencode","tool":"multiedit","input":{"edits":[{"file_path":"a.txt"},{"filePath":"b.txt"}]},"kind":"file","paths":2,"packages":0,"incomplete":false},
+    {"name":"nested patch","host":"opencode","tool":"apply_patch","input":{"patch":{"files":[{"path":"a.txt"},{"path":"b.txt"}]}},"kind":"file","paths":2,"packages":0,"incomplete":false},
+    {"name":"read","host":"opencode","tool":"read","input":{"filePath":"a.txt"},"kind":"file","paths":1,"packages":0,"incomplete":false},
+    {"name":"fetch","host":"opencode","tool":"webfetch","input":{"url":"https://example.test"},"kind":"fetch","paths":0,"packages":0,"incomplete":false},
+    {"name":"shell package","host":"opencode","tool":"bash","input":{"command":"npm install example-package@1.2.3"},"kind":"shell","paths":0,"packages":1,"incomplete":false},
+    {"name":"unsupported go","host":"opencode","tool":"bash","input":{"command":"go get example.test/mod@v1.2.3"},"kind":"shell","paths":0,"packages":0,"incomplete":true},
+    {"name":"shell substitution","host":"opencode","tool":"bash","input":{"command":"npm install $(printf example-package)"},"kind":"shell","paths":0,"packages":0,"incomplete":true},
+    {"name":"mcp","host":"opencode","tool":"mcp__example__call","input":{},"kind":"unknown","paths":0,"packages":0,"incomplete":true}
+  ]
+}

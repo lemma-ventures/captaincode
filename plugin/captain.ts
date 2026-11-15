@@ -17,7 +17,7 @@
 // is listed in plugin/README.md beside what it replaces.
 
 import { appendFileSync } from "node:fs"
-import { customCommands, unknownCommand } from "./commands"
+import { customCommands, unknownCommand, parseOutcomeWord } from "./commands"
 import { jailCommand } from "./jail"
 import { spawnSync } from "node:child_process"
 
@@ -65,6 +65,35 @@ const CAPTAIN_BIN = process.env["CAPTAIN_BIN"] ?? "captain"
 // returns without making a call.
 const GATE = (process.env["CAPTAIN_ACTION_GATE"] ?? "shadow").toLowerCase()
 const GATED_TOOLS = new Set(["bash", "write", "edit", "patch", "multiedit", "webfetch"])
+
+// ── the Blackbox audit hook (BB2) ────────────────────────────────────────────
+// A local security screening of every tool call, independent of the gate, the
+// routing plugin and the redact switch: it runs in every process that loads
+// this plugin, most importantly the workers' shared `opencode serve`. Audit
+// mode only - it records what it saw (would_block, evaluated, degraded,
+// observed_after_execution) and NEVER refuses; enforcement is a later, gated
+// phase. `captain blackbox hook` loads no credentials and writes one bounded
+// line to the private security stream. CAPTAIN_BLACKBOX=off skips the spawn.
+const BLACKBOX = (process.env["CAPTAIN_BLACKBOX"] ?? "off").toLowerCase()
+
+function blackboxAudit(tool: string, args: any, session: string | undefined, phase: "pre" | "post", cwd: string, output = ""): void {
+  try {
+    const r = spawnSync(CAPTAIN_BIN, ["blackbox", "hook", "--mode", "audit"], {
+      input: JSON.stringify({ tool, args: args ?? {}, cwd, session: session ?? "", phase, output: output.slice(0, 16 * 1024) }),
+      encoding: "utf8",
+      timeout: 2_000,
+      // Explicit env: the hook reads CAPTAIN_BLACKBOX_STATE and
+      // CAPTAIN_BLACKBOX_SNAPSHOT from the operator's environment, and some
+      // hosts do not forward a mutated process env to spawned children.
+      env: { ...process.env },
+    })
+    if (r.status !== 0) {
+      log(`blackbox hook phase ${phase} failed (status ${r.status})`)
+    }
+  } catch {
+    log(`blackbox hook phase ${phase} did not run - the tool is unaffected`)
+  }
+}
 
 // A captain with no decision leg must not spawn a process per tool call to be
 // told there is nothing to screen. Probed once, lazily, and cached for the
@@ -178,6 +207,7 @@ let legsAt = 0
 // Every /word the brain accepts at the head of a turn (GET /v1/commands).
 // Null until the brain has answered: with no list, nothing is refused.
 let commands: Set<string> | null = null
+let opencodeCommands: Set<string> | null = null
 // Route words (/grok-opencode, /deepseek-openrouter…) and the leg each
 // forces, from the same answer (legwords.go).
 let routeWords: Record<string, string> = {}
@@ -201,9 +231,10 @@ async function refreshLegs(): Promise<void> {
     if (ids.length) legs = ids
     const c = await fetch(`${BRAIN}/v1/commands`, { signal: AbortSignal.timeout(2000) })
     if (c.ok) {
-      const body = (await c.json()) as { commands?: string[]; words?: Record<string, string> }
+      const body = (await c.json()) as { commands?: string[]; opencode?: string[]; words?: Record<string, string> }
       const words = body.commands ?? []
       if (words.length) commands = new Set(words.map((w) => w.toLowerCase()))
+      if (body.opencode) opencodeCommands = new Set(body.opencode.map((w) => w.toLowerCase()))
       routeWords = body.words ?? {}
     }
   } catch {
@@ -347,7 +378,7 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     const wrapped = text.length > 1 && text.startsWith('"') && text.endsWith('"')
     if (wrapped) text = text.slice(1, -1)
 
-    const unknown = unknownCommand(text, commands, customCommands(input?.directory ?? process.env["CAPTAIN_CWD"] ?? ""))
+    const unknown = unknownCommand(text, commands, customCommands(input?.directory ?? process.env["CAPTAIN_CWD"] ?? ""), opencodeCommands)
     if (unknown) {
       log(`refused unknown command: ${text.slice(0, 40)}`)
       throw new Error(unknown)
@@ -420,6 +451,34 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     if (intr) {
       const msg = await outOfBand("/interrupt", "/v1/interrupt", { reason: (intr[1] ?? "").trim() }, (j) => (j.asked?.length || j.stopped?.length || j.withdrawn) > 0, typedIn)
       if (msg !== null) throw new Error(`captain: ${msg.slice(0, 240)} - nothing queued`)
+    }
+
+    // Outcome words (Q13): /accept [note], /reject <reason>,
+    // /correction <minutes> [reason] and /regressed <reason> act on the last
+    // task this session started. Out of band like /btw, but the word is
+    // never a task: the turn is refused whether or not the brain acted, and
+    // the error says what to do. The brain validates the argument.
+    const outcome = parseOutcomeWord(text)
+    if (outcome) {
+      let msg: string
+      try {
+        const r = await fetch(`${BRAIN}/v1/outcome/word?cwd=${encodeURIComponent(cwd)}&turn=${encodeURIComponent(typedIn)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ word: outcome.word, text: outcome.text }),
+          signal: AbortSignal.timeout(10_000),
+        })
+        const j = (await r.json()) as { result?: string; error?: string }
+        msg = String(j.result ?? j.error ?? `${r.status}`).replace(/[*_`#]/g, "").trim()
+        log(`/${outcome.word} out of band → ${msg.slice(0, 80)} (ok=${r.ok})`)
+        await input?.client?.tui?.showToast?.({
+          body: { title: `/${outcome.word}`, message: msg.slice(0, 400), variant: r.ok ? "success" : "warning", duration: 8000 },
+        })
+      } catch (e) {
+        log(`/${outcome.word} out of band failed: ${String(e).slice(0, 80)}`)
+        msg = `brain not reachable - the ${outcome.word} was not recorded, try again`
+      }
+      throw new Error(`captain: ${msg} - nothing queued`)
     }
 
     const par = text.match(PARALLEL)
@@ -566,6 +625,12 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
       // that tells the model to fetch "…?k=[[secret:…]]" must not get the key.
       if (!URL_TOOLS.has(call.tool)) output.args = restoreArgs(output.args)
     }
+    // The Blackbox audit hook runs on the RESTORED arguments - the command
+    // that will actually run - after restoration and before the gate and the
+    // jail wrap, and regardless of the gate's mode or the routing plugin.
+    if (BLACKBOX === "audit") {
+      blackboxAudit(call.tool, output?.args, call.sessionID, "pre", input?.directory ?? process.env["CAPTAIN_CWD"] ?? "")
+    }
     // The gate runs on the RESTORED arguments: the command that will actually
     // run is the one worth screening, not the masked copy the model wrote.
     if (GATE !== "off" && GATED_TOOLS.has(call.tool) && gateConfigured()) {
@@ -583,10 +648,18 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     }
   },
 
-  "tool.execute.after": async (input: { tool: string }, output: { output: string }) => {
-    if (!REDACT || typeof output?.output !== "string" || output.output.length === 0) return
-    const masked = captainRedact(["--source", `tool:${input.tool}`], output.output)
-    if (masked !== null && masked !== output.output) output.output = masked
+  "tool.execute.after": async (input: { tool: string; sessionID?: string }, output: { output: string }) => {
+    if (typeof output?.output !== "string" || output.output.length === 0) return
+    if (REDACT) {
+      const masked = captainRedact(["--source", `tool:${input.tool}`], output.output)
+      if (masked !== null && masked !== output.output) output.output = masked
+    }
+    // Post-tool observation, separate from the pre-tool decision: what the
+    // screening saw in the (already masked) output is recorded as
+    // observed_after_execution, never as prevention.
+    if (BLACKBOX === "audit") {
+      blackboxAudit(input.tool, undefined, input.sessionID, "post", process.env["CAPTAIN_CWD"] ?? "", output.output)
+    }
   },
 })
 

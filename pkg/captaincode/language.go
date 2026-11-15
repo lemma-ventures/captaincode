@@ -16,7 +16,7 @@ import (
 // LanguageVersion is the version of docs/LANGUAGE.md this parser implements.
 // A change that alters how an existing line is read bumps the major version;
 // a new word or form that leaves every existing line alone bumps the minor.
-const LanguageVersion = "3.2"
+const LanguageVersion = "3.3"
 
 // ownLineWords are the control words that take the rest of the line as
 // their argument: nothing after them is read as a command.
@@ -24,6 +24,8 @@ var ownLineWords = map[string]bool{
 	"btw": true, "interrupt": true, "init": true, "context": true, "euclid": true,
 	"private": true, "captain": true, "help": true, "wf": true, "workflow": true,
 	"run": true, "wfrun": true, "rename": true,
+	// outcome words (3.3): a verdict on the session's last task, never a turn
+	"accept": true, "reject": true, "correction": true, "regressed": true,
 }
 
 // Turn is how one line is read: what runs it, with which modifiers, on

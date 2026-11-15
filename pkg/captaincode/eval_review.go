@@ -20,7 +20,12 @@ package captaincode
 //     the report says how many of an arm's acceptances came this way.
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -133,6 +138,146 @@ func (r *EvalResult) RecordReview(taskID, alias string, repeat int, verdict, rev
 		return nil
 	}
 	return fmt.Errorf("no execution %s/%s/%d in this result", taskID, alias, repeat)
+}
+
+func ExportReviewPacket(ctx context.Context, r *EvalResult, root string) (err error) {
+	if err := os.Mkdir(root, 0o700); err != nil {
+		return fmt.Errorf("create review export: %w", err)
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(root)
+		}
+	}()
+	packet := filepath.Join(root, "packet")
+	if err := os.Mkdir(packet, 0o700); err != nil {
+		return err
+	}
+	redactor := reviewRedactor(r)
+	pending := r.Pending()
+	seen := map[string]bool{}
+	type keyRow struct {
+		TaskID string `json:"task_id"`
+		Alias  string `json:"alias"`
+		Repeat int    `json:"repeat"`
+		Arm    string `json:"arm"`
+	}
+	keys := make([]keyRow, 0, len(pending))
+	for _, item := range pending {
+		if !evalPathName(item.TaskID) || !evalPathName(item.Alias) || item.Repeat < 1 {
+			return fmt.Errorf("unsafe review key %s", item.Key())
+		}
+		if seen[item.Key()] {
+			return fmt.Errorf("ambiguous review key %s", item.Key())
+		}
+		seen[item.Key()] = true
+		var execution *EvalExecution
+		for i := range r.Executions {
+			e := &r.Executions[i]
+			if e.TaskID == item.TaskID && e.ArmAlias == item.Alias && e.Repeat == item.Repeat {
+				execution = e
+				break
+			}
+		}
+		if execution == nil {
+			return fmt.Errorf("missing execution %s", item.Key())
+		}
+		diff, err := reviewPacketDiff(ctx, *execution)
+		if err != nil {
+			return fmt.Errorf("%s: %w", item.Key(), err)
+		}
+		var body strings.Builder
+		fmt.Fprintf(&body, "task: %s\nfamily: %s\nalias: %s\nrepeat: %d\n\nchecks\n", item.TaskID, item.Family, item.Alias, item.Repeat)
+		for _, check := range execution.Checks {
+			fmt.Fprintf(&body, "\n[%s] exit=%d want=%d passed=%t\n%s\n", check.Name, check.Exit, check.Want, check.Passed, check.Output)
+		}
+		fmt.Fprintf(&body, "\ndiff\n%s", diff)
+		bodyText := redactor.ReplaceAllString(body.String(), "[redacted]")
+		bodyText = strings.ReplaceAll(bodyText, execution.Dir, "[snapshot]")
+		name := fmt.Sprintf("%s.%s.%d.txt", item.TaskID, item.Alias, item.Repeat)
+		if err := os.WriteFile(filepath.Join(packet, name), []byte(bodyText), 0o600); err != nil {
+			return err
+		}
+		keys = append(keys, keyRow{TaskID: item.TaskID, Alias: item.Alias, Repeat: item.Repeat, Arm: execution.Arm})
+	}
+	keyData, err := json.MarshalIndent(keys, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(root, "alias-key.json"), keyData, 0o600); err != nil {
+		return err
+	}
+	complete = true
+	return nil
+}
+
+func reviewPacketDiff(ctx context.Context, e EvalExecution) (string, error) {
+	if !pinnedRevision(e.Revision) {
+		return "", fmt.Errorf("execution has no pinned source revision")
+	}
+	if e.Dir == "" {
+		return "", fmt.Errorf("execution has no snapshot")
+	}
+	out, code, err := runIn(ctx, e.Dir, []string{"git", "diff", "--binary", "--full-index", "--no-renames", e.Revision, "--"}, nil, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("git diff exited %d: %s", code, tail(out))
+	}
+	var diff strings.Builder
+	diff.WriteString(out)
+	list, code, err := runIn(ctx, e.Dir, []string{"git", "ls-files", "--others", "--exclude-standard", "-z"}, nil, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("git ls-files exited %d: %s", code, tail(list))
+	}
+	for _, name := range strings.Split(list, "\x00") {
+		if name == "" {
+			continue
+		}
+		out, code, err = runIn(ctx, e.Dir, []string{"git", "diff", "--no-index", "--binary", "--full-index", "/dev/null", filepath.Join(e.Dir, name)}, nil, time.Minute)
+		if err != nil {
+			return "", err
+		}
+		if code != 0 && code != 1 {
+			return "", fmt.Errorf("untracked diff for %q exited %d: %s", name, code, tail(out))
+		}
+		diff.WriteString(out)
+	}
+	return diff.String(), nil
+}
+
+func reviewRedactor(r *EvalResult) *regexp.Regexp {
+	seen := map[string]bool{}
+	for _, e := range r.Executions {
+		seen[e.Arm] = true
+		for _, charge := range e.Charges {
+			seen[string(charge.Leg)] = true
+			seen[charge.Model] = true
+		}
+	}
+	for _, spec := range Registry() {
+		seen[string(spec.ID)] = true
+		seen[spec.Model] = true
+	}
+	for _, pin := range LegModelPins() {
+		seen[string(pin.Leg)] = true
+		seen[pin.Model] = true
+	}
+	delete(seen, "")
+	words := make([]string, 0, len(seen))
+	for word := range seen {
+		words = append(words, regexp.QuoteMeta(word))
+	}
+	sort.Slice(words, func(i, j int) bool { return len(words[i]) > len(words[j]) })
+	if len(words) == 0 {
+		return regexp.MustCompile(`a^`)
+	}
+	return regexp.MustCompile("(?i)" + strings.Join(words, "|"))
 }
 
 // ReviewedAccept reports whether this execution's acceptance came from a

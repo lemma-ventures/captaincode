@@ -48,6 +48,10 @@ type oaiChatReq struct {
 	// internal marks a request the brain issued itself (a /repeat round, a
 	// queued prompt): it opens no task identity of its own.
 	internal bool
+	// turn is this request's X-Captain-Turn id (the TUI session), carried to
+	// the dispatch paths so an outcome word from that session finds the task
+	// it started (brain_outcome_word.go).
+	turn string
 	// outcome, set on a program's turn, collects failures the HTTP status
 	// does not carry (brain_program.go). Nil-safe.
 	outcome *turnOutcome
@@ -395,6 +399,23 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	req.ws.Session = sessions.of(req.ws.Dir)
 	req.internal = r.Context().Value(noDedupeKey{}) != nil
 	req.outcome, _ = r.Context().Value(turnOutcomeKey{}).(*turnOutcome)
+	if !isTitleTurn(req.Messages) {
+		raw := lastUserRaw(req.Messages)
+		forced := captaincode.Leg(captaincode.LeadingForced(captaincode.HoistLeading(raw)))
+		if captaincode.KnownLeg(forced) && !captaincode.ServesTasks(forced) {
+			emit, _, finish := newCompletionWriter(w, req, "captain")
+			emit(fmt.Sprintf("/%s is a %v - `captain jev classify <task>` asks it a question", forced, captaincode.ErrDecisionLeg))
+			finish()
+			return
+		}
+		if message := captaincode.UnknownSlash(raw, captaincode.CustomSlashWords(req.ws.Dir)); message != "" {
+			fmt.Printf("captain brain: refused an unknown slash word\n")
+			emit, _, finish := newCompletionWriter(w, req, "captain")
+			emit(message)
+			finish()
+			return
+		}
+	}
 	// A prompt the user deleted while it was queued never runs: when it is
 	// all that waits, the turn says so and ends; otherwise it is dropped
 	// from the transcript the turn replays.
@@ -411,6 +432,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusConflict, "invalid or active turn identifier")
 			return
 		}
+		req.turn = id
 	}
 	if r.Context().Value(queuedKey{}) != nil {
 		req.ws.Steer, _ = r.Context().Value(queuedSteerKey{}).(*captaincode.Steer)
@@ -679,6 +701,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if !titleReq && b.handleInterrupt(w, req, lastUserRaw(req.Messages)) {
 		return
 	}
+	// /accept, /reject, /correction, /regressed - the session's outcome
+	// words; the out-of-band copy already acted, this answers the rest.
+	if !titleReq && b.handleOutcomeWord(w, req, lastUserRaw(req.Messages)) {
+		return
+	}
 	// /init regenerates captain's configs (worker permissions, env scaffold) -
 	// a control word, never a worker task.
 	if !titleReq && b.handleInit(w, req, raw) {
@@ -843,6 +870,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt), lastUserRaw(req.Messages))
 		taskID = b.openTask(lastUserTurn(prompt))
 		b.noteVerifyBase(taskID, req.ws.Dir)
+		// Q13: the session's outcome words and the sidebar act on this task.
+		if taskID != "" {
+			w.Header().Set("X-Captain-Task-ID", taskID)
+			b.noteTurnTask(req.turn, taskID)
+		}
 	}
 	if !titleReq {
 		prompt += b.workerContext(req.ws, lastUserTurn(prompt), taskID) + deliverableContract + callbackContract(req.ws, leg) + securityContract() + landingContract() + decisionContract() + clarityContract(req.ws) + privacyContract(req.ws) + rulesContract(req.ws)

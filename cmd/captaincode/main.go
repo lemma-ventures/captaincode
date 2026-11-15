@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +52,10 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "review" {
 		cmdReview(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "blackbox" {
+		cmdBlackbox(os.Args[2:])
 		return
 	}
 	// The provider keys live in ~/.config/captain/env. A process that was not
@@ -101,7 +106,7 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "why":
-			cmdWhy(ledger)
+			cmdWhy(ledger, args[1:])
 			return
 		case "quota":
 			cmdQuota(ledger)
@@ -343,7 +348,7 @@ func repl(ledger *captaincode.Ledger, prefer, until string, maxIters int, noMana
 			fmt.Println("captain: cleared this project's conversation threads - next dispatch starts fresh")
 			continue
 		case "/why":
-			cmdWhy(ledger)
+			cmdWhy(ledger, nil)
 			continue
 		case "/quota":
 			cmdQuota(ledger)
@@ -710,7 +715,24 @@ func runFanOut(ledger *captaincode.Ledger, mgr captaincode.Manager, task string,
 	saveLedger(ledger)
 }
 
-func cmdWhy(l *captaincode.Ledger) {
+func cmdWhy(l *captaincode.Ledger, args []string) {
+	flags := flag.NewFlagSet("why", flag.ContinueOnError)
+	share := flags.Bool("share", false, "frontier share of automatic routing decisions")
+	dayList := flags.String("days", "7,30", "comma-separated trailing windows in days")
+	if err := flags.Parse(args); err != nil {
+		fatal(err)
+	}
+	if flags.NArg() != 0 {
+		fatal(errors.New("usage: captain why [--share] [--days 7,30]"))
+	}
+	if *share {
+		days, err := parseShareDays(*dayList)
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Print(formatFrontierShare(l, days, time.Now()))
+		return
+	}
 	if len(l.Events) == 0 {
 		fmt.Println("captain: no decisions recorded yet")
 		return
@@ -727,6 +749,76 @@ func cmdWhy(l *captaincode.Ledger) {
 	printDecision(l, e.TaskID)
 	printCharges(l, e.TaskID)
 	printBudget(l, e.TaskID)
+}
+
+func parseShareDays(raw string) ([]int, error) {
+	seen := map[int]bool{}
+	var days []int
+	for _, part := range strings.Split(raw, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || n < 1 || n > 3650 {
+			return nil, fmt.Errorf("--days must contain numbers from 1 to 3650: %q", raw)
+		}
+		if !seen[n] {
+			seen[n] = true
+			days = append(days, n)
+		}
+	}
+	if len(days) == 0 || len(days) > 16 {
+		return nil, errors.New("--days needs between 1 and 16 windows")
+	}
+	return days, nil
+}
+
+func automaticShareDecision(d captaincode.Decision) bool {
+	if d.ChosenFrontier == nil || d.Preference != "" {
+		return false
+	}
+	switch d.Path {
+	case captaincode.PathForced, captaincode.PathNamedSeq, captaincode.PathWorkflow, captaincode.PathLane, captaincode.PathReroute:
+		return false
+	}
+	return true
+}
+
+func formatFrontierShare(l *captaincode.Ledger, days []int, now time.Time) string {
+	samples := captaincode.RoutingHistory(l)
+	var firstRule time.Time
+	for _, sample := range samples {
+		d := sample.Decision
+		if d.TiePolicy == "cheap-capable-v1" && !d.At.IsZero() && (firstRule.IsZero() || d.At.Before(firstRule)) {
+			firstRule = d.At
+		}
+	}
+	var out strings.Builder
+	for _, window := range days {
+		cutoff := now.Add(-time.Duration(window) * 24 * time.Hour)
+		total, frontier := 0, 0
+		for _, sample := range samples {
+			d := sample.Decision
+			if d.At.Before(cutoff) || d.At.After(now) || !automaticShareDecision(d) {
+				continue
+			}
+			total++
+			if *d.ChosenFrontier {
+				frontier++
+			}
+		}
+		fmt.Fprintf(&out, "%d days: %d/%d automatic decisions on frontier legs", window, frontier, total)
+		if total > 0 {
+			fmt.Fprintf(&out, " (%.1f%%)", 100*float64(frontier)/float64(total))
+		} else {
+			out.WriteString(" (n/a)")
+		}
+		out.WriteByte('\n')
+	}
+	out.WriteString("cheap-capable-v1 first recorded: ")
+	if firstRule.IsZero() {
+		out.WriteString("not present\n")
+	} else {
+		out.WriteString(firstRule.Format("2006-01-02") + "\n")
+	}
+	return out.String()
 }
 
 // printBudget shows the task's resource budget status when one exists.

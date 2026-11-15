@@ -123,7 +123,11 @@ func (c *TaskClient) Plan(req PlanRequest) (*PlanResponse, *TaskError) {
 // duplicate identical request (same RequestID) attaches to the existing
 // task; reuse with different scope is a conflict.
 func (c *TaskClient) Submit(req SubmitRequest) (*SubmitResponse, *TaskError) {
-	tr, err := c.call(OpSubmit, "", req)
+	return c.SubmitWithID("", req)
+}
+
+func (c *TaskClient) SubmitWithID(taskID string, req SubmitRequest) (*SubmitResponse, *TaskError) {
+	tr, err := c.call(OpSubmit, taskID, req)
 	if err != nil {
 		return nil, NewTaskError(ErrUnavailable, err.Error())
 	}

@@ -130,6 +130,7 @@ type ReleaseReport struct {
 	Manifest    ReleaseManifest `json:"manifest"`
 	Checks      []ReleaseCheck  `json:"checks"`
 	CompatTable []CompatRow     `json:"compat_table"`
+	Evaluation  *EvalReport     `json:"evaluation,omitempty"`
 	Passed      int             `json:"passed"`
 	Failed      int             `json:"failed"`
 	ExitOK      bool            `json:"exit_ok"`
@@ -193,6 +194,10 @@ func RunReleaseChecks(deps ReleaseDeps) []ReleaseCheck {
 
 // BuildReleaseReport assembles the full release package.
 func BuildReleaseReport(deps ReleaseDeps) ReleaseReport {
+	return BuildReleaseReportWithEval(deps, nil)
+}
+
+func BuildReleaseReportWithEval(deps ReleaseDeps, result *EvalResult) ReleaseReport {
 	if deps.BuildInfo == nil {
 		deps.BuildInfo = GoBuildStamp
 	}
@@ -201,6 +206,10 @@ func BuildReleaseReport(deps ReleaseDeps) ReleaseReport {
 	compat := BuildCompatTable()
 
 	r := ReleaseReport{Manifest: m, Checks: checks, CompatTable: compat}
+	if result != nil {
+		evaluation := result.Report()
+		r.Evaluation = &evaluation
+	}
 	for _, c := range checks {
 		if c.Passed {
 			r.Passed++
@@ -295,6 +304,21 @@ func FormatReleaseReport(r ReleaseReport) string {
 		}
 		if !c.Passed && c.Fix != "" {
 			fmt.Fprintf(&b, "     fix: %s\n", c.Fix)
+		}
+	}
+	if r.Evaluation != nil {
+		fmt.Fprintf(&b, "\nevaluation suite %s\n", r.Evaluation.Suite)
+		fmt.Fprintln(&b, "arm                 runs  checks  review  pending  seconds  cost")
+		for _, arm := range r.Evaluation.Arms {
+			cost := "-"
+			if arm.Coverage.Calls > 0 {
+				cost = fmt.Sprintf("$%.4f", arm.TotalCostUSD)
+				if arm.UnknownUsageRuns > 0 {
+					cost = fmt.Sprintf("at least $%.4f; %d runs unknown", arm.TotalCostUSD, arm.UnknownUsageRuns)
+				}
+			}
+			fmt.Fprintf(&b, "%-19s %4d  %6d  %6d  %7d  %7.1f  %s\n",
+				arm.Arm, arm.Executions, arm.Accepted-arm.ReviewAccepted, arm.ReviewAccepted, arm.PendingReview, arm.TotalSeconds, cost)
 		}
 	}
 	fmt.Fprintf(&b, "\ncompat     %d transports\n", len(r.CompatTable))

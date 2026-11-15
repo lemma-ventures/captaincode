@@ -143,18 +143,34 @@ func (b HostAdapterBase) OnApprovalNeeded(taskID string, policy PermissionPolicy
 // root (if not provided), pins the base revision, submits the task, and
 // calls the OnTaskSubmitted hook. Returns the task ID and initial state.
 func SubmitTask(h HostAdapter, prompt string, projectRoot string, opts SubmitOptions) (*SubmitResponse, *TaskError) {
+	req, err := hostSubmitRequest(h, prompt, projectRoot, opts)
+	if err != nil {
+		return nil, err
+	}
+	if !h.OnApprovalNeeded("", opts.Permissions) {
+		return nil, NewTaskError(ErrForbidden, "host denied approval for this task")
+	}
+	resp, submitErr := h.Client().SubmitWithID(opts.TaskID, req)
+	if submitErr != nil {
+		return nil, submitErr
+	}
+	h.OnTaskSubmitted(resp.TaskID, prompt)
+	return resp, nil
+}
+
+func hostSubmitRequest(h HostAdapter, prompt, projectRoot string, opts SubmitOptions) (SubmitRequest, *TaskError) {
 	if projectRoot == "" {
 		root, err := h.DetectProjectRoot("")
 		if err != nil {
-			return nil, NewTaskError(ErrBadRequest, "detect project root: "+err.Error())
+			return SubmitRequest{}, NewTaskError(ErrBadRequest, "detect project root: "+err.Error())
 		}
 		projectRoot = root
 	}
 	baseRev, err := h.CurrentRevision(projectRoot)
 	if err != nil {
-		return nil, NewTaskError(ErrBadRequest, "detect base revision: "+err.Error())
+		return SubmitRequest{}, NewTaskError(ErrBadRequest, "detect base revision: "+err.Error())
 	}
-	req := SubmitRequest{
+	return SubmitRequest{
 		Prompt:       prompt,
 		ProjectRoot:  projectRoot,
 		BaseRevision: baseRev,
@@ -164,21 +180,12 @@ func SubmitTask(h HostAdapter, prompt string, projectRoot string, opts SubmitOpt
 		Checks:       opts.Checks,
 		Limits:       opts.Limits,
 		Leg:          opts.Leg,
-	}
-	if !h.OnApprovalNeeded("", opts.Permissions) {
-		return nil, NewTaskError(ErrForbidden, "host denied approval for this task")
-	}
-	client := h.Client()
-	resp, submitErr := client.Submit(req)
-	if submitErr != nil {
-		return nil, submitErr
-	}
-	h.OnTaskSubmitted(resp.TaskID, prompt)
-	return resp, nil
+	}, nil
 }
 
 // SubmitOptions carries the optional fields a host passes to SubmitTask.
 type SubmitOptions struct {
+	TaskID      string
 	Intent      TaskIntent
 	Caps        Requirements
 	Permissions PermissionPolicy
@@ -322,7 +329,6 @@ func (c CertChecklist) CheckCancelDuringExecution(prompt string, opts SubmitOpti
 	}
 	cancelResp, cancelErr := CancelTask(c.Host, submit.TaskID, "certification cancel")
 	if cancelErr != nil {
-		// Already terminal is acceptable for certification.
 		if cancelErr.Code == ErrAlreadyTerminal {
 			return nil
 		}
@@ -331,7 +337,97 @@ func (c CertChecklist) CheckCancelDuringExecution(prompt string, opts SubmitOpti
 	if cancelResp.State != StateCancelled && !cancelResp.State.IsTerminal() {
 		return fmt.Errorf("expected cancelled or terminal, got %s", cancelResp.State)
 	}
+	inspection, inspectErr := c.Host.Client().Inspect(submit.TaskID, InspectRequest{})
+	if inspectErr != nil {
+		return fmt.Errorf("inspect cancellation: %s", inspectErr.Error())
+	}
+	if inspection.Task == nil || !inspection.Task.State.IsTerminal() {
+		return fmt.Errorf("terminal cancellation state was not durable")
+	}
 	return nil
+}
+
+func (c CertChecklist) CheckRecoverAfterRestart(prompt, projectRoot string, opts SubmitOptions, restart func() error) error {
+	opts.TaskID = NewTaskID()
+	req, requestErr := hostSubmitRequest(c.Host, prompt, projectRoot, opts)
+	if requestErr != nil {
+		return requestErr
+	}
+	submit, submitErr := c.Host.Client().SubmitWithID(opts.TaskID, req)
+	if submitErr != nil {
+		return fmt.Errorf("submit: %s", submitErr.Error())
+	}
+	if submit.Attempt == "" {
+		return fmt.Errorf("submit returned no attempt")
+	}
+	if restart == nil {
+		again, retryErr := c.Host.Client().SubmitWithID(opts.TaskID, req)
+		if retryErr != nil {
+			return fmt.Errorf("exact retry: %s", retryErr.Error())
+		}
+		if again.TaskID != submit.TaskID || again.Attempt != submit.Attempt {
+			return fmt.Errorf("exact retry changed task or attempt identity")
+		}
+		return nil
+	}
+	if err := restart(); err != nil {
+		return fmt.Errorf("restart: %w", err)
+	}
+	inspection, inspectErr := c.Host.Client().Inspect(opts.TaskID, InspectRequest{IncludeBudget: true})
+	if inspectErr != nil {
+		return fmt.Errorf("inspect restart: %s", inspectErr.Error())
+	}
+	if len(inspection.Attempts) != 1 || inspection.Attempts[0].State != StateInterrupted {
+		return fmt.Errorf("restart did not preserve one interrupted attempt")
+	}
+	resumed, resumeErr := ResumeTask(c.Host, opts.TaskID, submit.Attempt, "certification restart")
+	if resumeErr != nil {
+		return fmt.Errorf("resume: %s", resumeErr.Error())
+	}
+	if resumed.TaskID != opts.TaskID || resumed.AttemptID == "" || resumed.Budget == nil {
+		return fmt.Errorf("resume did not preserve task, attempt and budget identities")
+	}
+	return nil
+}
+
+func (c CertChecklist) CheckRootBudget(prompt, projectRoot string, opts SubmitOptions) error {
+	opts.TaskID = NewTaskID()
+	req, requestErr := hostSubmitRequest(c.Host, prompt, projectRoot, opts)
+	if requestErr != nil {
+		return requestErr
+	}
+	if _, submitErr := c.Host.Client().SubmitWithID(opts.TaskID, req); submitErr != nil {
+		return fmt.Errorf("submit: %s", submitErr.Error())
+	}
+	inspection, inspectErr := c.Host.Client().Inspect(opts.TaskID, InspectRequest{IncludeBudget: true})
+	if inspectErr != nil {
+		return fmt.Errorf("inspect budget: %s", inspectErr.Error())
+	}
+	budget := inspection.Budget
+	if budget == nil || budget.TaskID != opts.TaskID {
+		return fmt.Errorf("root budget is missing or belongs to another task")
+	}
+	if budget.MaxAttempts != opts.Limits.MaxAttempts || budget.MaxCostUSD != opts.Limits.MaxCostUSD || budget.MaxWallMs != opts.Limits.MaxWallMs {
+		return fmt.Errorf("root budget does not match submitted limits")
+	}
+	if _, retryErr := c.Host.Client().SubmitWithID(opts.TaskID, req); retryErr != nil {
+		return fmt.Errorf("exact retry lost root budget: %s", retryErr.Error())
+	}
+	return nil
+}
+
+func (c CertChecklist) CheckDenyScopeWidening(prompt, projectRoot string, opts SubmitOptions) error {
+	opts.TaskID = NewTaskID()
+	opts.Permissions = PermissionPolicy{ReadOnly: true}
+	req, requestErr := hostSubmitRequest(c.Host, prompt, projectRoot, opts)
+	if requestErr != nil {
+		return requestErr
+	}
+	if _, submitErr := c.Host.Client().SubmitWithID(opts.TaskID, req); submitErr != nil {
+		return fmt.Errorf("submit: %s", submitErr.Error())
+	}
+	req.Permissions.ReadOnly = false
+	return c.CheckRejectConflictingRetry(opts.TaskID, req)
 }
 
 // CheckRejectConflictingRetry verifies that a second submit with the same
@@ -345,12 +441,7 @@ func (c CertChecklist) CheckRejectConflictingRetry(taskID string, different Subm
 	if resp.Error != nil && resp.Error.Code == ErrConflict {
 		return nil
 	}
-	if resp.Status == ResponseOK {
-		// If the task was found and is still running, the server returns
-		// its current state. That is attach, not conflict — acceptable.
-		return nil
-	}
-	return fmt.Errorf("expected conflict or attach, got status=%s", resp.Status)
+	return fmt.Errorf("expected conflict, got status=%s", resp.Status)
 }
 
 // CheckDelegationLoopRejection verifies that a delegation lineage with a

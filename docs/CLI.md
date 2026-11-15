@@ -55,7 +55,7 @@ reads text from stdin. These helpers have no coding tools. See
 | Command | What it does |
 |---|---|
 | `captain director` / `director <leg>` / `director reset` | Show or switch the director ladder |
-| `captain why` | Last routing decision: candidates, exclusions, policy, charges |
+| `captain why [--share] [--days 7,30]` | Last routing decision, or frontier share of automatic decisions over trailing windows |
 | `captain quota` | Observed/inferred quota per leg |
 | `captain budget` | Per-task budgets (attempts, cost, mode, stopping reason) |
 | `captain stats` | Aggregate ledger stats |
@@ -105,6 +105,8 @@ The launcher runs these; you rarely call them by hand.
 | `captain brain [--addr host:port]` | The brain: routing policy, the OpenAI-compatible endpoint the TUI talks to, the task API |
 | `captain proxy` | The egress redaction proxy on its own (the brain runs one itself) |
 | `captain redact [--restore \| --check <path> \| --hook \| --stats] [--source name]` | The redaction engine for the opencode plugin and Claude Code's `PreToolUse` hook: stdin masked (or restored) to stdout; `--check` exits 3 on a file a worker must not read |
+| `captain blackbox check --snapshot <file>` | The offline security evaluator: one normalized action on stdin, one JSON result on stdout, no network, no credentials |
+| `captain blackbox hook [--snapshot <file>] [--mode audit]` | The plugin's audit path: one tool event on stdin, one bounded record in `security.jsonl`; never refuses |
 
 ### What every worker prompt carries
 
@@ -152,11 +154,12 @@ after the task (a session title gets none of them):
 | `captain eval plan <suite.json>` | The executions the suite would run |
 | `captain eval run <suite.json> [--out <result.json>] [--only ids] [--json]` | Execute arms serially (paid) |
 | `captain eval review <result.json> [--accept\|--reject <key> --by <name> --note … --amend]` | List or record blinded verdicts |
+| `captain eval review <result.json> --export <dir>` | Export redacted review evidence and a separate 0600 alias key |
 | `captain eval report <result.json>` | Acceptance / cost / latency table |
 | `captain release manifest [--json]` | Every version an evidence run was produced against |
 | `captain release compat` | The compatibility table |
 | `captain release check` | Extraction checks on the release contract |
-| `captain release report [--json]` | Full dated evidence report (M1.5) |
+| `captain release report [--eval <result.json>] [--json]` | Full dated evidence report, optionally with evaluation totals (M1.5) |
 
 ## Tasks, MCP & hosts (M4)
 
@@ -168,7 +171,9 @@ after the task (a session title gets none of them):
 | `captain task fixture` | Run task API contract checks against a live brain (submits a test task) |
 | `captain task mcp` | Stdio MCP server for the same seven operations |
 | `captain host pi …` / `host jido …` | Host helpers against a live brain |
-| `captain host cert [--host pi\|jido\|editor]` | Certification checklist |
+| `captain host cert [--host pi\|jido\|editor]` | Static certification checklist |
+| `captain host cert --dynamic --brain <url>` | Five mutating gates against a named test brain |
+| `captain host editor config <cursor\|vscode\|zed>` | Print one stdio MCP server entry with an absolute binary path |
 | `captain cancel` / `lifecycle` / `resume` | Cancellation tree and recovery |
 | `captain handoff [id] [--format json]` | Structured handoff brief |
 
@@ -183,7 +188,7 @@ after the task (a session title gets none of them):
 | `captain calibrate [--domain code\|editorial\|research\|general] [--json] [<leg>…]` | Quality/reliability estimates with uncertainty |
 | `captain behaviour [--json]` | How each leg behaves here: host, speed per class, failures by cause, judges, rejected outcomes, the model each tier runs, and what needs a change. The brain rewrites `~/.captaincode/behaviour.json` and `reports/behaviour-latest.md` every `CAPTAIN_REPORT_EVERY` runs (50) and when a leg or host appears |
 | `captain journal import <state.json>…` | Add the run events of older state files (`~/.captaincode/backups`) that the routing journal lacks |
-| `captain roles` | Role economics roll-up |
+| `captain roles` | Role economics roll-up: finished, accepted, rejected (including regressed) and unreviewed tasks; lifecycle success alone is not acceptance |
 | `captain policy [--json]` / `policy show <id>` | Policy snapshots and one in full |
 | `captain policy snapshot [name]` / `activate <id>` / `accept <id>` | Capture the current policy; make a snapshot active; accept it (what `rollback` returns to) |
 | `captain policy canary start <candidate-id> [rate] [max-tasks]` / `canary stop` | Route a share of tasks through a candidate |

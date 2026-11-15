@@ -483,7 +483,9 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	// attempts beneath them, so a five-run pipeline no longer reads as five
 	// unrelated tasks in the bill (ROADMAP M1.2).
 	taskID := b.openTask(task)
-	req.ws.Steer.SetTask(taskID) // a note's shadow joins this task's outcome (brain_shadow.go)
+	req.ws.Steer.SetTask(taskID)                // a note's shadow joins this task's outcome (brain_shadow.go)
+	w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
+	b.noteTurnTask(req.turn, taskID)
 	// M3.4: register the workflow's root context so `captain cancel <taskID>`
 	// cascades to every stage, worker, gate and review beneath it.
 	workflowCtx, workflowCancel := b.cancelTree.Register(taskID, "workflow", "workflow:"+key, context.Background())

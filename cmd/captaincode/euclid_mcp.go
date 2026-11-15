@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -304,10 +305,74 @@ func euclidToolCall(name string, args map[string]any, cwd string) (map[string]an
 	return nil, fmt.Errorf("unknown tool %q", name)
 }
 
+type mcpLifetime struct {
+	dir      string
+	parent   int
+	idle     time.Duration
+	interval time.Duration
+	now      func() time.Time
+	ppid     func() int
+	stat     func(string) (os.FileInfo, error)
+}
+
+func newMCPLifetime(cwd string) *mcpLifetime {
+	dir, err := filepath.Abs(cwd)
+	if err != nil {
+		dir = cwd
+	}
+	var idle time.Duration
+	if parsed, err := time.ParseDuration(strings.TrimSpace(os.Getenv("CAPTAIN_EUCLID_MCP_IDLE"))); err == nil && parsed > 0 {
+		idle = parsed
+	}
+	return &mcpLifetime{
+		dir:      dir,
+		parent:   os.Getppid(),
+		idle:     idle,
+		interval: time.Minute,
+		now:      time.Now,
+		ppid:     os.Getppid,
+		stat:     os.Stat,
+	}
+}
+
+func (l *mcpLifetime) shouldExit(now, lastRequest time.Time) bool {
+	if l.ppid() != l.parent {
+		return true
+	}
+	if _, err := l.stat(l.dir); err != nil && os.IsNotExist(err) {
+		return true
+	}
+	return l.idle > 0 && now.Sub(lastRequest) >= l.idle
+}
+
 // serveEuclidMCP runs the JSON-RPC loop; cwdFn is a seam for tests.
-func serveEuclidMCP(in io.Reader, out io.Writer, cwdFn func() string) {
+func serveEuclidMCP(in io.Reader, out io.Writer, cwdFn func() string, lifetimes ...*mcpLifetime) {
+	var life *mcpLifetime
+	if len(lifetimes) > 0 {
+		life = lifetimes[0]
+	}
+	var ticker *time.Ticker
+	var ticks <-chan time.Time
+	var lastRequest time.Time
+	if life != nil {
+		if life.interval <= 0 {
+			life.interval = time.Minute
+		}
+		ticker = time.NewTicker(life.interval)
+		defer ticker.Stop()
+		ticks = ticker.C
+		lastRequest = life.now()
+	}
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	lines := make(chan string)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
 	enc := json.NewEncoder(out)
 	reply := func(id json.RawMessage, result any, err *rpcError) {
 		if len(id) == 0 { // notification: no reply
@@ -315,46 +380,58 @@ func serveEuclidMCP(in io.Reader, out io.Writer, cwdFn func() string) {
 		}
 		_ = enc.Encode(rpcResponse{JSONRPC: "2.0", ID: id, Result: result, Error: err})
 	}
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
-		}
-		var req rpcRequest
-		if json.Unmarshal([]byte(line), &req) != nil {
-			continue
-		}
-		switch req.Method {
-		case "initialize":
-			reply(req.ID, map[string]any{
-				"protocolVersion": mcpProtocolVersion,
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": "captain-euclid", "version": "0.1.0"},
-			}, nil)
-		case "notifications/initialized", "notifications/cancelled":
-			// nothing to do
-		case "ping":
-			reply(req.ID, map[string]any{}, nil)
-		case "tools/list":
-			reply(req.ID, map[string]any{"tools": captaincode.EuclidTools()}, nil)
-		case "tools/call":
-			var p struct {
-				Name      string         `json:"name"`
-				Arguments map[string]any `json:"arguments"`
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticks:
+			if life.shouldExit(now, lastRequest) {
+				return
 			}
-			_ = json.Unmarshal(req.Params, &p)
-			res, err := euclidToolCall(p.Name, p.Arguments, cwdFn())
-			if err != nil {
-				reply(req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": err.Error()}}, "isError": true}, nil)
+		case line := <-lines:
+			line = strings.TrimSpace(line)
+			if line == "" {
 				continue
 			}
-			reply(req.ID, res, nil)
-		default:
-			reply(req.ID, nil, &rpcError{Code: -32601, Message: "method not found: " + req.Method})
+			var req rpcRequest
+			if json.Unmarshal([]byte(line), &req) != nil {
+				continue
+			}
+			if life != nil {
+				lastRequest = life.now()
+			}
+			switch req.Method {
+			case "initialize":
+				reply(req.ID, map[string]any{
+					"protocolVersion": mcpProtocolVersion,
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "captain-euclid", "version": "0.1.0"},
+				}, nil)
+			case "notifications/initialized", "notifications/cancelled":
+				// nothing to do
+			case "ping":
+				reply(req.ID, map[string]any{}, nil)
+			case "tools/list":
+				reply(req.ID, map[string]any{"tools": captaincode.EuclidTools()}, nil)
+			case "tools/call":
+				var p struct {
+					Name      string         `json:"name"`
+					Arguments map[string]any `json:"arguments"`
+				}
+				_ = json.Unmarshal(req.Params, &p)
+				res, err := euclidToolCall(p.Name, p.Arguments, cwdFn())
+				if err != nil {
+					reply(req.ID, map[string]any{"content": []map[string]any{{"type": "text", "text": err.Error()}}, "isError": true}, nil)
+					continue
+				}
+				reply(req.ID, res, nil)
+			default:
+				reply(req.ID, nil, &rpcError{Code: -32601, Message: "method not found: " + req.Method})
+			}
 		}
 	}
 }
 
 func cmdEuclidMCP() {
-	serveEuclidMCP(os.Stdin, os.Stdout, mcpCwd)
+	serveEuclidMCP(os.Stdin, os.Stdout, mcpCwd, newMCPLifetime(mcpCwd()))
 }

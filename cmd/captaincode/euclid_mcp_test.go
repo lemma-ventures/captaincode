@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 	"github.com/stretchr/testify/assert"
@@ -70,6 +73,111 @@ func TestEuclidMCPServer(t *testing.T) {
 	assert.Equal(t, true, replies[7]["result"].(map[string]any)["isError"])
 	assert.Equal(t, true, replies[8]["result"].(map[string]any)["isError"], "unknown tool → tool error, not a protocol error")
 	assert.NotNil(t, replies[9]["error"], "unknown method → JSON-RPC error")
+}
+
+func TestEuclidMCPExitsWhenFolderRemoved(t *testing.T) {
+	life := testMCPLifetime(t)
+	life.stat = func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+	assertMCPStops(t, life)
+}
+
+func TestEuclidMCPExitsWhenParentChanges(t *testing.T) {
+	life := testMCPLifetime(t)
+	life.parent = 10
+	life.ppid = func() int { return 1 }
+	assertMCPStops(t, life)
+}
+
+func TestEuclidMCPIdleOffByDefault(t *testing.T) {
+	t.Setenv("CAPTAIN_EUCLID_MCP_IDLE", "")
+	life := newMCPLifetime(t.TempDir())
+	assert.Zero(t, life.idle)
+	now := time.Now()
+	assert.False(t, life.shouldExit(now.Add(365*24*time.Hour), now))
+}
+
+func TestEuclidMCPIdleExit(t *testing.T) {
+	t.Setenv("CAPTAIN_EUCLID_MCP_IDLE", "5ms")
+	life := newMCPLifetime(t.TempDir())
+	life.interval = time.Millisecond
+	assertMCPStops(t, life)
+}
+
+func TestEuclidMCPRequestFinishesBeforeLifecycleExit(t *testing.T) {
+	life := testMCPLifetime(t)
+	var parent atomic.Int32
+	parent.Store(1)
+	life.ppid = func() int { return int(parent.Load()) }
+	started := make(chan struct{})
+	release := make(chan struct{})
+	in, writer := io.Pipe()
+	defer writer.Close()
+	var out bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		serveEuclidMCP(in, &out, func() string {
+			close(started)
+			<-release
+			return life.dir
+		}, life)
+		close(done)
+	}()
+	_, err := writer.Write([]byte("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"status\",\"arguments\":{}}}\n"))
+	require.NoError(t, err)
+	<-started
+	parent.Store(2)
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("MCP server did not stop after the request")
+	}
+	assert.Contains(t, out.String(), "No Euclid brain")
+}
+
+func testMCPLifetime(t *testing.T) *mcpLifetime {
+	t.Helper()
+	return &mcpLifetime{
+		dir:      t.TempDir(),
+		parent:   1,
+		interval: time.Millisecond,
+		now:      time.Now,
+		ppid:     func() int { return 1 },
+		stat: func(string) (os.FileInfo, error) {
+			return nil, nil
+		},
+	}
+}
+
+func assertMCPStops(t *testing.T, life *mcpLifetime) {
+	t.Helper()
+	in, writer := io.Pipe()
+	defer writer.Close()
+	done := make(chan struct{})
+	go func() {
+		serveEuclidMCP(in, io.Discard, func() string { return life.dir }, life)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("MCP server did not stop")
+	}
+}
+
+func BenchmarkMCPLifetimeCheck(b *testing.B) {
+	life := &mcpLifetime{
+		dir:    b.TempDir(),
+		parent: 1,
+		now:    time.Now,
+		ppid:   func() int { return 1 },
+		stat:   func(string) (os.FileInfo, error) { return nil, nil },
+	}
+	last := time.Now()
+	for b.Loop() {
+		life.shouldExit(last, last)
+	}
 }
 
 func TestEnsureEuclidMCPRegistersOnce(t *testing.T) {

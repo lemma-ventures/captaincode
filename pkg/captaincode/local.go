@@ -506,7 +506,7 @@ var localProbes = []localProbe{
 	{"commit", "commit", "The diff adds a timeout to the retry loop.", func(s string) bool {
 		return len(s) < 120 && !strings.Contains(s, "\n") && strings.Contains(strings.ToLower(s), "timeout")
 	}},
-	{"retrieval_abstention", "digest", "Sources: The service listens on loopback. Question: What was its exact revenue last Tuesday?", func(s string) bool { return strings.TrimSpace(s) == "CANNOT_TELL" }},
+	{"retrieval_abstention", "digest", "Sources: The service listens on loopback. Question: What was its exact revenue last Tuesday?", func(s string) bool { return localAbstains("digest", s) }},
 	{"learn", "learn", `No new journal entries or memories. Return {"summary":"","edits":[]}.`, func(s string) bool {
 		var v struct {
 			Summary string
@@ -531,13 +531,37 @@ New journal fact: Retries are enabled, with at most 3 attempts. Return JSON with
 	}},
 }
 
+func localAbstains(purpose, raw string) bool {
+	switch purpose {
+	case "classify":
+		var v struct {
+			Abstain   bool     `json:"abstain"`
+			Answer    string   `json:"answer"`
+			Citations []string `json:"citations"`
+		}
+		if json.Unmarshal([]byte(raw), &v) != nil || !v.Abstain || len(v.Citations) != 0 {
+			return false
+		}
+		answer := strings.TrimSpace(v.Answer)
+		return answer == "" || answer == "CANNOT_TELL"
+	case "digest":
+		answer := strings.TrimSpace(raw)
+		return answer == "" || answer == "CANNOT_TELL"
+	default:
+		return false
+	}
+}
+
 func localClassIs(s, want string, abstain bool) bool {
+	if abstain {
+		return localAbstains("classify", s)
+	}
 	var v struct {
 		Class   string
 		Domain  Domain
 		Abstain bool
 	}
-	return json.Unmarshal([]byte(s), &v) == nil && v.Abstain == abstain && (abstain || (v.Class == want && v.Domain == DomainCode))
+	return json.Unmarshal([]byte(s), &v) == nil && !v.Abstain && v.Class == want && v.Domain == DomainCode
 }
 func QualifyLocal(ctx context.Context, c LocalConfig) (LocalQualification, error) {
 	q := LocalQualification{Suite: localSuite, Endpoint: c.Endpoint, Model: c.Model, At: time.Now()}
