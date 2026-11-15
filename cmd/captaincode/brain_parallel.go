@@ -20,6 +20,9 @@ package main
 // conversation between two concurrently-mutating turns is how transcripts get
 // interleaved and unreadable. Each parallel run is its own turn against the
 // conversation as it stood when you launched it.
+//
+// Typed while a turn streams, the TUI would queue the word itself behind
+// that turn; the plugin sends it out of band instead (brain_parallel_oob.go).
 
 import (
 	"context"

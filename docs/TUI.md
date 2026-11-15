@@ -104,7 +104,7 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 | `/repeat N <task>` | Repeat until N rounds (no N = until stopped); rounds stream in that turn. `… until: <cmd>` also ends the loop when the command exits 0 |
 | `/repeat status` · `show` · `watch` | Loops in this folder · what recent rounds did · follow a loop live |
 | `/repeat stop` (`finish`, `wrapup`) · `/repeat abort` | End after the current round · kill it now |
-| `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop` |
+| `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop`. Typed while a turn runs, it starts at once instead of waiting in the queue |
 | `/btw <note>` | Tell the running worker more (claude and the opencode legs take it mid-run; codex and cursor get it as the next turn) |
 | `/interrupt [reason]` | Stop the running worker and keep its work: a handoff (done, left, how to resume) or a marked partial |
 

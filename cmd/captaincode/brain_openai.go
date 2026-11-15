@@ -416,6 +416,9 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		req.ws.Steer, _ = r.Context().Value(queuedSteerKey{}).(*captaincode.Steer)
 	}
 	req.Messages = dropDeleted(req.Messages)
+	if r.Context().Value(queuedKey{}) == nil {
+		b.noteConversation(req) // a /parallel typed while this turn runs replays it (brain_parallel_oob.go)
+	}
 	// Several prompts queued behind the previous turn arrive as one request
 	// with several trailing user messages: each is its own turn, in order
 	// (brain_queue.go). A round the brain issued itself never splits.

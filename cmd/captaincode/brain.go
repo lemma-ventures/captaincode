@@ -200,6 +200,7 @@ func cmdBrain(args []string) {
 	mux.HandleFunc("/v1/repeat/stop", b.repeatStopHTTP)
 	mux.HandleFunc("/v1/repeat/ctl", b.repeatCtlHTTP)
 	mux.HandleFunc("/v1/btw", b.btwHTTP)
+	mux.HandleFunc("/v1/parallel", b.parallelHTTP)
 	mux.HandleFunc("/v1/interrupt", b.interruptHTTP)
 	mux.HandleFunc("/v1/inbox", b.inboxHTTP)
 	mux.HandleFunc("/v1/presence/", b.presenceHTTP)
@@ -484,11 +485,12 @@ type brain struct {
 	// (brain_queue.go); nil → a real chatCompletions call.
 	signedQueueRunFn func(w http.ResponseWriter, r *http.Request)
 	// narrateFn stubs the step narrator in tests (brain_narrate.go).
-	narrateFn func(task string, steps []captaincode.Step) ([]string, error)
-	rmu       sync.Mutex
-	repeats   map[string]*repeatThread // detached /repeat threads
-	pmu       sync.Mutex
-	parallels map[string]*parallelRun // detached /parallel runs
+	narrateFn     func(task string, steps []captaincode.Step) ([]string, error)
+	rmu           sync.Mutex
+	repeats       map[string]*repeatThread // detached /repeat threads
+	pmu           sync.Mutex
+	parallels     map[string]*parallelRun // detached /parallel runs
+	parallelConvs map[string]parallelConv // each folder's latest turn, for an out-of-band /parallel
 	// classifyLLMFn stubs triage tier 1 (free-leg classify) in tests.
 	classifyLLMFn func(task string) (captaincode.Class, captaincode.Domain, error)
 	// jev is triage tier 1 on the decision leg (TypeSafe System One) when

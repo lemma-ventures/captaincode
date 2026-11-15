@@ -239,6 +239,15 @@ const BTW = /^\s*\/btw\b[\s:]*([\s\S]*)$/i
 // what they streamed. The queued copy prints the outcome.
 const INTERRUPT = /^\s*\/interrupt\b[\s:]*([\s\S]*)$/i
 
+// /parallel <task>: a second task beside the running one. Typed while a turn
+// streams, the TUI queued it behind that turn - the one place it must not
+// wait (live 2026-11-15: QUEUED for the length of a frontier turn). So it
+// goes to the brain the moment it is typed and starts there, replaying the
+// running turn's conversation; status, show and stop answer the same way.
+// With no turn running the brain does nothing and the message runs as the
+// ordinary turn it is (brain_parallel_oob.go).
+const PARALLEL = /^\s*\/parallel\b[\s:]*([\s\S]*)$/i
+
 // /rename [title]: rename this thread in the TUI. No argument derives a name
 // from the repository the TUI is open in and the thread's recent prompts;
 // an argument sets that title exactly. The name is written through the
@@ -411,6 +420,12 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     if (intr) {
       const msg = await outOfBand("/interrupt", "/v1/interrupt", { reason: (intr[1] ?? "").trim() }, (j) => (j.asked?.length || j.stopped?.length || j.withdrawn) > 0, typedIn)
       if (msg !== null) throw new Error(`captain: ${msg.slice(0, 240)} - nothing queued`)
+    }
+
+    const par = text.match(PARALLEL)
+    if (par) {
+      const msg = await outOfBand("/parallel", "/v1/parallel", { text: (par[1] ?? "").trim() }, (j) => !!j.acted)
+      if (msg !== null) throw new Error(`captain: ${msg.slice(0, 300)} - nothing queued`)
     }
 
     // /rename: the session title belongs to the TUI, so this is the one control
