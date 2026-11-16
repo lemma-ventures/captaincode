@@ -80,10 +80,10 @@ failure no longer reproduces on this tree.) |
 | Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | done (15 November 2026; `captain why --share --days 7,30` reads durable decisions and excludes explicit choices, one scorer accepts only citation-free abstention with an empty/`CANNOT_TELL` answer, new OpenCode MCP entries carry the selected tool profile, and routing events fill `EfficiencyRecord.Schema`; the four Q16 tests, full `go test ./...`, `go vet ./...` and formatting pass. Five synthetic 120-decision report runs measured 173.4–192.6 µs, 400 KB and 285 allocations per call; W1 still needs seven days of real turns) |
 | Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
 | BB1 | Offline security evaluator and explicit detection coverage | M3/M4 | done (15 November 2026; bounded Go evaluator, JSON CLI and 11 required host fixtures; full Go suite, focused race checks, vet and build pass) |
-| BB2 | OpenCode audit hook and private security records | M3/M4 | done (15 November 2026; `captain blackbox hook` normalizes the final restored arguments, files bounded records in `security.jsonl` with rotation and concurrent-append safety, and never refuses; the plugin hook runs after restoration and before the gate and jail wrap, opt-in via `CAPTAIN_BLACKBOX=audit`, independent of the routing plugin and gate; post-tool output is a separate `observed_after_execution` record. 9 Go store tests, 6 hook command tests and 6 plugin handler tests pass; full `go test ./pkg/captaincode` and `./cmd/captaincode`, `go vet ./...` and 25 plugin tests pass. Measured 17.5 ms per hook call end to end (50 runs). Still owed: hook invocation inside the combined fixture runtime - its workers run tools in fake CLI processes, so a new fixture path is needed - and the two-workspace live run) |
-| BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | blocked: export contract and BB1 |
-| BB4 | Claude hook parity and workspace security status | M4 | blocked: BB2; rule health uses BB3 |
-| BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: BB2–BB4 and enforcement evidence |
+| BB2 | OpenCode audit hook and private security records | M3/M4 | done (15 November 2026; `captain blackbox hook` normalizes the final restored arguments, files bounded records in `security.jsonl` with rotation and concurrent-append safety, and never refuses; the plugin hook runs after restoration and before the gate and jail wrap, opt-in via `CAPTAIN_BLACKBOX=audit`, independent of the routing plugin and gate; post-tool output is a separate `observed_after_execution` record. 9 Go store tests, 6 hook command tests and 6 plugin handler tests pass; full `go test ./pkg/captaincode` and `./cmd/captaincode`, `go vet ./...` and 25 plugin tests pass. Measured 17.5 ms per hook call end to end (50 runs). Live invocation evidence landed 16 November 2026: the combined fixture runtime now drives a real opencode tool call through a local fixture model, with no provider key and no network path, in two workspaces at the same time. The pre call files a `would_block` record with a critical protected-path finding, the post call files `observed_after_execution`, the two records share one workspace and session id, each workspace keeps its own id, no path or output text reaches the stream, and the file is still written - audit never refused the call. The full check runs 11 reports in 78.9 s, twice green. One live hook call with a snapshot costs a median 12.34 ms (11.13-14.21 ms, n=50) of process start, snapshot decode, evaluation and append; evaluation inside it is 152 µs. Still owed: a real snapshot from BB3's export contract) |
+| BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | in progress (16 November 2026, dq-261115-c32ef1): narrow sender contract chosen; write down the exact export fields first, then build one small exporter around the pinned upstream rule code and prove it with rejection tests (BB1 complete) |
+| BB4 | Claude hook parity and workspace security status | M4 | done: source, fixtures and live host acceptance (16 November 2026). `captain redact --hook` is the one composed Claude path. Under `CAPTAIN_BLACKBOX=audit` it screens the input Claude Code will execute after restoration or the sent-turn jail wrap, then files one `host: claude` record. Two concurrent Claude hook calls keep separate workspace and session identities. `captain blackbox status` reports mode, hook installation, snapshot identity and age, the five display states, per-host and path-free per-workspace counts, and uncovered transports. `GET /v1/blackbox/status?cwd=<folder>` requires an existing absolute folder and returns only that folder's counts and newest 20 records. The TUI polls it every five seconds and labels the row `audit only`; it never calls a would-block record prevention. Full `cmd` and `pkg` suites, focused race checks, `go vet ./...` and `go build ./...` pass in the offline Linux sandbox. Workspace status with 200 records costs 606.8-614.7 µs over three 300-run samples. Six real Claude Code fixture runs passed on this host in 0.490-0.519 s each, with no provider credential or external network. Authenticated rule health still uses BB3 |
+| BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: BB3–BB4 and enforcement evidence |
 | N1 | Install a local model runtime and pull one candidate model | Small calls | needs you |
 | N2 | Qualify and run one real task on a second machine | M3.7 | needs you, after Q3 |
 | N3 | OpenShell #3940: maintainer vouch, then reopen with a DCO sign-off | M3.7 | blocked: maintainer |
@@ -99,11 +99,13 @@ failure no longer reproduces on this tree.) |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
 | P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | proposed |
 
-After BB2 (15 November 2026) no row is buildable without the user or another
-owner: BB3–BB5 wait on the rule export contract and BB2's combined-runtime
-evidence, N1/N2/N4/N5 are marked `needs you`, W1 waits on seven days of
-turns, and P1–P7 are proposals. The next round that needs a row should take
-a P-row after the user picks one, or the fleet queue's F5 after its gates.
+BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
+composition, CLI status, concurrent workspace isolation, TUI join and real host
+acceptance are also done. BB5 remains gated on BB3's authenticated rule export
+contract (dq-261115-c32ef1 narrow sender contract chosen) and the enforcement
+evidence. N1/N2/N4/N5 are marked `needs you`, W1 waits on seven days of turns, and
+P1–P7 are proposals. No buildable roadmap row is marked `next`: a round takes a
+P-row after the user picks one, or the fleet queue's F5 after its gates.
 
 **Rules for a `/repeat` round.**
 
@@ -3737,9 +3739,9 @@ enforcement, not the audit experiment.
 | ID | Formalized | Specified | Implemented | Tested | Released |
 |---|---|---|---|---|---|
 | BB1 | not_applicable | done | done | done | not_started |
-| BB2 | not_applicable | draft | not_started | not_started | not_started |
-| BB3 | not_started | draft | not_started | not_started | not_started |
-| BB4 | not_applicable | draft | not_started | not_started | not_started |
+| BB2 | not_applicable | done | done | done | not_started |
+| BB3 | not_started | narrow sender contract (dq-261115-c32ef1) | not_started | not_started | not_started |
+| BB4 | not_applicable | done | done | done | not_started |
 | BB5 | not_started | draft | not_started | not_started | not_started |
 
 BB1, BB2 and BB4 only evaluate or observe. Their assurance comes from bounded
@@ -3808,6 +3810,8 @@ that audit findings do not grant permission or claim a blocked action.
 
 #### BB3. Authenticated rule snapshots
 
+Decision dq-261115-c32ef1 (16 November 2026): user chose option a, Narrow sender contract. Write down the exact export fields first, then build one small exporter around the pinned upstream rule code and prove it with rejection tests. The open question on the export contract path is now closed.
+
 Keep rule acquisition outside tool execution. Validate schema, upstream revision,
 graph/network, trusted authority, generation, expiry, revocations, category counts
 and export completeness before atomic replacement. A checksum or a `public`
@@ -3820,8 +3824,8 @@ do not establish that boundary.
 
 **Tests.** Reject forged authority, wrong graph, partial exports, unsupported
 schemas, replay and revoked rules. Exercise interrupted replacement, restart,
-stale state and rollback. The security maintainer must resolve the export and
-authority contract before declaring this item specified.
+stale state and rollback. Export contract path selected (dq-261115-c32ef1); the
+narrow sender contract question is closed.
 
 #### BB4. Claude coverage and workspace security status
 
