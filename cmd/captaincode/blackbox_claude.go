@@ -46,7 +46,7 @@ func screenClaudeToolInput(tool, session, cwd string, input map[string]any) (cap
 	}
 	started := time.Now()
 	action := captaincode.PrepareBlackboxHookAction("claude", "pre", strings.ToLower(tool), raw, "", cwd)
-	result := captaincode.EvaluateBlackboxHook(action, blackboxSnapshotPath(""))
+	result := evaluateBlackboxHookAction(action, "")
 	mode := claudeBlackboxMode()
 	record := captaincode.FinishBlackboxHookRecord(action, result, mode, session, started)
 	var decision captaincode.BlackboxEnforceDecision

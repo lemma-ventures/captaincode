@@ -527,11 +527,25 @@ of `unknown`. The checks are `TestBlackboxStateIsOutsideTheJail`,
 `TestJailEnvDropsBlackboxSettings`, `TestBlackboxStatusRecognizesEnforceMode`
 and `TestBlackboxStatusJailedReportsHiddenSettings`.
 
-Still owed for BB5 rollout: the 1,000-benign-action pilot review across both
-hosts and two disposable workspaces with zero unexplained would-block results,
-and the operator's host and category selection before any enforcement is
-enabled anywhere. Enforcement stays off by default; nothing in these changes
-enables it anywhere.
+The 1,000-benign-action pilot review is built (16 November 2026): `captain
+blackbox pilot [--count N] [--workspaces N] --state <dir>` replays a
+deterministic benign corpus through both supported hosts in enforce mode -
+the opencode hook path and the Claude composition - against the same rule
+source production uses (explicit snapshot, else the configured authenticated
+store, else the default file). The gate passes only with zero refusals and
+zero degraded, unavailable or errored screenings; every failure names its
+host, workspace, corpus index and reason. A half-configured store fails the
+gate, a corpus action that matches a critical rule fails it, and the Claude
+composition now resolves rules through the same authenticated store as the
+opencode hook (the composition previously read only the file snapshot). The
+fixture run screens 1,000 actions (500 per host, 2 workspaces) in about
+137 ms, roughly 137 µs per action, and files exactly one record per action
+in the disposable state directory. Corpus commands stay inside the supported
+shell grammar: syntax the evaluator cannot fully parse is an incomplete
+screening, and an incomplete required check refuses in enforce mode. The
+operator's host and category selection is still owed before any enforcement
+is enabled anywhere. Enforcement stays off by default; nothing in these
+changes enables it anywhere.
 
 ### Normalized action
 

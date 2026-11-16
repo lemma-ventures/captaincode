@@ -23,7 +23,7 @@ func cmdBlackbox(args []string) {
 
 func runBlackbox(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|status ...")
+		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|pilot|status ...")
 	}
 	switch args[0] {
 	case "check":
@@ -36,8 +36,10 @@ func runBlackbox(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runBlackboxHook(args[1:], stdin, stdout)
 	case "status":
 		return runBlackboxStatus(args[1:], stdout)
+	case "pilot":
+		return runBlackboxPilot(args[1:], stdout)
 	default:
-		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|status ...")
+		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|pilot|status ...")
 	}
 }
 
