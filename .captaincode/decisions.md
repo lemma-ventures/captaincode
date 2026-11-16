@@ -50,3 +50,18 @@ keep the entries from both sides.
 - Question: BB5 has a signed rule store and a green 1,000-action benign review. Which hosts and rule categories may turn on enforcement?
 - Answered: 2026-11-16
 - Choice: a: This host first - enforce exact-package and local-path critical rules on the development Mac after its audit records stay clean; the second Mac stays audit-only until it passes the same review
+
+## dq-261116-a61645 posted: Next optional roadmap item after P7 step 1
+
+- Posted: 2026-11-16 21:04 UTC
+- Branch: main
+- Question: P7 step 1, the routing dataset export, is delivered. Which item should the next build round take?
+- Context: Step 1 joined decision, class, legs, gate result, repairs, cost and verdict per attempt into a prompt-free file: 3,755 rows on this Mac, tests and vet green, no routing change. Its steps 2 and 3 say in the roadmap that they need your go: step 2 splits that file by date and scores the current hand priors and director. The fleet queue's next four items are host runs only you can do, and the two owner decisions are closed. Everything else in the build queue is blocked, waiting, deferred or proposed.
+- Needed before: the next build round
+- Record: `docs/ROADMAP.md`
+- Options:
+  - a (recommended): P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
+  - b: P1 trailing statistics - Two-week default window with minimum-sample fallback for the statistics that rank legs; this touches routing inputs
+  - c: P4 needs-you inbox - Surface only the turns that wait on the user: endpoint, CLI and TUI count
+  - d: Hold - No build round until you run the fleet host gates: clean macOS account, Linux user manager, two-host first prompt
+- Why a: It scores the data we now hold, spends nothing and changes no route.
