@@ -74,11 +74,15 @@ const GATED_TOOLS = new Set(["bash", "write", "edit", "patch", "multiedit", "web
 // observed_after_execution) and NEVER refuses; enforcement is a later, gated
 // phase. `captain blackbox hook` loads no credentials and writes one bounded
 // line to the private security stream. CAPTAIN_BLACKBOX=off skips the spawn.
+// In enforce mode the hook's JSON can refuse the action; the refusal throws
+// here, before the tool runs, so no side effect happens. A hook that crashes,
+// times out or prints nothing decides nothing: the existing controls decide,
+// and the gap stays visible in `captain blackbox status`.
 const BLACKBOX = (process.env["CAPTAIN_BLACKBOX"] ?? "off").toLowerCase()
 
-function blackboxAudit(tool: string, args: any, session: string | undefined, phase: "pre" | "post", cwd: string, output = ""): void {
+function blackboxScreen(tool: string, args: any, session: string | undefined, phase: "pre" | "post", cwd: string, output = ""): { refuse?: boolean; reason?: string } | null {
   try {
-    const r = spawnSync(CAPTAIN_BIN, ["blackbox", "hook", "--mode", "audit"], {
+    const r = spawnSync(CAPTAIN_BIN, ["blackbox", "hook", "--mode", BLACKBOX], {
       input: JSON.stringify({ tool, args: args ?? {}, cwd, session: session ?? "", phase, output: output.slice(0, 16 * 1024) }),
       encoding: "utf8",
       timeout: 2_000,
@@ -89,9 +93,13 @@ function blackboxAudit(tool: string, args: any, session: string | undefined, pha
     })
     if (r.status !== 0) {
       log(`blackbox hook phase ${phase} failed (status ${r.status})`)
+      return null
     }
+    const parsed = JSON.parse(r.stdout)
+    return typeof parsed === "object" && parsed !== null ? parsed : null
   } catch {
     log(`blackbox hook phase ${phase} did not run - the tool is unaffected`)
+    return null
   }
 }
 
@@ -625,11 +633,16 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
       // that tells the model to fetch "…?k=[[secret:…]]" must not get the key.
       if (!URL_TOOLS.has(call.tool)) output.args = restoreArgs(output.args)
     }
-    // The Blackbox audit hook runs on the RESTORED arguments - the command
+    // The Blackbox screening hook runs on the RESTORED arguments - the command
     // that will actually run - after restoration and before the gate and the
     // jail wrap, and regardless of the gate's mode or the routing plugin.
-    if (BLACKBOX === "audit") {
-      blackboxAudit(call.tool, output?.args, call.sessionID, "pre", input?.directory ?? process.env["CAPTAIN_CWD"] ?? "")
+    // In enforce mode a refusal throws here: the tool never runs.
+    if (BLACKBOX !== "off") {
+      const screen = blackboxScreen(call.tool, output?.args, call.sessionID, "pre", input?.directory ?? process.env["CAPTAIN_CWD"] ?? "")
+      if (BLACKBOX === "enforce" && screen?.refuse) {
+        log(`blackbox refused ${call.tool}`)
+        throw new Error(screen.reason ?? "captain blackbox refused this action")
+      }
     }
     // The gate runs on the RESTORED arguments: the command that will actually
     // run is the one worth screening, not the masked copy the model wrote.
@@ -656,9 +669,10 @@ export const server = async (input?: { client?: any; directory?: string }) => ({
     }
     // Post-tool observation, separate from the pre-tool decision: what the
     // screening saw in the (already masked) output is recorded as
-    // observed_after_execution, never as prevention.
-    if (BLACKBOX === "audit") {
-      blackboxAudit(input.tool, undefined, input.sessionID, "post", process.env["CAPTAIN_CWD"] ?? "", output.output)
+    // observed_after_execution, never as prevention. A post refusal decides
+    // nothing: the action already ran.
+    if (BLACKBOX !== "off") {
+      blackboxScreen(input.tool, undefined, input.sessionID, "post", process.env["CAPTAIN_CWD"] ?? "", output.output)
     }
   },
 })

@@ -12,7 +12,8 @@ import (
 // The hook path between the opencode plugin and the evaluator (BB2). The
 // plugin sends the final restored tool arguments; this file normalizes them,
 // evaluates against the configured snapshot, and returns the record the
-// caller files. Nothing here can refuse a tool: enforcement is BB5.
+// caller files. Nothing here refuses a tool: the enforce-mode decision is
+// blackbox_enforce.go and the caller applies it.
 
 // BlackboxKindForTool maps a host tool name to its semantic kind. Known tools
 // keep their original name in the action; an unknown tool is an explicit

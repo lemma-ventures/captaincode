@@ -302,9 +302,11 @@ event from standard input (`tool`, `args`, `cwd`, `session`, `phase`,
 evaluates against the snapshot at `$CAPTAIN_BLACKBOX_SNAPSHOT` or
 `~/.config/captain/blackbox-snapshot.json`, and files one bounded record in
 `~/.captaincode/security.jsonl` (`CAPTAIN_BLACKBOX_STATE` moves it). Like
-`check`, it runs before Captain loads provider credentials. It never refuses:
-`enforce` is rejected as unbuilt, every screened event exits 0, and a failed
-record write reports `degraded` on stdout without failing the tool.
+`check`, it runs before Captain loads provider credentials. In audit mode it
+never refuses: every screened event exits 0, and a failed record write
+reports `degraded` on stdout without failing the tool. Enforce mode (BB5,
+delivered 16 November 2026) additionally reports a refusal in its JSON
+output; see the BB5 section below.
 
 The plugin hook in `plugin/captain.ts` calls it after secret restoration and
 before the gate and jail wrapping, on the arguments that will actually run,
@@ -437,6 +439,64 @@ pass. No provider credential, external model, live service or dependency changed
 BB4 is complete for host acceptance. Nothing here refuses an action, and the
 host coverage line must not be read as enforcement until BB5. Authenticated
 snapshot health remains BB3.
+
+#### BB5 selective enforcement delivered, step 1 (16 November 2026)
+
+`CAPTAIN_BLACKBOX=enforce` is now a built mode. The decision engine is
+`pkg/captaincode/blackbox_enforce.go`; both hosts share it.
+
+- Only exact package rules and explicit local path rules can refuse, only at
+  `critical` severity, and only when the snapshot selected that category.
+  Pattern, secret and heuristic findings are recorded and never block.
+- A required check that cannot run - unreadable snapshot, evaluation error,
+  or an incomplete required category - refuses with
+  `security_check_unavailable`, never a claim of malicious intent. A category
+  the snapshot did not select is not required and does not refuse.
+- A post-tool observation never refuses: the action already ran.
+- The decision is a pure function of the phase, the result and the overrides.
+  The same event screened twice refuses twice; there is no retry path to a
+  different answer inside one snapshot generation.
+- Operator overrides live in `~/.config/captain/blackbox-overrides.json`
+  (`CAPTAIN_BLACKBOX_OVERRIDES` moves it): rule id, workspace id, expiry,
+  reason; at most 32 entries, each at most 24 hours ahead, mode 0600, no
+  symlinks, no unknown fields, no trailing JSON. A file that cannot be
+  trusted grants nothing: every would-block refusal stands. An active
+  override records `overridden` with the rule and reason; it never widens
+  any other control and one rule's override never covers another rule.
+- Records carry the enforce dispositions `blocked`,
+  `security_check_unavailable` and `overridden`; audit records keep
+  `would_block`. `captain blackbox status` reports all of them. The reason
+  line names the rule id or the unavailable check; no command, path or
+  secret reaches a record.
+- The opencode plugin passes the real mode to
+  `captain blackbox hook` and throws on a pre-tool refusal before the tool
+  runs, so no side effect happens. A hook that crashes, times out or prints
+  nothing decides nothing: the existing controls decide, and the gap stays
+  visible in the status view. A post-tool refusal is ignored by design.
+- The Claude composition path (`captain redact --hook`) applies the same
+  decision and answers Claude Code with `permissionDecision: deny`, so the
+  action never executes. A sent-turn denial runs nothing and files nothing,
+  as before.
+
+Evidence, Apple M3 Max, Go 1.27.3: the policy table, incomplete-required,
+override and guarded-loader tests pass in `pkg/captaincode`
+(`blackbox_enforce_test.go`), the hook refuses a critical package match and
+an unavailable check, keeps advisory findings and post observations
+non-refusing, and honors a scoped override in `cmd/captaincode`
+(`blackbox_hook_test.go`); the plugin throws on an enforce refusal before
+the tool runs, ignores it in audit mode and after execution, and survives a
+crashing hook (`plugin/blackbox.test.ts`, 33 plugin tests). Full `pkg` and
+`cmd` suites, `go vet ./...`, `gofmt -l` and `go build ./...` pass.
+`BenchmarkDecideBlackboxEnforcement` measured 190.6-345.8 ns per decision
+over three 300-run samples with eight advisory findings and one override.
+
+Still owed for BB5 rollout: the 1,000-benign-action pilot review across both
+hosts and two disposable workspaces with zero unexplained would-block results,
+the operator's host and category selection before any enforcement is enabled
+anywhere, live refusal evidence in the combined fixture runtime (as BB2 and
+BB4 did), and the worker-containment check that a worker cannot edit the
+override file or the mode. Enforcement stays off by default; nothing in this
+change enables it anywhere.
 
 ### Normalized action
 

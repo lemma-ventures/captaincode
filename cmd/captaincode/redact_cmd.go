@@ -186,7 +186,11 @@ func redactHookRun(in claudeHookInput, out io.Writer) (captaincode.BlackboxActio
 			var action captaincode.BlackboxAction
 			screened := false
 			if input := hookUpdatedInput(decided); input != nil {
-				action, screened = auditClaudeHook(in.ToolName, in.SessionID, hookCwd, input)
+				var deny map[string]any
+				action, screened, deny = auditClaudeHook(in.ToolName, in.SessionID, hookCwd, input)
+				if deny != nil {
+					decided = deny
+				}
 			}
 			writeJSONTo(out, decided)
 			return action, screened
@@ -198,7 +202,11 @@ func redactHookRun(in claudeHookInput, out io.Writer) (captaincode.BlackboxActio
 	// 2026-10-06). Nothing rewrites this input, so Claude runs it as it
 	// stands - and so it is screened as it stands.
 	if in.ToolName == "WebFetch" {
-		return auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
+		action, screened, deny := auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
+		if deny != nil {
+			writeJSONTo(out, deny)
+		}
+		return action, screened
 	}
 	// Refused: the action never executes, so there is no executed input to
 	// screen and no record is filed.
@@ -214,7 +222,12 @@ func redactHookRun(in claudeHookInput, out io.Writer) (captaincode.BlackboxActio
 		}
 	}
 	changed := restoreInput(in.ToolInput)
-	action, screened := auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
+	action, screened, deny := auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
+	if deny != nil {
+		// Enforce mode refused: the action never executes.
+		writeJSONTo(out, deny)
+		return action, screened
+	}
 	if changed == 0 {
 		return action, screened // Claude runs what stands: the input screened
 	}

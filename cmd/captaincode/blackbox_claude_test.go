@@ -317,7 +317,7 @@ func BenchmarkClaudeScreenHook(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := screenClaudeToolInput("bash", "ses-bench", "/home/user/project", input); err != nil {
+		if _, _, _, err := screenClaudeToolInput("bash", "ses-bench", "/home/user/project", input); err != nil {
 			b.Fatal(err)
 		}
 	}

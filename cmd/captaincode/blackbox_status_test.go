@@ -46,7 +46,7 @@ func appendStatusRecord(t testing.TB, record captaincode.BlackboxSecurityRecord)
 	}
 }
 
-// The read half of BB4: hosts, snapshot age, the five dispositions and the
+// The read half of BB4: hosts, snapshot age, the dispositions and the
 // transports that stay uncovered - counts and path-free ids only.
 func setBlackboxAuthorityEnv(t testing.TB, fixture blackboxExportCommandFixture) {
 	t.Helper()

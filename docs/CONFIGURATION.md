@@ -259,6 +259,17 @@ secret restoration and before the gate and jail wrap, on the arguments that
 will actually run - independent of the action gate, the routing plugin and
 `CAPTAIN_REDACT`. It is audit-only: findings are recorded, never enforced.
 
+`CAPTAIN_BLACKBOX=enforce` additionally refuses an action before it runs when
+an exact package or explicit path rule matches at critical severity, and
+refuses with `security_check_unavailable` when a required check cannot run.
+Pattern, secret and heuristic findings stay advisory. Operator overrides live
+in `~/.config/captain/blackbox-overrides.json` (`CAPTAIN_BLACKBOX_OVERRIDES`
+moves it): one rule, one workspace, one expiry of at most 24 hours, and a
+reason; mode 0600, no symlinks, and a file that cannot be trusted grants
+nothing. Enforcement is off by default and no rollout is enabled; see the BB5
+section of [the integration plan](AGENT_BLACKBOX_INTEGRATION.md) for the
+remaining rollout gates.
+
 Each screened event becomes one bounded line in `~/.captaincode/security.jsonl`
 (`CAPTAIN_BLACKBOX_STATE` moves it): correlation IDs, coverage, finding
 summaries and a disposition (`evaluated`, `would_block`, `degraded`,

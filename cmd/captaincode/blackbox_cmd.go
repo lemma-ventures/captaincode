@@ -89,19 +89,23 @@ type blackboxHookOutput struct {
 	Disposition string `json:"disposition"`
 	EventID     string `json:"event_id,omitempty"`
 	Findings    int    `json:"finding_count"`
+	Refuse      bool   `json:"refuse,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
-// runBlackboxHook screens one tool event in audit mode and files a private
-// security record. It never refuses: enforcement is BB5 and is not built. It
-// exits 0 for every screened event, including degraded ones, so an audit
-// problem can never break a tool call.
+// runBlackboxHook screens one tool event and files a private security record.
+// Audit mode never refuses: every screened event exits 0, so an audit problem
+// can never break a tool call. Enforce mode (BB5) additionally refuses the
+// action for an eligible trusted rule match or an unavailable required check:
+// the refusal is a decision, not an error, and it is reported in the JSON
+// output for the host to act on before any side effect.
 func runBlackboxHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	flags := flag.NewFlagSet("blackbox hook", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	snapshotPath := flags.String("snapshot", "", "synthetic rule snapshot")
-	modeFlag := flags.String("mode", "", "audit mode (audit)")
+	modeFlag := flags.String("mode", "", "blackbox mode (audit, enforce)")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
-		return fmt.Errorf("usage: captain blackbox hook [--snapshot <file>] [--mode audit] < event.json")
+		return fmt.Errorf("usage: captain blackbox hook [--snapshot <file>] [--mode audit|enforce] < event.json")
 	}
 	mode := *modeFlag
 	if mode == "" {
@@ -113,12 +117,11 @@ func runBlackboxHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	switch strings.ToLower(mode) {
 	case "off":
 		return writeBlackboxHookOutput(stdout, blackboxHookOutput{Status: "disabled"})
-	case "audit":
-	case "enforce":
-		return fmt.Errorf("enforcement is not implemented (BB5); use audit")
+	case "audit", "enforce":
 	default:
 		return fmt.Errorf("unknown blackbox mode %q", mode)
 	}
+	mode = strings.ToLower(mode)
 	var input blackboxHookInput
 	decoder := json.NewDecoder(io.LimitReader(stdin, captaincode.BlackboxMaxActionBytes+1))
 	decoder.DisallowUnknownFields()
@@ -143,16 +146,32 @@ func runBlackboxHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	started := time.Now()
 	action := captaincode.PrepareBlackboxHookAction("opencode", phase, input.Tool, input.Args, input.Output, input.Cwd)
 	result := captaincode.EvaluateBlackboxHook(action, blackboxSnapshotPath(*snapshotPath))
-	record := captaincode.FinishBlackboxHookRecord(action, result, "audit", input.Session, started)
+	record := captaincode.FinishBlackboxHookRecord(action, result, mode, input.Session, started)
+
+	var decision captaincode.BlackboxEnforceDecision
+	if mode == "enforce" {
+		now := time.Now()
+		overrides, overrideErr := captaincode.LoadBlackboxOverrides(captaincode.BlackboxOverridesPath(), now)
+		if overrideErr != nil {
+			// A file that cannot be trusted grants nothing: every
+			// would-block refusal stands.
+			fmt.Fprintf(os.Stderr, "captain: blackbox overrides: %v\n", overrideErr)
+			overrides = nil
+		}
+		decision = captaincode.DecideBlackboxEnforcement(phase, result, overrides, action.WorkspaceID, now)
+		captaincode.ApplyBlackboxEnforcement(&record, decision)
+	}
 
 	writeErr := captaincode.AppendBlackboxSecurityRecord(record)
-	status := blackboxHookOutput{Status: record.Status, Disposition: record.Disposition, EventID: record.EventID, Findings: record.FindingCount}
+	status := blackboxHookOutput{Status: record.Status, Disposition: record.Disposition, EventID: record.EventID, Findings: record.FindingCount, Refuse: decision.Refuse, Reason: decision.Reason}
 	if writeErr != nil {
 		// The screening happened; its record did not. Say so, never fail.
 		fmt.Fprintf(os.Stderr, "captain: blackbox security record: %v\n", writeErr)
 		status.Status = "degraded"
 		status.Disposition = "degraded"
 		status.EventID = ""
+		// A refusal stands even when its record could not be written:
+		// losing the record must not lose the refusal.
 	}
 	return writeBlackboxHookOutput(stdout, status)
 }

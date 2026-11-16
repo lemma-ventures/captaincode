@@ -21,6 +21,13 @@ cat >> "$CAPTAIN_HOOK_LOG"
 echo '{"status":"complete","disposition":"evaluated","event_id":"bbx_test","finding_count":0}'
 `
 
+const REFUSING_CAPTAIN = `#!/bin/sh
+# records what the plugin sent, refuses like an enforce-mode rule match
+cat >> "$CAPTAIN_HOOK_LOG"
+printf '\\n' >> "$CAPTAIN_HOOK_LOG"
+echo '{"status":"complete","disposition":"blocked","finding_count":1,"refuse":true,"reason":"blackbox_rule_match:pkg-exact"}'
+`
+
 async function loadServer() {
   // A query string per load: the plugin reads its env at import time, so each
   // test needs a fresh module with its own snapshot.
@@ -129,5 +136,48 @@ describe("the blackbox audit hook (BB2)", () => {
     const server = await loadServer()
     await server["tool.execute.before"]({ tool: "bash", sessionID: "ses-1" }, { args: { command: "ls" } })
     expect(readHookEvents().length).toBe(1)
+  })
+})
+
+describe("the blackbox enforce refusal (BB5)", () => {
+  test("an enforce refusal throws before the tool runs, and a retry meets the same refusal", async () => {
+    // The fake captain refuses every pre screening: the same event must
+    // refuse twice, so a worker cannot retry its way past it.
+    await writeFile(fakeBin, REFUSING_CAPTAIN, { mode: 0o700 })
+    process.env["CAPTAIN_BLACKBOX"] = "enforce"
+    const server = await loadServer()
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(
+        server["tool.execute.before"]({ tool: "bash", sessionID: "ses-1" }, { args: { command: "npm install example-package@1.2.3" } }),
+      ).rejects.toThrow("blackbox_rule_match:pkg-exact")
+    }
+    const events = readHookEvents()
+    expect(events.length).toBe(2)
+    expect(events[0].args.command).toBe("npm install example-package@1.2.3")
+  })
+
+  test("a post-tool observation never refuses, whatever the hook says", async () => {
+    await writeFile(fakeBin, REFUSING_CAPTAIN, { mode: 0o700 })
+    process.env["CAPTAIN_BLACKBOX"] = "enforce"
+    const server = await loadServer()
+    await expect(server["tool.execute.after"]({ tool: "bash" }, { output: "text" })).resolves.toBeUndefined()
+  })
+
+  test("a refusal is honored in enforce mode only", async () => {
+    await writeFile(fakeBin, REFUSING_CAPTAIN, { mode: 0o700 })
+    process.env["CAPTAIN_BLACKBOX"] = "audit"
+    const server = await loadServer()
+    await expect(
+      server["tool.execute.before"]({ tool: "bash", sessionID: "ses-1" }, { args: { command: "ls" } }),
+    ).resolves.toBeUndefined()
+  })
+
+  test("a hook that crashes or says nothing decides nothing", async () => {
+    await writeFile(fakeBin, "#!/bin/sh\nexit 3\n", { mode: 0o700 })
+    process.env["CAPTAIN_BLACKBOX"] = "enforce"
+    const server = await loadServer()
+    await expect(
+      server["tool.execute.before"]({ tool: "bash", sessionID: "ses-1" }, { args: { command: "ls" } }),
+    ).resolves.toBeUndefined()
   })
 })

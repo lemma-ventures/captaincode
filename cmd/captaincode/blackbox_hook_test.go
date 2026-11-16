@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
@@ -128,8 +129,150 @@ func TestBlackboxHookModeOffAndEnforceRefused(t *testing.T) {
 	if _, err := os.Stat(blackboxHookState(t, dir)); !os.IsNotExist(err) {
 		t.Fatal("off mode must write no record")
 	}
-	if err := runBlackbox([]string{"hook", "--mode", "enforce"}, strings.NewReader(`{"tool":"bash"}`), &stdout); err == nil {
-		t.Fatal("enforce must be refused: it is BB5 and not built")
+	if err := runBlackbox([]string{"hook", "--mode", "enforce"}, strings.NewReader(`{"tool":"bash"}`), &stdout); err != nil {
+		t.Fatalf("enforce is built (BB5): %v", err)
+	}
+}
+
+func TestBlackboxHookEnforceRefusesRuleMatch(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	state := blackboxHookState(t, dir)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", state)
+	snapshot := blackboxHookSnapshot(t, dir)
+	input := `{"tool":"bash","cwd":"/Users/x/repo","session":"ses-e1","phase":"pre","args":{"command":"npm install example-package@1.2.3"}}`
+	run := func() blackboxHookOutput {
+		t.Helper()
+		var stdout bytes.Buffer
+		if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", snapshot}, strings.NewReader(input), &stdout); err != nil {
+			t.Fatalf("hook: %v", err)
+		}
+		var out blackboxHookOutput
+		if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	first := run()
+	if !first.Refuse || first.Reason != "blackbox_rule_match:pkg-exact" || first.Disposition != "blocked" {
+		t.Fatalf("first = %+v - an enforce match must refuse", first)
+	}
+	// A retry of the same action meets the same refusal: the decision is a
+	// pure function of the event and the snapshot, so there is no bypass.
+	second := run()
+	if !second.Refuse || second.Reason != "blackbox_rule_match:pkg-exact" {
+		t.Fatalf("second = %+v - a retry must meet the same refusal", second)
+	}
+	records, _, err := captaincode.ReadBlackboxSecurityRecords(state)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("read: %v n=%d", err, len(records))
+	}
+	for _, record := range records {
+		if record.Disposition != "blocked" || record.Mode != "enforce" {
+			t.Fatalf("record = %+v", record)
+		}
+		if strings.Contains(string(marshalHookJSON(t, record)), "example-package") {
+			t.Fatal("the record must not carry the screened command's content")
+		}
+	}
+}
+
+func TestBlackboxHookEnforceUnavailableFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", blackboxHookState(t, dir))
+	var stdout bytes.Buffer
+	// A missing snapshot is a required check that cannot run: refuse as
+	// unavailable, never as malicious.
+	input := `{"tool":"bash","session":"ses-e2","phase":"pre","args":{"command":"ls"}}`
+	if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", filepath.Join(dir, "none.json")}, strings.NewReader(input), &stdout); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	var out blackboxHookOutput
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.Refuse || out.Reason != "security_check_unavailable" {
+		t.Fatalf("out = %+v - an unavailable required check must refuse", out)
+	}
+}
+
+func TestBlackboxHookEnforceAdvisoryFindingsDoNotRefuse(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	state := blackboxHookState(t, dir)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", state)
+	// The pattern rule is heuristic and warning-severity: recorded, never
+	// blocking, even in enforce mode.
+	input := `{"tool":"bash","session":"ses-e3","phase":"pre","args":{"command":"echo dangerous-example"}}`
+	var stdout bytes.Buffer
+	if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", blackboxHookSnapshot(t, dir)}, strings.NewReader(input), &stdout); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	var out blackboxHookOutput
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Refuse {
+		t.Fatalf("out = %+v - an advisory finding must not refuse", out)
+	}
+	// Post phase never refuses either: the action already ran.
+	post := `{"tool":"bash","session":"ses-e4","phase":"post","output":"npm install example-package@1.2.3 done"}`
+	stdout.Reset()
+	if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", blackboxHookSnapshot(t, dir)}, strings.NewReader(post), &stdout); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	var postOut blackboxHookOutput
+	json.Unmarshal(stdout.Bytes(), &postOut)
+	if postOut.Refuse || postOut.Disposition != "observed_after_execution" {
+		t.Fatalf("postOut = %+v", postOut)
+	}
+}
+
+func TestBlackboxHookEnforceOverrideSuppressesOneRule(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	state := blackboxHookState(t, dir)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", state)
+	workspace := captaincode.BlackboxWorkspaceID("/Users/x/repo")
+	expires := time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
+	overrides := filepath.Join(dir, "overrides.json")
+	t.Setenv("CAPTAIN_BLACKBOX_OVERRIDES", overrides)
+	body, err := json.Marshal([]captaincode.BlackboxOverride{
+		{RuleID: "pkg-exact", WorkspaceID: workspace, Expires: expires, Reason: "operator reviewed the fixture rule"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(overrides, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"tool":"bash","cwd":"/Users/x/repo","session":"ses-e5","phase":"pre","args":{"command":"npm install example-package@1.2.3"}}`
+	var stdout bytes.Buffer
+	if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", blackboxHookSnapshot(t, dir)}, strings.NewReader(input), &stdout); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	var out blackboxHookOutput
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Refuse || out.Disposition != "overridden" {
+		t.Fatalf("out = %+v - an active override suppresses the refusal", out)
+	}
+	// An override scoped to another workspace grants nothing here.
+	other := captaincode.BlackboxWorkspaceID("/Users/x/other")
+	otherBody, err := json.Marshal([]captaincode.BlackboxOverride{{RuleID: "pkg-exact", WorkspaceID: other, Expires: expires, Reason: "other workspace"}})
+	if err := os.WriteFile(overrides, otherBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := runBlackbox([]string{"hook", "--mode", "enforce", "--snapshot", blackboxHookSnapshot(t, dir)}, strings.NewReader(input), &stdout); err != nil {
+		t.Fatalf("hook: %v", err)
+	}
+	var out2 blackboxHookOutput
+	json.Unmarshal(stdout.Bytes(), &out2)
+	if !out2.Refuse || out2.Disposition != "blocked" {
+		t.Fatalf("out2 = %+v - a foreign-workspace override must not suppress", out2)
 	}
 }
 

@@ -23,10 +23,13 @@ import (
 // reads. The stream rotates at 1 MiB, so this bounds the work.
 const blackboxStatusMaxRecords = 500
 
-// blackboxDispositions are the five states the workspace view distinguishes.
+// blackboxDispositions are the states the workspace view distinguishes.
 // `not_covered` counts records that carry a not_covered coverage entry; it is
 // the only one the writer cannot produce as a record disposition itself.
+// `blocked`, `security_check_unavailable` and `overridden` are enforce-mode
+// dispositions (BB5); audit mode keeps would_block.
 var blackboxDispositions = []string{
+	"blocked", "security_check_unavailable", "overridden",
 	"would_block", "observed_after_execution", "evaluated", "degraded", "not_covered",
 }
 
@@ -73,7 +76,7 @@ func collectBlackboxStatus() blackboxStatus {
 	case "audit", "off", "shadow":
 		status.ModeValid = true
 	}
-	status.ClaudeHook = claudeBlackboxMode() == "audit" && captaincode.ClaudeHookInstalled("captain redact --hook")
+	status.ClaudeHook = claudeBlackboxMode() != "" && captaincode.ClaudeHookInstalled("captain redact --hook")
 
 	status.SnapshotPath = blackboxSnapshotPath("")
 	if file, err := os.Open(status.SnapshotPath); err == nil {
