@@ -106,6 +106,11 @@ complete. BB5 remains gated on enforcement evidence. N1/N2/N4/N5 are marked
 `needs you`, W1 waits on seven days of turns, and
 P1–P7 are proposals. No buildable roadmap row is marked `next`: a round takes a
 P-row after the user picks one, or the fleet queue's F5 after its gates.
+The choice is posted as decision `dq-261116-9b3a84` (P7 step 1 recommended).
+The committed tree at `25e600c` verified clean on 16 November 2026:
+`go vet ./...` is clean, `gofmt -l pkg cmd` prints nothing, and both full
+suites pass with `go test -count=1` (pkg 236.7 s, cmd 349.4 s) on a tree with
+no uncommitted changes. The earliest W1 readout is 22 November 2026.
 
 **Rules for a `/repeat` round.**
 
