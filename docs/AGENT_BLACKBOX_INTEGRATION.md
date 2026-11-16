@@ -547,6 +547,50 @@ operator's host and category selection is still owed before any enforcement
 is enabled anywhere. Enforcement stays off by default; nothing in these
 changes enables it anywhere.
 
+#### BB5 local path policy delivered (16 November 2026)
+
+`captain blackbox export --paths <policy.json>` now carries the operator's
+own path rules into a signed snapshot: `rules.paths`, `rule_counts`
+`protected_path`, and `rules.categories.protected_path` set. Without the flag
+the category stays disabled, exactly as before. This is the missing input for
+the scope in `dq-261116-0cd13b` (exact package and local path rules): upstream
+has no path rules, so the local-path half can only come from local
+configuration.
+
+The policy file is one protected local file: no symlink, mode `0600`, one hard
+link, bounded at 256 KiB and 256 rules. `DecodeBlackboxPathPolicy` rejects an
+empty policy, an unknown field, trailing data, no array, a bad kind or
+severity, an unsafe or duplicate id, a blank path, a path over 4 KiB, a null
+byte and an invalid glob. The export applies the `--max-rules` bound to all
+three rule sets, so a policy cannot slip past the import scope.
+
+The completeness claim follows the plan in `BLACKBOX_SNAPSHOT_CONTRACT.md`:
+while upstream's `fileaccess` source sits in `manifest.omitted` the sender
+selects `protected_path` but does not claim it complete. When nothing
+path-shaped is omitted the claim is made. The receiver's rules are unchanged.
+
+**Evidence (16 November 2026, this Mac, throwaway key and store).** A local
+export from the checked-in upstream fixture with a two-rule policy accepted
+generation 1 (`local-paths-pilot-1`, `path_rules 2`, rule counts `dependency 2,
+protected_path 2, pattern 1`, categories all selected). Both 1,000-action
+reviews then passed against that store: enforce stopped 0 actions in 189.5 ms
+(median 0.152 ms, p95 0.194 ms, max 23.725 ms) and audit stopped 0 in 197.7 ms
+(median 0.155 ms, p95 0.210 ms, max 25.044 ms), each writing exactly 1,000
+records with 834 `evaluated` and 166 `observed_after_execution`. Those
+timings cover a one-pattern fixture store and are not comparable with the
+103-pattern production review. Five probes through the real hook: a critical
+protected path is `blocked` (`blackbox_rule_match:path:fixture-secrets`), an
+ordinary workspace path is `evaluated`, a critical exact package matches
+through the dependency category, the same path in audit mode is `would_block`,
+and an unknown tool is `security_check_unavailable`. The main suites, focused
+race checks, `go vet ./...` and `gofmt -l cmd pkg` pass on this change.
+
+**What this does not do.** The store the development Mac runs on
+(`pilot-20261116-1`) still carries zero path rules, because it can only be
+renewed from a preserved upstream cache and that cache is gone with its
+container. The operator's own policy file (which local paths to protect) is
+not written here: that is an explicit operator choice under the rule below.
+
 ### Normalized action
 
 Carry these fields independently:

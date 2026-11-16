@@ -21,6 +21,10 @@ type BlackboxImportOptions struct {
 	Revision   string
 	Ecosystems []string
 	MaxRules   int
+	// LocalPaths is the operator's local protected-path policy. Upstream has
+	// no path rules, so this input is what enables the protected_path
+	// category. It is validated with the snapshot's own path rule checks.
+	LocalPaths []BlackboxPathRule
 }
 
 type BlackboxUpstreamImport struct {
@@ -234,12 +238,16 @@ func ImportBlackboxUpstreamCache(reader io.Reader, options BlackboxImportOptions
 			Severity: strings.TrimSpace(row.Severity),
 		})
 	}
-	if len(packages)+len(patterns) > maxRules {
+	if len(packages)+len(patterns)+len(options.LocalPaths) > maxRules {
 		return BlackboxUpstreamImport{}, fmt.Errorf("import would carry more than %d rules; narrow the import scope", maxRules)
 	}
+	// The local policy is the only source of path rules: with no rules the
+	// category stays disabled (scope, not an omission), and with rules it is
+	// selected for every screening.
+	paths := append([]BlackboxPathRule{}, options.LocalPaths...)
 	categories := map[string]bool{
 		"dependency":      len(packages) > 0,
-		"protected_path":  false,
+		"protected_path":  len(paths) > 0,
 		"secret_exposure": true,
 		"pattern":         len(patterns) > 0,
 	}
@@ -250,6 +258,7 @@ func ImportBlackboxUpstreamCache(reader io.Reader, options BlackboxImportOptions
 		Revision:   revision,
 		Categories: categories,
 		Packages:   packages,
+		Paths:      paths,
 		Patterns:   patterns,
 	}
 	if err := validateBlackboxSnapshot(&snapshot, BlackboxExportSource); err != nil {
@@ -261,6 +270,12 @@ func ImportBlackboxUpstreamCache(reader io.Reader, options BlackboxImportOptions
 	}
 	if categories["pattern"] && !blackboxOmitsPrefix(omitted, "pattern:") {
 		complete = append(complete, "pattern")
+	}
+	// The local policy is complete only when nothing path-shaped was dropped:
+	// an omitted `fileaccess` source has no schema 1 mapping, so the claim is
+	// withheld for that refresh instead of overstating coverage.
+	if categories["protected_path"] && !blackboxOmissionDropsPathMaterial(omitted) {
+		complete = append(complete, "protected_path")
 	}
 	complete = append(complete, "secret_exposure")
 	revocations := make([]string, 0, len(revoked))

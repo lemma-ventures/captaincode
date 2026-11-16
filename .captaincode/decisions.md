@@ -70,3 +70,16 @@ keep the entries from both sides.
 
 - Answered: 2026-11-16 21:26 UTC, in galaxy
 - Choice: a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
+
+## dq-261117-bb5-paths (dq-261116-f9c709) posted: Which local paths become critical path rules
+
+- Posted: 2026-11-16 23:10 UTC
+- Branch: main
+- Question: Which directories should the signed local path policy protect on the development Mac?
+- Context: BB5 enforcement is on with the sender scope 'exact package and local path rules'. Upstream has no path rules, so only LOCAL input can supply them: the export flag --paths now signs one local 0600 policy file (per-directory globs, at most 256 rules) into the snapshot, and the loader rules match the ones the receiver uses. The policy file must live outside git because a mode-0600 requirement makes any checked-in file unusable. Matching a critical path refuses a read or write before it happens; ordinary paths stay evaluated.
+- Needed before: Renewing the pilot snapshot before 23 November 2026, and any expectation that protected_path is signed into production.
+- Record: `docs/ROADMAP.md`
+- Options:
+  - a (recommended): "Locations and secrets - repo checkout roots, the captain config directory, shell and cloud key locations, written as ~/.config/captain/blackbox-paths.json at 0600"
+  - b: "Repositories only - just the checkout roots in that same file; secret material keeps relying on the built-in secret patterns"
+- Why a: It closes the exfiltration path the pattern rules cannot see (an agent reading a credential directory as an ordinary file) at the cost of one small policy file; the review will show any rule that is too broad.

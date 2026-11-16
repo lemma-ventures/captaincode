@@ -20,6 +20,7 @@ type blackboxExportCommandResult struct {
 	Digest     string    `json:"digest"`
 	Generation uint64    `json:"generation"`
 	Sequence   int       `json:"sequence"`
+	PathRules  int       `json:"path_rules"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	Output     string    `json:"output"`
 }
@@ -40,10 +41,11 @@ func runBlackboxExport(args []string, stdout io.Writer) error {
 	generation := flags.Uint64("generation", 0, "authority generation (default store generation plus one)")
 	sequence := flags.Int("sequence", 0, "manifest sequence (default generation)")
 	ttl := flags.Duration("ttl", 24*time.Hour, "snapshot lifetime")
+	policyPath := flags.String("paths", "", "operator protected_path policy file (json array)")
 	ecosystems := flags.String("ecosystems", "", "comma-separated package ecosystems")
 	maxRules := flags.Int("max-rules", 0, "maximum imported rules")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
-		return fmt.Errorf("usage: captain blackbox export --cache <ruleset.json> --id <id> --revision <rev> --key-id <id> --signing-key <file> --trust-root <root> --network <name> --store <dir> --output <new-file> [--generation n --sequence n --ttl 24h --ecosystems npm,pypi --max-rules n]")
+		return fmt.Errorf("usage: captain blackbox export --cache <ruleset.json> --id <id> --revision <rev> --key-id <id> --signing-key <file> --trust-root <root> --network <name> --store <dir> --output <new-file> [--generation n --sequence n --ttl 24h --ecosystems npm,pypi --max-rules n --paths <policy.json>]")
 	}
 	for name, value := range map[string]string{
 		"cache": *cachePath, "id": *envelopeID, "revision": *revision,
@@ -66,7 +68,21 @@ func runBlackboxExport(args []string, stdout io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("read signing key: %w", err)
 	}
+	if len(privateKeyBytes) != ed25519.PrivateKeySize {
+		return fmt.Errorf("private key must contain exactly %d bytes", ed25519.PrivateKeySize)
+	}
 	privateKey := ed25519.PrivateKey(privateKeyBytes)
+	var localPaths []captaincode.BlackboxPathRule
+	if *policyPath != "" {
+		policy, readErr := readBlackboxExportFile(*policyPath, captaincode.BlackboxPathPolicyMaxBytes, true)
+		if readErr != nil {
+			return fmt.Errorf("read path policy: %w", readErr)
+		}
+		localPaths, err = captaincode.DecodeBlackboxPathPolicy(bytes.NewReader(policy))
+		if err != nil {
+			return fmt.Errorf("path policy: %w", err)
+		}
+	}
 	cache, err := readBlackboxExportFile(*cachePath, captaincode.BlackboxUpstreamMaxCacheBytes, false)
 	if err != nil {
 		return fmt.Errorf("read upstream cache: %w", err)
@@ -80,6 +96,7 @@ func runBlackboxExport(args []string, stdout io.Writer) error {
 		Revision:   *revision,
 		Ecosystems: selected,
 		MaxRules:   *maxRules,
+		LocalPaths: localPaths,
 	})
 	if err != nil {
 		return err
@@ -137,7 +154,8 @@ func runBlackboxExport(args []string, stdout io.Writer) error {
 	}
 	result := blackboxExportCommandResult{
 		ID: envelope.ID, Digest: store.Digest(), Generation: *generation,
-		Sequence: *sequence, ExpiresAt: envelope.ExpiresAt, Output: *outputPath,
+		Sequence: *sequence, PathRules: len(envelope.Rules.Paths),
+		ExpiresAt: envelope.ExpiresAt, Output: *outputPath,
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(true)
@@ -147,7 +165,13 @@ func runBlackboxExport(args []string, stdout io.Writer) error {
 	return nil
 }
 
-func readBlackboxExportFile(path string, maximum int, private bool) ([]byte, error) {
+// readBlackboxExportFile reads one protected local file without following a
+// symlink. `protected` files are one regular file with mode 0600 and a single
+// hard link: the signing key and the operator path policy both change what the
+// exporter will vouch for, so neither may be swapped under it. The upstream
+// cache is untrusted input that travels through the signature, so it carries
+// no mode requirement.
+func readBlackboxExportFile(path string, maximum int, protected bool) ([]byte, error) {
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
@@ -160,8 +184,8 @@ func readBlackboxExportFile(path string, maximum int, private bool) ([]byte, err
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("not a regular file")
 	}
-	if private && (info.Mode().Perm() != 0o600 || info.Sys().(*syscall.Stat_t).Nlink != 1) {
-		return nil, fmt.Errorf("private key must be one regular file with mode 0600")
+	if protected && (info.Mode().Perm() != 0o600 || info.Sys().(*syscall.Stat_t).Nlink != 1) {
+		return nil, fmt.Errorf("file must be one regular file with mode 0600")
 	}
 	if info.Size() < 0 || info.Size() > int64(maximum) {
 		return nil, fmt.Errorf("file size exceeds %d bytes", maximum)
@@ -172,9 +196,6 @@ func readBlackboxExportFile(path string, maximum int, private bool) ([]byte, err
 	}
 	if len(body) > maximum {
 		return nil, fmt.Errorf("file size exceeds %d bytes", maximum)
-	}
-	if private && len(body) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("private key must contain exactly %d bytes", ed25519.PrivateKeySize)
 	}
 	return body, nil
 }

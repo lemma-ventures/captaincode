@@ -210,11 +210,8 @@ func validateBlackboxSnapshot(snapshot *BlackboxSnapshot, allowedSources ...stri
 		}
 	}
 	for _, rule := range snapshot.Paths {
-		if !validBlackboxRule(rule.ID, rule.Kind, rule.Severity, seen) || len(rule.Path) == 0 || len(rule.Path) > 4096 || strings.ContainsRune(rule.Path, '\x00') {
-			return fmt.Errorf("path rule is invalid")
-		}
-		if _, err := path.Match(rule.Path, "fixture"); err != nil {
-			return fmt.Errorf("path rule pattern is invalid")
+		if err := validateBlackboxPathRule(rule, seen); err != nil {
+			return err
 		}
 	}
 	snapshot.compiled = make([]*regexp.Regexp, 0, len(snapshot.Patterns))
@@ -242,6 +239,21 @@ func blackboxSourceAllowed(source string, allowedSources []string) bool {
 
 func compileBlackboxPattern(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
+}
+
+// validateBlackboxPathRule accepts one local path rule with the same checks
+// the snapshot receiver applies: a safe id, a finding label for kind and
+// severity, no duplicate id, a bounded glob and no null byte. `path.Match`
+// reports whether the pattern parses, so an unmatched glob is still a valid
+// pattern.
+func validateBlackboxPathRule(rule BlackboxPathRule, seen map[string]bool) error {
+	if !validBlackboxRule(rule.ID, rule.Kind, rule.Severity, seen) || len(rule.Path) == 0 || len(rule.Path) > 4096 || strings.ContainsRune(rule.Path, '\x00') {
+		return fmt.Errorf("path rule is invalid")
+	}
+	if _, err := path.Match(rule.Path, "fixture"); err != nil {
+		return fmt.Errorf("path rule pattern is invalid")
+	}
+	return nil
 }
 
 func validBlackboxRule(id, kind, severity string, seen map[string]bool) bool {

@@ -64,13 +64,25 @@ these mappings:
 | `curator_revoked` and `verified_scope.revoked_identifiers` | `revocations` | Merged, trimmed, sorted and de-duplicated. A row named by a revocation never enters `rules`. |
 | `fileaccess`, `ioc`, `skill`, `escalation`, `community`, `graph_threats`, `kill_list` | `manifest.omitted` | Recorded by source name when the cache is non-empty. None of them has a schema 1 mapping today. |
 
+## Local policy input (`--paths`)
+
+Upstream has no path rules, so `protected_path` comes from one operator file
+outside the cache: `captain blackbox export --paths <policy.json>`.
+
+| Input | Export field | Rule |
+|---|---|---|
+| operator policy file | `rules.paths` | A JSON array of `BlackboxPathRule` objects (`id`, `path`, `kind`, `severity`). Read as one protected local file: no symlink, mode `0600`, one hard link, at most 256 KiB. The same path rule checks the receiver applies run on every entry: safe id, finding labels, no duplicate id, bounded glob that parses, no null byte. The bound of 256 rules and the export's `--max-rules` bound both apply. |
+| the same rules | `rules.categories.protected_path`, `manifest.rule_counts.protected_path` | With at least one rule the export selects the category. With none the category stays disabled, which is scope, not an omission. |
+| the same rules | `manifest.complete_categories` | The sender claims `protected_path` complete only while it recorded no omission with path material. Upstream's `fileaccess` source has no schema 1 mapping and stays in `manifest.omitted`, so while it is present the claim is withheld. When the cache carries no such source the claim is made. This is a sender obligation: the receiver only rejects a claim that its own omissions contradict. |
+
 Rows outside the mapping are recorded as `dependency:<id>` or `pattern:<id>`
 in `manifest.omitted`. A category is complete only when the sender records no
 omission for it: this input marks `secret_exposure` complete (Captain carries
-its own built-in patterns) and leaves `protected_path` disabled, because the
-operator's protected-path policy is local configuration and is not exported by
-upstream. `manifest.omitted` and `manifest.complete_categories` can therefore
-never agree on the same name, and the receiver rejects that contradiction.
+its own built-in patterns) and leaves `protected_path` disabled unless the
+operator supplies `--paths`, because the operator's protected-path policy is
+local configuration and is not exported by upstream. `manifest.omitted` and
+`manifest.complete_categories` can therefore never agree on the same name, and
+the receiver rejects that contradiction.
 
 The test fixture `pkg/captaincode/testdata/blackbox/upstream_ruleset.json` was
 produced by calling upstream's `_serialize` at the pinned revision, so the
@@ -153,7 +165,21 @@ fields, so contract changes need a new schema number.
 - Export command: `captain blackbox export` reads the cache and a protected
   raw Ed25519 key file, accepts the signed envelope into the store, and writes
   the envelope to a new `0600` file. Generation and sequence default to the
-  next store generation. It performs no network call and enables no enforcement.
+  next store generation. `--paths` adds the operator's local protected-path
+  rules to the signed snapshot; the result reports `path_rules`. It performs no
+  network call and enables no enforcement.
+- Local path policy: 16 November 2026. `DecodeBlackboxPathPolicy` reads the
+  operator file with the snapshot parser's bounds. Fourteen decode rejections
+  cover an empty policy, unknown field, trailing data, oversize input, no
+  array, unknown kind, blank severity, unsafe id, blank path, oversize path,
+  null byte, invalid glob, duplicate id and a rule count above 256, plus one
+  bounded-reader case. Three import cases carry the rules into `rules.paths`,
+  select `protected_path`, count them in the manifest, and withhold the
+  completeness claim while an upstream path-shaped source is omitted. One
+  end-to-end signed envelope decides enforcement on a critical path match, on
+  an ordinary path and on an unknown-tool input. Six export command rejections
+  cover a group-readable file, a symlink, an empty policy, an unknown field,
+  an invalid glob and a missing file.
 - Status integration: `captain blackbox status` and
   `GET /v1/blackbox/status?cwd=<folder>` read the accepted store when the
   operator supplies its path and all five trust pins. They report the
