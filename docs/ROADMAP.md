@@ -97,7 +97,7 @@ failure no longer reproduces on this tree.) |
 | P4 | A "needs you" inbox: surface only the turns that wait on the user | TUI | proposed |
 | P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
-| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | step 1 done (16 November 2026, dq-261116-9b3a84): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing. Step 2 has the owner's go (dq-261116-a61645, answered 16 November 2026): split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. Step 3 still needs your go (P1–P6 remain proposed) |
+| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | steps 1–2 done (16 November 2026, dq-261116-9b3a84 and dq-261116-a61645): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing; `captain why --score <file> [--cutoff YYYY-MM-DD]` splits that dataset by date and scores the director's actual routing and the hand priors on acceptance rate and cost per accepted task (9 package tests, 4 command tests, both full package suites, `go vet` and `gofmt` green; a live run on the development Mac scored 3,760 rows). Step 3 (a shadow router) still needs your go (P1–P6 remain proposed) |
 
 BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
 composition, CLI status, concurrent workspace isolation, TUI join and real host
@@ -119,8 +119,13 @@ benign actions ran on this host against that signed store through both hosts and
 disposable workspaces, in enforce and audit, with zero refusals and zero degraded
 screenings, and enforce is now set here (activated 16 November 2026 per `dq-261116-0cd13b`; the snapshot must be renewed before it expires 23 November 2026, or the mode must be unset). The rollout gate `dq-261116-0cd13b` chose this host first. P7 step 1 was delivered 16 November 2026 under `dq-261116-9b3a84` and committed as `e5fe844`: `captain why --export` writes the joined dataset (9 package tests, 4 command tests, `go test ./... -count=1` and `go vet ./...` green; a live export on this Mac wrote 3,755 rows for 3,423 tasks across 2,142 prompt digests, with no unexpected field and an existing file refused). N1/N2/N4/N5 are marked
 `needs you`, W1 waits on seven days of turns, and
-P1–P6 remain proposals. P7 step 2 has the owner's go (dq-261116-a61645,
-answered 16 November 2026) and is the next buildable row; step 3 still needs
+P1–P6 remain proposals. P7 step 2 was delivered 16 November 2026 under
+`dq-261116-a61645`: `captain why --score` splits the exported dataset by
+date and reports the director's and the hand priors' acceptance rate and
+cost per accepted task per split (8 new tests, both full package suites,
+`go vet` and `gofmt` green; a live run scored 3,760 rows, cutoff
+2026-10-31, 89.9% acceptance over 473 labeled tasks in the scoring split).
+Step 3 still needs
 your go, the P-rows are proposals, and F5 waits on the fleet queue's host
 gates.
 The committed tree at `25e600c` verified clean on 16 November 2026:
@@ -3774,6 +3779,46 @@ routing change, and no label invented for a task nobody judged.
 
 Steps 2 and 3 (the held-out split by date, and the shadow router) need your
 go.
+
+**Step 2 delivered 16 November 2026.** `captain why --score <file>` (or
+`-` for stdin; `cmd/captaincode/why_score.go`) reads a dataset that
+`--export` wrote and prints the split report. `--cutoff YYYY-MM-DD` names
+the split date in UTC; without it, the first 70% of the observed time span
+is the scoring split and the rest is held out, and a dataset that spans one
+day or less asks for an explicit date instead of inventing a split. A
+cutoff that empties either side is refused with both row counts. The
+scoring lives in `pkg/captaincode/routing_score.go`: per split, the
+director's overall acceptance rate and cost per accepted task, a per-leg
+table (attempts, tasks, labeled, accepted, acceptance rate, cost per
+accepted task, prior), and the hand priors' concordance with the observed
+acceptance order over judged leg pairs.
+
+Attribution rules, so the numbers mean one thing: a task's verdict is its
+last settled label; per-leg verdicts attribute to the leg of the final
+attempt; a leg's cost is the sum of its own attempt costs on tasks that
+ended accepted, so a repair chain that switched legs charges each leg only
+its own attempts; the split's overall cost uses the task total, with the
+ledger's billed figure as the fallback when no attempt cost exists; and
+pending or regressed labels count as unlabeled. The command refuses every
+flag combination with `--share` or `--export`, a malformed or empty file
+fails with its line number, and nothing in the path writes, calls a model
+or changes routing.
+
+**Step 2 evidence.** Four package tests cover the split boundary, the
+default 70% cutoff (including the one-day refusal), the verdict and cost
+attribution (two legs on one accepted task each pay their own attempt,
+billed fallback, unlabeled tasks count nothing), and the prior concordance
+pairs; four command tests cover the flag refusals, the cutoff parse, the
+file reader's failure modes and the report's split, cost and refusal
+lines. `go test ./pkg/captaincode -count=1` (230.8 s), `go test
+./cmd/captaincode -count=1` (344.1 s), `go vet` and `gofmt` pass. A live
+run on the development Mac scored a fresh 3,760-row export: the default
+cutoff fell on 2026-10-31, the scoring split held 3,022 tasks (89.9%
+acceptance over 473 labeled, $1.9528 per accepted task, priors concordant
+on 35 of 83 judged leg pairs), and the held-out split held 407 tasks with
+only 9 labeled verdicts - the outcome commands landed 15 November, so the
+held-out window's verdict coverage is thin and its figures are indicative,
+not a baseline yet. Step 3 (a shadow router) still needs your go.
 
 ### Blackbox security backlog (21 October 2026)
 

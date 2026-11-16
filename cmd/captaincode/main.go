@@ -720,14 +720,28 @@ func cmdWhy(l *captaincode.Ledger, args []string) {
 	share := flags.Bool("share", false, "frontier share of automatic routing decisions")
 	dayList := flags.String("days", "7,30", "comma-separated trailing windows in days")
 	export := flags.String("export", "", "write the routing dataset to a file, or - for stdout")
+	score := flags.String("score", "", "score an exported routing dataset by date, or - for stdin")
+	cutoff := flags.String("cutoff", "", "split date for --score, YYYY-MM-DD UTC (default: 70% of the span)")
 	if err := flags.Parse(args); err != nil {
 		fatal(err)
 	}
 	if flags.NArg() != 0 {
-		fatal(errors.New("usage: captain why [--share] [--days 7,30] [--export <file>|-]"))
+		fatal(errors.New("usage: captain why [--share] [--days 7,30] [--export <file>|-] [--score <file>|- [--cutoff YYYY-MM-DD]]"))
 	}
-	if err := whyExportFlags(*share, *export); err != nil {
+	if err := whyScoreFlags(*share, *export, *score); err != nil {
 		fatal(err)
+	}
+	if *score != "" {
+		rows, err := readDatasetRows(*score)
+		if err != nil {
+			fatal(err)
+		}
+		at, err := parseScoreCutoff(*cutoff)
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Print(scoreDataset(rows, at))
+		return
 	}
 	if *export != "" {
 		rows, err := exportDataset(l, *export)
