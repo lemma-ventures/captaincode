@@ -266,8 +266,12 @@ summaries and a disposition (`evaluated`, `would_block`, `degraded`,
 values are stored. The stream rotates at 1 MiB. `CAPTAIN_BLACKBOX_SNAPSHOT`
 names the rule snapshot (default
 `~/.config/captain/blackbox-snapshot.json`); a missing or invalid snapshot
-degrades the record instead of claiming a clean screen. See
-[the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
+degrades the record instead of claiming a clean screen. Claude Code uses the
+same switch inside the composed `captain redact --hook`, so the final restored
+input is the input screened. The TUI's **security** row reads only the current
+folder's counts through `GET /v1/blackbox/status?cwd=…`; it labels the mode
+`audit only` and names uncovered transports. `captain blackbox status` prints
+the machine-wide report. See [the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
 
 ### The action gate
 

@@ -53,6 +53,7 @@ type BlackboxSecurityRecord struct {
 	TaskID         string                    `json:"task_id,omitempty"`
 	RunID          string                    `json:"run_id,omitempty"`
 	ToolCallID     string                    `json:"tool_call_id,omitempty"`
+	Host           string                    `json:"host,omitempty"`
 	Phase          string                    `json:"phase"`
 	Tool           string                    `json:"tool"`
 	Mode           string                    `json:"mode"`
@@ -134,6 +135,7 @@ func NewBlackboxSecurityRecord(action BlackboxAction, result BlackboxResult, mod
 	record := BlackboxSecurityRecord{
 		Schema:         1,
 		Time:           time.Now().UTC().Format(time.RFC3339Nano),
+		Host:           action.Host,
 		WorkspaceID:    action.WorkspaceID,
 		SessionID:      action.SessionID,
 		TaskID:         action.TaskID,

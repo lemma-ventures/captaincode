@@ -11,6 +11,7 @@ import { homedir, platform } from "node:os"
 import { join } from "node:path"
 import { hookEpilogue, logo, resumeCommand } from "./epilogue"
 import { openInboxDialog } from "./inbox-dialog"
+import { securityClient, securitySummary, type SecurityStatus } from "./security"
 
 const id = "captain:sidebar"
 
@@ -106,6 +107,7 @@ function View(props: { api: TuiPluginApi }) {
   const [workers, setWorkers] = createSignal<WorkerInfo[]>([])
   const [roster, setRoster] = createSignal<Roster | null>(null)
   const [shield, setShield] = createSignal<Shield | null>(null)
+  const [security, setSecurity] = createSignal<SecurityStatus | null>(null)
   // This folder's held sent prompts and why its inbox is closed: kept on the
   // panel until the user acts, since a toast is gone before they look.
   const [inboxWait, setInboxWait] = createSignal<{ waiting: number; closed: string }>({ waiting: 0, closed: "" })
@@ -285,7 +287,15 @@ function View(props: { api: TuiPluginApi }) {
       if (JSON.stringify(sh) !== JSON.stringify(shield())) setShield(sh)
     } catch {}
   }
+  const pollSecurity = async () => {
+    try {
+      const next = await securityClient(brainURL("/v1/blackbox/status")).read()
+      if (JSON.stringify(next) !== JSON.stringify(security())) setSecurity(next)
+    } catch {}
+  }
   void pollRoster()
+  void pollSecurity()
+  const securityTimer = setInterval(() => void pollSecurity(), 5000)
   const rosterTimer = setInterval(() => void pollRoster(), 60_000)
   // The spinner animates only while a leg is busy; an idle panel must not
   // repaint itself 8 times a second for nothing.
@@ -296,6 +306,7 @@ function View(props: { api: TuiPluginApi }) {
     clearInterval(timer)
     clearInterval(inboxTimer)
     clearInterval(rosterTimer)
+    clearInterval(securityTimer)
     clearInterval(spin)
   })
 
@@ -539,6 +550,14 @@ function View(props: { api: TuiPluginApi }) {
               ? "off (CAPTAIN_REDACT=off)"
               : `${shield()!.secrets + (shield()!.boundary?.secrets ?? 0)} secrets masked · ${shield()!.identity} identity · wire ${shield()!.requests}`}
           </text>
+        </box>
+      </Show>
+
+      <Show when={security() && !offline()}>
+        <box flexDirection="row" gap={1}>
+          <text fg={security()!.snapshot_ok && security()!.mode_valid ? theme().success : theme().warning}>●</text>
+          <text fg={theme().text}>security</text>
+          <text fg={theme().textMuted} wrapMode="word">{securitySummary(security()!)}</text>
         </box>
       </Show>
 

@@ -326,11 +326,117 @@ prompts, outputs or secret values reach the stream. The stream rotates at
 1 MiB to two bounded generations; concurrent processes append one line each
 and a hostile ID is dropped and named as omitted, never recorded.
 
-Still owed for BB2: hook invocation proven inside the combined fixture
-runtime (its workers run tools in fake CLI processes, so a new fixture path
-is needed for a live opencode tool call), the two-workspace live run, and a
-real snapshot from BB3's export contract. The audit findings cannot grant
-permission or block an action: that stays true by construction until BB5.
+Live hook invocation landed 16 November 2026 inside the combined fixture
+runtime. Its workers run tools in fake processes, so the fixture gained a
+second path: a local OpenAI-compatible fixture model answers one `write` tool
+call, and two `opencode serve` processes run it at the same time in two
+workspaces with no provider key and no network path. Each pre call files a
+`would_block` record with a critical protected-path finding from the
+synthetic snapshot; each post call files `observed_after_execution`; both
+records keep one workspace id and session id, the two workspaces keep
+different ids, and no path or output text reaches the stream. The written
+file proves the audit hook never refused the call. The check runs in 78.9 s
+and passed twice; one hook call with a snapshot costs a median 12.34 ms
+(11.13-14.21 ms, n=50) and 152 µs inside the evaluator.
+
+Still owed for BB2: a real snapshot from BB3's export contract. The audit
+findings cannot grant permission or block an action: that stays true by
+construction until BB5.
+
+#### BB4 Claude parity and status delivered 16 November 2026
+
+Claude Code gets one composition path. Its `PreToolUse` hook,
+`captain redact --hook`, already restores placeholders and refuses secret
+files, and it is the only place where the executed input for a Claude tool
+call exists. The screening therefore runs inside it
+(`cmd/captaincode/redact_cmd.go`, helper in `blackbox_claude.go`):
+
+- After `restoreInput`, the screened map is the map handed back as
+  `updatedInput`. When nothing is restored, nothing is handed back and Claude
+  runs the very map that was screened.
+- The sent-turn path screens the `updatedInput` its jail wrap produced; a
+  sent-turn denial runs nothing and files nothing.
+- `WebFetch` rewrites nothing, so that path screens the input as it stands.
+- A redaction refusal runs before any restoration: the action never executes,
+  so no record is filed and no "would_block" is claimed for it.
+
+The switch is `CAPTAIN_BLACKBOX=audit`, the same one the plugin and
+`captain blackbox hook` read. In any other mode the composition marshals no
+input, loads no snapshot, writes no record and costs one environment check. A
+record write that fails prints `captain: blackbox security record: ...` on
+stderr; the action still runs, because audit mode cannot break a tool call.
+Records now carry `host` (`opencode` or `claude`), so the status view can
+separate the transports without guessing.
+
+`captain blackbox status` (`cmd/captaincode/blackbox_status.go`) is the read
+half. It prints the mode and whether it is a known one, whether the composed
+hook is installed in Claude Code's settings
+(`captaincode.ClaudeHookInstalled`), the snapshot's id and source with its age,
+and the record counts. It distinguishes all five display states -
+`would_block`, `observed_after_execution`, `evaluated`, `degraded` and
+`not_covered`, where `not_covered` counts records that carry a `not_covered`
+coverage entry - plus per-host and path-free per-workspace counts over the
+newest 500 records, and names the transports with no pre-execution hook:
+codex-cli, grok-cli, cursor-agent. It reads at most that cap, keeps partial
+lines counted, escapes external ids through `safeField`, and prints no rule
+text, command, path or URL.
+
+Evidence, Apple M3 Max, Go 1.27.3:
+
+- Five hook tests (one with two sub-cases) and four status tests pass. The core one drives
+  `redactHookRun` with an identity stand-in, then asserts the screened
+  `action.Command` equals the `updatedInput` command the hook hands back and
+  that the rule fired only after restoration: the pattern matches the restored
+  form alone, so a `would_block` cannot come from the raw input. The same test
+  asserts the record carries host, tool, session and workspace and holds no
+  command text. Refusal and `off` file nothing; a state file it cannot write
+  still returns the screened action and keeps the tool input untouched; the
+  settings file keeps the user's own hook and gains no second Captain entry.
+- `BenchmarkClaudeScreenHook`: 120.882-148.604 µs per call, 14,362-14,734 B
+  and 115 allocations, three 300-run samples, including snapshot decode and
+  the record append.
+- `BenchmarkBlackboxStatusCollect` (200 records, one snapshot):
+  691.232-727.994 µs per read, about 339 KB and 1,204 allocations.
+- `go vet ./cmd/captaincode ./pkg/captaincode`, `gofmt -l` and
+  `git diff --check` are clean. The full `pkg` and `cmd` suites show the same
+  failures as an exported copy of HEAD on this machine, where `git clone`
+  inside a hardened fixture exits 128 because the Xcode licence is not
+  accepted; no test changed by this work fails.
+
+The workspace read path is now `GET /v1/blackbox/status?cwd=<folder>`. It
+requires an existing absolute folder and returns its path-free workspace id,
+mode, snapshot state, disposition and host counts, uncovered transports, and
+at most 20 recent records. Another folder's records and every filesystem path
+stay out. The TUI sidebar polls that scoped endpoint every five seconds. Its
+`security` row says `audit only`, names would-block, degraded and not-covered
+counts, and lists uncovered transports. `TestClaudeHookTwoWorkspaceIsolation`
+runs two Claude hook calls concurrently and proves that their session and
+workspace identities stay separate.
+
+Full `cmd` and `pkg` suites, focused race checks, `go vet ./...` and `go build
+./...` pass in the offline Linux sandbox. Three 300-run samples of the new
+workspace report with 200 records cost 606.8-614.7 µs. The older machine-wide
+report costs 537.4-557.9 µs in the same run. These are local read benchmarks,
+not model or network measurements.
+
+Live Claude Code host acceptance passed on 16 November 2026.
+`plugin/e2e/claude_blackbox.py` runs the installed host binary against a local
+Anthropic-compatible fixture. The fixture requests one `Write`; the real Claude
+Code process calls the composed Captain hook and a separate user hook, writes
+the requested file, returns the tool result and finishes. One `host: claude`
+record has `disposition=would_block` and two synthetic findings. It carries no
+path or tool content. Audit mode does not refuse the write.
+
+Six consecutive final runs passed in 0.490-0.519 seconds each. The child used
+an empty allowlisted environment with dummy credentials, no external network,
+a scratch-only write sandbox, a 90-second CPU and wall limit, a 1 GiB
+process-group memory monitor, a 32 MiB file limit and 256 file descriptors.
+The fixture avoids DNS resolution during startup. Ruff lint and format checks
+pass. No provider credential, external model, live service or dependency changed.
+
+BB4 is complete for host acceptance. Nothing here refuses an action, and the
+host coverage line must not be read as enforcement until BB5. Authenticated
+snapshot health remains BB3.
 
 ### Normalized action
 

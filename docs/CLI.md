@@ -107,6 +107,7 @@ The launcher runs these; you rarely call them by hand.
 | `captain redact [--restore \| --check <path> \| --hook \| --stats] [--source name]` | The redaction engine for the opencode plugin and Claude Code's `PreToolUse` hook: stdin masked (or restored) to stdout; `--check` exits 3 on a file a worker must not read |
 | `captain blackbox check --snapshot <file>` | The offline security evaluator: one normalized action on stdin, one JSON result on stdout, no network, no credentials |
 | `captain blackbox hook [--snapshot <file>] [--mode audit]` | The plugin's audit path: one tool event on stdin, one bounded record in `security.jsonl`; never refuses |
+| `captain blackbox status` | The workspace security status: audit mode, whether the composed Claude hook is installed, snapshot identity and age, record counts by disposition, host and workspace, and the transports with no pre-execution hook |
 
 ### What every worker prompt carries
 

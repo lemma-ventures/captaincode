@@ -129,59 +129,99 @@ func cmdRedact(args []string) {
 }
 
 func writeStdoutJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
+	writeJSONTo(os.Stdout, v)
+}
+
+func writeJSONTo(w io.Writer, v any) {
+	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
 }
 
-// redactHook is the Claude Code PreToolUse hook body. Input (stdin):
-// {"tool_name":"Write","tool_input":{...}}. It refuses reads of secret files
-// and restores placeholders / identity stand-ins in every string of the
-// tool input, so a file the model writes with [[secret:…]] in it lands with
-// the real value and a command naming /home/captain runs in the real home.
+// claudeHookInput is one Claude Code PreToolUse payload. SessionID and Cwd
+// are what the security record needs to join the event to a session and a
+// workspace; a host that sends neither simply records neither.
+type claudeHookInput struct {
+	ToolName  string         `json:"tool_name"`
+	ToolInput map[string]any `json:"tool_input"`
+	SessionID string         `json:"session_id"`
+	Cwd       string         `json:"cwd"`
+}
+
+// redactHook is the Claude Code PreToolUse hook body: read from stdin, write
+// to stdout (redactHookRun does the work so tests can drive it).
 func redactHook() {
-	var in struct {
-		ToolName  string         `json:"tool_name"`
-		ToolInput map[string]any `json:"tool_input"`
-	}
+	var in claudeHookInput
 	if err := json.NewDecoder(os.Stdin).Decode(&in); err != nil {
 		return // not our shape: allow silently
+	}
+	redactHookRun(in, os.Stdout)
+}
+
+// redactHookRun refuses reads of secret files and restores placeholders /
+// identity stand-ins in every string of the tool input, so a file the model
+// writes with [[secret:…]] in it lands with the real value and a command
+// naming /home/captain runs in the real home.
+//
+// BB4 composes the Blackbox audit here, because this hook is the one place
+// where the executed input for a Claude tool call exists. Every decision
+// path screens the input that will actually run - the restored copy, the
+// sent-turn jail wrap, or the untouched copy when nothing else rewrites it -
+// and a path where the action never runs screens nothing.
+//
+// It returns the screened action and whether anything was screened, so a test
+// can compare the screened arguments with the input the hook hands back.
+func redactHookRun(in claudeHookInput, out io.Writer) (captaincode.BlackboxAction, bool) {
+	hookCwd := in.Cwd
+	if hookCwd == "" {
+		hookCwd, _ = os.Getwd()
 	}
 	// A turn sent by another agent: the sent-turn policy, before anything
 	// else (sentpolicy.go). This hook is installed whenever redaction is on,
 	// so the policy does not wait for a decision leg.
 	if os.Getenv(captaincode.SentTurnEnv) == "1" {
-		cwd, _ := os.Getwd()
-		if out, decided := sentHookOutput(in.ToolName, in.ToolInput, cwd); decided {
-			writeStdoutJSON(out)
-			return
+		decided, ok := sentHookOutput(in.ToolName, in.ToolInput, hookCwd)
+		if ok {
+			// A deny runs nothing; a jail wrap changes the command that runs.
+			var action captaincode.BlackboxAction
+			screened := false
+			if input := hookUpdatedInput(decided); input != nil {
+				action, screened = auditClaudeHook(in.ToolName, in.SessionID, hookCwd, input)
+			}
+			writeJSONTo(out, decided)
+			return action, screened
 		}
 	}
 	// A secret placeholder is never turned back into the secret inside a
 	// URL: a fetched page that tells the model to fetch
 	// "https://x/?k=[[secret:…]]" must not get the key (blind review,
-	// 2026-10-06).
+	// 2026-10-06). Nothing rewrites this input, so Claude runs it as it
+	// stands - and so it is screened as it stands.
 	if in.ToolName == "WebFetch" {
-		return
+		return auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
 	}
+	// Refused: the action never executes, so there is no executed input to
+	// screen and no record is filed.
 	if in.ToolName == "Read" || in.ToolName == "Grep" || in.ToolName == "Glob" {
 		if p, _ := in.ToolInput["file_path"].(string); p != "" {
 			if deny, why := captaincode.IsSecretFile(p); deny {
-				writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+				writeJSONTo(out, map[string]any{"hookSpecificOutput": map[string]any{
 					"hookEventName": "PreToolUse", "permissionDecision": "deny",
 					"permissionDecisionReason": p + " is a " + why + " - captain workers do not read it",
 				}})
-				return
+				return captaincode.BlackboxAction{}, false
 			}
 		}
 	}
 	changed := restoreInput(in.ToolInput)
+	action, screened := auditClaudeHook(in.ToolName, in.SessionID, hookCwd, in.ToolInput)
 	if changed == 0 {
-		return
+		return action, screened // Claude runs what stands: the input screened
 	}
-	writeStdoutJSON(map[string]any{"hookSpecificOutput": map[string]any{
+	writeJSONTo(out, map[string]any{"hookSpecificOutput": map[string]any{
 		"hookEventName": "PreToolUse", "updatedInput": in.ToolInput,
 	}})
+	return action, screened
 }
 
 // restoreInput puts real values back into every string of a tool input, in

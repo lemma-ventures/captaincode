@@ -241,6 +241,7 @@ func cmdBrain(args []string) {
 	// band; the sidebar reads that task's status back.
 	mux.HandleFunc("/v1/outcome/word", b.outcomeWordHTTP)
 	mux.HandleFunc("/v1/outcome/last", b.outcomeLastHTTP)
+	mux.HandleFunc("/v1/blackbox/status", b.blackboxStatusHTTP)
 	mux.HandleFunc("/v1/models", b.models)
 	// Every /word a turn may start with, for the plugin's unknown-command check.
 	mux.HandleFunc("/v1/commands", func(w http.ResponseWriter, _ *http.Request) {

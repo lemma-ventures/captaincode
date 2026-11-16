@@ -62,8 +62,11 @@ the UI for the length of a director call. Unprefixed prompts go to
 `e2e/combined.ts` runs a stock opencode release with these plugins against a
 real brain and a fake `claude` worker. It covers routing, `/btw` and
 `/interrupt` scoped to their session, abort, a brain restart, programs,
-`/team`, the Euclid journal, the worker guard and a brain crash. Both servers
-run under a macOS sandbox that only reaches the check's own ports.
+`/team`, the Euclid journal, the worker guard and a brain crash. It also runs
+a live Blackbox audit (`CAPTAIN_BLACKBOX=audit`): a local fixture model makes
+one `write` tool call per workspace, in two workspaces at the same time, and
+the check reads the private `security.jsonl` records back. Both servers run
+under a macOS sandbox that only reaches the check's own ports.
 
 ```sh
 go build -o /tmp/captain-e2e ./cmd/captaincode
@@ -72,3 +75,24 @@ CAPTAIN_BRAIN_BIN=/tmp/captain-e2e OPENCODE_BIN="$(command -v opencode)" bun plu
 
 It needs network once, to install `@opencode-ai/plugin` at the opencode
 version under test, and macOS for the sandbox.
+
+## Claude Blackbox host acceptance
+
+`e2e/claude_blackbox.py` runs the installed Claude Code binary against a local
+fixture model. The model requests one `Write` tool call. The check proves that
+the composed Captain hook and an unrelated user hook both run, the write still
+executes in audit mode, and one path-free `would_block` record reaches the
+private security stream. No provider credential, external network or paid model
+call is used.
+
+```sh
+go build -o /tmp/captain-e2e ./cmd/captaincode
+python3 plugin/e2e/claude_blackbox.py \
+  --captain /tmp/captain-e2e \
+  --claude "$(command -v claude)"
+```
+
+The check needs macOS for `sandbox-exec`. The child can write only in its
+scratch folder and connect only to the fixture model. It has a 90-second wall
+and CPU limit, a 1 GiB process-group memory monitor, a 32 MiB file limit and
+256 file descriptors. The scratch folder is removed after the check.

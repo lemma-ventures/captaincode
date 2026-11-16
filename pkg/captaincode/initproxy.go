@@ -223,6 +223,33 @@ func EnsureClaudeGateHook(on bool) (bool, string, error) {
 		"actions screened on the decision leg; no decision leg configured means no call and no delay")
 }
 
+// ClaudeHookInstalled reports whether a Captain PreToolUse command is already
+// installed in Claude Code's user settings. Coverage reporting asks this: the
+// Blackbox audit composes into `captain redact --hook`, so a settings file
+// without that entry means the Claude transport is not covered (BB4).
+func ClaudeHookInstalled(command string) bool {
+	path := ClaudeSettingsPath()
+	if path == "" {
+		return false
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var cfg map[string]any
+	if json.Unmarshal(StripJSONC(body), &cfg) != nil {
+		return false
+	}
+	hooks, _ := cfg["hooks"].(map[string]any)
+	pre, _ := hooks["PreToolUse"].([]any)
+	for _, e := range pre {
+		if entryRunsCommand(e, command) {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureClaudePreToolUseHook adds or removes one PreToolUse entry.
 // Idempotent; other hooks are kept.
 func ensureClaudePreToolUseHook(on bool, command, matcher string, timeout int, note string) (bool, string, error) {
