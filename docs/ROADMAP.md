@@ -49,7 +49,7 @@ brain deployment, host credential or network policy changed in that commit.
 | M5.3 real numbers | Needs cost-attributed pilot data |
 | M3.2 host workflows | Stages hand over their tree and cumulative diff applies at end (Q6 done); host `/team` and `+` stages rule once per conflict group (Q7 done) |
 | M3.8 `/btw` on codex | Opt-in app-server transport implemented 15 November 2026; fake-server steering, refusal, interrupt, malformed-input and schema-gate tests pass. Exec remains the default pending a live throwaway-session check |
-| Optional Blackbox security checks | Offline evaluator and coverage contract done (BB1, 15 November); host coverage, authenticated rule import and enforcement remain unbuilt. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
+| Optional Blackbox security checks | Offline evaluation (BB1), audit records (BB2), authenticated snapshots (BB3) and host coverage (BB4) are done. Selective enforcement (BB5) remains gated on enforcement evidence. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
 
 ### Build queue (October 2026)
 
@@ -80,10 +80,10 @@ failure no longer reproduces on this tree.) |
 | Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | done (15 November 2026; `captain why --share --days 7,30` reads durable decisions and excludes explicit choices, one scorer accepts only citation-free abstention with an empty/`CANNOT_TELL` answer, new OpenCode MCP entries carry the selected tool profile, and routing events fill `EfficiencyRecord.Schema`; the four Q16 tests, full `go test ./...`, `go vet ./...` and formatting pass. Five synthetic 120-decision report runs measured 173.4–192.6 µs, 400 KB and 285 allocations per call; W1 still needs seven days of real turns) |
 | Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
 | BB1 | Offline security evaluator and explicit detection coverage | M3/M4 | done (15 November 2026; bounded Go evaluator, JSON CLI and 11 required host fixtures; full Go suite, focused race checks, vet and build pass) |
-| BB2 | OpenCode audit hook and private security records | M3/M4 | done (15 November 2026; `captain blackbox hook` normalizes the final restored arguments, files bounded records in `security.jsonl` with rotation and concurrent-append safety, and never refuses; the plugin hook runs after restoration and before the gate and jail wrap, opt-in via `CAPTAIN_BLACKBOX=audit`, independent of the routing plugin and gate; post-tool output is a separate `observed_after_execution` record. 9 Go store tests, 6 hook command tests and 6 plugin handler tests pass; full `go test ./pkg/captaincode` and `./cmd/captaincode`, `go vet ./...` and 25 plugin tests pass. Measured 17.5 ms per hook call end to end (50 runs). Live invocation evidence landed 16 November 2026: the combined fixture runtime now drives a real opencode tool call through a local fixture model, with no provider key and no network path, in two workspaces at the same time. The pre call files a `would_block` record with a critical protected-path finding, the post call files `observed_after_execution`, the two records share one workspace and session id, each workspace keeps its own id, no path or output text reaches the stream, and the file is still written - audit never refused the call. The full check runs 11 reports in 78.9 s, twice green. One live hook call with a snapshot costs a median 12.34 ms (11.13-14.21 ms, n=50) of process start, snapshot decode, evaluation and append; evaluation inside it is 152 µs. Still owed: a real snapshot from BB3's export contract) |
-| BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | in progress (16 November 2026, dq-261115-c32ef1): the exact export fields are written down in [BLACKBOX_SNAPSHOT_CONTRACT.md](BLACKBOX_SNAPSHOT_CONTRACT.md), and the fail-closed receiver verifier rejects all 23 cases (wrong schema, source, authority pin, signature, replay, counts, completeness, revocations, unknown fields). Next: the exporter around the pinned upstream rule code, then on-disk revocation and rollback state (BB1 complete) |
-| BB4 | Claude hook parity and workspace security status | M4 | done: source, fixtures and live host acceptance (16 November 2026). `captain redact --hook` is the one composed Claude path. Under `CAPTAIN_BLACKBOX=audit` it screens the input Claude Code will execute after restoration or the sent-turn jail wrap, then files one `host: claude` record. Two concurrent Claude hook calls keep separate workspace and session identities. `captain blackbox status` reports mode, hook installation, snapshot identity and age, the five display states, per-host and path-free per-workspace counts, and uncovered transports. `GET /v1/blackbox/status?cwd=<folder>` requires an existing absolute folder and returns only that folder's counts and newest 20 records. The TUI polls it every five seconds and labels the row `audit only`; it never calls a would-block record prevention. Full `cmd` and `pkg` suites, focused race checks, `go vet ./...` and `go build ./...` pass in the offline Linux sandbox. Workspace status with 200 records costs 606.8-614.7 µs over three 300-run samples. Six real Claude Code fixture runs passed on this host in 0.490-0.519 s each, with no provider credential or external network. Authenticated rule health still uses BB3 |
-| BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: BB3–BB4 and enforcement evidence |
+| BB2 | OpenCode audit hook and private security records | M3/M4 | done (15 November 2026; `captain blackbox hook` normalizes the final restored arguments, files bounded records in `security.jsonl` with rotation and concurrent-append safety, and never refuses; the plugin hook runs after restoration and before the gate and jail wrap, opt-in via `CAPTAIN_BLACKBOX=audit`, independent of the routing plugin and gate; post-tool output is a separate `observed_after_execution` record. 9 Go store tests, 6 hook command tests and 6 plugin handler tests pass; full `go test ./pkg/captaincode` and `./cmd/captaincode`, `go vet ./...` and 25 plugin tests pass. Measured 17.5 ms per hook call end to end (50 runs). Live invocation evidence landed 16 November 2026: the combined fixture runtime now drives a real opencode tool call through a local fixture model, with no provider key and no network path, in two workspaces at the same time. The pre call files a `would_block` record with a critical protected-path finding, the post call files `observed_after_execution`, the two records share one workspace and session id, each workspace keeps its own id, no path or output text reaches the stream, and the file is still written - audit never refused the call. The full check runs 11 reports in 78.9 s, twice green. One live hook call with a snapshot costs a median 12.34 ms (11.13-14.21 ms, n=50) of process start, snapshot decode, evaluation and append; evaluation inside it is 152 µs. BB3's accepted store now supplies authenticated snapshot health to BB4 status) |
+| BB3 | Authenticated, complete rule snapshots with revocation and rollback | M3 | done (16 November 2026, dq-261115-c32ef1): [BLACKBOX_SNAPSHOT_CONTRACT.md](BLACKBOX_SNAPSHOT_CONTRACT.md) defines the fields. The importer maps the pinned upstream cache, the exporter signs and self-verifies schema 2 envelopes, and the store provides replay refusal, expiry retention and rollback. `captain blackbox export` now runs the complete local flow with a protected key file and monotonic generation and sequence. `formal/blackbox_snapshot_model.py` checks 576 acceptance, 16 rollback and 36 restart transitions under one sequential writer. Five command tests, focused race checks, both full package suites, `go vet ./...`, formatting and diff checks pass. Three 300-run end-to-end exports measured 0.507–0.521 ms in the Linux fixture. No network or enforcement is enabled (BB1 complete) |
+| BB4 | Claude hook parity and workspace security status | M4 | done: source, fixtures and live host acceptance (16 November 2026). `captain redact --hook` is the one composed Claude path. Under `CAPTAIN_BLACKBOX=audit` it screens the input Claude Code will execute after restoration or the sent-turn jail wrap, then files one `host: claude` record. Two concurrent Claude hook calls keep separate workspace and session identities. `captain blackbox status` reports mode, hook installation, snapshot identity and age, the five display states, per-host and path-free per-workspace counts, and uncovered transports. `GET /v1/blackbox/status?cwd=<folder>` requires an existing absolute folder and returns only that folder's counts and newest 20 records. The TUI polls it every five seconds and labels the row `audit only`; it never calls a would-block record prevention. Full `cmd` and `pkg` suites, focused race checks, `go vet ./...` and `go build ./...` pass in the offline Linux sandbox. Workspace status with 200 records costs 606.8-614.7 µs over three 300-run samples. Six real Claude Code fixture runs passed on this host in 0.490-0.519 s each, with no provider credential or external network. Authenticated rule health reads BB3's accepted store with explicit trust pins and reports verification time and signed expiry, never file modification time |
+| BB5 | Selective refusal before execution, with no retry bypass | M3/M4 | blocked: enforcement evidence (BB3–BB4 done) |
 | N1 | Install a local model runtime and pull one candidate model | Small calls | needs you |
 | N2 | Qualify and run one real task on a second machine | M3.7 | needs you, after Q3 |
 | N3 | OpenShell #3940: maintainer vouch, then reopen with a DCO sign-off | M3.7 | blocked: maintainer |
@@ -101,9 +101,9 @@ failure no longer reproduces on this tree.) |
 
 BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
 composition, CLI status, concurrent workspace isolation, TUI join and real host
-acceptance are also done. BB5 remains gated on BB3's authenticated rule export
-contract (dq-261115-c32ef1 narrow sender contract chosen) and the enforcement
-evidence. N1/N2/N4/N5 are marked `needs you`, W1 waits on seven days of turns, and
+acceptance are also done. BB3's export command and formal acceptance model are
+complete. BB5 remains gated on enforcement evidence. N1/N2/N4/N5 are marked
+`needs you`, W1 waits on seven days of turns, and
 P1–P7 are proposals. No buildable roadmap row is marked `next`: a round takes a
 P-row after the user picks one, or the fleet queue's F5 after its gates.
 
@@ -3740,7 +3740,7 @@ enforcement, not the audit experiment.
 |---|---|---|---|---|---|
 | BB1 | not_applicable | done | done | done | not_started |
 | BB2 | not_applicable | done | done | done | not_started |
-| BB3 | in_progress | narrow sender contract (dq-261115-c32ef1): fields defined, receiver verifier with 23 rejection tests done | not_started | not_started | not_started |
+| BB3 | done (16 November 2026: 576 acceptance, 16 rollback and 36 restart transitions; one sequential writer) | narrow sender contract (dq-261115-c32ef1): fields defined, receiver verifier done | done (16 November 2026: importer, exporter, on-disk store and export command) | done (16 November 2026: 38 signed receiver checks, 18 sender rejections, 9 importer rejections, store tests, five command tests, focused race checks and both full package suites) | not_started |
 | BB4 | not_applicable | done | done | done | not_started |
 | BB5 | not_started | draft | not_started | not_started | not_started |
 
@@ -3826,6 +3826,96 @@ do not establish that boundary.
 schemas, replay and revoked rules. Exercise interrupted replacement, restart,
 stale state and rollback. Export contract path selected (dq-261115-c32ef1); the
 narrow sender contract question is closed.
+
+**Delivered 16 November 2026.** The narrow sender contract is built.
+`pkg/captaincode/blackbox_upstream.go` reads upstream's `ruleset.json` cache
+at the pinned revision: bounded at 8 MiB, unknown fields and trailing data
+rejected, `public` dependency and injection rows mapped, unsupported
+ecosystems, null kinds, non-RE2 patterns and duplicates recorded in
+`manifest.omitted`, revocations merged and sorted, revoked rows dropped, and a
+rule-count ceiling that forces the operator to narrow the scope instead of
+truncating. The test fixture is upstream's own `_serialize` output at
+`7d697683e0d56608cfe3fee374d6a6866702058a`, not a hand-written copy.
+
+`pkg/captaincode/blackbox_export.go` builds the schema 2 envelope, computes
+every count from the rules it carries, signs the canonical payload and then
+runs the receiver on its own output before returning, so a contradictory
+export never leaves the process. `pkg/captaincode/blackbox_store.go` keeps the
+accepted envelope and its metadata (generation, sequence, digest, acceptance
+and verification time, expiry, revocations) with a temp file and rename at
+mode `0600`; the record written before it becomes `store.prev.json` for
+rollback. `Accept` refuses a replayed or older generation, a failed write
+leaves the state unchanged, `Open` fails closed on a truncated record, an
+unknown field or a tampered envelope, an expired snapshot is retained with its
+original verification time, and `Rollback` swaps with the previous record.
+
+Evidence: full `go test ./pkg/captaincode -count=1` (282.409 s) and
+`go test ./cmd/...` (345.774 s) pass, `gofmt -l pkg cmd` is empty and
+`go vet ./...` is clean. 36 receiver rejection checks, 18 sender rejections,
+9 importer rejections and the store failure, replay, expiry and rollback tests
+all pass. Benchmarks (300 iterations, Apple M3 Max): envelope verify 1.226 ms,
+export 67.573 µs, import 35.130 µs (96 MB/s), store accept 10.830 ms of two
+durably renamed writes on APFS. No dependency changed and nothing was
+committed.
+
+The command and acceptance model are also delivered. `captain blackbox export`
+reads one upstream cache and one raw Ed25519 key file. The key must be a
+single regular file with mode `0600`; symlinks, other file types, hard links
+and wider modes are refused. The command accepts the signed envelope into the
+store and writes it to a new `0600` output file. Default generation and
+sequence advance from the store. An explicit sequence must also increase. The
+command makes no network call and enables no enforcement.
+
+`formal/blackbox_snapshot_model.py` checks 576 acceptance transitions, 16
+rollback transitions and 36 restart states. It covers refusal, replay, expiry,
+failed previous/current writes, restart and rollback under one sequential
+writer. It does not claim cryptographic correctness, concurrent store safety,
+filesystem crash atomicity or Go refinement.
+
+Final command evidence: five command tests and their key-file subtests pass.
+Focused race checks, `go vet ./...`, `gofmt -l pkg cmd` and `git diff --check`
+pass. Full `go test ./cmd/captaincode -count=1` passes in 144.927 s and full
+`go test ./pkg/captaincode -count=1` passes in 130.107 s in the offline Linux
+fixture. Three 300-run command benchmarks measure 507.237–520.694 µs for cache
+import, signing, receiver verification, store acceptance and output. No
+dependency changed and nothing was committed.
+
+A follow-up review on 16 November closed two fail-open gaps. An omission such as
+`dependency:<rule id>` now contradicts a `dependency` completeness claim; the
+old comparison checked the whole omission string against the category name.
+The current store and the rollback record now both bind their duplicated
+expiry and revocations to the signed envelope, in addition to generation,
+sequence, snapshot id, upstream revision and digest. Each receiver rejection
+case uses a fresh fixture and signs its mutation, so a shared map or stale
+signature cannot make a case pass for the wrong reason. The two omission cases
+and three current/rollback metadata cases failed before the fix.
+
+Review evidence: full `go test ./pkg/captaincode -count=1` passes in 76.138 s,
+full `go test ./cmd/captaincode -count=1` in 155.913 s, focused race checks in
+1.253 s, and `go vet ./...` is clean in the offline Linux fixture. The formal
+model still passes 576 acceptance, 16 rollback and 36 restart transitions.
+Three 300-run export benchmarks measure 524.079–537.299 µs. The 1,024-rule
+receiver benchmark measures 2.141–2.234 ms over three 300-run samples. These
+are regression baselines, not speedup claims. No dependency changed.
+
+BB5 remains gated on enforcement evidence, not on BB3.
+
+Authenticated status integration also landed on 16 November 2026. With
+`CAPTAIN_BLACKBOX_STORE` and all five explicit trust pins configured,
+`captain blackbox status` and the scoped workspace endpoint verify the accepted
+store and report its authenticated verification time and signed expiry. They
+do not infer authority health from file modification time. Incomplete or wrong
+pins, unreadable state and expired state stay explicit. The separate evaluator
+file remains labelled unverified, and the API exposes no store path or public
+key.
+
+Evidence: three new CLI authority tests (including three fail-closed subtests)
+and one workspace API test pass. Both full package suites pass (command
+379.484 s; library 259.284 s), focused race checks pass, and `go vet ./...` is
+clean. Three 300-run samples on an Apple M3 Max measure authority status at
+170.206–375.837 µs. The complete machine report with 200 records costs
+701.682–861.000 µs; the workspace report costs 708.417–842.665 µs. These are
+local regression baselines, not speedup claims. No dependency changed.
 
 #### BB4. Claude coverage and workspace security status
 

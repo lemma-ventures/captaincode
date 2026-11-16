@@ -273,6 +273,22 @@ folder's counts through `GET /v1/blackbox/status?cwd=…`; it labels the mode
 `audit only` and names uncovered transports. `captain blackbox status` prints
 the machine-wide report. See [the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
 
+The status command and workspace endpoint also report the accepted signed
+snapshot when `CAPTAIN_BLACKBOX_STORE` names its store directory. Configure all
+five trust pins with it: `CAPTAIN_BLACKBOX_KEY_ID`,
+`CAPTAIN_BLACKBOX_PUBLIC_KEY` (base64 Ed25519 public key),
+`CAPTAIN_BLACKBOX_TRUST_ROOT`, `CAPTAIN_BLACKBOX_GRAPH`, and
+`CAPTAIN_BLACKBOX_NETWORK`. An incomplete set, a wrong pin, an unreadable store,
+or a failed signature makes the authority report unavailable. The pins come
+from the operator, never from the envelope.
+
+The authority report uses the store's authenticated verification time and the
+signed expiry. It does not use file modification time. An expired snapshot
+stays visible and reports `expired`, not `ok`. This report is separate from the
+`CAPTAIN_BLACKBOX_SNAPSHOT` file used by the audit evaluator; that file remains
+explicitly unverified. The API returns no store path, public key, rule text, or
+local workspace path.
+
 ### The action gate
 
 Captain runs its workers at full permission, on purpose. `claude

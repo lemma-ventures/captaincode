@@ -97,15 +97,6 @@ func canonicalBlackboxEnvelope(envelope BlackboxEnvelope) ([]byte, error) {
 }
 
 func VerifyBlackboxEnvelope(envelope BlackboxEnvelope, options BlackboxVerifyOptions) (BlackboxSnapshot, error) {
-	if envelope.Schema != BlackboxEnvelopeSchema {
-		return BlackboxSnapshot{}, fmt.Errorf("envelope schema %d is not %d", envelope.Schema, BlackboxEnvelopeSchema)
-	}
-	if envelope.Source != BlackboxExportSource {
-		return BlackboxSnapshot{}, fmt.Errorf("envelope source %q is not %q", envelope.Source, BlackboxExportSource)
-	}
-	if strings.TrimSpace(envelope.ID) == "" || strings.TrimSpace(envelope.Revision) == "" {
-		return BlackboxSnapshot{}, fmt.Errorf("envelope id and revision are required")
-	}
 	now := options.Now
 	if now.IsZero() {
 		now = time.Now()
@@ -116,21 +107,44 @@ func VerifyBlackboxEnvelope(envelope BlackboxEnvelope, options BlackboxVerifyOpt
 	if !envelope.ExpiresAt.After(now) {
 		return BlackboxSnapshot{}, fmt.Errorf("envelope expired at %s", envelope.ExpiresAt.Format(time.RFC3339))
 	}
+	if envelope.Authority.Generation <= options.LastGeneration {
+		return BlackboxSnapshot{}, fmt.Errorf("envelope generation %d does not exceed last accepted %d", envelope.Authority.Generation, options.LastGeneration)
+	}
+	return verifyBlackboxEnvelopeStructure(envelope, options)
+}
+
+func verifyBlackboxEnvelopeStructure(envelope BlackboxEnvelope, options BlackboxVerifyOptions) (BlackboxSnapshot, error) {
+	if envelope.Schema != BlackboxEnvelopeSchema {
+		return BlackboxSnapshot{}, fmt.Errorf("envelope schema %d is not %d", envelope.Schema, BlackboxEnvelopeSchema)
+	}
+	if envelope.Source != BlackboxExportSource {
+		return BlackboxSnapshot{}, fmt.Errorf("envelope source %q is not %q", envelope.Source, BlackboxExportSource)
+	}
+	if strings.TrimSpace(envelope.ID) == "" || strings.TrimSpace(envelope.Revision) == "" {
+		return BlackboxSnapshot{}, fmt.Errorf("envelope id and revision are required")
+	}
 	if envelope.Engine.EvaluatorMin > blackboxEvaluatorSchema {
 		return BlackboxSnapshot{}, fmt.Errorf("envelope requires evaluator schema %d above supported %d", envelope.Engine.EvaluatorMin, blackboxEvaluatorSchema)
 	}
 	if err := verifyBlackboxAuthority(envelope, options); err != nil {
 		return BlackboxSnapshot{}, err
 	}
-	if envelope.Authority.Generation <= options.LastGeneration {
-		return BlackboxSnapshot{}, fmt.Errorf("envelope generation %d does not exceed last accepted %d", envelope.Authority.Generation, options.LastGeneration)
-	}
 	if err := verifyBlackboxManifest(envelope); err != nil {
+		return BlackboxSnapshot{}, err
+	}
+	if err := verifyBlackboxRules(&envelope); err != nil {
 		return BlackboxSnapshot{}, err
 	}
 	snapshot := envelope.Rules
 	snapshot.Digest = blackboxEnvelopeDigest(envelope)
 	return snapshot, nil
+}
+
+func verifyBlackboxRules(envelope *BlackboxEnvelope) error {
+	if err := validateBlackboxSnapshot(&envelope.Rules, BlackboxExportSource, "synthetic"); err != nil {
+		return fmt.Errorf("envelope rules are invalid: %w", err)
+	}
+	return nil
 }
 
 func verifyBlackboxAuthority(envelope BlackboxEnvelope, options BlackboxVerifyOptions) error {
@@ -194,7 +208,27 @@ func verifyBlackboxManifest(envelope BlackboxEnvelope) error {
 			return fmt.Errorf("manifest counts unknown category %q", category)
 		}
 	}
+	complete := map[string]bool{}
 	for _, category := range manifest.CompleteCategories {
+		if complete[category] {
+			return fmt.Errorf("manifest marks %s complete twice", category)
+		}
+		complete[category] = true
+	}
+	seenOmitted := map[string]bool{}
+	for _, entry := range manifest.Omitted {
+		if strings.TrimSpace(entry) == "" {
+			return fmt.Errorf("manifest omits an empty record")
+		}
+		if seenOmitted[entry] {
+			return fmt.Errorf("manifest omits %q twice", entry)
+		}
+		if complete[blackboxOmissionCategory(entry)] {
+			return fmt.Errorf("manifest omits %q and marks its category complete", entry)
+		}
+		seenOmitted[entry] = true
+	}
+	for category := range complete {
 		if enabled, ok := rules.Categories[category]; !ok || !enabled {
 			return fmt.Errorf("manifest marks %s complete but the rules do not enable it", category)
 		}
@@ -228,6 +262,13 @@ func verifyBlackboxManifest(envelope BlackboxEnvelope) error {
 		}
 	}
 	return nil
+}
+
+func blackboxOmissionCategory(entry string) string {
+	if colon := strings.IndexByte(entry, ':'); colon >= 0 {
+		return entry[:colon]
+	}
+	return entry
 }
 
 func blackboxEnvelopeDigest(envelope BlackboxEnvelope) string {

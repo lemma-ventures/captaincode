@@ -70,6 +70,20 @@ execution remain outside this model; no proof of shell-command safety is claimed
   `CAPTAIN_RUN_BUDGET` and `CAPTAIN_INBOX_QUOTA` have. Raising them raises the
   bound.
 
+## Blackbox snapshot acceptance
+
+`blackbox_snapshot_model.py` exhaustively checks 576 acceptance transitions,
+16 rollback transitions and 36 restart states for the BB3 store. A refused,
+replayed or expired envelope keeps the current record. A failed current-record
+write also keeps it. A successful rollback swaps the current and previous
+records.
+
+The model assumes one sequential writer. It does not prove cryptographic
+correctness, concurrent store access, filesystem crash atomicity or refinement
+from the Go implementation. The Go command and store tests check the matching
+implementation boundaries. Run it with `python3 formal/blackbox_snapshot_model.py`
+from the repository root.
+
 ## Review dispatch policy
 
 `CommandSafety/Review.lean` proves that each planned attempt belongs to the

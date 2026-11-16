@@ -106,8 +106,9 @@ The launcher runs these; you rarely call them by hand.
 | `captain proxy` | The egress redaction proxy on its own (the brain runs one itself) |
 | `captain redact [--restore \| --check <path> \| --hook \| --stats] [--source name]` | The redaction engine for the opencode plugin and Claude Code's `PreToolUse` hook: stdin masked (or restored) to stdout; `--check` exits 3 on a file a worker must not read |
 | `captain blackbox check --snapshot <file>` | The offline security evaluator: one normalized action on stdin, one JSON result on stdout, no network, no credentials |
+| `captain blackbox export --cache <ruleset.json> --id <id> --revision <rev> --key-id <id> --signing-key <file> --trust-root <root> --network <name> --store <dir> --output <new-file>` | Import one upstream cache, sign its schema 2 envelope, verify it with the receiver, and accept it into the local store. The raw Ed25519 key file must be one regular file with mode `0600`. Generation and sequence default to the next store generation. The output must not exist. No network call or enforcement |
 | `captain blackbox hook [--snapshot <file>] [--mode audit]` | The plugin's audit path: one tool event on stdin, one bounded record in `security.jsonl`; never refuses |
-| `captain blackbox status` | The workspace security status: audit mode, whether the composed Claude hook is installed, snapshot identity and age, record counts by disposition, host and workspace, and the transports with no pre-execution hook |
+| `captain blackbox status` | The workspace security status: audit mode, whether the composed Claude hook is installed, snapshot identity and age, record counts by disposition, host and workspace, and the transports with no pre-execution hook. With an authenticated store and explicit trust pins configured, it also reports the signed snapshot's verification time and expiry |
 
 ### What every worker prompt carries
 

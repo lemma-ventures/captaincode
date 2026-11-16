@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -63,6 +65,37 @@ func TestBlackboxWorkspaceStatusScopesRecords(t *testing.T) {
 		}
 		if strings.Contains(rec.Body.String(), tc.excluded) || strings.Contains(rec.Body.String(), tc.workspace) {
 			t.Fatalf("response crosses a workspace or exposes a path: %s", rec.Body.String())
+		}
+	}
+}
+
+func TestBlackboxWorkspaceStatusReportsAuthority(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", writeStatusSnapshot(t, fixture.dir))
+	workspace := t.TempDir()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/blackbox/status?cwd="+url.QueryEscape(workspace), nil)
+	(&brain{}).blackboxStatusHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Authority blackboxWorkspaceAuthority `json:"authority"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Authority.Configured || !body.Authority.OK || body.Authority.Expired || body.Authority.ID != "fixture-export agent-blackbox-export" || body.Authority.VerifiedAt == "" || body.Authority.ExpiresAt == "" {
+		t.Fatalf("authority = %+v", body.Authority)
+	}
+	for _, private := range []string{fixture.store, base64.StdEncoding.EncodeToString(fixture.pins.PublicKey)} {
+		if strings.Contains(rec.Body.String(), private) {
+			t.Fatalf("response exposes authority configuration: %s", rec.Body.String())
 		}
 	}
 }

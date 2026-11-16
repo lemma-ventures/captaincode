@@ -1,0 +1,133 @@
+{
+  "community": {},
+  "community_empty_since": 0.0,
+  "community_fingerprint": "",
+  "community_paused": false,
+  "context_graph_id": "urn:graph:demo",
+  "curator_manifest_state": "",
+  "curator_revoked": [
+    "dep:npm:old-pkg@9.9.9"
+  ],
+  "dependency": {
+    "go:vendored@1.0.0": {
+      "advisoryId": null,
+      "description": "",
+      "ecosystem": "go",
+      "identifier": "dep:go:vendored@1.0.0",
+      "kind": "vulnerability",
+      "name": "vendored",
+      "packageName": "vendored",
+      "packageVersion": "1.0.0",
+      "severity": "low",
+      "source": "public",
+      "subject": ""
+    },
+    "npm:evil-pkg@1.2.3": {
+      "advisoryId": null,
+      "description": "flagged by the fixture",
+      "ecosystem": "npm",
+      "identifier": "dep:npm:evil-pkg@1.2.3",
+      "kind": "malware",
+      "name": "evil-pkg",
+      "packageName": "evil-pkg",
+      "packageVersion": "1.2.3",
+      "severity": "high",
+      "source": "public",
+      "subject": "urn:guardian:threat:evil"
+    },
+    "npm:unknown-kind@2.0.0": {
+      "advisoryId": null,
+      "description": "",
+      "ecosystem": "npm",
+      "identifier": "dep:npm:unknown-kind@2.0.0",
+      "kind": null,
+      "name": "unknown-kind",
+      "packageName": "unknown-kind",
+      "packageVersion": "2.0.0",
+      "severity": "medium",
+      "source": "community",
+      "subject": ""
+    },
+    "pypi:dropper@0.1.0": {
+      "advisoryId": null,
+      "description": "",
+      "ecosystem": "pypi",
+      "identifier": "dep:pypi:dropper@0.1.0",
+      "kind": "compromised",
+      "name": "dropper",
+      "packageName": "dropper",
+      "packageVersion": "0.1.0",
+      "severity": "critical",
+      "source": "public",
+      "subject": ""
+    }
+  },
+  "escalation": [],
+  "fileaccess": [
+    {
+      "category": "read",
+      "description": "",
+      "identifier": "fileaccess:brew:read",
+      "name": "read",
+      "severity": "low",
+      "source": "public",
+      "subject": "",
+      "toolName": "brew"
+    }
+  ],
+  "graph_threats": [],
+  "injection": [
+    {
+      "description": "",
+      "identifier": "injection:simple",
+      "name": "simple",
+      "pattern_src": "curl\\s+\\|\\s*sh",
+      "severity": "high",
+      "source": "public",
+      "subject": "urn:guardian:threat:inj1"
+    },
+    {
+      "description": "",
+      "identifier": "injection:python-only",
+      "name": "python-only",
+      "pattern_src": "(?P<cmd>rm)\\s+\\K(?P=cmd)",
+      "severity": "medium",
+      "source": "public",
+      "subject": ""
+    }
+  ],
+  "ioc": {
+    "ioc:domain:x.example": {
+      "description": "",
+      "identifier": "ioc:domain:x.example",
+      "iocType": "domain",
+      "kind": null,
+      "name": "x.example",
+      "severity": "medium",
+      "source": "public",
+      "subject": "",
+      "value": "x.example"
+    }
+  },
+  "kill_list": {},
+  "kill_list_refused": "",
+  "refresh_due_at": 1763386400.0,
+  "skill": [],
+  "synced_at": 1763300000.0,
+  "verified_scope": {
+    "assertion_graphs": [],
+    "asset_facts": {},
+    "built_at": 1763300000.0,
+    "context_graph_id": "urn:graph:demo",
+    "fallback": "off",
+    "legacy_refused": "",
+    "package_aliases": {},
+    "revoked_identifiers": [
+      "dep:npm:old-pkg@9.9.9",
+      "ioc:domain:withdrawn.invalid"
+    ],
+    "store_url": "http://127.0.0.1:1/store",
+    "suppressed_subjects": [],
+    "verified_counts": {}
+  }
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -47,6 +48,110 @@ func appendStatusRecord(t testing.TB, record captaincode.BlackboxSecurityRecord)
 
 // The read half of BB4: hosts, snapshot age, the five dispositions and the
 // transports that stay uncovered - counts and path-free ids only.
+func setBlackboxAuthorityEnv(t testing.TB, fixture blackboxExportCommandFixture) {
+	t.Helper()
+	t.Setenv("CAPTAIN_BLACKBOX_STORE", fixture.store)
+	t.Setenv("CAPTAIN_BLACKBOX_KEY_ID", fixture.pins.KeyID)
+	t.Setenv("CAPTAIN_BLACKBOX_PUBLIC_KEY", base64.StdEncoding.EncodeToString(fixture.pins.PublicKey))
+	t.Setenv("CAPTAIN_BLACKBOX_TRUST_ROOT", fixture.pins.TrustRoot)
+	t.Setenv("CAPTAIN_BLACKBOX_GRAPH", fixture.pins.Graph)
+	t.Setenv("CAPTAIN_BLACKBOX_NETWORK", fixture.pins.Network)
+}
+
+func TestBlackboxStatusReportsAuthenticatedStoreTimes(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("HOME", fixture.dir)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", writeStatusSnapshot(t, fixture.dir))
+	old := time.Now().Add(-240 * time.Hour)
+	if err := os.Chtimes(filepath.Join(fixture.dir, "snapshot.json"), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	status := collectBlackboxStatus()
+	if !status.Authority.Configured || !status.Authority.OK || status.Authority.Expired {
+		t.Fatalf("authority status = %+v", status.Authority)
+	}
+	if status.Authority.ID != "fixture-export agent-blackbox-export" {
+		t.Fatalf("authority id = %q", status.Authority.ID)
+	}
+	if status.Authority.VerifiedAt.IsZero() || !status.Authority.ExpiresAt.After(status.Authority.VerifiedAt) {
+		t.Fatalf("authority times = %+v", status.Authority)
+	}
+	if status.Authority.VerifiedAt.Before(old.Add(time.Hour)) {
+		t.Fatal("authority age came from the unverified snapshot file")
+	}
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"authority  fixture-export agent-blackbox-export", "verified at ", "expires at ", "authenticated"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in report:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestBlackboxStatusAuthorityFailsClosed(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", writeStatusSnapshot(t, fixture.dir))
+
+	for _, test := range []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "incomplete pins", key: "CAPTAIN_BLACKBOX_GRAPH", value: ""},
+		{name: "wrong trust root", key: "CAPTAIN_BLACKBOX_TRUST_ROOT", value: "other-root"},
+		{name: "invalid public key", key: "CAPTAIN_BLACKBOX_PUBLIC_KEY", value: "not-base64"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(test.key, test.value)
+			status := collectBlackboxStatus()
+			if !status.Authority.Configured || status.Authority.OK {
+				t.Fatalf("authority status = %+v", status.Authority)
+			}
+			var out bytes.Buffer
+			if err := runBlackboxStatus(nil, &out); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), "authority  unavailable") || (test.value != "" && strings.Contains(out.String(), test.value)) {
+				t.Fatalf("report = %s", out.String())
+			}
+		})
+	}
+}
+
+func TestBlackboxStatusAuthorityReportsExpiry(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(append(fixture.args(), "--ttl", "1ns"), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", writeStatusSnapshot(t, fixture.dir))
+	status := collectBlackboxStatus()
+	if !status.Authority.Configured || status.Authority.OK || !status.Authority.Expired {
+		t.Fatalf("authority status = %+v", status.Authority)
+	}
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "expired") || !strings.Contains(out.String(), "authenticated") {
+		t.Fatalf("report = %s", out.String())
+	}
+}
+
 func TestBlackboxStatusReportsCoverageAndDispositions(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
@@ -201,6 +306,18 @@ func benchmarkBlackboxStatus(b *testing.B) string {
 		})
 	}
 	return workspace
+}
+
+func BenchmarkBlackboxAuthorityStatusCollect(b *testing.B) {
+	fixture := newBlackboxExportCommandFixture(b)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		b.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(b, fixture)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collectBlackboxAuthorityStatus(time.Now().UTC())
+	}
 }
 
 func BenchmarkBlackboxStatusCollect(b *testing.B) {

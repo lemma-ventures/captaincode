@@ -111,7 +111,7 @@ type BlackboxResult struct {
 }
 
 var blackboxCategories = []string{"dependency", "protected_path", "secret_exposure", "pattern"}
-var blackboxRuleID = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
+var blackboxRuleID = regexp.MustCompile(`^[A-Za-z0-9_./@:-]{1,128}$`)
 var blackboxFindingLabel = regexp.MustCompile(`^[a-z0-9_.:-]{1,64}$`)
 var blackboxPackageName = regexp.MustCompile(`^[A-Za-z0-9@_./+:-]{1,256}$`)
 var blackboxPackageVersion = regexp.MustCompile(`^(\*|[0-9A-Za-z.+_-]{1,128})$`)
@@ -151,7 +151,7 @@ func DecodeBlackboxSnapshot(reader io.Reader) (BlackboxSnapshot, error) {
 	if err != nil {
 		return snapshot, err
 	}
-	if err := validateBlackboxSnapshot(&snapshot); err != nil {
+	if err := validateBlackboxSnapshot(&snapshot, "synthetic"); err != nil {
 		return snapshot, err
 	}
 	digest := sha256.Sum256(body)
@@ -185,9 +185,12 @@ func validateBlackboxAction(action BlackboxAction) error {
 	return nil
 }
 
-func validateBlackboxSnapshot(snapshot *BlackboxSnapshot) error {
-	if snapshot.Schema != 1 || !blackboxRuleID.MatchString(snapshot.ID) || snapshot.Source != "synthetic" || snapshot.Revision == "" {
-		return fmt.Errorf("snapshot schema, synthetic source, id and revision are required")
+func validateBlackboxSnapshot(snapshot *BlackboxSnapshot, allowedSources ...string) error {
+	if snapshot.Schema != 1 || !blackboxRuleID.MatchString(snapshot.ID) || snapshot.Revision == "" {
+		return fmt.Errorf("snapshot schema, source, id and revision are required")
+	}
+	if !blackboxSourceAllowed(snapshot.Source, allowedSources) {
+		return fmt.Errorf("snapshot source %q is not accepted here", snapshot.Source)
 	}
 	if len(snapshot.Categories) != len(blackboxCategories) {
 		return fmt.Errorf("snapshot must declare every coverage category")
@@ -226,6 +229,15 @@ func validateBlackboxSnapshot(snapshot *BlackboxSnapshot) error {
 		snapshot.compiled = append(snapshot.compiled, compiled)
 	}
 	return nil
+}
+
+func blackboxSourceAllowed(source string, allowedSources []string) bool {
+	for _, allowed := range allowedSources {
+		if source == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func compileBlackboxPattern(pattern string) (*regexp.Regexp, error) {

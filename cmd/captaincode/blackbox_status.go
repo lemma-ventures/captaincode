@@ -7,6 +7,8 @@ package main
 // prints counts and path-free workspace ids, never commands, paths or rules.
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -32,6 +34,15 @@ var blackboxDispositions = []string{
 // hook today. Naming them is the coverage contract: nothing else is claimed.
 var blackboxUncoveredTransports = []string{"codex-cli", "grok-cli", "cursor-agent"}
 
+type blackboxAuthorityStatus struct {
+	Configured bool
+	OK         bool
+	Expired    bool
+	ID         string
+	VerifiedAt time.Time
+	ExpiresAt  time.Time
+}
+
 // blackboxStatus is the report's inputs, gathered once and printed once.
 type blackboxStatus struct {
 	Mode         string
@@ -41,6 +52,7 @@ type blackboxStatus struct {
 	SnapshotAge  time.Duration
 	SnapshotPath string
 	SnapshotOK   bool
+	Authority    blackboxAuthorityStatus
 	Records      []captaincode.BlackboxSecurityRecord
 	Total        int
 	Partial      int
@@ -56,7 +68,7 @@ func runBlackboxStatus(args []string, stdout io.Writer) error {
 }
 
 func collectBlackboxStatus() blackboxStatus {
-	status := blackboxStatus{Mode: blackboxEnvMode()}
+	status := blackboxStatus{Mode: blackboxEnvMode(), Authority: collectBlackboxAuthorityStatus(time.Now().UTC())}
 	switch status.Mode {
 	case "audit", "off", "shadow":
 		status.ModeValid = true
@@ -87,6 +99,43 @@ func collectBlackboxStatus() blackboxStatus {
 	}
 	status.Records = records
 	return status
+}
+
+func collectBlackboxAuthorityStatus(now time.Time) blackboxAuthorityStatus {
+	values := []string{
+		os.Getenv("CAPTAIN_BLACKBOX_STORE"), os.Getenv("CAPTAIN_BLACKBOX_KEY_ID"),
+		os.Getenv("CAPTAIN_BLACKBOX_PUBLIC_KEY"), os.Getenv("CAPTAIN_BLACKBOX_TRUST_ROOT"),
+		os.Getenv("CAPTAIN_BLACKBOX_GRAPH"), os.Getenv("CAPTAIN_BLACKBOX_NETWORK"),
+	}
+	configured := false
+	complete := true
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			complete = false
+		} else {
+			configured = true
+		}
+	}
+	report := blackboxAuthorityStatus{Configured: configured}
+	if !configured || !complete {
+		return report
+	}
+	publicKey, err := base64.StdEncoding.DecodeString(values[2])
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
+		return report
+	}
+	store, err := captaincode.OpenBlackboxStore(values[0], captaincode.BlackboxTrustPins{
+		KeyID: values[1], PublicKey: publicKey, TrustRoot: values[3], Graph: values[4], Network: values[5],
+	})
+	if err != nil || !store.HasCurrent() {
+		return report
+	}
+	report.ID = safeField(store.Snapshot().ID + " " + store.Snapshot().Source)
+	report.VerifiedAt = store.VerifiedAt().UTC()
+	report.ExpiresAt = store.ExpiresAt().UTC()
+	report.Expired = store.Expired(now)
+	report.OK = !report.Expired
+	return report
 }
 
 // blackboxEnvMode is CAPTAIN_BLACKBOX as the operator set it: lower case,
@@ -126,6 +175,16 @@ func (s blackboxStatus) String() string {
 		fmt.Fprintf(&b, "snapshot   %s, age %s - %s\n", s.SnapshotID, ageText(s.SnapshotAge), s.SnapshotPath)
 	default:
 		fmt.Fprintln(&b, "snapshot   unreadable - every screening stays degraded, never clean - "+safeField(s.SnapshotPath))
+	}
+	switch {
+	case !s.Authority.Configured:
+		fmt.Fprintln(&b, "authority  not configured - the file snapshot remains unverified")
+	case s.Authority.OK:
+		fmt.Fprintf(&b, "authority  %s, verified at %s, expires at %s - authenticated\n", s.Authority.ID, s.Authority.VerifiedAt.Format(time.RFC3339), s.Authority.ExpiresAt.Format(time.RFC3339))
+	case s.Authority.Expired:
+		fmt.Fprintf(&b, "authority  %s, expired at %s - authenticated but not fresh\n", s.Authority.ID, s.Authority.ExpiresAt.Format(time.RFC3339))
+	default:
+		fmt.Fprintln(&b, "authority  unavailable - check the store and trust pins; the file snapshot remains unverified")
 	}
 
 	byDisposition := map[string]int{}

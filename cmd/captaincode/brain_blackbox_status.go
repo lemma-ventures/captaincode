@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
@@ -18,11 +19,21 @@ type blackboxWorkspaceStatus struct {
 	SnapshotID         string                               `json:"snapshot_id,omitempty"`
 	SnapshotAgeSeconds int64                                `json:"snapshot_age_seconds"`
 	SnapshotOK         bool                                 `json:"snapshot_ok"`
+	Authority          blackboxWorkspaceAuthority           `json:"authority"`
 	Total              int                                  `json:"total"`
 	Dispositions       map[string]int                       `json:"dispositions"`
 	Hosts              map[string]int                       `json:"hosts"`
 	Uncovered          []string                             `json:"uncovered"`
 	Recent             []captaincode.BlackboxSecurityRecord `json:"recent"`
+}
+
+type blackboxWorkspaceAuthority struct {
+	Configured bool   `json:"configured"`
+	OK         bool   `json:"ok"`
+	Expired    bool   `json:"expired"`
+	ID         string `json:"id,omitempty"`
+	VerifiedAt string `json:"verified_at,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
 }
 
 func collectBlackboxWorkspaceStatus(cwd string) blackboxWorkspaceStatus {
@@ -35,10 +46,22 @@ func collectBlackboxWorkspaceStatus(cwd string) blackboxWorkspaceStatus {
 		SnapshotID:         status.SnapshotID,
 		SnapshotAgeSeconds: int64(status.SnapshotAge.Seconds()),
 		SnapshotOK:         status.SnapshotOK,
-		Dispositions:       map[string]int{},
-		Hosts:              map[string]int{},
-		Uncovered:          append([]string(nil), blackboxUncoveredTransports...),
-		Recent:             []captaincode.BlackboxSecurityRecord{},
+		Authority: blackboxWorkspaceAuthority{
+			Configured: status.Authority.Configured,
+			OK:         status.Authority.OK,
+			Expired:    status.Authority.Expired,
+			ID:         status.Authority.ID,
+		},
+		Dispositions: map[string]int{},
+		Hosts:        map[string]int{},
+		Uncovered:    append([]string(nil), blackboxUncoveredTransports...),
+		Recent:       []captaincode.BlackboxSecurityRecord{},
+	}
+	if !status.Authority.VerifiedAt.IsZero() {
+		report.Authority.VerifiedAt = status.Authority.VerifiedAt.Format(time.RFC3339)
+	}
+	if !status.Authority.ExpiresAt.IsZero() {
+		report.Authority.ExpiresAt = status.Authority.ExpiresAt.Format(time.RFC3339)
 	}
 	for _, name := range blackboxDispositions {
 		report.Dispositions[name] = 0

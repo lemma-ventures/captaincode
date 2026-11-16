@@ -130,7 +130,6 @@ func TestBlackboxEnvelopeRejectsUnknownFieldAndTrailingData(t *testing.T) {
 }
 
 func TestBlackboxEnvelopeRejections(t *testing.T) {
-	fixture := newBlackboxEnvelopeFixture(t)
 	cases := []struct {
 		name string
 		mut  func(*BlackboxEnvelope)
@@ -139,8 +138,8 @@ func TestBlackboxEnvelopeRejections(t *testing.T) {
 		{"wrong source", func(e *BlackboxEnvelope) { e.Source = "public" }},
 		{"empty id", func(e *BlackboxEnvelope) { e.ID = "" }},
 		{"empty revision", func(e *BlackboxEnvelope) { e.Revision = " " }},
-		{"future generation time", func(e *BlackboxEnvelope) { e.GeneratedAt = fixture.options.Now.Add(time.Hour) }},
-		{"expired", func(e *BlackboxEnvelope) { e.ExpiresAt = fixture.options.Now.Add(-time.Minute) }},
+		{"future generation time", func(e *BlackboxEnvelope) { e.GeneratedAt = time.Date(2026, 11, 16, 13, 0, 0, 0, time.UTC) }},
+		{"expired", func(e *BlackboxEnvelope) { e.ExpiresAt = time.Date(2026, 11, 16, 11, 0, 0, 0, time.UTC) }},
 		{"unsupported engine", func(e *BlackboxEnvelope) { e.Engine.EvaluatorMin = 2 }},
 		{"wrong authority kind", func(e *BlackboxEnvelope) { e.Authority.Kind = "hmac" }},
 		{"wrong key id", func(e *BlackboxEnvelope) { e.Authority.KeyID = "key-2" }},
@@ -162,12 +161,28 @@ func TestBlackboxEnvelopeRejections(t *testing.T) {
 		{"tampered rules", func(e *BlackboxEnvelope) {
 			e.Rules.Packages = append(e.Rules.Packages, BlackboxPackageRule{ID: "pkg-2", Ecosystem: "npm", Name: "other", Version: "*", Kind: "known_malware", Severity: "critical"})
 		}},
+		{"rules from an unknown source", func(e *BlackboxEnvelope) { e.Rules.Source = "public" }},
+		{"rule with an invalid id", func(e *BlackboxEnvelope) { e.Rules.Packages[0].ID = "bad id!" }},
+		{"rule with an unsupported pattern", func(e *BlackboxEnvelope) {
+			e.Rules.Patterns[0].Pattern = `(?P<word>rm)\K(?P=word)`
+		}},
+		{"rules that hide a category", func(e *BlackboxEnvelope) {
+			delete(e.Rules.Categories, "secret_exposure")
+			e.Manifest.CompleteCategories = []string{"dependency", "protected_path", "pattern"}
+		}},
+		{"omitted and complete", func(e *BlackboxEnvelope) { e.Manifest.Omitted = []string{"pattern"} }},
+		{"omitted dependency rule and complete", func(e *BlackboxEnvelope) { e.Manifest.Omitted = []string{"dependency:pkg-2"} }},
+		{"omitted pattern rule and complete", func(e *BlackboxEnvelope) { e.Manifest.Omitted = []string{"pattern:pattern-2"} }},
+		{"empty omission", func(e *BlackboxEnvelope) { e.Manifest.Omitted = []string{" "} }},
+		{"duplicate omission", func(e *BlackboxEnvelope) { e.Manifest.Omitted = []string{"ioc", "ioc"} }},
+		{"complete twice", func(e *BlackboxEnvelope) { e.Manifest.CompleteCategories = []string{"dependency", "dependency"} }},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			envelope := fixture.envelope
-			testCase.mut(&envelope)
-			if _, err := VerifyBlackboxEnvelope(envelope, fixture.options); err == nil {
+			fixture := newBlackboxEnvelopeFixture(t)
+			testCase.mut(&fixture.envelope)
+			fixture.sign(t, fixture.privateKey)
+			if _, err := VerifyBlackboxEnvelope(fixture.envelope, fixture.options); err == nil {
 				t.Fatal("envelope was accepted")
 			}
 		})
@@ -219,7 +234,7 @@ func BenchmarkBlackboxEnvelopeVerify(b *testing.B) {
 		Engine:    BlackboxEngine{EvaluatorMin: 1},
 		Authority: BlackboxAuthority{Kind: BlackboxAuthorityEd25519, KeyID: "k", PublicKey: base64.StdEncoding.EncodeToString(publicKey), Generation: 9, TrustRoot: "r", Graph: "g", Network: "n"},
 		Manifest:  BlackboxManifest{Sequence: 1, RuleCounts: map[string]int{"dependency": 512, "protected_path": 256, "pattern": 256}, CompleteCategories: []string{"dependency"}},
-		Rules:     BlackboxSnapshot{Schema: 1, ID: "s", Source: "synthetic", Revision: "rev", Categories: map[string]bool{"dependency": true}},
+		Rules:     BlackboxSnapshot{Schema: 1, ID: "s", Source: "synthetic", Revision: "rev", Categories: map[string]bool{"dependency": true, "protected_path": true, "secret_exposure": true, "pattern": true}},
 	}
 	for i := 0; i < 512; i++ {
 		envelope.Rules.Packages = append(envelope.Rules.Packages, BlackboxPackageRule{ID: fmt.Sprintf("p%d", i), Ecosystem: "npm", Name: "x", Version: "*", Kind: "known_malware", Severity: "critical"})
