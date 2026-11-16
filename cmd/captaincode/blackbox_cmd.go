@@ -22,6 +22,12 @@ func cmdBlackbox(args []string) {
 }
 
 func runBlackbox(args []string, stdin io.Reader, stdout io.Writer) error {
+	// main() dispatches `blackbox` before it loads the captain files, so a bare
+	// terminal resolved an authority that was never configured: status printed
+	// "not configured" and the pilot review screened the legacy file snapshot
+	// instead of the operator's signed store. Load the store's trust pins here,
+	// before any subcommand resolves a rule source; no credential moves.
+	captaincode.LoadBlackboxConfig()
 	if len(args) == 0 {
 		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|pilot|status ...")
 	}

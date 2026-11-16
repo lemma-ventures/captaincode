@@ -25,3 +25,16 @@ keep the entries from both sides.
   - c: P4 needs-you inbox - Add the waiting-turn endpoint, CLI and TUI count
   - d: Hold feature work - Wait for the fleet host-acceptance gates and BB5 evidence
 - Why a: It adds evaluation evidence without changing routing or requiring new infrastructure.
+
+## captaincode (dq-261116-0cd13b) posted: Enforcement hosts and rule categories
+
+- Posted: 2026-11-16 13:54 UTC
+- Branch: main
+- Question: BB5 has a signed rule store and a green 1,000-action benign review. Which hosts and rule categories may turn on enforcement?
+- Context: The pilot store pilot-20261116-1 is authenticated and expires 23 November 2026, and it must be re-exported or allowed to lapse before then. The benign review passed 1,000 actions across both supported hosts and two disposable workspaces in audit and enforce, with zero refusals and zero degraded screenings, and audit mode is now set on this Mac for the next brain start. Enforcement stays off until you choose: only exact-package and local-path rules at critical severity can ever refuse, and the second Mac stays owner-gated.
+- Record: `docs/ROADMAP.md`
+- Options:
+  - a (recommended): This host first - enforce exact-package and local-path critical rules on the development Mac after its audit records stay clean; the second Mac stays audit-only until it passes the same review
+  - b: Both Macs - enforce on both Macs at once, after the second Mac passes the same 1,000-action review and a week of clean audit records
+  - c: Stay audit only - turn on nothing now; keep audit records and the signed store until real worker traffic gives more evidence
+- Why a: One host carries the burden, the scope is proven green, and the rollback is one unset variable

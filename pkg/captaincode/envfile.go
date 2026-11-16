@@ -22,8 +22,25 @@ import (
 func LoadCaptainEnv() []string {
 	seen := map[string]bool{}
 	var set []string
-	set = append(set, loadEnvFile(CaptainEnvPath(), seen)...)
-	set = append(set, loadSecretsFile(seen)...)
+	set = append(set, assignEnvFile(CaptainEnvPath(), seen, nil)...)
+	set = append(set, assignSecretsFile(seen, nil)...)
+	return set
+}
+
+// LoadBlackboxConfig puts only the CAPTAIN_BLACKBOX_* names of both captain
+// files into this process's environment. `captain blackbox` runs before
+// LoadCaptainEnv, so a bare terminal resolved an unconfigured authority: status
+// printed "not configured" and the pilot review screened the legacy file
+// snapshot instead of the operator's signed store. The trust pins are
+// configuration, not credentials, so a short-lived screening command reads them
+// without putting every provider key into its environment. Values already in
+// the environment still win. Returns the names it set.
+func LoadBlackboxConfig() []string {
+	seen := map[string]bool{}
+	keep := func(k string) bool { return strings.HasPrefix(k, "CAPTAIN_BLACKBOX_") }
+	var set []string
+	set = append(set, assignEnvFile(CaptainEnvPath(), seen, keep)...)
+	set = append(set, assignSecretsFile(seen, keep)...)
 	return set
 }
 
@@ -33,15 +50,15 @@ func CaptainSecretsPath() string {
 	return filepath.Join(configHome(), "captain", "secrets.env")
 }
 
-func loadEnvFile(path string, seen map[string]bool) []string {
+func assignEnvFile(path string, seen map[string]bool, keep func(string) bool) []string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	return assignEnv(raw, seen)
+	return assignEnv(raw, seen, keep)
 }
 
-func loadSecretsFile(seen map[string]bool) []string {
+func assignSecretsFile(seen map[string]bool, keep func(string) bool) []string {
 	raw, _, err := readPrivateEnvFile(CaptainSecretsPath())
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -49,7 +66,15 @@ func loadSecretsFile(seen map[string]bool) []string {
 		}
 		return nil
 	}
-	return assignEnv(raw, seen)
+	return assignEnv(raw, seen, keep)
+}
+
+func loadEnvFile(path string, seen map[string]bool) []string {
+	return assignEnvFile(path, seen, nil)
+}
+
+func loadSecretsFile(seen map[string]bool) []string {
+	return assignSecretsFile(seen, nil)
 }
 
 func readPrivateEnvFile(path string) ([]byte, os.FileMode, error) {
@@ -111,7 +136,7 @@ func EnvFileNames(path string) ([]string, os.FileMode, error) {
 	return names, mode, nil
 }
 
-func assignEnv(raw []byte, seen map[string]bool) []string {
+func assignEnv(raw []byte, seen map[string]bool, keep func(string) bool) []string {
 	var set []string
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
@@ -120,6 +145,9 @@ func assignEnv(raw []byte, seen map[string]bool) []string {
 		}
 		k, v, ok := strings.Cut(line, "=")
 		if !ok || k == "" || strings.ContainsAny(k, " \t") {
+			continue
+		}
+		if keep != nil && !keep(k) {
 			continue
 		}
 		v = strings.TrimSpace(v)

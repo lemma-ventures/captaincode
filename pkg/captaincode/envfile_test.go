@@ -69,6 +69,44 @@ func TestLoadCaptainEnvRefusesLooseSecretsFile(t *testing.T) {
 	assert.Empty(t, os.Getenv("CAPTAIN_TEST_LEAKED"), "a group-readable secrets file is not loaded")
 }
 
+func TestLoadBlackboxConfigKeepsCredentialsOut(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	writeEnv(t, home, "env", "OPENROUTER_API_KEY=sk-or-test\nCAPTAIN_BLACKBOX_STORE=/store\nCAPTAIN_BLACKBOX_KEY_ID=fixture-key\nCAPTAIN_TEST_UNRELATED=1\n", 0o600)
+	writeEnv(t, home, "secrets.env", "CAPTAIN_BLACKBOX_NETWORK=from-secrets\nHF_TOKEN=hf-test\n", 0o600)
+	for _, key := range []string{"OPENROUTER_API_KEY", "HF_TOKEN", "CAPTAIN_TEST_UNRELATED", "CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"} {
+		key := key
+		previous, present := os.LookupEnv(key)
+		os.Unsetenv(key)
+		t.Cleanup(func() {
+			if present {
+				os.Setenv(key, previous)
+			} else {
+				os.Unsetenv(key)
+			}
+		})
+	}
+
+	set := LoadBlackboxConfig()
+	assert.ElementsMatch(t, []string{"CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"}, set)
+	assert.Equal(t, "/store", os.Getenv("CAPTAIN_BLACKBOX_STORE"), "the env file's pins load")
+	assert.Equal(t, "from-secrets", os.Getenv("CAPTAIN_BLACKBOX_NETWORK"), "the secrets file's pins load")
+	assert.Empty(t, os.Getenv("OPENROUTER_API_KEY"), "a screening command never loads credentials")
+	assert.Empty(t, os.Getenv("HF_TOKEN"), "a screening command never loads credentials")
+	assert.Empty(t, os.Getenv("CAPTAIN_TEST_UNRELATED"), "no other setting moves")
+}
+
+func TestLoadBlackboxConfigYieldsToTheEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
+	writeEnv(t, home, "env", "CAPTAIN_BLACKBOX_STORE=/from-file\n", 0o600)
+	t.Setenv("CAPTAIN_BLACKBOX_STORE", "/from-shell")
+
+	set := LoadBlackboxConfig()
+	assert.Empty(t, set)
+	assert.Equal(t, "/from-shell", os.Getenv("CAPTAIN_BLACKBOX_STORE"), "the shell's value wins")
+}
+
 func TestIsSecretEnvName(t *testing.T) {
 	for _, k := range []string{"OPENROUTER_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GITHUB_SECRET", "X_PASSWORD", "DB_PASSWD", "MY_CREDENTIAL"} {
 		assert.True(t, IsSecretEnvName(k), k)
