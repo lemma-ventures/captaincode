@@ -42,10 +42,26 @@ func NormalizeBlackboxAction(host, phase, tool string, raw json.RawMessage) (Bla
 	if action.Kind == "shell" {
 		blackboxParseShell(&action, gaps)
 	}
-	if len(gaps) != 0 {
-		action.ParseStatus = "unsupported"
+	// A shell gap names a tokenization the package extractor does not
+	// support; the action input itself parsed. Only an action-wide gap
+	// leaves the action unsupported.
+	for gap := range gaps {
+		if !blackboxShellGapNames[gap] {
+			action.ParseStatus = "unsupported"
+			break
+		}
 	}
-	return action, sortedBlackboxGaps(gaps)
+	action.OmittedFields = sortedBlackboxGaps(gaps)
+	return action, action.OmittedFields
+}
+
+// blackboxShellGapNames are extraction gaps of the shell package parser.
+// They cost the dependency category its input, not the categories that
+// screen the action text.
+var blackboxShellGapNames = map[string]bool{
+	"unsupported_shell_syntax":    true,
+	"unsupported_package_syntax":  true,
+	"unsupported_package_manager": true,
 }
 
 type blackboxNormalizeState struct {

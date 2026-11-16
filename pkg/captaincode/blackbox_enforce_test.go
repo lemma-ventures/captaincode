@@ -1,6 +1,8 @@
 package captaincode
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,6 +73,35 @@ func TestDecideBlackboxEnforcementIncompleteRequiredCategory(t *testing.T) {
 	decision = DecideBlackboxEnforcement("pre", enforceResult("incomplete", advisoryOnly), nil, "workspace", now)
 	if decision.Refuse {
 		t.Fatalf("decision = %+v - no required category means no refusal", decision)
+	}
+}
+
+func TestBlackboxEnforcementShellGapScopesRefusalToDependency(t *testing.T) {
+	now := time.Now()
+	action, _ := NormalizeBlackboxAction("claude", "pre", "bash", json.RawMessage(`{"command":"echo \"hi\" | grep foo"}`))
+	if action.ParseStatus != "parsed" || len(action.OmittedFields) != 1 {
+		t.Fatalf("action = %+v", action)
+	}
+	// A pilot-shaped snapshot disables the enforceable categories: the
+	// quoted command screens clean instead of degrading every check.
+	pilot := blackboxFixtureSnapshot()
+	pilot.Categories["dependency"] = false
+	pilot.Categories["protected_path"] = false
+	pilot.Packages, pilot.Paths = nil, nil
+	decision := DecideBlackboxEnforcement("pre", EvaluateBlackbox(context.Background(), action, pilot), nil, "workspace", now)
+	if decision.Refuse {
+		t.Fatalf("decision = %+v - no required category lost its input", decision)
+	}
+	// With dependency selected, the same command cannot run the required
+	// exact-package check, so it refuses as unavailable: fail closed.
+	enabled := blackboxFixtureSnapshot()
+	result := EvaluateBlackbox(context.Background(), action, enabled)
+	if result.Status != "incomplete" {
+		t.Fatalf("status = %s", result.Status)
+	}
+	decision = DecideBlackboxEnforcement("pre", result, nil, "workspace", now)
+	if !decision.Refuse || decision.Reason != "security_check_unavailable" {
+		t.Fatalf("decision = %+v", decision)
 	}
 }
 

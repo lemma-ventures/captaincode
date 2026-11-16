@@ -567,6 +567,17 @@ for OpenCode `filePath`, Claude `file_path`, notebooks, multi-edit arrays, and
 patch targets. Unknown MCP tools get a named coverage gap.
 Do not flatten all fields into one string and then claim full coverage.
 
+Attribute each coverage gap to the categories that consume it. The shell
+tokenizer's gaps (`unsupported_shell_syntax`, `unsupported_package_syntax`,
+`unsupported_package_manager`) name syntax the package extractor cannot read:
+they cost the `dependency` category its input and leave the action itself
+`parsed`. The categories that screen the action text (`pattern`,
+`secret_exposure`) and the path rules keep their input, so a quoted command
+does not degrade them. An action-wide gap (unknown tool, unparsed arguments,
+size or node limits, text truncation) still degrades every enabled category,
+and a selected enforceable category that cannot run still refuses as
+`security_check_unavailable`.
+
 ### Rule import and authority
 
 The first audit fixtures can use synthetic rules. Real rule import is a

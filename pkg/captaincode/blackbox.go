@@ -17,7 +17,15 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 		result.Status = "error"
 		result.Errors = []string{"invalid_action"}
 	}
-	incomplete := action.Kind == "unknown" || action.ParseStatus != "parsed" || action.Truncated || len(action.OmittedFields) != 0
+	actionIncomplete := action.Kind == "unknown" || action.ParseStatus != "parsed" || action.Truncated
+	shellIncomplete := false
+	for _, field := range action.OmittedFields {
+		if blackboxShellGapNames[field] {
+			shellIncomplete = true
+			continue
+		}
+		actionIncomplete = true
+	}
 	for _, category := range blackboxCategories {
 		coverage := BlackboxCoverage{Category: category, Status: "covered"}
 		enabled, declared := snapshot.Categories[category]
@@ -27,7 +35,7 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 		} else if category != "secret_exposure" && blackboxSnapshotRuleCount(snapshot, category) == 0 {
 			coverage.Status = "incomplete"
 			coverage.Reason = "no_rules"
-		} else if incomplete {
+		} else if actionIncomplete || (shellIncomplete && category == "dependency") {
 			coverage.Status = "incomplete"
 			coverage.Reason = "action_input_incomplete"
 		}

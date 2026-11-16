@@ -50,9 +50,7 @@ func PrepareBlackboxHookAction(host, phase, tool string, rawArgs json.RawMessage
 		}
 		action.ParseStatus = "parsed"
 	} else {
-		var gaps []string
-		action, gaps = NormalizeBlackboxAction(host, phase, tool, rawArgs)
-		action.OmittedFields = append(action.OmittedFields, gaps...)
+		action, _ = NormalizeBlackboxAction(host, phase, tool, rawArgs)
 	}
 	action.WorkspaceID = BlackboxWorkspaceID(cwd)
 	return action

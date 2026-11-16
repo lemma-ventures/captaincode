@@ -94,6 +94,73 @@ func TestBlackboxDisabledCategoryProducesNoFinding(t *testing.T) {
 	}
 }
 
+func TestBlackboxShellGapDegradesOnlyDependency(t *testing.T) {
+	quoted := BlackboxAction{
+		Schema: 1, Tool: "bash", Kind: "shell", Phase: "pre", ParseStatus: "parsed",
+		OmittedFields: []string{"unsupported_shell_syntax"},
+		Command:       `npm install "$(printf example-package)"`,
+	}
+	full := EvaluateBlackbox(context.Background(), quoted, blackboxFixtureSnapshot())
+	if full.Status != "incomplete" {
+		t.Fatalf("status = %s - the dependency check did not run", full.Status)
+	}
+	for _, coverage := range full.Coverage {
+		if coverage.Category == "dependency" {
+			if coverage.Status != "incomplete" || coverage.Reason != "action_input_incomplete" {
+				t.Fatalf("dependency coverage = %+v", coverage)
+			}
+			continue
+		}
+		if coverage.Status != "covered" {
+			t.Fatalf("%s coverage = %+v - shell tokenization is not its input", coverage.Category, coverage)
+		}
+	}
+	shellGaps := []string{"unsupported_shell_syntax", "unsupported_package_syntax", "unsupported_package_manager"}
+	for _, gap := range shellGaps {
+		scoped := quoted
+		scoped.OmittedFields = []string{gap}
+		result := EvaluateBlackbox(context.Background(), scoped, blackboxFixtureSnapshot())
+		if result.Status != "incomplete" {
+			t.Fatalf("status = %s for gap %s", result.Status, gap)
+		}
+	}
+	disabled := blackboxFixtureSnapshot()
+	disabled.Categories["dependency"] = false
+	disabled.Packages = nil
+	light := EvaluateBlackbox(context.Background(), quoted, disabled)
+	if light.Status != "complete" {
+		t.Fatalf("status = %s - the snapshot disabled dependency, so no check lost its input", light.Status)
+	}
+	for _, coverage := range light.Coverage {
+		if coverage.Category == "dependency" {
+			if coverage.Status != "not_covered" {
+				t.Fatalf("dependency coverage = %+v", coverage)
+			}
+			continue
+		}
+		if coverage.Status != "covered" {
+			t.Fatalf("coverage = %+v", coverage)
+		}
+	}
+}
+
+func TestBlackboxNormalizeKeepsParsedForShellGaps(t *testing.T) {
+	action, gaps := NormalizeBlackboxAction("claude", "pre", "bash", json.RawMessage(`{"command":"echo \"hi\" | grep foo"}`))
+	if action.ParseStatus != "parsed" {
+		t.Fatalf("parse status = %s - the action input itself parsed", action.ParseStatus)
+	}
+	if len(gaps) != 1 || gaps[0] != "unsupported_shell_syntax" {
+		t.Fatalf("gaps = %v", gaps)
+	}
+	if len(action.OmittedFields) != 1 || action.OmittedFields[0] != "unsupported_shell_syntax" {
+		t.Fatalf("omitted = %v", action.OmittedFields)
+	}
+	unknown, gaps := NormalizeBlackboxAction("claude", "pre", "mcp_custom", json.RawMessage(`{}`))
+	if unknown.ParseStatus != "unsupported" || len(gaps) == 0 || gaps[0] != "unknown_tool" {
+		t.Fatalf("unknown tool: parse = %s, gaps = %v", unknown.ParseStatus, gaps)
+	}
+}
+
 func TestBlackboxIncompleteInputIsNotClean(t *testing.T) {
 	for _, action := range []BlackboxAction{
 		{Schema: 1, Tool: "unknown", Kind: "unknown", Phase: "pre", ParseStatus: "parsed"},
