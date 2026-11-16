@@ -27,17 +27,19 @@ func LoadCaptainEnv() []string {
 	return set
 }
 
-// LoadBlackboxConfig puts only the CAPTAIN_BLACKBOX_* names of both captain
-// files into this process's environment. `captain blackbox` runs before
-// LoadCaptainEnv, so a bare terminal resolved an unconfigured authority: status
-// printed "not configured" and the pilot review screened the legacy file
-// snapshot instead of the operator's signed store. The trust pins are
-// configuration, not credentials, so a short-lived screening command reads them
-// without putting every provider key into its environment. Values already in
-// the environment still win. Returns the names it set.
+// LoadBlackboxConfig puts only the blackbox names of both captain files -
+// CAPTAIN_BLACKBOX itself and every CAPTAIN_BLACKBOX_* pin - into this
+// process's environment. `captain blackbox` runs before LoadCaptainEnv, so a
+// bare terminal resolved an unconfigured authority: status printed "not
+// configured" and the pilot review screened the legacy file snapshot instead of
+// the operator's signed store. The mode and the trust pins are configuration,
+// not credentials, so a short-lived screening command reads them without
+// putting every provider key into its environment. Values already in the
+// environment still win, so an explicit `--mode` or a shell export beats the
+// file. Returns the names it set.
 func LoadBlackboxConfig() []string {
 	seen := map[string]bool{}
-	keep := func(k string) bool { return strings.HasPrefix(k, "CAPTAIN_BLACKBOX_") }
+	keep := func(k string) bool { return k == "CAPTAIN_BLACKBOX" || strings.HasPrefix(k, "CAPTAIN_BLACKBOX_") }
 	var set []string
 	set = append(set, assignEnvFile(CaptainEnvPath(), seen, keep)...)
 	set = append(set, assignSecretsFile(seen, keep)...)

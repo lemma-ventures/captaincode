@@ -21,11 +21,11 @@ var blackboxPinNames = []string{
 	"CAPTAIN_BLACKBOX_TRUST_ROOT", "CAPTAIN_BLACKBOX_GRAPH", "CAPTAIN_BLACKBOX_NETWORK",
 }
 
-// bareBlackboxEnvironment removes every name the operator's own shell or an
+// bareBlackboxEnvironment removes every blackbox name the operator's own shell or an
 // earlier test could have left behind, and restores it afterwards.
 func bareBlackboxEnvironment(t *testing.T) {
 	t.Helper()
-	for _, key := range append(blackboxPinNames, "CAPTAIN_BLACKBOX_SNAPSHOT") {
+	for _, key := range append(blackboxPinNames, "CAPTAIN_BLACKBOX", "CAPTAIN_BLACKBOX_SNAPSHOT") {
 		key := key
 		previous, present := os.LookupEnv(key)
 		if err := os.Unsetenv(key); err != nil {
@@ -47,6 +47,7 @@ func writeCaptainPinsFile(t *testing.T, configHome string, fixture blackboxExpor
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	lines := []string{
+		"CAPTAIN_BLACKBOX=audit",
 		"CAPTAIN_BLACKBOX_STORE=" + fixture.store,
 		"CAPTAIN_BLACKBOX_KEY_ID=" + fixture.pins.KeyID,
 		"CAPTAIN_BLACKBOX_PUBLIC_KEY=" + base64.StdEncoding.EncodeToString(fixture.pins.PublicKey),
@@ -80,6 +81,9 @@ func TestBlackboxStatusReadsTheOperatorStoreFromTheEnvFile(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "not configured") {
 		t.Fatalf("report = %s", out.String())
+	}
+	if !strings.Contains(out.String(), "mode audit") {
+		t.Fatalf("report = %s - the configured mode must come from the captain env file", out.String())
 	}
 }
 

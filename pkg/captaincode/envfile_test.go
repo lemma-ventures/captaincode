@@ -72,9 +72,9 @@ func TestLoadCaptainEnvRefusesLooseSecretsFile(t *testing.T) {
 func TestLoadBlackboxConfigKeepsCredentialsOut(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
-	writeEnv(t, home, "env", "OPENROUTER_API_KEY=sk-or-test\nCAPTAIN_BLACKBOX_STORE=/store\nCAPTAIN_BLACKBOX_KEY_ID=fixture-key\nCAPTAIN_TEST_UNRELATED=1\n", 0o600)
+	writeEnv(t, home, "env", "OPENROUTER_API_KEY=sk-or-test\nCAPTAIN_BLACKBOX=audit\nCAPTAIN_BLACKBOX_STORE=/store\nCAPTAIN_BLACKBOX_KEY_ID=fixture-key\nCAPTAIN_TEST_UNRELATED=1\n", 0o600)
 	writeEnv(t, home, "secrets.env", "CAPTAIN_BLACKBOX_NETWORK=from-secrets\nHF_TOKEN=hf-test\n", 0o600)
-	for _, key := range []string{"OPENROUTER_API_KEY", "HF_TOKEN", "CAPTAIN_TEST_UNRELATED", "CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"} {
+	for _, key := range []string{"OPENROUTER_API_KEY", "HF_TOKEN", "CAPTAIN_TEST_UNRELATED", "CAPTAIN_BLACKBOX", "CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"} {
 		key := key
 		previous, present := os.LookupEnv(key)
 		os.Unsetenv(key)
@@ -88,7 +88,8 @@ func TestLoadBlackboxConfigKeepsCredentialsOut(t *testing.T) {
 	}
 
 	set := LoadBlackboxConfig()
-	assert.ElementsMatch(t, []string{"CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"}, set)
+	assert.ElementsMatch(t, []string{"CAPTAIN_BLACKBOX", "CAPTAIN_BLACKBOX_STORE", "CAPTAIN_BLACKBOX_KEY_ID", "CAPTAIN_BLACKBOX_NETWORK"}, set)
+	assert.Equal(t, "audit", os.Getenv("CAPTAIN_BLACKBOX"), "the configured mode loads")
 	assert.Equal(t, "/store", os.Getenv("CAPTAIN_BLACKBOX_STORE"), "the env file's pins load")
 	assert.Equal(t, "from-secrets", os.Getenv("CAPTAIN_BLACKBOX_NETWORK"), "the secrets file's pins load")
 	assert.Empty(t, os.Getenv("OPENROUTER_API_KEY"), "a screening command never loads credentials")
