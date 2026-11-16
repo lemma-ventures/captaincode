@@ -73,7 +73,7 @@ func runBlackboxStatus(args []string, stdout io.Writer) error {
 func collectBlackboxStatus() blackboxStatus {
 	status := blackboxStatus{Mode: blackboxEnvMode(), Authority: collectBlackboxAuthorityStatus(time.Now().UTC())}
 	switch status.Mode {
-	case "audit", "off", "shadow":
+	case "audit", "enforce", "off", "shadow":
 		status.ModeValid = true
 	}
 	status.ClaudeHook = claudeBlackboxMode() != "" && captaincode.ClaudeHookInstalled("captain redact --hook")
@@ -158,10 +158,17 @@ func (s blackboxStatus) String() string {
 		fmt.Fprintf(&b, "blackbox   mode %s - unknown; `captain blackbox hook` refuses it, use audit or off\n", s.Mode)
 	case s.Mode == "audit":
 		fmt.Fprintln(&b, "blackbox   mode audit - tool events are recorded, nothing is refused (BB5)")
+	case s.Mode == "enforce":
+		fmt.Fprintln(&b, "blackbox   mode enforce - eligible critical matches and unavailable required checks are refused before the tool runs (BB5)")
 	default:
 		fmt.Fprintln(&b, "blackbox   mode off - CAPTAIN_BLACKBOX=audit starts recording tool events (nothing is ever refused)")
 	}
+	if os.Getenv("CAPTAIN_JAILED") == "1" {
+		fmt.Fprintln(&b, "settings   hidden - a sent-turn shell never receives the mode, the overrides or the snapshot; run this outside a jail")
+	}
 	switch {
+	case s.ClaudeHook && s.Mode == "enforce":
+		fmt.Fprintln(&b, "claude     covered - the composed path in `captain redact --hook` applies the same refusals")
 	case s.ClaudeHook:
 		fmt.Fprintln(&b, "claude     covered - the audit composes into `captain redact --hook`")
 	case s.Mode == "audit" && captaincode.RedactMode() == "off":

@@ -110,13 +110,16 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 // credentialVarRe names an environment variable that may hold a credential.
 var credentialVarRe = regexp.MustCompile(`(?i)(KEY|TOKEN|SECRET|PASSW|CREDENTIAL|AUTH|COOKIE|SESSION|PRIVATE|_PAT$|DSN|WEBHOOK|SSH_AUTH_SOCK|GPG_AGENT)`)
 
-// JailEnv is env with every credential-like variable removed, and the
-// toolchains told not to reach the network.
+// JailEnv is env with every credential-like variable removed, the Blackbox
+// enforcement settings removed (they belong to the host process that screens
+// the tools, never to a worker shell that cannot be trusted with them), and
+// the toolchains told not to reach the network.
 func JailEnv(env []string) []string {
 	out := make([]string, 0, len(env)+3)
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
-		if credentialVarRe.MatchString(name) || name == "GOPROXY" || name == "CAPTAIN_JAILED" {
+		if credentialVarRe.MatchString(name) || name == "GOPROXY" || name == "CAPTAIN_JAILED" ||
+			strings.HasPrefix(name, "CAPTAIN_BLACKBOX") {
 			continue
 		}
 		out = append(out, kv)

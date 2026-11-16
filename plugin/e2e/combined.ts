@@ -232,7 +232,7 @@ export async function runCombined(brainBinary: string, opencodeBinary: string) {
       return new Response(`${sse}data: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } })
     },
   })
-  const ports = { brain: await free(), proxy: await free(), frontend: await free(), bb2a: await free(), bb2b: await free(), model: fixtureModel.port }
+  const ports = { brain: await free(), proxy: await free(), frontend: await free(), bb2a: await free(), bb2b: await free(), bb5e: await free(), model: fixtureModel.port }
   const profile = path.join(scratch, "loopback.sb")
   await Bun.write(
     profile,
@@ -721,6 +721,56 @@ export async function runCombined(brainBinary: string, opencodeBinary: string) {
     assert.notEqual(idA, idB, `two workspaces must not share a workspace id: ${describe()}`)
     reports.push(
       "PASS: two simultaneous workspaces run a live tool call, the Blackbox hook files would_block then observed_after_execution records, and the call is never refused",
+    )
+    // BB5: the same fixture call in enforce mode is refused before the tool
+    // runs. The snapshot already holds a critical protected-path rule for this
+    // workspace, so one refusal is expected: no file, no post record, and one
+    // blocked pre record that names the rule instead of the path.
+    await startFrontend(directory, ports.bb5e, "blackbox-enforce", {
+      ...isolatedHome("e"),
+      CAPTAIN_BLACKBOX: "enforce",
+    })
+    const sessionE = await sessionIn(directory, ports.bb5e)
+    const enforcedTarget = "config/private/enforced.txt"
+    const turned = await sendFixture(directory, ports.bb5e, sessionE, `WRITE ${enforcedTarget}`)
+    assert.ok(turned.parts.length > 0, JSON.stringify(turned))
+    assert.equal(
+      await readFile(path.join(directory, enforcedTarget), "utf8").catch(() => ""),
+      "",
+      "the refused tool call must write nothing",
+    )
+    await until(async () => (await security()).some((row) => row.mode === "enforce"), 30000)
+    const enforceRows = (await security()).filter((row) => row.mode === "enforce")
+    const forEnforce = JSON.stringify(enforceRows, null, 2)
+    const blocked = enforceRows.filter((row) => row.phase === "pre" && row.tool === "write")
+    assert.ok(blocked.length >= 1, `one blocked pre record: ${forEnforce}`)
+    assert.ok(
+      blocked.every((row) => row.disposition === "blocked" && row.status === "complete"),
+      `a refusal records blocked: ${forEnforce}`,
+    )
+    assert.ok(
+      blocked.every((row) => row.snapshot_id === "fixture" && row.session_id === sessionE),
+      `the refusal joins the session and its snapshot: ${forEnforce}`,
+    )
+    assert.ok(
+      blocked.every((row) => row.findings.some((finding) => finding.severity === "critical")),
+      `the refusal carries the critical finding: ${forEnforce}`,
+    )
+    assert.ok(
+      !enforceRows.some((row) => row.phase === "post"),
+      `an action that never ran has no post record: ${forEnforce}`,
+    )
+    assert.ok(
+      !JSON.stringify(enforceRows).includes("enforced"),
+      `the stream carries no path: ${forEnforce}`,
+    )
+    assert.equal(
+      await readFile(path.join(directory, target), "utf8").catch(() => ""),
+      "bb2\n",
+      "the audit call in the same workspace still ran in audit mode",
+    )
+    reports.push(
+      "PASS: the same fixture call in enforce mode is refused before the tool runs, files one blocked record with no path, and writes nothing",
     )
     return reports
   } catch (error) {

@@ -45,3 +45,20 @@ test("empty, off and degraded states stay explicit", () => {
   expect(securitySummary({ ...status, mode: "off", total: 0 })).toContain("off")
   expect(securitySummary({ ...status, snapshot_ok: false })).toContain("snapshot unreadable")
 })
+
+test("an enforcing host reports refusals as refusals, not as audit-only coverage", () => {
+  const enforcing: SecurityStatus = {
+    ...status,
+    mode: "enforce",
+    total: 4,
+    dispositions: { blocked: 2, overridden: 1, security_check_unavailable: 1, degraded: 0, evaluated: 0 },
+  }
+  const text = securitySummary(enforcing)
+  expect(text).toContain("enforcing")
+  expect(text).toContain("4 events")
+  expect(text).toContain("2 blocked")
+  expect(text).toContain("1 overridden")
+  expect(text).toContain("1 check unavailable")
+  expect(text).not.toContain("audit only")
+  expect(securitySummary({ ...enforcing, total: 0, dispositions: {} })).toContain("enforcing · no events in this folder")
+})

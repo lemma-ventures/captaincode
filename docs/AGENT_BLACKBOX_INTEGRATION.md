@@ -490,13 +490,36 @@ crashing hook (`plugin/blackbox.test.ts`, 33 plugin tests). Full `pkg` and
 `BenchmarkDecideBlackboxEnforcement` measured 190.6-345.8 ns per decision
 over three 300-run samples with eight advisory findings and one override.
 
+**Live refusal evidence (16 November 2026).** The combined fixture runtime
+now runs one fixture call in `enforce` mode. A third frontend serves the BB2
+workspace with `CAPTAIN_BLACKBOX=enforce` and the same snapshot: the model
+asks for a file under the protected path, the plugin refuses the call before
+the tool runs, no file is written, one `blocked` pre record carries the
+critical finding and the rule id instead of the path, and no
+`observed_after_execution` record exists. The audit call in the same workspace
+still ran under `audit`. The check now prints 12 reports; two runs finished
+green in 73 s and 79 s with `CAPTAIN_BRAIN_BIN` built from this checkout and a
+stock `OPENCODE_BIN`.
+
+**Worker containment (16 November 2026).** The mode exists only in host
+environments, and the state lives in two directories the jail denies in both
+profiles: `SeatbeltProfile` puts `~/.config/captain` (the default override
+file and the default snapshot) and `~/.captaincode` (the record stream) in the
+final `deny file-read* file-write*` block, after every write allow, and
+`BwrapArgs` mounts both as tmpfs. `JailEnv` now drops every `CAPTAIN_BLACKBOX*`
+variable, so a worker shell cannot read the mode, the override path or the
+store, and cannot pass them to anything it spawns. `captain blackbox status`
+inside a sent turn prints `settings   hidden` instead of a mode it cannot see,
+and the report now names `enforce` as a known mode with its own line instead
+of `unknown`. The checks are `TestBlackboxStateIsOutsideTheJail`,
+`TestJailEnvDropsBlackboxSettings`, `TestBlackboxStatusRecognizesEnforceMode`
+and `TestBlackboxStatusJailedReportsHiddenSettings`.
+
 Still owed for BB5 rollout: the 1,000-benign-action pilot review across both
 hosts and two disposable workspaces with zero unexplained would-block results,
-the operator's host and category selection before any enforcement is enabled
-anywhere, live refusal evidence in the combined fixture runtime (as BB2 and
-BB4 did), and the worker-containment check that a worker cannot edit the
-override file or the mode. Enforcement stays off by default; nothing in this
-change enables it anywhere.
+and the operator's host and category selection before any enforcement is
+enabled anywhere. Enforcement stays off by default; nothing in these changes
+enables it anywhere.
 
 ### Normalized action
 

@@ -46,8 +46,18 @@ export function securitySummary(status: SecurityStatus): string {
   const safeMode = display(status.mode)
   const snapshot = status.snapshot_ok ? "" : " · snapshot unreadable"
   if (!status.mode_valid) return `unknown mode ${safeMode}${snapshot}`
-  if (status.mode !== "audit") return `${safeMode} · audit recording disabled${snapshot}`
   const uncovered = status.uncovered.length ? ` · ${display(status.uncovered.join(", "))} uncovered` : ""
+  if (status.mode === "enforce") {
+    if (status.total === 0) return `enforcing · no events in this folder${snapshot}${uncovered}`
+    const refusals = [
+      ["blocked", "blocked"],
+      ["overridden", "overridden"],
+      ["security_check_unavailable", "check unavailable"],
+      ["degraded", "degraded"],
+    ].filter(([key]) => (status.dispositions[key] ?? 0) > 0).map(([key, label]) => `${status.dispositions[key]} ${label}`)
+    return `enforcing · ${status.total} events${refusals.length ? " · " + refusals.join(" · ") : ""}${snapshot}${uncovered}`
+  }
+  if (status.mode !== "audit") return `${safeMode} · audit recording disabled${snapshot}`
   if (status.total === 0) return `audit only · no events in this folder${snapshot}${uncovered}`
   const counts = [
     ["would_block", "would block"],

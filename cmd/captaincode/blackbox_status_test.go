@@ -335,3 +335,55 @@ func BenchmarkBlackboxWorkspaceStatusCollect(b *testing.B) {
 		collectBlackboxWorkspaceStatus(workspace)
 	}
 }
+
+// BB5: enforce is a real mode, so the report names it instead of calling it
+// unknown, and it counts the enforce dispositions it collects.
+func TestBlackboxStatusRecognizesEnforceMode(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("CAPTAIN_BLACKBOX", "enforce")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", writeStatusSnapshot(t, dir))
+	appendStatusRecord(t, captaincode.BlackboxSecurityRecord{
+		EventID: "ev1", Phase: "pre", Tool: "write", Mode: "enforce", Host: "opencode",
+		Disposition: "blocked", Status: "complete", WorkspaceID: "ws_aaaaaaaa", SessionID: "ses-1",
+	})
+
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	report := out.String()
+	for _, want := range []string{
+		"blackbox   mode enforce - eligible critical matches",
+		"records    1",
+		"blocked 1",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in report:\n%s", want, report)
+		}
+	}
+	if strings.Contains(report, "mode enforce - unknown") {
+		t.Errorf("enforce is not unknown to the report:\n%s", report)
+	}
+}
+
+// A sent-turn shell never receives the settings (JailEnv drops them), so the
+// report says where they really live instead of printing an off it cannot see.
+func TestBlackboxStatusJailedReportsHiddenSettings(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("CAPTAIN_BLACKBOX", "")
+	t.Setenv("CAPTAIN_JAILED", "1")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(dir, "security.jsonl"))
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", filepath.Join(dir, "missing.json"))
+
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	report := out.String()
+	if !strings.Contains(report, "settings   hidden - a sent-turn shell never receives") {
+		t.Errorf("the jailed report must say the settings are hidden:\n%s", report)
+	}
+}
