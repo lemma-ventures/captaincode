@@ -63,28 +63,40 @@ func PrepareBlackboxHookAction(host, phase, tool string, rawArgs json.RawMessage
 // degraded result, never a clean one.
 func EvaluateBlackboxHook(action BlackboxAction, snapshotPath string) BlackboxResult {
 	if snapshotPath == "" {
-		return blackboxUnavailableResult("snapshot_unavailable")
+		return BlackboxUnavailableResult("snapshot_unavailable")
 	}
 	file, err := os.Open(snapshotPath)
 	if err != nil {
-		return blackboxUnavailableResult("snapshot_unreadable")
+		return BlackboxUnavailableResult("snapshot_unreadable")
 	}
 	defer file.Close()
 	snapshot, err := DecodeBlackboxSnapshot(io.LimitReader(file, BlackboxMaxSnapshotBytes+1))
 	if err != nil {
-		return blackboxUnavailableResult("snapshot_invalid")
+		return BlackboxUnavailableResult("snapshot_invalid")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
 	return EvaluateBlackbox(ctx, action, snapshot)
 }
 
-func blackboxUnavailableResult(reason string) BlackboxResult {
+func BlackboxUnavailableResult(reason string) BlackboxResult {
 	result := BlackboxResult{Schema: 1, Status: "error", Errors: []string{reason}, Findings: []BlackboxFinding{}, Coverage: []BlackboxCoverage{}}
 	for _, category := range blackboxCategories {
 		result.Coverage = append(result.Coverage, BlackboxCoverage{Category: category, Status: "not_covered", Reason: reason})
 	}
 	return result
+}
+
+// EvaluateBlackboxHookStore screens one action against the accepted snapshot
+// of an authenticated store. An empty, unverifiable or expired store is a
+// degraded result, never a silent fallback to some other rule source.
+func EvaluateBlackboxHookStore(action BlackboxAction, store *BlackboxStore, now time.Time) BlackboxResult {
+	if store == nil || !store.HasCurrent() || store.Expired(now) {
+		return BlackboxUnavailableResult("snapshot_unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	return EvaluateBlackbox(ctx, action, store.Snapshot())
 }
 
 // FinishBlackboxHookRecord builds the security record for one hook event,

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -21,11 +23,13 @@ func cmdBlackbox(args []string) {
 
 func runBlackbox(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: captain blackbox check|export|hook|status ...")
+		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|status ...")
 	}
 	switch args[0] {
 	case "check":
 		return runBlackboxCheck(args[1:], stdin, stdout)
+	case "keygen":
+		return runBlackboxKeygen(args[1:], stdout)
 	case "export":
 		return runBlackboxExport(args[1:], stdout)
 	case "hook":
@@ -33,7 +37,7 @@ func runBlackbox(args []string, stdin io.Reader, stdout io.Writer) error {
 	case "status":
 		return runBlackboxStatus(args[1:], stdout)
 	default:
-		return fmt.Errorf("usage: captain blackbox check|export|hook|status ...")
+		return fmt.Errorf("usage: captain blackbox check|export|keygen|hook|status ...")
 	}
 }
 
@@ -145,7 +149,7 @@ func runBlackboxHook(args []string, stdin io.Reader, stdout io.Writer) error {
 
 	started := time.Now()
 	action := captaincode.PrepareBlackboxHookAction("opencode", phase, input.Tool, input.Args, input.Output, input.Cwd)
-	result := captaincode.EvaluateBlackboxHook(action, blackboxSnapshotPath(*snapshotPath))
+	result := evaluateBlackboxHookAction(action, *snapshotPath)
 	record := captaincode.FinishBlackboxHookRecord(action, result, mode, input.Session, started)
 
 	var decision captaincode.BlackboxEnforceDecision
@@ -188,6 +192,56 @@ func blackboxSnapshotPath(flagPath string) string {
 		return ""
 	}
 	return home + "/.config/captain/blackbox-snapshot.json"
+}
+
+// evaluateBlackboxHookAction resolves the rule source for one hook event.
+// An explicit snapshot flag or CAPTAIN_BLACKBOX_SNAPSHOT file wins. Without
+// one, a configured authenticated store supplies the accepted snapshot; a
+// store that is configured but cannot be opened degrades the screening
+// instead of silently falling back to the unverified file. With no store
+// configured at all, the default file path keeps the previous behavior.
+func evaluateBlackboxHookAction(action captaincode.BlackboxAction, flagPath string) captaincode.BlackboxResult {
+	if flagPath != "" || os.Getenv("CAPTAIN_BLACKBOX_SNAPSHOT") != "" {
+		return captaincode.EvaluateBlackboxHook(action, blackboxSnapshotPath(flagPath))
+	}
+	store, configured, err := blackboxStoreFromEnv()
+	if !configured {
+		return captaincode.EvaluateBlackboxHook(action, blackboxSnapshotPath(flagPath))
+	}
+	if err != nil {
+		return captaincode.BlackboxUnavailableResult("snapshot_unavailable")
+	}
+	return captaincode.EvaluateBlackboxHookStore(action, store, time.Now())
+}
+
+// blackboxStoreFromEnv opens the authenticated snapshot store when the
+// operator configured any of its trust pins. configured is true when at least
+// one pin is set, so a half-configured store is reported, not ignored.
+func blackboxStoreFromEnv() (store *captaincode.BlackboxStore, configured bool, err error) {
+	values := []string{
+		os.Getenv("CAPTAIN_BLACKBOX_STORE"), os.Getenv("CAPTAIN_BLACKBOX_KEY_ID"),
+		os.Getenv("CAPTAIN_BLACKBOX_PUBLIC_KEY"), os.Getenv("CAPTAIN_BLACKBOX_TRUST_ROOT"),
+		os.Getenv("CAPTAIN_BLACKBOX_GRAPH"), os.Getenv("CAPTAIN_BLACKBOX_NETWORK"),
+	}
+	complete := true
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			complete = false
+		} else {
+			configured = true
+		}
+	}
+	if !configured || !complete {
+		return nil, configured, nil
+	}
+	publicKey, err := base64.StdEncoding.DecodeString(values[2])
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
+		return nil, true, fmt.Errorf("blackbox store public key pin is invalid")
+	}
+	store, err = captaincode.OpenBlackboxStore(values[0], captaincode.BlackboxTrustPins{
+		KeyID: values[1], PublicKey: publicKey, TrustRoot: values[3], Graph: values[4], Network: values[5],
+	})
+	return store, true, err
 }
 
 func writeBlackboxHookOutput(stdout io.Writer, output blackboxHookOutput) error {

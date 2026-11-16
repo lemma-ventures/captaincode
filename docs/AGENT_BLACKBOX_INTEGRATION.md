@@ -308,6 +308,18 @@ reports `degraded` on stdout without failing the tool. Enforce mode (BB5,
 delivered 16 November 2026) additionally reports a refusal in its JSON
 output; see the BB5 section below.
 
+Since 16 November 2026 the hook also resolves rules from the authenticated
+snapshot store: when no explicit snapshot file is given and the operator
+configured the store trust pins (`CAPTAIN_BLACKBOX_STORE`, `KEY_ID`,
+`PUBLIC_KEY`, `TRUST_ROOT`, `GRAPH`, `NETWORK`), the screening runs against
+the store's accepted snapshot. A configured store that cannot be opened, or
+one that is empty or expired, degrades the screening rather than silently
+falling back to the unverified file. A category the signed snapshot declares
+disabled is a scope decision and no longer forces the whole result to
+`incomplete`; only an enabled category without rules, or an incomplete action
+input, degrades. `captain blackbox keygen` writes the raw Ed25519 signing key
+the export signs with.
+
 The plugin hook in `plugin/captain.ts` calls it after secret restoration and
 before the gate and jail wrapping, on the arguments that will actually run,
 with `CAPTAIN_BLACKBOX=audit` opt-in (default `off`). It is independent of

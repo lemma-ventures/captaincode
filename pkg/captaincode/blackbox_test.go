@@ -80,8 +80,17 @@ func TestBlackboxDisabledCategoryProducesNoFinding(t *testing.T) {
 	action := blackboxFixtureAction()
 	action.Packages = []BlackboxPackage{{Ecosystem: "npm", Name: "example-package", Version: "1.2.3"}}
 	result := EvaluateBlackbox(context.Background(), action, snapshot)
-	if len(result.Findings) != 0 || result.Status != "incomplete" {
+	if len(result.Findings) != 0 || result.Status != "complete" {
 		t.Fatalf("result = %+v", result)
+	}
+	disabled := false
+	for _, coverage := range result.Coverage {
+		if coverage.Category == "dependency" {
+			disabled = coverage.Status == "not_covered"
+		}
+	}
+	if !disabled {
+		t.Fatalf("coverage = %+v - the disabled category stays named", result.Coverage)
 	}
 }
 

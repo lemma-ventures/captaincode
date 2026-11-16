@@ -32,8 +32,17 @@ func TestBlackboxCheckJSONWithoutConfiguration(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != "incomplete" || len(result.Findings) != 1 || result.Findings[0].RuleID != "pkg" {
+	if result.Status != "complete" || len(result.Findings) != 1 || result.Findings[0].RuleID != "pkg" {
 		t.Fatalf("result = %+v", result)
+	}
+	notCovered := 0
+	for _, coverage := range result.Coverage {
+		if coverage.Status == "not_covered" {
+			notCovered++
+		}
+	}
+	if notCovered != 2 {
+		t.Fatalf("coverage = %+v - the disabled categories stay named", result.Coverage)
 	}
 }
 

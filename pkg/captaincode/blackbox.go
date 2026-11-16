@@ -31,7 +31,10 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 			coverage.Status = "incomplete"
 			coverage.Reason = "action_input_incomplete"
 		}
-		if coverage.Status != "covered" && result.Status == "complete" {
+		if coverage.Status == "incomplete" && result.Status == "complete" {
+			// A category the snapshot disables is a signed scope
+			// decision, not a degradation: the screening is complete
+			// for what the snapshot selected.
 			result.Status = "incomplete"
 		}
 		result.Coverage = append(result.Coverage, coverage)

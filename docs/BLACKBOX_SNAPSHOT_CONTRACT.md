@@ -160,6 +160,30 @@ fields, so contract changes need a new schema number.
   authenticated verification time and signed expiry, never file modification
   time. Missing or wrong pins, unreadable state and expired state stay explicit.
   The audit evaluator's separate file input remains labelled unverified.
+- Key generation: `captain blackbox keygen --output <new-key-file>
+  [--public <new-public-file>]` writes one new raw Ed25519 signing key as the
+  exact 64 bytes the export reads, mode `0600`, never an existing path, and
+  prints the base64 public key with a key id hint. The pinned key id, trust
+  root and network stay operator choices at export time.
+- Hook evaluation from the store: `captain blackbox hook` resolves rules from
+  the authenticated store when the operator configured its trust pins and no
+  explicit snapshot file was given. A configured store that cannot be opened
+  degrades the screening instead of falling back to the unverified file; with
+  no store configured the file path keeps the previous behavior. An empty or
+  expired store degrades the same way.
+- Disabled-category scope: a category the signed snapshot declares disabled
+  (`not_covered`) is a scope decision, not a degradation. Such a category no
+  longer forces the whole result to `incomplete`; only a category that is
+  enabled but carries no rules, or an incomplete action input, does. Every
+  upstream export leaves `protected_path` disabled because that policy is
+  local, so this is what keeps an exported snapshot's screenings complete.
+- First live snapshot: on 16 November 2026 the pilot store accepted
+  generation 1 of `pilot-20261116-1`, imported from a fresh upstream cache
+  produced at the pinned revision inside an isolated throwaway container (103
+  injection patterns, 32 skill rules, 135 graph threats from the default
+  verified graph; upstream keeps dependency and IOC rules live in its node, so
+  the cache carries none). The hook screened one benign action against it and
+  recorded `evaluated` with the snapshot id. No enforcement is enabled.
 - Formal acceptance model: `formal/blackbox_snapshot_model.py` checks
   acceptance, replay, expiry, write failures, restart and rollback. It assumes
   one sequential writer. It does not prove cryptographic correctness, concurrent
