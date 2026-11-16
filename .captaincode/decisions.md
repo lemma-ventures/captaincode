@@ -38,3 +38,15 @@ keep the entries from both sides.
   - b: Both Macs - enforce on both Macs at once, after the second Mac passes the same 1,000-action review and a week of clean audit records
   - c: Stay audit only - turn on nothing now; keep audit records and the signed store until real worker traffic gives more evidence
 - Why a: One host carries the burden, the scope is proven green, and the rollback is one unset variable
+
+## P7 (dq-261116-9b3a84) answered: Next optional roadmap item
+
+- Question: BB1-BB4 are complete and the remaining fleet rows need host acceptance or owner approval. Which proposed Captain Code item should the next build round take?
+- Answered: 2026-11-16
+- Choice: a: P7 dataset export - Build only step 1: join routing decisions and outcomes without prompt text; no routing change
+
+## captaincode (dq-261116-0cd13b) answered: Enforcement hosts and rule categories
+
+- Question: BB5 has a signed rule store and a green 1,000-action benign review. Which hosts and rule categories may turn on enforcement?
+- Answered: 2026-11-16
+- Choice: a: This host first - enforce exact-package and local-path critical rules on the development Mac after its audit records stay clean; the second Mac stays audit-only until it passes the same review
