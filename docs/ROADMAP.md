@@ -97,7 +97,7 @@ failure no longer reproduces on this tree.) |
 | P4 | A "needs you" inbox: surface only the turns that wait on the user | TUI | proposed |
 | P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
-| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | step 1 done (16 November 2026, dq-261116-9b3a84): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing. Steps 2 and 3 need your go (P1–P6 remain proposed) |
+| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | step 1 done (16 November 2026, dq-261116-9b3a84): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing. Step 2 has the owner's go (dq-261116-a61645, answered 16 November 2026): split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. Step 3 still needs your go (P1–P6 remain proposed) |
 
 BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
 composition, CLI status, concurrent workspace isolation, TUI join and real host
@@ -119,7 +119,10 @@ benign actions ran on this host against that signed store through both hosts and
 disposable workspaces, in enforce and audit, with zero refusals and zero degraded
 screenings, and enforce is now set here (activated 16 November 2026 per `dq-261116-0cd13b`; the snapshot must be renewed before it expires 23 November 2026, or the mode must be unset). The rollout gate `dq-261116-0cd13b` chose this host first. P7 step 1 was delivered 16 November 2026 under `dq-261116-9b3a84` and committed as `e5fe844`: `captain why --export` writes the joined dataset (9 package tests, 4 command tests, `go test ./... -count=1` and `go vet ./...` green; a live export on this Mac wrote 3,755 rows for 3,423 tasks across 2,142 prompt digests, with no unexpected field and an existing file refused). N1/N2/N4/N5 are marked
 `needs you`, W1 waits on seven days of turns, and
-P1–P6 remain proposals. No buildable roadmap row is marked `next`: P7's steps 2 and 3 need your go, the P-rows are proposals, and F5 waits on the fleet queue's host gates, so a round takes the fleet queue's next gated item or reports `no buildable row`. Both decision questions are now closed.
+P1–P6 remain proposals. P7 step 2 has the owner's go (dq-261116-a61645,
+answered 16 November 2026) and is the next buildable row; step 3 still needs
+your go, the P-rows are proposals, and F5 waits on the fleet queue's host
+gates.
 The committed tree at `25e600c` verified clean on 16 November 2026:
 `go vet ./...` is clean, `gofmt -l pkg cmd` prints nothing, and both full
 suites pass with `go test -count=1` (pkg 236.7 s, cmd 349.4 s) on a tree with
@@ -3706,6 +3709,8 @@ your go, and a hardware or GPU budget.
 #### P7. A routing dataset and an offline router evaluation (proposed)
 
 Decision dq-261116-9b3a84 (16 November 2026): user chose option a, P7 dataset export - Build only step 1: join routing decisions and outcomes without prompt text; no routing change. The open question on the next optional roadmap item is now closed.
+
+Decision dq-261116-a61645 (16 November 2026, answered in Galaxy): user chose option a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. The open question on the next build item is now closed; step 3 still needs a separate go.
 
 Source: the multi-harness reinforcement-learning talk (Hugging Face, Kernel
 Panic Madrid, October 2026): run one task through several harnesses, keep the

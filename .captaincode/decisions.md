@@ -65,3 +65,8 @@ keep the entries from both sides.
   - c: P4 needs-you inbox - Surface only the turns that wait on the user: endpoint, CLI and TUI count
   - d: Hold - No build round until you run the fleet host gates: clean macOS account, Linux user manager, two-host first prompt
 - Why a: It scores the data we now hold, spends nothing and changes no route.
+
+## dq-261116-a61645 answered: Next optional roadmap item after P7 step 1
+
+- Answered: 2026-11-16 21:26 UTC, in galaxy
+- Choice: a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
