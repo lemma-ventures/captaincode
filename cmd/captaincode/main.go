@@ -719,11 +719,25 @@ func cmdWhy(l *captaincode.Ledger, args []string) {
 	flags := flag.NewFlagSet("why", flag.ContinueOnError)
 	share := flags.Bool("share", false, "frontier share of automatic routing decisions")
 	dayList := flags.String("days", "7,30", "comma-separated trailing windows in days")
+	export := flags.String("export", "", "write the routing dataset to a file, or - for stdout")
 	if err := flags.Parse(args); err != nil {
 		fatal(err)
 	}
 	if flags.NArg() != 0 {
-		fatal(errors.New("usage: captain why [--share] [--days 7,30]"))
+		fatal(errors.New("usage: captain why [--share] [--days 7,30] [--export <file>|-]"))
+	}
+	if err := whyExportFlags(*share, *export); err != nil {
+		fatal(err)
+	}
+	if *export != "" {
+		rows, err := exportDataset(l, *export)
+		if err != nil {
+			fatal(err)
+		}
+		if *export != "-" {
+			fmt.Print(exportSummary(*export, rows))
+		}
+		return
 	}
 	if *share {
 		days, err := parseShareDays(*dayList)

@@ -55,7 +55,7 @@ reads text from stdin. These helpers have no coding tools. See
 | Command | What it does |
 |---|---|
 | `captain director` / `director <leg>` / `director reset` | Show or switch the director ladder |
-| `captain why [--share] [--days 7,30]` | Last routing decision, or frontier share of automatic decisions over trailing windows |
+| `captain why [--share] [--days 7,30] [--export <file>\|-]` | Last routing decision; frontier share of automatic decisions over trailing windows; or the routing dataset, prompt text replaced by its SHA-256 (P7 step 1) |
 | `captain quota` | Observed/inferred quota per leg |
 | `captain budget` | Per-task budgets (attempts, cost, mode, stopping reason) |
 | `captain stats` | Aggregate ledger stats |

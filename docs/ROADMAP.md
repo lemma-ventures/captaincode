@@ -97,7 +97,7 @@ failure no longer reproduces on this tree.) |
 | P4 | A "needs you" inbox: surface only the turns that wait on the user | TUI | proposed |
 | P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
-| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | step 1 chosen (dq-261116-9b3a84): join routing decisions and outcomes without prompt text; no routing change (P1–P6 remain proposed) |
+| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | step 1 done (16 November 2026, dq-261116-9b3a84): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing. Steps 2 and 3 need your go (P1–P6 remain proposed) |
 
 BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
 composition, CLI status, concurrent workspace isolation, TUI join and real host
@@ -117,9 +117,9 @@ evaluates against the authenticated store when its trust pins are configured,
 category is scope, not degradation. The second rollout gate closed on 16 November 2026: 1,000
 benign actions ran on this host against that signed store through both hosts and two
 disposable workspaces, in enforce and audit, with zero refusals and zero degraded
-screenings, and audit is now set here. The rollout gate `dq-261116-0cd13b` chose this host first. P7 step 1 chosen under `dq-261116-9b3a84` (join routing decisions and outcomes without prompt text; no routing change). N1/N2/N4/N5 are marked
+screenings, and audit is now set here. The rollout gate `dq-261116-0cd13b` chose this host first. P7 step 1 was delivered 16 November 2026 under `dq-261116-9b3a84`: `captain why --export` writes the joined dataset (9 package tests, 4 command tests, `go test ./... -count=1` and `go vet ./...` green; a live export on this Mac wrote 3,755 rows for 3,423 tasks across 2,142 prompt digests, with no unexpected field and an existing file refused). N1/N2/N4/N5 are marked
 `needs you`, W1 waits on seven days of turns, and
-P1–P6 remain proposals. No buildable roadmap row is marked `next`: a round takes the first queued P-row or the fleet queue's F5 after its gates. Both decision questions are now closed.
+P1–P6 remain proposals. No buildable roadmap row is marked `next`: P7's steps 2 and 3 need your go, the P-rows are proposals, and F5 waits on the fleet queue's host gates, so a round takes the fleet queue's next gated item or reports `no buildable row`. Both decision questions are now closed.
 The committed tree at `25e600c` verified clean on 16 November 2026:
 `go vet ./...` is clean, `gofmt -l pkg cmd` prints nothing, and both full
 suites pass with `go test -count=1` (pkg 236.7 s, cmd 349.4 s) on a tree with
@@ -3726,6 +3726,49 @@ decision and its candidates. Verdicts are in the outcome records
    never changes a route the user typed.
 
 Step 1 needs no model and can start after Q8. Steps 2 and 3 need your go.
+
+**Step 1 delivered 16 November 2026.** `captain why --export <file>` (or
+`-` for stdout) writes one JSON row per attempt from `BuildRoutingDataset`
+in `pkg/captaincode/routing_dataset.go`; the command is
+`cmd/captaincode/why_export.go`. Each row carries: task id, prompt SHA-256,
+class, domain, path, shape, tie policy, attempt and attempt total, repair
+count, the decision's chosen leg, this attempt's leg, effort, frontier flag,
+gate result (the task's last `gate:` check: pass, fail or none), run
+outcome, verdict, quality, this attempt's cost and cost status, the task
+cost when the charge log still holds it, and the settlement with its label
+and decided-by. No field holds free text: no prompt, task label, rationale,
+error, reason or file path. A fan-out's aggregate event has no leg, so it
+becomes no row and cannot count its cost twice. A task settled by silence
+exports `settled` with an empty label, because silence is not a label
+(`RoutingSample.Labeled`). The file is created 0600, its parent 0700, and an
+existing path is refused with `O_EXCL`, so a symlink cannot redirect the
+write. The one refused flag combination is `--share` with `--export`.
+
+**Evidence.** Nine package tests and four command tests cover the join,
+the digest, the decision-only row, the event-only row, gate results, the
+silence label, file mode, file refusal and stdout streaming. `go vet ./...`
+and `gofmt -l pkg cmd` are clean, and `go test ./... -count=1` exits 0 across all
+five packages (`pkg/captaincode` 261.5 s; `cmd/captaincode` passes inside the
+same run). A live export on the
+development Mac wrote 3,755 rows for 3,423 tasks: 2,603 rows carry a 64-hex
+prompt digest over 2,142 distinct digests, 495 rows carry a label (434
+accepted, 61 rejected), 4 rows record a failed gate, and no row holds a
+field outside the schema. A second export to the same path exits 1 with
+`routing dataset already exists`. The build benchmark over 400 samples
+(1,200 rows) measures 388.7-393.7 microseconds, 2,226,476 B and 2,412
+allocations per run on the development Mac.
+
+**Limits read from that export.** `task_cost_usd` was populated on 13 rows:
+the ledger's charge log is bounded at 4,000 rows, so older tasks no longer
+carry their cost. Per-attempt money comes from the run event instead (2,828
+measured, 406 estimated, 465 unknown; 56 rows are unrun and state no cost
+status). The exporter reads the whole journal and holds its rows in memory,
+the same read `captain why --share` does, so a very long history wants the
+date window that step 2 defines. The export is a read: no model call, no
+routing change, and no label invented for a task nobody judged.
+
+Steps 2 and 3 (the held-out split by date, and the shadow router) need your
+go.
 
 ### Blackbox security backlog (21 October 2026)
 
