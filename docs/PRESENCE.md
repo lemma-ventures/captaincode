@@ -395,11 +395,17 @@ The folder must also have opted in with `captain link add`.
 `VerifyPromptReadOnly` records the read-only scope in the durable grant. The
 worker is a sent turn with an additional read-only contract, not a typed turn.
 It can read and search inside the linked repository and use read-only Git
-history commands. It cannot write, run project code or tests, use the network,
-start a loop or team, call MCP tools, or read outside that repository. Shell
-commands use the sent-turn jail. Codex uses its own read-only sandbox and no
-MCP servers. Cursor and Grok CLI refuse this scope because their adapters do
-not enforce the same tool contract.
+history commands. `git branch` and `git remote` are limited to their listing
+forms. `git status` and `git blame` are refused because repository
+configuration can start helper programs. `git log`, `git diff` and `git show`
+require `--no-ext-diff --no-textconv`; `--textconv`, `--show-signature`,
+signature fields in pretty formats, and `--no-index` are refused. These rules keep configured helpers and
+outside-repository diff inputs outside the remote scope. Git output-file
+options and `--ext-diff` are refused because they can write files or start
+another program. It cannot write, run project code or tests, use the network,
+start a loop or team, call MCP tools, or read outside that repository. Shell commands use the sent-turn jail. Codex uses its own
+read-only sandbox and no MCP servers. Cursor and Grok CLI refuse this scope
+because their adapters do not enforce the same tool contract.
 
 An `active` folder runs after the normal one-minute headless wait. A
 `--queue` folder waits for its TUI. Every accepted prompt is durable before
@@ -407,7 +413,10 @@ its `prompt.receipt` goes back. A refused prompt gets a signed refusal code.
 An exact redelivery returns the existing receipt without consuming the nonce
 again; a different nonce or different content cannot reuse the queue entry.
 The result stays in the local queue and run log. A completed headless hub
-prompt also stores a `turn.summary` beside that result. The stream sends the
+prompt also stores a `turn.summary` beside that result. An accepted prompt
+whose grant expires before execution, or which the operator drops from the
+pending queue, stores a failed summary so the browser does not wait forever.
+A handoff to a TUI is not a result and stores no summary. The stream sends the
 bounded, secret-masked 160-character outcome and completion state, never the
 prompt, transcript or tool output. Cost is `unknown` until the queue has a
 billed total. Unlinking the folder stops later delivery. A fresh envelope can

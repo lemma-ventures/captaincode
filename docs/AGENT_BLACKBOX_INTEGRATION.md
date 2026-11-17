@@ -585,11 +585,16 @@ through the dependency category, the same path in audit mode is `would_block`,
 and an unknown tool is `security_check_unavailable`. The main suites, focused
 race checks, `go vet ./...` and `gofmt -l cmd pkg` pass on this change.
 
-**What this does not do.** The store the development Mac runs on
-(`pilot-20261116-1`) still carries zero path rules, because it can only be
-renewed from a preserved upstream cache and that cache is gone with its
-container. The operator's own policy file (which local paths to protect) is
-not written here: that is an explicit operator choice under the rule below.
+**Delivered 17 November 2026.** The store the development Mac runs on
+(`pilot-20261116-1`) carries the operator's path rules now: generation 3 was
+signed with `--paths` from `~/.config/captain/blackbox-paths.json` (13 rules,
+critical on secret and key locations, high on repository roots), fresh probes
+refuse the critical paths before any side effect, and both 1,000-action
+reviews pass with the path category active. The upstream cache from the sync
+container is kept at `~/.config/captain/blackbox-cache/` (0600 with a
+provenance record), so a renewal is a re-export instead of a new sync. See
+the BB5 entry in [ROADMAP.md](ROADMAP.md) for digests, timings and what stays
+owed.
 
 ### Normalized action
 
