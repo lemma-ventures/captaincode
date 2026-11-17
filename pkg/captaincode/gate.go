@@ -241,7 +241,27 @@ func plainlyReadOnly(cmd string) bool {
 	}
 	head := filepath.Base(f[0])
 	if head == "git" {
-		return len(f) > 1 && readOnlyGit[f[1]]
+		if len(f) < 2 || !readOnlyGit[f[1]] {
+			return false
+		}
+		for _, arg := range f[2:] {
+			if arg == "--ext-diff" || arg == "--output" || strings.HasPrefix(arg, "--output=") {
+				return false
+			}
+			switch f[1] {
+			case "branch":
+				switch arg {
+				case "--list", "--show-current", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose", "--no-color":
+				default:
+					return false
+				}
+			case "remote":
+				if arg != "-v" && arg != "--verbose" {
+					return false
+				}
+			}
+		}
+		return true
 	}
 	// sed -i and awk -i inplace edit files: not a read.
 	for _, a := range f[1:] {
