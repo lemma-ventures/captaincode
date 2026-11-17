@@ -32,8 +32,11 @@ were rebuilt at `9b0a315` (17 November 2026, 11:32 local, staged rename with
 the previous `ba33787` build kept as `.prev-20261117b`; `go build ./...` and
 `go vet ./...` clean, `captain blackbox status` reads `mode enforce` against
 the authenticated store). That install carries the codex app-server 0.169
-fixes and the live qualification test; the app-server transport itself stays
-opt-in until dq-261117-5008de is answered. The running brain and
+fixes and the live qualification test; the app-server transport is now the
+codex default (dq-261117-5008de answered and implemented 17 November 2026:
+app-server by default, `CAPTAIN_CODEX_TRANSPORT=exec` opts out, and the
+schema gate is cached against the codex binary so the default costs one
+generation per install, not one per turn). The running brain and
 the `opencode serve` process still carry older code: restart them when idle
 (`./captaincode.sh restart`), then run F2/F3 acceptance on both hosts with
 that build. The
@@ -54,7 +57,7 @@ brain deployment, host credential or network policy changed in that commit.
 | M5.1 TUI correction UI | Done 15 November 2026 (Q13): `/accept`, `/reject`, `/correction`, `/regressed` ship in the TUI plugin and the CLI. Feedback loops on live pilot data remain |
 | M5.3 real numbers | Needs cost-attributed pilot data |
 | M3.2 host workflows | Stages hand over their tree and cumulative diff applies at end (Q6 done); host `/team` and `+` stages rule once per conflict group (Q7 done) |
-| M3.8 `/btw` on codex | Opt-in app-server transport implemented 15 November 2026; fake-server steering, refusal, interrupt, malformed-input and schema-gate tests pass. Live qualification passed 17 November 2026 on codex-cli 0.169.0 (`TestLiveCodexAppServer`, gated by `CAPTAIN_LIVE_CLI=1`): the schema gate passes, one real turn answers with its thread id, usage and first-output time, and a note sent mid-turn through the same channel `/btw` uses amended that turn's answer ("pong steered"). The check caught two 0.169 drift defects, both fixed the same day: the usage notification is now `thread/tokenUsage/updated` (the parser takes both names, and the fake server emits both), and `turn/steer`'s `additionalContext` must not carry an inner `name` ("only supported for untrusted context"). The default stays `exec` (posted as a decision); app-server is one env var away and falls back to exec on a schema mismatch |
+| M3.8 `/btw` on codex | Opt-in app-server transport implemented 15 November 2026; fake-server steering, refusal, interrupt, malformed-input and schema-gate tests pass. Live qualification passed 17 November 2026 on codex-cli 0.169.0 (`TestLiveCodexAppServer`, gated by `CAPTAIN_LIVE_CLI=1`): the schema gate passes, one real turn answers with its thread id, usage and first-output time, and a note sent mid-turn through the same channel `/btw` uses amended that turn's answer ("pong steered"). The check caught two 0.169 drift defects, both fixed the same day: the usage notification is now `thread/tokenUsage/updated` (the parser takes both names, and the fake server emits both), and `turn/steer`'s `additionalContext` must not carry an inner `name` ("only supported for untrusted context"). The default flipped to app-server on 17 November 2026 (dq-261117-5008de): `CAPTAIN_CODEX_TRANSPORT=exec` opts back into exec, a schema mismatch still falls back to exec with the reason in `doctor`, and the schema check is cached against the codex binary identity (path, size, mtime), so each turn does not regenerate it |
 | Optional Blackbox security checks | Offline evaluation (BB1), audit records (BB2), authenticated snapshots (BB3) and host coverage (BB4) are done. Selective enforcement (BB5) keeps its engine, the signed store and a green 1,000-action benign review; the owner's scope selection (dq-261116-0cd13b answered: this host first) is closed. The export takes an operator path policy (`--paths`), proved on a throwaway store 16 November 2026, and the policy is now live: `~/.config/captain/blackbox-paths.json` holds 13 rules (dq-261116-f9c709 answered: locations and secrets), generation 4 of `pilot-20261116-1` carries them with `protected_path` selected, live probes refuse critical matches, and both 1,000-action reviews pass on 17 November 2026. The snapshot was renewed offline from the kept cache on 17 November 2026 and expires 24 November 2026 10:38 UTC; the second Mac still stays audit-only. See BB1–BB5 below and the [integration plan](AGENT_BLACKBOX_INTEGRATION.md) |
 
 ### Build queue (October 2026)
@@ -81,7 +84,7 @@ reported a persistent `TestEscalationPromptSaved` failure in the full suite;
 both full suites now pass clean (15 November 2026, 379 s and 249 s), so that
 failure no longer reproduces on this tree.) |
 | Q13 | Outcome commands in the TUI | M5.1 | done (15 November 2026; `/accept [note]`, `/reject <reason>`, `/correction <minutes> [reason]` and `/regressed <reason>` act out of band on the last task the session started, the brain sends `X-Captain-Task-ID` on solo, team, frontier, workflow and openshell completions, the sidebar shows the last task's outcome via `GET /v1/outcome/last`, the reviewer is `tui:<OS user>`, and the words are control lines in LANGUAGE.md 3.3; the five new Go tests, full `go test ./cmd/captaincode`, full `go test ./pkg/captaincode` and `go vet` pass) |
-| Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | done (15 November 2026; opt-in stdio transport, schema-gated fallback, steer/interrupt/refusal/malformed-input/16-MiB-limit and settings-parity tests; focused race checks, the complete Codex test set and `go vet ./...` pass. Settings construction benchmark: 658.7–740.8 ns, 1,144 B and 14 allocations per call. Live qualification 17 November 2026: `TestLiveCodexAppServer` in `pkg/captaincode/codexappserver_live_test.go` runs the transport against the installed codex-cli 0.169.0 - one turn (answer, thread id as session, 16,360 tokens, first output 3.7 s) and one mid-turn steer that amended the running turn's answer - and it caught and fixed two 0.169 drift defects: the usage notification renamed to `thread/tokenUsage/updated` and the steer `additionalContext` inner `name` field now refused. Both full suites, `go vet ./...` and gofmt pass. The default flip from `exec` is posted as a decision) |
+| Q14 | `/btw` reaches a running codex worker through `codex app-server` | M3.8 | done (15 November 2026; opt-in stdio transport, schema-gated fallback, steer/interrupt/refusal/malformed-input/16-MiB-limit and settings-parity tests; focused race checks, the complete Codex test set and `go vet ./...` pass. Settings construction benchmark: 658.7–740.8 ns, 1,144 B and 14 allocations per call. Live qualification 17 November 2026: `TestLiveCodexAppServer` in `pkg/captaincode/codexappserver_live_test.go` runs the transport against the installed codex-cli 0.169.0 - one turn (answer, thread id as session, 16,360 tokens, first output 3.7 s) and one mid-turn steer that amended the running turn's answer - and it caught and fixed two 0.169 drift defects: the usage notification renamed to `thread/tokenUsage/updated` and the steer `additionalContext` inner `name` field now refused. Both full suites, `go vet ./...` and gofmt pass. The default flip from `exec` is answered (dq-261117-5008de, 17 November 2026: app-server is the codex default, `exec` opts out) and implemented the same day: `CodexAppServerRequested` is true unless the variable says `exec`, the schema check runs once per codex binary identity, `doctor` prints which transport is live, and the exec-path tests state the opt-out they need |
 | Q15 | Host certification runs its dynamic gates; editor MCP recipe | M4.3-M4.5 | done (15 November 2026; all five gates pass against an in-process brain, including startup reconciliation and interrupted-attempt resume; exact-retry recovery also passes through the external CLI path. Changed retries now conflict, root limits and submit fingerprints survive a ledger reload, and Cursor/VS Code/Zed JSON recipes use an absolute binary path. Full `go test ./...`, focused race checks and `go vet ./...` pass; editor JSON generation measured 1,996–5,915 ns, 1,443 B and 16 allocations per call over three 10,000-run samples) |
 | Q16 | Measure the small-call changes: frontier share, abstention fixture, lean profile | Routing | done (15 November 2026; `captain why --share --days 7,30` reads durable decisions and excludes explicit choices, one scorer accepts only citation-free abstention with an empty/`CANNOT_TELL` answer, new OpenCode MCP entries carry the selected tool profile, and routing events fill `EfficiencyRecord.Schema`; the four Q16 tests, full `go test ./...`, `go vet ./...` and formatting pass. Five synthetic 120-decision report runs measured 173.4–192.6 µs, 400 KB and 285 allocations per call; W1 still needs seven days of real turns) |
 | Q17 | Qualify a local helper model and measure it | Small calls | blocked: N1 |
@@ -103,7 +106,7 @@ failure no longer reproduces on this tree.) |
 | P4 | A "needs you" inbox: surface only the turns that wait on the user | TUI | proposed |
 | P5 | An optional tool-marketplace MCP (Monid) under the task budget | Tools | proposed |
 | P6 | Fine-tuning as a delegated task (Brewery AI) | Workers | proposed |
-| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | steps 1–2 done (16 November 2026, dq-261116-9b3a84 and dq-261116-a61645): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing; `captain why --score <file> [--cutoff YYYY-MM-DD]` splits that dataset by date and scores the director's actual routing and the hand priors on acceptance rate and cost per accepted task (9 package tests, 4 command tests, both full package suites, `go vet` and `gofmt` green; a live run on the development Mac scored 3,760 rows). Step 3 (a shadow router) still needs your go (P1–P6 remain proposed) |
+| P7 | A routing dataset from the journal and the verdicts; offline router eval | M5 | steps 1–2 done (16 November 2026, dq-261116-9b3a84 and dq-261116-a61645): `captain why --export <file>` joins decision, task class, leg, gate result, repairs, billed cost and verdict per attempt, with the prompt as a SHA-256 and no change to routing; `captain why --score <file> [--cutoff YYYY-MM-DD]` splits that dataset by date and scores the director's actual routing and the hand priors on acceptance rate and cost per accepted task (9 package tests, 4 command tests, both full package suites, `go vet` and `gofmt` green; a live run on the development Mac scored 3,760 rows). Step 3 done (dq-261117-f0191b, 17 November 2026): `captain why --shadow <file>` trains a per-domain policy on the scoring split and prints director/prior/learned side by side on the held-out split - agreement, coverage, positions, try-ok, pair order, cost per accepted and a head-to-head that refuses a claim under 10 tasks (8 package tests, 4 command tests, 2.13-2.28 ms per evaluation, a live 3,816-row run, no routing change and no spend) (P1–P6 remain proposed) |
 
 BB2's live combined-runtime evidence closed on 16 November 2026. BB4's Claude
 composition, CLI status, concurrent workspace isolation, TUI join and real host
@@ -131,8 +134,11 @@ date and reports the director's and the hand priors' acceptance rate and
 cost per accepted task per split (8 new tests, both full package suites,
 `go vet` and `gofmt` green; a live run scored 3,760 rows, cutoff
 2026-10-31, 89.9% acceptance over 473 labeled tasks in the scoring split).
-Step 3 still needs
-your go, the P-rows are proposals, and F5 waits on the fleet queue's host
+Step 3 was chosen and delivered 17 November 2026 (`dq-261117-f0191b`: offline
+shadow router, no routing change, no spend - `captain why --shadow`, eight
+package and four command tests, a live 3,816-row run whose claim honestly
+reads `no claim` because the journal holds no held-out task where two chosen
+legs both ran), the P-rows are proposals, and F5 waits on the fleet queue's host
 gates. F6 keeps running: step 1 landed 17 November 2026 (the guarded key,
 the folder registry and the signed frame with a wire vector both
 repositories verify) and step 2 landed the same day (`captain link pair|unpair`,
@@ -3552,11 +3558,12 @@ documents the four words.
 **Today**
 
 - Each codex turn is a new `codex exec --json` process
-  (`pkg/captaincode/codexcli.go:73-74`, started at `:242`). It never calls
-  `steer.Attach`, and the capability table says so
-  (`pkg/captaincode/capability.go:130`).
-- A `/btw` for a running codex worker runs as the next turn
-  (`cmd/captaincode/brain_btw.go:160, 246-249`).
+  (`pkg/captaincode/codexcli.go:73-74`, started at `:242`) — the exec
+  transport as it stood when this section was written, and what
+  `CAPTAIN_CODEX_TRANSPORT=exec` selects today.
+- A `/btw` for a running codex worker using exec runs as the next turn
+  (`cmd/captaincode/brain_btw.go:160, 246-249`); the app-server transport
+  takes it mid-turn.
 - The installed `codex-cli 0.156.0` has `codex app-server`, marked
   experimental. It speaks JSON-RPC over stdio by default and can write its
   schema (`generate-json-schema`). Its binary names `thread/start`,
@@ -3566,8 +3573,9 @@ documents the four words.
 
 **Build**
 
-1. `CAPTAIN_CODEX_TRANSPORT=app-server` selects a new transport. `exec` stays
-   the default.
+1. `CAPTAIN_CODEX_TRANSPORT` selects the transport: app-server is the
+   default (dq-261117-5008de, 17 November 2026), `exec` opts back into
+   `codex exec`.
 2. One `codex app-server` process per worker turn, on stdio only:
    `initialize`, `thread/start` (the same model, effort, folder, sandbox mode
    and approval policy as the exec path), `turn/start` with the prompt, then
@@ -3591,13 +3599,16 @@ documents the four words.
 steer during the turn, a refused steer, an interrupt, a malformed line (worker
 error, no hang), and settings parity with `exec`.
 
-**Done when.** The tests pass with the flag set. With the flag unset, the
-existing codex tests pass unchanged. `capability.go:130`, the `/btw` section of
-`docs/TUI.md` and `docs/CONFIGURATION.md` describe the flag. M3.8 gets a dated
-status note.
+**Done when.** The tests pass with app-server selected, and the exec tests set
+`CAPTAIN_CODEX_TRANSPORT=exec` themselves now that it is the opt-out rather
+than the default. `capability.go:130`, the `/btw` section of `docs/TUI.md` and
+`docs/CONFIGURATION.md` describe the transport and its opt-out. M3.8 gets a
+dated status note. Done 15 November 2026 (transport) and 17 November 2026
+(default flip, dq-261117-5008de).
 
-**Out of scope.** Making `app-server` the default, which needs live evidence
-in a throwaway session first. Reusing one thread across turns.
+**Out of scope.** Reusing one thread across turns. (Making `app-server` the
+default was out of scope until `TestLiveCodexAppServer` qualified it live on
+17 November 2026; dq-261117-5008de then closed it the same day.)
 
 #### Q15. Host certification runs its dynamic gates; editor MCP recipe
 
@@ -3827,7 +3838,9 @@ your go, and a hardware or GPU budget.
 
 Decision dq-261116-9b3a84 (16 November 2026): user chose option a, P7 dataset export - Build only step 1: join routing decisions and outcomes without prompt text; no routing change. The open question on the next optional roadmap item is now closed.
 
-Decision dq-261116-a61645 (16 November 2026): user chose option a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. The open question on the next optional roadmap item is now closed; step 3 still needs a separate go.
+Decision dq-261116-a61645 (16 November 2026): user chose option a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. The open question on the next optional roadmap item is now closed.
+
+Decision dq-261117-f0191b (17 November 2026): user chose option a, P7 step 3 - build the offline shadow router over the exported dataset; no routing change, no spend. The open question on step 3 is now closed.
 
 Source: the multi-harness reinforcement-learning talk (Hugging Face, Kernel
 Panic Madrid, October 2026): run one task through several harnesses, keep the
@@ -3847,7 +3860,8 @@ decision and its candidates. Verdicts are in the outcome records
    that baseline on the held-out split and on 7 days of shadow turns. It
    never changes a route the user typed.
 
-Step 1 needs no model and can start after Q8. Steps 2 and 3 need your go.
+Step 1 needs no model and can start after Q8. Steps 2 and 3 needed your
+go; both are now chosen (dq-261116-a61645, dq-261117-f0191b).
 
 **Step 1 delivered 16 November 2026.** `captain why --export <file>` (or
 `-` for stdout) writes one JSON row per attempt from `BuildRoutingDataset`
@@ -3889,8 +3903,8 @@ the same read `captain why --share` does, so a very long history wants the
 date window that step 2 defines. The export is a read: no model call, no
 routing change, and no label invented for a task nobody judged.
 
-Steps 2 and 3 (the held-out split by date, and the shadow router) need your
-go.
+Step 2 (the held-out split by date) is delivered below; step 3, the
+offline shadow router, is chosen by dq-261117-f0191b.
 
 **Step 2 delivered 16 November 2026.** `captain why --score <file>` (or
 `-` for stdin; `cmd/captaincode/why_score.go`) reads a dataset that
@@ -3930,7 +3944,81 @@ acceptance over 473 labeled, $1.9528 per accepted task, priors concordant
 on 35 of 83 judged leg pairs), and the held-out split held 407 tasks with
 only 9 labeled verdicts - the outcome commands landed 15 November, so the
 held-out window's verdict coverage is thin and its figures are indicative,
-not a baseline yet. Step 3 (a shadow router) still needs your go.
+not a baseline yet. Step 3, the offline shadow router, is chosen by
+dq-261117-f0191b (17 November 2026) and is delivered below.
+
+**Step 3 delivered 17 November 2026.** `captain why --shadow <file>` reads the
+same export as `--score` (`cmd/captaincode/why_shadow.go`), splits it by the
+same date rule, and evaluates three policies through `EvaluateShadow` in
+`pkg/captaincode/routing_shadow.go`. `director` is the decision's own pick on
+each task. `prior` is the hand-prior table, ranked per domain, so it stands
+for today's fixed knowledge rather than anything fit. `learned` fits on the
+scoring slice only: per-domain leg statistics counted from accepted and
+rejected verdicts, with a leg needing `ShadowMinLabeled = 3` settled tasks
+before it is eligible and the prior rank as its fallback below that bar. The
+held-out slice never trains anything, and `ShadowRouter.Legs` /
+`Predict` state the legs and picks so a test can prove the leakage. Verdicts
+and money reuse `--score`'s attribution (a task's verdict is its last settled
+label; a policy's cost per accepted task is that policy's own attempt costs on
+tasks it routed), so the two commands can be read side by side.
+
+The table says what an offline record can and cannot show. `agree` is how often
+the policy picked the director's leg; `covered` says how often its pick ran at
+all, split into `first` and `later` (a repair that reached it); `unrun` and
+`unpick` separate a leg that did not run from a task the policy had no leg
+for; `try-ok` is the settled attempts over the attempts of the picks it covered
+(a run that failed outright can hide behind an accepted label); and `pair-order`
+is ranking accuracy over the observed ok-versus-fail preferences inside one
+task, printed with the number of judged pairs so a `0% (1)` cannot be read as
+a rate. The head-to-head below the tables counts only held-out tasks where the
+policy and the director chose different legs and both of those legs ran, and
+`ShadowClaimMin = 10` of them is the bar for a claim: under it the report
+prints `no claim: N held-out task(s) where the shadow and the director chose
+different legs and both ran, 10 needed` instead of a percentage of nothing,
+and over it one raw-count line per policy with no significance test. `--shadow` refuses `--share`, `--export`
+and `--score`, and the path reads rows and prints a string: no model call, no
+file write, no route changed.
+
+**Step 3 evidence.** Eight package tests cover the split train/holdout rule,
+the learned pick and its fallback below the floor (out-of-slice legs can never
+be picked), eligible-over-thin ranking, the coverage/position/verdict columns,
+the head-to-head's own-outcome rule, cost attribution to the pick's own
+attempts, the claim minimum, and prediction with no training data; four command
+tests cover the flag refusals, the report, the empty/one-day/empty-slice
+refusals and the default cutoff rule. `go test ./pkg/captaincode -count=1`,
+`go test ./cmd/captaincode -count=1`, `go vet ./...` and `gofmt` are green.
+`BenchmarkEvaluateShadow` (500 training and 300 held-out tasks, two legs)
+measures 2.13-2.28 ms per evaluation, 1,695,440 B and 18,398 allocations over
+three runs on the development Mac, so the whole report is cheap enough to run
+after every export; the live 3,816-row run prints in 0.19 s end to end.
+
+**Step 3 read on real data (17 November 2026).** The live export holds 3,816
+rows over 3,475 tasks with a leg (3,419 of them with a run) and 496 labels
+(436 accepted, 60 rejected). The default cutoff falls on 2026-10-31: 3,022
+training tasks over 19 legs and 4 domains, 453 held-out. On the training slice
+the director covers 2,939 tasks at 90.3% acceptance (417 of 462 labeled) and
+$1.9902 per accepted task; the learned policy agrees on 652, covers 650, and
+its picks' attempts are 650 ok of 650. On the held-out slice the director
+covers 432 of 453 with 10 labeled (60.0%), the hand priors agree on 40 and
+cover 40 of them (413 unrun), the learned policy agrees on 59 and covers 60,
+and their own attempt counts read 73/73, 85/85 and 712/712 ok. Both
+head-to-head rows are 0 tasks, so the claim line reads `no claim: 0 held-out
+task(s) where the shadow and the director chose different legs and both ran,
+10 needed`.
+
+That zero is the finding, not a bug: the journal contains 16 multi-leg tasks
+in total, one task where two legs split ok-versus-fail (`claude ok`,
+`codex-cli fail`, inside the training slice), and no such task at all after
+2026-10-31, while the selective-outcome cache holds the verdicts of tasks the
+agent finished. A different pick and the pick the director made rarely both
+ran on one task, and `unrun` shows the effect: on held-out, 393 learned picks
+and 413 prior picks never ran, so the comparison has nothing to compare them
+against. Offline fitting can carry the baseline numbers above; it cannot
+manufacture the counterfactual. The measured next step is therefore live
+shadow turns for 7 days - record what each policy would pick beside the
+decision (`ShadowDecision` already writes such a record for the triage
+sidecar), let the runs settle, then re-run this same report over the joined
+rows. No routing change, no spend, same claim bar.
 
 ### Blackbox security backlog (21 October 2026)
 

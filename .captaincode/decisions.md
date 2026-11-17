@@ -113,3 +113,13 @@ keep the entries from both sides.
   - a (recommended): Build step 3 - offline shadow router over the exported dataset; no routing change, no spend
   - b: Hold P7 - keep steps 1-2 and pick a different proposed item (P1-P6) instead
 - Why a: It completes the evaluation loop the first two steps opened, at zero spend
+
+## captaincode (dq-261117-5008de) answered: Make the codex app-server transport the default
+
+- Answered: 2026-11-17 12:14 UTC, in galaxy
+- Choice: a, Default to app-server
+
+## captaincode (dq-261117-f0191b) answered: P7 step 3: the offline shadow router
+
+- Answered: 2026-11-17 12:14 UTC, in galaxy
+- Choice: a, Build step 3
