@@ -84,3 +84,9 @@ keep the entries from both sides.
   - a (recommended): "Locations and secrets - repo checkout roots, the captain config directory, shell and cloud key locations, written as ~/.config/captain/blackbox-paths.json at 0600"
   - b: "Repositories only - just the checkout roots in that same file; secret material keeps relying on the built-in secret patterns"
 - Why a: It closes the exfiltration path the pattern rules cannot see (an agent reading a credential directory as an ordinary file) at the cost of one small policy file; the review will show any rule that is too broad.
+
+## dq-261117-bb5-paths (dq-261116-f9c709) answered: Which local paths become critical path rules
+
+- Question: Which directories should the signed local path policy protect on the development Mac?
+- Answered: 2026-11-17
+- Choice: a: Locations and secrets - repo checkout roots, the captain config directory, shell and cloud key locations, written as ~/.config/captain/blackbox-paths.json at 0600
