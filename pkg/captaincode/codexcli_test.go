@@ -72,6 +72,7 @@ const codexCLIProbeEvents = `{"type":"thread.started","thread_id":"01a087d8-4625
 `
 
 func TestCodexCLIStreamParsesCodexEvents(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", "#!/bin/sh\nprintf '%s' '"+strings.ReplaceAll(codexCLIProbeEvents, "'", "'\"'\"'")+"'\n")
 	var deltas []string
 	var statuses []string
@@ -96,6 +97,7 @@ func TestCodexCLIStreamParsesCodexEvents(t *testing.T) {
 }
 
 func TestCodexCLIStreamBufferedModeStillReturnsText(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", "#!/bin/sh\nprintf '%s' '"+strings.ReplaceAll(codexCLIProbeEvents, "'", "'\"'\"'")+"'\n")
 	res, err := runCodexCLIStream("", "task", 30*time.Second, 0, nil, nil, "", nil)
 	require.NoError(t, err)
@@ -106,6 +108,7 @@ func TestCodexCLIStreamBufferedModeStillReturnsText(t *testing.T) {
 // Error classification: only turn.failed is authoritative. The "error" events
 // codex emits while reconnecting are noise on a run that then succeeds.
 func TestCodexCLIStreamClassifiesTurnFailures(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	cases := []struct {
 		name    string
 		message string
@@ -136,6 +139,7 @@ exit 1
 }
 
 func TestCodexCLIStreamAuthFailureNamesTheFix(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", `#!/bin/sh
 cat <<'EOF'
 {"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"}}
@@ -149,6 +153,7 @@ exit 1
 }
 
 func TestCodexCLIStreamReconnectNoiseIsNotAnError(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", `#!/bin/sh
 cat <<'EOF'
 {"type":"turn.started"}
@@ -164,6 +169,7 @@ EOF
 }
 
 func TestCodexCLIStreamGenericFailureIsNotReroutable(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", `#!/bin/sh
 cat <<'EOF'
 {"type":"turn.failed","error":{"message":"unknown model gpt-7"}}
@@ -178,6 +184,7 @@ exit 1
 }
 
 func TestCodexCLIStreamStderrOnExitClassifies(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", "#!/bin/sh\necho 'error: connection reset by peer' >&2\nexit 1\n")
 	_, err := runCodexCLIStream("", "task", 30*time.Second, 0, nil, nil, "", nil)
 	require.Error(t, err)
@@ -185,6 +192,7 @@ func TestCodexCLIStreamStderrOnExitClassifies(t *testing.T) {
 }
 
 func TestCodexCLITimeoutKeepsWhatItProduced(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	// A run is cut only when QUIET past its base cap (the progress contract):
 	// the idle window is what ends a silent one.
 	t.Setenv("CAPTAIN_WORKER_CLI_IDLE_TIMEOUT", "200ms")
@@ -204,6 +212,7 @@ sleep 30
 }
 
 func TestCodexCLITimeoutWithNoOutputStaysAnError(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	// A run is cut only when QUIET past its base cap (the progress contract):
 	// the idle window is what ends a silent one.
 	t.Setenv("CAPTAIN_WORKER_CLI_IDLE_TIMEOUT", "200ms")

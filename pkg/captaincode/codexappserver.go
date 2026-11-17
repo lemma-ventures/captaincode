@@ -239,11 +239,58 @@ func (c *codexRPCClient) interrupt() {
 	_, _ = c.call(ctx, "turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID})
 }
 
+// CodexAppServerRequested selects the codex transport. app-server is the
+// default (dq-261117-5008de): it carries steering, the exec transport does
+// not. CAPTAIN_CODEX_TRANSPORT=exec opts back into codex exec.
 func CodexAppServerRequested() bool {
-	return strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_TRANSPORT")) == "app-server"
+	return strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_TRANSPORT")) != "exec"
 }
 
+// codexSchemaCache remembers one schema check per codex binary identity, so
+// the default transport does not regenerate the schema before every turn.
+// The identity is the resolved binary path plus its size and mtime: a codex
+// upgrade invalidates it. A failed check is remembered too - the run falls
+// back to exec for the process's life and `captain doctor` re-checks.
+var codexSchemaCache sync.Map // codexBinaryID -> codexSchemaResult (nil errors must survive a sync.Map)
+
+type codexBinaryID struct {
+	path string
+	size int64
+	msec int64
+}
+
+func codexBinaryIdentity() (codexBinaryID, bool) {
+	path, err := exec.LookPath("codex")
+	if err != nil {
+		return codexBinaryID{}, false
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return codexBinaryID{}, false
+	}
+	return codexBinaryID{path: path, size: info.Size(), msec: info.ModTime().UnixMilli()}, true
+}
+
+type codexSchemaResult struct{ err error }
+
 func CheckCodexAppServer() error {
+	key, keyed := codexBinaryIdentity()
+	if keyed {
+		if cached, ok := codexSchemaCache.Load(key); ok {
+			return cached.(codexSchemaResult).err
+		}
+	}
+	err := checkCodexAppServerBinary()
+	if keyed {
+		codexSchemaCache.Store(key, codexSchemaResult{err: err})
+	}
+	return err
+}
+
+func checkCodexAppServerBinary() error {
 	dir, err := os.MkdirTemp("", "captain-codex-schema-")
 	if err != nil {
 		return err

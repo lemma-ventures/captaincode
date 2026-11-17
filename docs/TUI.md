@@ -107,7 +107,7 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 | `/repeat status` · `show` · `watch` | Loops in this folder · what recent rounds did · follow a loop live |
 | `/repeat stop` (`finish`, `wrapup`) · `/repeat abort` | End after the current round · kill it now |
 | `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop`. Typed while a turn runs, it starts at once instead of waiting in the queue |
-| `/btw <note>` | Tell the running worker more (claude and the opencode legs take it mid-run; codex-cli does too with `CAPTAIN_CODEX_TRANSPORT=app-server`; cursor gets it as the next turn) |
+| `/btw <note>` | Tell the running worker more (claude and the opencode legs take it mid-run; codex-cli does too on its default app-server transport; cursor, or codex with `CAPTAIN_CODEX_TRANSPORT=exec`, get it as the next turn) |
 | `/interrupt [reason]` | Stop the running worker and keep its work: a handoff (done, left, how to resume) or a marked partial |
 | `/accept [note]` | Record the last task this session started as accepted (the reviewer is `tui:<OS user>`) |
 | `/reject <reason>` | Record the session's last task as rejected |

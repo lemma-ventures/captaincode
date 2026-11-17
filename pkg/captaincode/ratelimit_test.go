@@ -107,6 +107,7 @@ EOF2
 }
 
 func TestCodexCLIRateLimitKeepsPartialOutput(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeBin(t, "codex", `#!/bin/sh
 cat <<'EOF2'
 {"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"Wrote the migration."}}

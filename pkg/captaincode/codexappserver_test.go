@@ -293,12 +293,64 @@ func TestCodexAppServerSettingsMatchExec(t *testing.T) {
 	}
 }
 
-func TestCodexTransportDefaultsToExec(t *testing.T) {
-	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "")
+func TestCodexTransportDefaultsToAppServer(t *testing.T) {
+	for _, value := range []string{"", " ", "app-server"} {
+		t.Setenv("CAPTAIN_CODEX_TRANSPORT", value)
+		assert.True(t, CodexAppServerRequested(), "app-server carries steering (dq-261117-5008de); %q selects it", value)
+	}
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
+	assert.False(t, CodexAppServerRequested(), "exec is the opt-out")
+}
+
+func TestCodexTransportOptsOutToExec(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "exec")
 	fakeCodexAppServer(t, "normal")
 	res, err := runCodexCLIStream("", "task", 30*time.Second, 0, nil, nil, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "exec fallback", res.Text)
+}
+
+func TestCodexTransportWithoutOptOutRunsAppServer(t *testing.T) {
+	t.Setenv("CAPTAIN_CODEX_TRANSPORT", "")
+	fakeCodexAppServer(t, "normal")
+	res, err := runCodexCLIStream("", "task", 30*time.Second, 0, nil, nil, "", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "app-server answer", res.Text)
+}
+
+// The schema check is a subprocess per turn when app-server is the default,
+// so it is cached against the binary it read: one generation per codex
+// install, re-run once that binary changes.
+func TestCodexAppServerSchemaCheckIsCachedPerBinary(t *testing.T) {
+	t.Setenv("GO_WANT_CODEX_APP_SERVER_HELPER", "1")
+	t.Setenv("CAPTAIN_CODEX_HELPER_SCENARIO", "normal")
+	t.Setenv("CAPTAIN_CODEX_HELPER_LOG", filepath.Join(t.TempDir(), "methods.jsonl"))
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "schema-calls")
+	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = app-server ]; then echo gen >> %q; fi\nexec %q -test.run=^TestCodexAppServerHelper$ -- \"$@\"\n", calls, os.Args[0])
+	path := filepath.Join(dir, "codex")
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	generations := func() int {
+		raw, err := os.ReadFile(calls)
+		if os.IsNotExist(err) {
+			return 0
+		}
+		require.NoError(t, err)
+		return len(strings.Split(strings.TrimSpace(string(raw)), "\n"))
+	}
+
+	require.NoError(t, CheckCodexAppServer(), "the fixture schema satisfies the gate")
+	assert.Equal(t, 1, generations())
+	require.NoError(t, CheckCodexAppServer())
+	assert.Equal(t, 1, generations(), "the same codex binary is read once per process, not per turn")
+
+	fat, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, append(fat, []byte("# new install\n")...), 0o755), "a codex upgrade changes the binary")
+	require.NoError(t, CheckCodexAppServer())
+	assert.Equal(t, 2, generations(), "a changed binary is read again")
 }
 
 func BenchmarkCodexAppServerSettings(b *testing.B) {

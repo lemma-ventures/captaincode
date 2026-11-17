@@ -315,8 +315,10 @@ func runDoctor(w io.Writer, o doctorOpts) int {
 		if err := o.codexAppServer(); err != nil {
 			fmt.Fprintf(w, "codex      ~ app-server schema check failed (%v); using exec\n", err)
 		} else {
-			fmt.Fprintln(w, "codex      ✓ app-server schema supports steering; CAPTAIN_CODEX_TRANSPORT=app-server")
+			fmt.Fprintln(w, "codex      ✓ app-server schema supports steering (default transport; CAPTAIN_CODEX_TRANSPORT=exec to opt out)")
 		}
+	} else {
+		fmt.Fprintln(w, "codex      ✓ exec transport (CAPTAIN_CODEX_TRANSPORT=exec); steering to codex arrives next turn")
 	}
 
 	probed := map[string]captaincode.ToolStatus{}
