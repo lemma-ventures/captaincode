@@ -219,8 +219,11 @@ func (c *codexRPCClient) steer(text string) error {
 	_, err := c.call(ctx, "turn/steer", map[string]any{
 		"threadId": threadID, "expectedTurnId": turnID,
 		"input": []any{map[string]any{"type": "text", "text": SteerLine(text)}},
+		// 0.169 rejects a name inside the context ("only supported for
+		// untrusted context", live 17 November 2026); the key and value
+		// still carry the origin.
 		"additionalContext": map[string]any{"captain": map[string]any{
-			"kind": "application", "name": "captain /btw", "value": "A user note amends the active turn.",
+			"kind": "application", "value": "A user note amends the active turn.",
 		}},
 	})
 	return err
@@ -482,7 +485,7 @@ func (s *codexAppStream) notification(method string, raw json.RawMessage) {
 		if json.Unmarshal(raw, &params) == nil {
 			s.item(strings.Replace(method, "/", ".", 1), params.Item)
 		}
-	case "thread/tokenUsageUpdated":
+	case "thread/tokenUsageUpdated", "thread/tokenUsage/updated":
 		var params struct {
 			TokenUsage struct {
 				Last struct {

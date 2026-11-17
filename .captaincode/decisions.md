@@ -89,3 +89,27 @@ keep the entries from both sides.
 - Question: Which directories should the signed local path policy protect on the development Mac?
 - Answered: 2026-11-17
 - Choice: a: Locations and secrets - repo checkout roots, the captain config directory, shell and cloud key locations, written as ~/.config/captain/blackbox-paths.json at 0600
+
+## captaincode (dq-261117-5008de) posted: Make the codex app-server transport the default
+
+- Posted: 2026-11-17 10:31 UTC
+- Branch: main
+- Question: The codex app-server transport (/btw steering on codex workers) passed live qualification on codex-cli 0.169.0: one real turn answered with thread id, usage and first-output time, and a mid-turn note amended the running turn's answer. Should it become the codex-cli default?
+- Context: Exec stays the only default today, so a /btw for a running codex worker lands as the next turn. The app-server path now carries the same model, effort, sandbox, MCP and proxy settings, falls back to exec when the installed codex changes its schema, and doctor reports why. One live session is the evidence; a default flip changes every codex turn on both Macs at the next binary install.
+- Record: `docs/ROADMAP.md`
+- Options:
+  - a (recommended): Default to app-server - codex-cli workers take /btw notes mid-run; CAPTAIN_CODEX_TRANSPORT=exec opts out; the schema gate still falls back to exec on a version mismatch
+  - b: Keep exec - stay on the qualified-but-opt-in transport; flip later after more live use
+- Why a: Steering is the feature the transport exists for and the fallback keeps the risk bounded
+
+## captaincode (dq-261117-f0191b) posted: P7 step 3: the offline shadow router
+
+- Posted: 2026-11-17 10:31 UTC
+- Branch: main
+- Question: P7 steps 1-2 are delivered: the routing dataset export and the by-date scoring of the director and hand priors. Should step 3 build the shadow router next?
+- Context: Step 3 replays the exported dataset through the current router offline: it compares the shadow's routing decisions against what the director actually did, still with no routing change and no spend. It is the last step before any real routing change could be proposed from evidence.
+- Record: `docs/ROADMAP.md`
+- Options:
+  - a (recommended): Build step 3 - offline shadow router over the exported dataset; no routing change, no spend
+  - b: Hold P7 - keep steps 1-2 and pick a different proposed item (P1-P6) instead
+- Why a: It completes the evaluation loop the first two steps opened, at zero spend

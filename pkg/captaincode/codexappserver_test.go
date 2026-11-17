@@ -70,13 +70,18 @@ func TestCodexAppServerHelper(t *testing.T) {
 		_ = enc.Encode(map[string]any{"method": method, "params": params})
 	}
 	complete := func(status string) {
-		notify("thread/tokenUsageUpdated", map[string]any{
-			"threadId": "thread-1", "turnId": "turn-1",
-			"tokenUsage": map[string]any{"last": map[string]any{
-				"inputTokens": 10, "cachedInputTokens": 4, "outputTokens": 2,
-				"reasoningOutputTokens": 0, "totalTokens": 12,
-			}, "total": map[string]any{}},
-		})
+		// 0.156 sends thread/tokenUsageUpdated; 0.169 renamed it to
+		// thread/tokenUsage/updated (live 17 November 2026). Emit both so
+		// every fake turn exercises both parse paths.
+		for _, method := range []string{"thread/tokenUsageUpdated", "thread/tokenUsage/updated"} {
+			notify(method, map[string]any{
+				"threadId": "thread-1", "turnId": "turn-1",
+				"tokenUsage": map[string]any{"last": map[string]any{
+					"inputTokens": 10, "cachedInputTokens": 4, "outputTokens": 2,
+					"reasoningOutputTokens": 0, "totalTokens": 12,
+				}, "total": map[string]any{}},
+			})
+		}
 		notify("turn/completed", map[string]any{
 			"threadId": "thread-1",
 			"turn":     map[string]any{"id": "turn-1", "items": []any{}, "status": status},
