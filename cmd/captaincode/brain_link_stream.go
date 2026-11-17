@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	pres "github.com/lemma-ventures/captaincode/internal/presence"
@@ -111,6 +112,97 @@ func (b *brain) linkPresenceFolders() ([]captaincode.LinkPresenceFolder, error) 
 	return out, nil
 }
 
+// linkTruncate cuts a text to the hub's bound and marks the cut, so a long
+// register entry still travels instead of being refused whole.
+func linkTruncate(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit - len("…")
+	if cut < 0 {
+		cut = 0
+	}
+	return s[:cut] + "…"
+}
+
+// linkDecisionCards maps the decision register to cards the hub takes: the
+// register's text is already masked where it was written, no path travels,
+// and a decision from a folder that never opted in stays on this machine.
+// The newest decisions go first and the hub's per-machine ceiling bounds the
+// set; a card that would still be refused is skipped, not sent broken.
+func (b *brain) linkDecisionCards() ([]captaincode.LinkDecisionCard, error) {
+	linked, err := captaincode.LinkFolders()
+	if err != nil {
+		return nil, err
+	}
+	roots := make(map[string]bool, len(linked))
+	for _, f := range linked {
+		roots[f.Root] = true
+	}
+	all, err := captaincode.ListDecisions("")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]captaincode.LinkDecisionCard, 0, 8)
+	for i := len(all) - 1; i >= 0 && len(out) < 64; i-- {
+		d := all[i]
+		repo, checkout := captaincode.DecisionHome(d)
+		if !roots[repo] && (checkout == "" || !roots[checkout]) {
+			continue
+		}
+		card := captaincode.LinkDecisionCard{
+			DecisionID: d.ID,
+			Title:      linkTruncate(d.Title, 200),
+			Question:   linkTruncate(d.Question, 4000),
+			Context:    linkTruncate(d.Context, 4000),
+			Recommend:  d.Recommend,
+			Why:        linkTruncate(d.Why, 500),
+			PostedAt:   d.PostedAt.Unix(),
+			Status:     d.Status,
+		}
+		if d.Record != "" && !strings.HasPrefix(d.Record, "/") && !strings.Contains(d.Record, "..") && len(d.Record) <= 256 {
+			card.Record = d.Record
+		}
+		if d.Status == captaincode.DecisionAnswered && d.Answer != nil {
+			card.Answer = d.Answer.Option
+		}
+		kept := 0
+		for _, o := range d.Options {
+			if kept >= 6 {
+				break
+			}
+			card.Options = append(card.Options, captaincode.LinkDecisionOption{
+				ID:     o.ID,
+				Label:  linkTruncate(o.Label, 200),
+				Detail: linkTruncate(o.Detail, 1000),
+			})
+			kept++
+		}
+		// A cut option set can drop the recommended or chosen option;
+		// the card must stay valid, so those references go with it.
+		holds := func(id string) bool {
+			for _, o := range card.Options {
+				if o.ID == id {
+					return true
+				}
+			}
+			return false
+		}
+		if card.Recommend != "" && !holds(card.Recommend) {
+			card.Recommend = ""
+		}
+		if card.Answer != "" && !holds(card.Answer) {
+			card.Answer = ""
+			card.Status = captaincode.DecisionOpen
+		}
+		if captaincode.LinkDecisionValid(card) != nil {
+			continue
+		}
+		out = append(out, card)
+	}
+	return out, nil
+}
+
 // linkStreamReady reads everything the stream needs from local state, and
 // says in words why nothing is reported when that is the case. It never
 // contacts the hub: pending pairings, an unreadable key and an empty folder
@@ -153,8 +245,18 @@ func (b *brain) linkStreamReady() (captaincode.LinkStreamReady, error) {
 			Key:          key,
 			BrainVersion: linkBrainVersion(),
 			Folders:      b.linkPresenceFolders,
+			Cards:        b.linkDecisionCards,
 		},
 	}, nil
+}
+
+// linkStreamRun keeps the presence connection until the context ends. It
+// returns when the supervisor has fully stopped, so a caller that swaps
+// standard output (a test) can wait for the last line before it restores it.
+func (b *brain) linkStreamRun(ctx context.Context) {
+	_, _ = captaincode.LinkStreamSupervisor(ctx, b.linkStreamReady, captaincode.LinkStreamPolicy{}, func(msg string) {
+		fmt.Println("captain link: " + msg)
+	})
 }
 
 // linkStreamSupervisor keeps the presence connection while the brain runs.
@@ -167,7 +269,5 @@ func (b *brain) linkStreamSupervisor(done <-chan struct{}) {
 		<-done
 		cancel()
 	}()
-	_, _ = captaincode.LinkStreamSupervisor(ctx, b.linkStreamReady, captaincode.LinkStreamPolicy{}, func(msg string) {
-		fmt.Println("captain link: " + msg)
-	})
+	b.linkStreamRun(ctx)
 }

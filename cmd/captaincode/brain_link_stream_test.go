@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -309,14 +310,19 @@ func TestLinkStreamReadyCarriesLocalState(t *testing.T) {
 
 func TestLinkStreamSupervisorNotesAnUnpairedMachineOnce(t *testing.T) {
 	b := linkStreamFixture(t)
-	done := make(chan struct{})
 	out, err := linkCapture(t, func() error {
-		go b.linkStreamSupervisor(done)
+		ctx, cancel := context.WithCancel(context.Background())
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			b.linkStreamRun(ctx)
+		}()
 		// The first source read happens at once; an idle machine then
 		// sleeps on the poll without dialing anywhere.
 		time.Sleep(300 * time.Millisecond)
-		close(done)
-		time.Sleep(50 * time.Millisecond)
+		cancel()
+		// Wait for the last line before the capture restores output.
+		<-finished
 		return nil
 	})
 	if err != nil {
@@ -324,5 +330,133 @@ func TestLinkStreamSupervisorNotesAnUnpairedMachineOnce(t *testing.T) {
 	}
 	if lines := strings.Count(out, "\n"); lines != 1 || !strings.Contains(out, "no hub is paired") {
 		t.Fatalf("the unpaired machine printed %d line(s): %q", lines, out)
+	}
+}
+
+// linkStreamWriteDecision writes one decision the way the register stores
+// it, so the card feed reads what production wrote.
+func linkStreamWriteDecision(t *testing.T, d captaincode.OwnerDecision) {
+	t.Helper()
+	if err := os.MkdirAll(captaincode.DecisionsDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(captaincode.DecisionsDir(), d.ID+".json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func linkStreamDecision(id, repo string) captaincode.OwnerDecision {
+	return captaincode.OwnerDecision{
+		ID:       id,
+		Repo:     repo,
+		Title:    "Trial host for the first cloud worker",
+		Question: "Where should the first Linux host run, and at what spend cap?",
+		Options: []captaincode.DecisionOption{
+			{ID: "a", Label: "AWS"},
+			{ID: "b", Label: "A second provider"},
+		},
+		Recommend: "a",
+		Why:       "The Terraform stack already exists.",
+		Record:    "docs/fleet.md",
+		PostedAt:  time.Now().UTC(),
+		Status:    captaincode.DecisionOpen,
+	}
+}
+
+func TestLinkDecisionCardsFollowTheFolderOptIn(t *testing.T) {
+	b := linkStreamFixture(t)
+	oak, other := t.TempDir(), t.TempDir()
+	if _, err := captaincode.LinkAdd(oak, captaincode.LinkModeActive); err != nil {
+		t.Fatal(err)
+	}
+	linkStreamWriteDecision(t, linkStreamDecision("dq-261117-0a1b2c", oak))
+	linkStreamWriteDecision(t, linkStreamDecision("dq-261117-0d1e2f", other))
+
+	cards, err := b.linkDecisionCards()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 {
+		t.Fatalf("only a linked folder's decisions travel, got %d", len(cards))
+	}
+	if cards[0].DecisionID != "dq-261117-0a1b2c" {
+		t.Fatalf("wrong card travelled: %+v", cards[0])
+	}
+	if captaincode.LinkDecisionValid(cards[0]) != nil {
+		t.Fatalf("the mapped card is not valid: %+v", cards[0])
+	}
+}
+
+func TestLinkDecisionCardsCarryStateAndBounds(t *testing.T) {
+	b := linkStreamFixture(t)
+	oak := t.TempDir()
+	if _, err := captaincode.LinkAdd(oak, captaincode.LinkModeActive); err != nil {
+		t.Fatal(err)
+	}
+	answered := linkStreamDecision("dq-261117-0a1b2c", oak)
+	answered.Status = captaincode.DecisionAnswered
+	answered.Answer = &captaincode.DecisionAnswer{Option: "b", At: time.Now().UTC()}
+	linkStreamWriteDecision(t, answered)
+	long := linkStreamDecision("dq-261117-0b3c4d", oak)
+	long.Question = strings.Repeat("q", 5000)
+	linkStreamWriteDecision(t, long)
+
+	cards, err := b.linkDecisionCards()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 2 {
+		t.Fatalf("two linked decisions should map, got %d", len(cards))
+	}
+	// Newest first.
+	if cards[0].DecisionID != "dq-261117-0b3c4d" {
+		t.Fatalf("the newest decision should come first: %+v", cards)
+	}
+	if len(cards[0].Question) > 4000 {
+		t.Fatalf("an over-long question was not cut: %d", len(cards[0].Question))
+	}
+	if !strings.HasSuffix(cards[0].Question, "…") {
+		t.Fatal("a cut question should say so")
+	}
+	if captaincode.LinkDecisionValid(cards[0]) != nil {
+		t.Fatalf("the cut card is not valid: %+v", cards[0])
+	}
+	var state *captaincode.LinkDecisionCard
+	for i := range cards {
+		if cards[i].DecisionID == "dq-261117-0a1b2c" {
+			state = &cards[i]
+		}
+	}
+	if state == nil || state.Status != "answered" || state.Answer != "b" {
+		t.Fatalf("the answered state did not travel: %+v", state)
+	}
+	if state.Record != "docs/fleet.md" {
+		t.Fatalf("the record name did not travel: %q", state.Record)
+	}
+}
+
+func TestLinkDecisionCardsDropAnAbsoluteRecord(t *testing.T) {
+	b := linkStreamFixture(t)
+	oak := t.TempDir()
+	if _, err := captaincode.LinkAdd(oak, captaincode.LinkModeActive); err != nil {
+		t.Fatal(err)
+	}
+	d := linkStreamDecision("dq-261117-0c5d6e", oak)
+	d.Record = filepath.Join(oak, "docs", "fleet.md")
+	linkStreamWriteDecision(t, d)
+
+	cards, err := b.linkDecisionCards()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 || cards[0].Record != "" {
+		t.Fatalf("an absolute record must not travel: %+v", cards)
+	}
+	if captaincode.LinkDecisionValid(cards[0]) != nil {
+		t.Fatalf("the card without its record is not valid: %+v", cards[0])
 	}
 }

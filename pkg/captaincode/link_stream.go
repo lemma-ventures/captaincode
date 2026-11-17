@@ -99,6 +99,111 @@ func LinkPresenceLabel(label string) bool {
 	return linkHubLabel.MatchString(label) && strings.TrimSpace(label) == label && label != ""
 }
 
+// LinkDecisionOption is one answer choice on a decision card, in the hub's
+// own spelling.
+type LinkDecisionOption struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// LinkDecisionCard is one owner question on its way up. It carries no path
+// and no transcript: the machine's own register already masked the text, and
+// the record names a file inside the repository, never an absolute path.
+type LinkDecisionCard struct {
+	DecisionID string               `json:"decision_id"`
+	Title      string               `json:"title"`
+	Question   string               `json:"question"`
+	Context    string               `json:"context,omitempty"`
+	Options    []LinkDecisionOption `json:"options"`
+	Recommend  string               `json:"recommend,omitempty"`
+	Why        string               `json:"why,omitempty"`
+	Record     string               `json:"record,omitempty"`
+	PostedAt   int64                `json:"posted_at"`
+	Status     string               `json:"status"`
+	Answer     string               `json:"answer,omitempty"`
+}
+
+// linkCardLimit bounds the cards one machine pushes, matching the hub's row
+// ceiling per machine.
+const linkCardLimit = 64
+
+// LinkDecisionValid checks a card against the hub's rules before it is
+// signed, so a card this machine builds badly is never sent.
+func LinkDecisionValid(c LinkDecisionCard) error {
+	if !decisionIDRe.MatchString(c.DecisionID) {
+		return fmt.Errorf("a decision card id is outside the id profile")
+	}
+	if c.Title == "" || len(c.Title) > 200 || c.Question == "" || len(c.Question) > 4000 || len(c.Context) > 4000 || len(c.Why) > 500 {
+		return fmt.Errorf("a decision card holds text outside the hub's bounds")
+	}
+	if len(c.Record) > 256 || strings.HasPrefix(c.Record, "/") || strings.Contains(c.Record, "..") {
+		return fmt.Errorf("a decision card record is not a bounded repository-relative name")
+	}
+	if len(c.Options) < 2 || len(c.Options) > 6 {
+		return fmt.Errorf("a decision card holds %d options; the hub takes two to six", len(c.Options))
+	}
+	seen := make(map[string]bool, len(c.Options))
+	for _, o := range c.Options {
+		if len(o.ID) > 16 || !linkIdentifier.MatchString(o.ID) || o.Label == "" || len(o.Label) > 200 || len(o.Detail) > 1000 || seen[o.ID] {
+			return fmt.Errorf("a decision card option is outside the hub's rules")
+		}
+		seen[o.ID] = true
+	}
+	switch c.Status {
+	case "open":
+		if c.Answer != "" {
+			return fmt.Errorf("an open decision card carries an answer")
+		}
+	case "answered":
+		if !seen[c.Answer] {
+			return fmt.Errorf("an answered decision card names an option it does not hold")
+		}
+	case "withdrawn":
+	default:
+		return fmt.Errorf("a decision card holds a status the hub does not use")
+	}
+	if c.Recommend != "" && !seen[c.Recommend] {
+		return fmt.Errorf("a decision card recommends an option it does not hold")
+	}
+	return nil
+}
+
+// linkCardCanon is the comparable form of a card: a change in any of these
+// fields is a change the hub must see again.
+func linkCardCanon(c LinkDecisionCard) string {
+	var b strings.Builder
+	b.WriteString(c.DecisionID)
+	b.WriteByte('\n')
+	b.WriteString(c.Status)
+	b.WriteByte('\n')
+	b.WriteString(c.Answer)
+	b.WriteByte('\n')
+	b.WriteString(c.Title)
+	b.WriteByte('\n')
+	b.WriteString(c.Question)
+	b.WriteByte('\n')
+	b.WriteString(c.Recommend)
+	return b.String()
+}
+
+// linkCardState remembers what one run already pushed, across the streams it
+// opens, so a reconnect does not repeat every card. It lives for the run.
+type linkCardState struct {
+	canon map[string]string
+}
+
+func (s *linkCardState) sent(id, canon string) {
+	if s.canon == nil {
+		s.canon = map[string]string{}
+	}
+	s.canon[id] = canon
+}
+
+func (s *linkCardState) known(id, canon string) bool {
+	return s.canon != nil && s.canon[id] == canon
+}
+
 // LinkPresenceValid checks a snapshot against the hub's rules before it is
 // signed: the folder count, unique labels inside the label profile, and an
 // optional project id in the identifier profile. The caller logs what it
@@ -168,6 +273,7 @@ type LinkStreamReport struct {
 	Sessions       int
 	Posted         int
 	Acknowledged   int
+	Cards          int
 	ProviderErrors int
 	StreamID       string
 	LastSequence   int64
@@ -226,7 +332,12 @@ type LinkStreamOptions struct {
 	// Folders reads the current snapshot on demand. An error means the
 	// read failed: nothing is sent, never an empty snapshot, because an
 	// empty snapshot unlinks every folder on the hub.
-	Folders  func() ([]LinkPresenceFolder, error)
+	Folders func() ([]LinkPresenceFolder, error)
+	// Cards reads the current decision cards on demand. An error means
+	// the register could not be read: nothing is sent this beat. A card
+	// is pushed when it is new or when its comparable form changed.
+	Cards    func() ([]LinkDecisionCard, error)
+	cardSent *linkCardState
 	Interval time.Duration // defaults to 2.5 seconds
 	Policy   LinkStreamPolicy
 	// Client overrides the client built from the hub's CA file; the tests
@@ -590,6 +701,69 @@ func linkStreamPost(ctx context.Context, client *http.Client, opts LinkStreamOpt
 	return nil
 }
 
+// linkStreamPostCard sends one decision card and checks the acknowledgement
+// in full: pinned signature, our machine, the type the protocol names, and
+// the id of the message and of the decision it answers, byte for byte.
+func linkStreamPostCard(ctx context.Context, client *http.Client, opts LinkStreamOptions, pub ed25519.PublicKey, card LinkDecisionCard) error {
+	posted, err := LinkSign(opts.Key, opts.MachineID, linkBrainDirection, "decision.card", card, time.Now())
+	if err != nil {
+		return linkRefuse("the link signing key is missing: %v", err)
+	}
+	raw, err := json.Marshal(posted)
+	if err != nil || len(raw) > linkMaxBody {
+		return linkRefuse("the decision card this machine builds is too large")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, linkPostLimit)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, linkEndpoint(opts.Hub.URL, "/messages"), bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("the decision card request could not be built: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("the decision card could not be delivered: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, linkMaxBody+1))
+	if err != nil {
+		return fmt.Errorf("the hub's answer could not be read: %w", err)
+	}
+	if len(body) > linkMaxBody {
+		return linkRefuse("the hub's answer is too large to be a link envelope")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return linkStreamStatus(pub, opts.MachineID, resp.StatusCode, body)
+	}
+	var reply LinkEnvelope
+	if err := LinkDecodeEnvelope(body, &reply); err != nil {
+		return linkRefuse("the hub's acknowledgement is not a link envelope")
+	}
+	if err := LinkVerify(pub, reply, linkHubDirection, time.Now()); err != nil {
+		return linkRefuse("the hub's acknowledgement cannot be verified")
+	}
+	if reply.MachineID != opts.MachineID {
+		return linkRefuse("the hub acknowledged another machine's message")
+	}
+	if reply.Type != "decision.accepted" {
+		return linkRefuse("the hub answered a decision card with another message type")
+	}
+	var pay struct {
+		MessageID  string `json:"message_id"`
+		DecisionID string `json:"decision_id"`
+	}
+	if err := LinkDecodePayload(reply, &pay); err != nil {
+		return linkRefuse("the hub's acknowledgement cannot be read")
+	}
+	if pay.MessageID != posted.ID || pay.DecisionID != card.DecisionID {
+		return linkRefuse("the hub acknowledged a different decision card")
+	}
+	return nil
+}
+
 // errLinkEnd says the session is over because no folder is left to report.
 // The supervisor re-reads state when it arrives, so the machine stops its
 // traffic instead of streaming an empty set forever.
@@ -654,12 +828,13 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 	tick := opts.tick()
 	interval := opts.interval()
 	var (
-		streamID  string
-		seq       int64
-		lastCanon string
-		lastSent  time.Time
-		lastEvent = time.Now()
-		sent      bool
+		streamID     string
+		seq          int64
+		lastCanon    string
+		lastSent     time.Time
+		lastEvent    = time.Now()
+		lastCardRead time.Time
+		sent         bool
 	)
 	report.Reason = "waiting for the hub"
 	// snapshot sends one snapshot when one is due and does nothing when
@@ -715,12 +890,54 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 		}
 		return nil
 	}
+	// cards pushes decision cards when one is due: a fresh stream sends
+	// what it has, a changed card sends again, an unchanged one waits for
+	// its interval so the register is not reread on every tick.
+	cards := func() error {
+		if streamID == "" || opts.Cards == nil || opts.cardSent == nil {
+			return nil
+		}
+		if !lastCardRead.IsZero() && time.Since(lastCardRead) < interval {
+			return nil
+		}
+		lastCardRead = time.Now()
+		list, err := opts.Cards()
+		if err != nil {
+			report.ProviderErrors++
+			return nil
+		}
+		if len(list) > linkCardLimit {
+			list = list[:linkCardLimit]
+		}
+		for _, c := range list {
+			if err := LinkDecisionValid(c); err != nil {
+				return linkRefuse("a decision card this machine builds would be refused: %v", err)
+			}
+			canon := linkCardCanon(c)
+			if opts.cardSent.known(c.DecisionID, canon) {
+				continue
+			}
+			if err := linkStreamPostCard(sessionCtx, client, options, pub, c); err != nil {
+				return err
+			}
+			opts.cardSent.sent(c.DecisionID, canon)
+			report.Cards++
+			report.Reason = "stream open"
+		}
+		return nil
+	}
 	for {
 		if streamID == "" && time.Since(lastEvent) > linkIdleLimit {
 			report.Reason = "the hub did not open the stream"
 			return report, fmt.Errorf("%s", report.Reason)
 		}
 		if err := snapshot(); err != nil {
+			if ctx.Err() != nil {
+				return report, ctx.Err()
+			}
+			return report, err
+		}
+		if err := cards(); err != nil {
 			if ctx.Err() != nil {
 				return report, ctx.Err()
 			}
@@ -829,6 +1046,11 @@ func linkPause(ctx context.Context, d time.Duration) bool {
 // healthy session, so its delay falls back to the base instead of growing.
 func LinkStreamLoop(ctx context.Context, opts LinkStreamOptions) (LinkStreamReport, error) {
 	policy := opts.Policy.withDefaults()
+	if opts.Cards != nil && opts.cardSent == nil {
+		// One card memory for the whole run, so a reconnect does not
+		// repeat every card the hub already holds.
+		opts.cardSent = &linkCardState{}
+	}
 	var report LinkStreamReport
 	attempt := 0
 	for {
@@ -839,6 +1061,7 @@ func LinkStreamLoop(ctx context.Context, opts LinkStreamOptions) (LinkStreamRepo
 		report.Sessions++
 		report.Posted += run.Posted
 		report.Acknowledged += run.Acknowledged
+		report.Cards += run.Cards
 		report.ProviderErrors += run.ProviderErrors
 		report.StreamID = run.StreamID
 		report.LastSequence = run.LastSequence

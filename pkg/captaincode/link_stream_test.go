@@ -46,6 +46,7 @@ type streamHub struct {
 	opens     int
 	streamIDs []string
 	posts     []streamPost
+	cards     []LinkDecisionCard
 	current   string
 	seen      map[string]bool
 	seq       int64
@@ -252,10 +253,14 @@ func (h *streamHub) serveStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveMessages is the presence path with the hub's own checks.
+// serveMessages is the presence and card path with the hub's own checks.
 func (h *streamHub) serveMessages(w http.ResponseWriter, r *http.Request) {
 	e, ok := h.readEnvelope(w, r)
 	if !ok {
+		return
+	}
+	if e.Type == "decision.card" {
+		h.serveCard(w, e)
 		return
 	}
 	if e.Type != "presence" {
@@ -329,6 +334,79 @@ func streamRandomID() string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(raw[:])
+}
+
+// serveCard is the decision-card path with the hub's own checks: a strict
+// payload, the card rules, and a signed acknowledgement that names the
+// message and the decision.
+func (h *streamHub) serveCard(w http.ResponseWriter, e LinkEnvelope) {
+	var c LinkDecisionCard
+	if err := LinkDecodePayload(e, &c); err != nil || LinkDecisionValid(c) != nil ||
+		c.PostedAt < 946684800 || c.PostedAt > time.Now().Add(5*time.Minute).Unix() {
+		h.hubError(w, e.MachineID, http.StatusBadRequest)
+		return
+	}
+	h.mu.Lock()
+	h.cards = append(h.cards, c)
+	ack := map[string]any{"message_id": e.ID, "decision_id": c.DecisionID}
+	if h.ackKind == "card.wrong" {
+		ack["decision_id"] = "dq-261117-000000"
+	}
+	h.mu.Unlock()
+	h.writeEnvelope(w, http.StatusOK, h.sign("decision.accepted", ack))
+}
+
+// streamCards is a card provider the tests change while a stream runs.
+type streamCards struct {
+	mu    sync.Mutex
+	cards []LinkDecisionCard
+	err   error
+	calls int
+}
+
+func (c *streamCards) set(cards ...LinkDecisionCard) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cards = append([]LinkDecisionCard(nil), cards...)
+}
+
+func (c *streamCards) fail(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.err = err
+}
+
+func (c *streamCards) read() ([]LinkDecisionCard, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls++
+	if c.err != nil {
+		return nil, c.err
+	}
+	return append([]LinkDecisionCard(nil), c.cards...), nil
+}
+
+func (c *streamCards) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+// testCard is one valid card.
+func testCard(id string) LinkDecisionCard {
+	return LinkDecisionCard{
+		DecisionID: id,
+		Title:      "Trial host for the first cloud worker",
+		Question:   "Where should the first Linux host run, and at what spend cap?",
+		Options: []LinkDecisionOption{
+			{ID: "a", Label: "AWS"},
+			{ID: "b", Label: "A second provider"},
+		},
+		Recommend: "a",
+		Record:    "docs/fleet.md",
+		PostedAt:  time.Now().Unix(),
+		Status:    "open",
+	}
 }
 
 // streamFolders is a folder provider the tests change while a stream runs.
@@ -1005,6 +1083,207 @@ func BenchmarkLinkStreamFrame(b *testing.B) {
 		msg := linkStreamFrame(frame, true, true, pub, hub.machine, &linkSeenIDs{})
 		if msg.err != nil {
 			b.Fatal(msg.err)
+		}
+	}
+}
+
+func TestLinkStreamPushesDecisionCards(t *testing.T) {
+	fx := newStreamFixture(t)
+	cards := &streamCards{}
+	cards.set(testCard("dq-261117-0a1b2c"))
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	report, err := LinkStreamLoop(ctx, opts)
+	if ctx.Err() == nil {
+		t.Fatalf("the loop should run until its context ends, got %v (%v)", report.Reason, err)
+	}
+	fx.hub.mu.Lock()
+	defer fx.hub.mu.Unlock()
+	if len(fx.hub.cards) != 1 {
+		t.Fatalf("the hub should hold one card, got %d", len(fx.hub.cards))
+	}
+	if fx.hub.cards[0].DecisionID != "dq-261117-0a1b2c" || fx.hub.cards[0].Status != "open" {
+		t.Fatalf("the hub held the wrong card: %+v", fx.hub.cards[0])
+	}
+	if report.Cards < 1 {
+		t.Fatalf("the report should count pushed cards, got %d", report.Cards)
+	}
+}
+
+func TestLinkStreamDoesNotRepeatAnUnchangedCard(t *testing.T) {
+	fx := newStreamFixture(t)
+	fx.hub.closeAfterPings = 2
+	cards := &streamCards{}
+	cards.set(testCard("dq-261117-0a1b2c"))
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = LinkStreamLoop(ctx, opts)
+	fx.hub.mu.Lock()
+	defer fx.hub.mu.Unlock()
+	if len(fx.hub.cards) != 1 {
+		t.Fatalf("one unchanged card should be pushed once across reconnects, got %d", len(fx.hub.cards))
+	}
+	if fx.hub.opens < 2 {
+		t.Fatalf("the test should have reconnected at least once, opened %d streams", fx.hub.opens)
+	}
+}
+
+func TestLinkStreamRepostsAChangedCard(t *testing.T) {
+	fx := newStreamFixture(t)
+	cards := &streamCards{}
+	card := testCard("dq-261117-0a1b2c")
+	cards.set(card)
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+	defer cancel()
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		card.Status = "answered"
+		card.Answer = "a"
+		cards.set(card)
+	}()
+	report, err := LinkStreamLoop(ctx, opts)
+	if ctx.Err() == nil {
+		t.Fatalf("the loop should run until its context ends, got %v (%v)", report.Reason, err)
+	}
+	fx.hub.mu.Lock()
+	defer fx.hub.mu.Unlock()
+	answered := 0
+	for _, c := range fx.hub.cards {
+		if c.Status == "answered" && c.Answer == "a" {
+			answered++
+		}
+	}
+	if answered != 1 {
+		t.Fatalf("the changed card should be pushed again, answered cards: %d of %d", answered, len(fx.hub.cards))
+	}
+}
+
+func TestLinkStreamCardProviderErrorKeepsTheStream(t *testing.T) {
+	fx := newStreamFixture(t)
+	cards := &streamCards{}
+	cards.set(testCard("dq-261117-0a1b2c"))
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+	defer cancel()
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cards.fail(fmt.Errorf("the register is being rewritten"))
+		time.Sleep(300 * time.Millisecond)
+		cards.fail(nil)
+	}()
+	report, err := LinkStreamLoop(ctx, opts)
+	if ctx.Err() == nil {
+		t.Fatalf("a failed register read should not end the run, got %v (%v)", report.Reason, err)
+	}
+	if report.ProviderErrors == 0 {
+		t.Fatal("the report should count the failed register read")
+	}
+}
+
+func TestLinkStreamRefusesCardAckForAnotherDecision(t *testing.T) {
+	fx := newStreamFixture(t)
+	fx.hub.ackKind = "card.wrong"
+	cards := &streamCards{}
+	cards.set(testCard("dq-261117-0a1b2c"))
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := LinkStreamLoop(ctx, opts)
+	if !LinkRefusalOf(err) {
+		t.Fatalf("an acknowledgement for another decision should be a refusal, got %v", err)
+	}
+}
+
+func TestLinkStreamRefusesACardItCannotBuild(t *testing.T) {
+	fx := newStreamFixture(t)
+	bad := testCard("dq-261117-0a1b2c")
+	bad.Options = nil
+	cards := &streamCards{}
+	cards.set(bad)
+	opts := fx.options()
+	opts.Cards = cards.read
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := LinkStreamLoop(ctx, opts)
+	if !LinkRefusalOf(err) {
+		t.Fatalf("an invalid card should stop the run as a refusal, got %v", err)
+	}
+}
+
+func TestLinkDecisionValid(t *testing.T) {
+	base := testCard("dq-261117-0a1b2c")
+	if err := LinkDecisionValid(base); err != nil {
+		t.Fatalf("a well-formed card should pass: %v", err)
+	}
+	bad := base
+	bad.DecisionID = "not-an-id"
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("a card with a bad id should be refused")
+	}
+	bad = base
+	bad.Status = "answered"
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("an answered card without an answer should be refused")
+	}
+	bad = base
+	bad.Answer = "a"
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("an open card with an answer should be refused")
+	}
+	bad = base
+	bad.Record = "/etc/passwd"
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("an absolute record path should be refused")
+	}
+	bad = base
+	bad.Options = append(bad.Options, LinkDecisionOption{ID: "a", Label: "Duplicate"})
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("a repeated option id should be refused")
+	}
+	bad = base
+	bad.Title = strings.Repeat("x", 201)
+	if err := LinkDecisionValid(bad); err == nil {
+		t.Fatal("an over-long title should be refused")
+	}
+}
+
+func BenchmarkLinkDecisionCardChecks(b *testing.B) {
+	card := testCard("dq-261117-0a1b2c")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := LinkDecisionValid(card); err != nil {
+			b.Fatal(err)
+		}
+		_ = linkCardCanon(card)
+	}
+}
+
+// BenchmarkLinkDecisionCardSign measures building one decision card the wire
+// takes: the checks, the comparable form, and the signed envelope.
+func BenchmarkLinkDecisionCardSign(b *testing.B) {
+	_, key, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	card := testCard("dq-261117-0a1b2c")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = linkCardCanon(card)
+		if err := LinkDecisionValid(card); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := LinkSign(key, "machine-stream-test", linkBrainDirection, "decision.card", card, time.Now()); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
