@@ -185,8 +185,18 @@ suites, focused race checks, both `go vet ./...` runs, formatting and leak
 checks pass. Three 3,000-run summary builds cost 21.471–21.992 microseconds,
 about 2.6 KB and 54 allocations; three 10,000-run hub validations cost
 159.8–170.7 nanoseconds and zero allocations. The broader migration gate
-applied migration 054 but stopped on the unrelated existing account-backfill
-assertion that expected 502 skipped rows and got 501. The next F6 step is the
+stopped that day on the account-backfill assertion (`expected 502 ... got
+501`); it is explained and closed 17 November 2026 - the failure was
+shared-database interference, not a code defect. Pointing two test packages at
+one database reproduces it on demand: a concurrent `pkg/database` run
+truncates `accounts` while the recovery test scans it, and the backfill's
+ordered cursor skips the deleted rows silently (`Updated:494` where 501 were
+seeded, with no error). The gate's one-fresh-database-per-package design is
+the fix, and it is green: three consecutive runs passed every package against
+a disposable loopback PostgreSQL 16, and the gate now covers
+`./services/hublink` as a fourth package (migrations 001-054, tests and vet
+green; the record and the reproduction live in the companion repository's
+fleet plan). The next F6 step is the
 signed browser prompt flow and physical-passkey acceptance on two hosts.
 
 A pre-acceptance review of the read-only Git policy on 17 November 2026 found
