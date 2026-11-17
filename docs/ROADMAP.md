@@ -3731,7 +3731,7 @@ your go, and a hardware or GPU budget.
 
 Decision dq-261116-9b3a84 (16 November 2026): user chose option a, P7 dataset export - Build only step 1: join routing decisions and outcomes without prompt text; no routing change. The open question on the next optional roadmap item is now closed.
 
-Decision dq-261116-a61645 (16 November 2026, answered in Galaxy): user chose option a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. The open question on the next build item is now closed; step 3 still needs a separate go.
+Decision dq-261116-a61645 (16 November 2026): user chose option a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend. The open question on the next optional roadmap item is now closed; step 3 still needs a separate go.
 
 Source: the multi-harness reinforcement-learning talk (Hugging Face, Kernel
 Panic Madrid, October 2026): run one task through several harnesses, keep the

@@ -68,8 +68,9 @@ keep the entries from both sides.
 
 ## dq-261116-a61645 answered: Next optional roadmap item after P7 step 1
 
-- Answered: 2026-11-16 21:26 UTC, in galaxy
-- Choice: a, P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
+- Question: P7 step 1, the routing dataset export, is delivered. Which item should the next build round take?
+- Answered: 2026-11-16
+- Choice: a: P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
 
 ## dq-261117-bb5-paths (dq-261116-f9c709) posted: Which local paths become critical path rules
 
