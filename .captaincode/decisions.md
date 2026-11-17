@@ -67,7 +67,6 @@ keep the entries from both sides.
 - Why a: It scores the data we now hold, spends nothing and changes no route.
 
 ## dq-261116-a61645 answered: Next optional roadmap item after P7 step 1
-
 - Question: P7 step 1, the routing dataset export, is delivered. Which item should the next build round take?
 - Answered: 2026-11-16
 - Choice: a: P7 step 2 - Split the exported dataset by date and score the current hand priors and director on acceptance rate and cost per accepted task; no routing change, no spend
