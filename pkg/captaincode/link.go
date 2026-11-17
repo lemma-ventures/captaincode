@@ -173,6 +173,10 @@ type LinkFolder struct {
 type linkState struct {
 	Version int          `json:"version"`
 	Folders []LinkFolder `json:"folders"`
+	// Hub is the one hub this machine pairs with (link_pair.go). It is
+	// omitted while there is none, so a registry from the folder-only
+	// protocol still reads as it was written.
+	Hub *LinkHub `json:"hub,omitempty"`
 }
 
 // LinkCanonicalRoot resolves a folder to the path the registry stores: fully

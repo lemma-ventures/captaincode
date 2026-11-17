@@ -42,7 +42,7 @@ This command uses a separate profile and does not start or restart the brain.
 | `captain priors refit [--apply]` | Move each prior toward the cross-vendor judges' mean measured here (30% of the gap, at most 0.5); the brain does it weekly |
 | `captain adi` / `adi refresh` | ADI standing per leg (green, red, not measured) and green tuples no leg serves; `refresh` fetches the feed now |
 | `captain state [--last] [<folder>]` | The per-folder TUI state directory (history, model, preferences); `--last` prints the newest session id |
-| `captain link add <dir> [--queue]` / `off [<dir>]` / `status [--json]` | Which folders this machine offers to a hub: opt one in, drop one (or all), and see the key fingerprint, machine id and list. A folder is linked only when it is listed here; `--queue` holds prompts until a keyboard is free. Terminal only (F6 step 1) |
+| `captain link add <dir> [--queue]` / `off [<dir>]` / `pair [--ca <file>] [--wait <duration>] <hub-url>` / `unpair` / `status [--json]` | What this machine offers to one hub: opt a folder in, drop one (or all), pair with a hub and approve the printed code on its web page, drop the hub pin, then see the key fingerprint, machine id, hub state and list. `pair` needs `https`, verifies the hub certificate and pins the hub's key for every later reply; `--ca` trusts a hub on a private certificate authority and `--wait` bounds the wait (default `4m`, `0` does not wait). `--queue` holds prompts until a keyboard is free. Terminal only (F6 steps 1-2) |
 
 ## Local small calls
 
