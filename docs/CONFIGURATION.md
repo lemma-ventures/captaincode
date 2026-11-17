@@ -274,31 +274,34 @@ Each screened event becomes one bounded line in `~/.captaincode/security.jsonl`
 (`CAPTAIN_BLACKBOX_STATE` moves it): correlation IDs, coverage, finding
 summaries and a disposition (`evaluated`, `would_block`, `degraded`,
 `observed_after_execution`). No commands, paths, prompts, outputs or secret
-values are stored. The stream rotates at 1 MiB. `CAPTAIN_BLACKBOX_SNAPSHOT`
-names the rule snapshot (default
-`~/.config/captain/blackbox-snapshot.json`); a missing or invalid snapshot
-degrades the record instead of claiming a clean screen. Claude Code uses the
-same switch inside the composed `captain redact --hook`, so the final restored
-input is the input screened. The TUI's **security** row reads only the current
-folder's counts through `GET /v1/blackbox/status?cwd=…`; it labels the mode
-`audit only` and names uncovered transports. `captain blackbox status` prints
-the machine-wide report. See [the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
+values are stored. The stream rotates at 1 MiB. `CAPTAIN_BLACKBOX_SNAPSHOT` names an unverified rule file. When that variable
+is set, hooks and the status snapshot line use that file. A missing or invalid
+file degrades the record instead of claiming a clean screen. When the variable
+is unset and the store pins below are complete, hooks and the snapshot line
+use the authenticated store. A missing default file
+`~/.config/captain/blackbox-snapshot.json` is not a degraded screening in that
+case. Claude Code uses the same switch inside the composed `captain redact
+--hook`, so the final restored input is the input screened. The TUI's
+**security** row reads only the current folder's counts through `GET
+/v1/blackbox/status?cwd=…`; it labels the mode `audit only` and names
+uncovered transports. `captain blackbox status` prints the machine-wide
+report. See [the integration plan](AGENT_BLACKBOX_INTEGRATION.md).
 
-The status command and workspace endpoint also report the accepted signed
-snapshot when `CAPTAIN_BLACKBOX_STORE` names its store directory. Configure all
-five trust pins with it: `CAPTAIN_BLACKBOX_KEY_ID`,
+The status command and workspace endpoint report the accepted signed snapshot
+when `CAPTAIN_BLACKBOX_STORE` names its store directory. Configure all five
+trust pins with it: `CAPTAIN_BLACKBOX_KEY_ID`,
 `CAPTAIN_BLACKBOX_PUBLIC_KEY` (base64 Ed25519 public key),
 `CAPTAIN_BLACKBOX_TRUST_ROOT`, `CAPTAIN_BLACKBOX_GRAPH`, and
-`CAPTAIN_BLACKBOX_NETWORK`. An incomplete set, a wrong pin, an unreadable store,
-or a failed signature makes the authority report unavailable. The pins come
-from the operator, never from the envelope.
+`CAPTAIN_BLACKBOX_NETWORK`. An incomplete set, a wrong pin, an unreadable
+store, or a failed signature makes the snapshot line say the store is
+unavailable and screenings fail closed. The unused legacy file is not named
+as the cause. The pins come from the operator, never from the envelope.
 
-The authority report uses the store's authenticated verification time and the
-signed expiry. It does not use file modification time. An expired snapshot
-stays visible and reports `expired`, not `ok`. This report is separate from the
-`CAPTAIN_BLACKBOX_SNAPSHOT` file used by the audit evaluator; that file remains
-explicitly unverified. The API returns no store path, public key, rule text, or
-local workspace path.
+The store report uses the authenticated verification time and the signed
+expiry. It does not use file modification time. An expired snapshot stays
+visible, reports `expired`, and fails closed until renewal. The workspace
+response sets `snapshot_ok` from that same source. It returns no store path,
+public key, rule text, or local workspace path.
 
 ### The action gate
 

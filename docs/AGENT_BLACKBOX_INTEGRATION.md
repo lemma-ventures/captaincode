@@ -386,7 +386,10 @@ separate the transports without guessing.
 half. It prints the mode and whether it is a known one, whether the composed
 hook is installed in Claude Code's settings
 (`captaincode.ClaudeHookInstalled`), the snapshot's id and source with its age,
-and the record counts. It distinguishes all five display states -
+and the record counts. When `CAPTAIN_BLACKBOX_SNAPSHOT` is unset and the store
+pins are complete, that snapshot line names the authenticated store the hooks
+read. A closed or expired store says screenings fail closed. It does not call
+a missing legacy file a degraded screening. It distinguishes all five display states -
 `would_block`, `observed_after_execution`, `evaluated`, `degraded` and
 `not_covered`, where `not_covered` counts records that carry a `not_covered`
 coverage entry - plus per-host and path-free per-workspace counts over the

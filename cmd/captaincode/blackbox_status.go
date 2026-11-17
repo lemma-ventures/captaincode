@@ -48,17 +48,19 @@ type blackboxAuthorityStatus struct {
 
 // blackboxStatus is the report's inputs, gathered once and printed once.
 type blackboxStatus struct {
-	Mode         string
-	ModeValid    bool
-	ClaudeHook   bool
-	SnapshotID   string
-	SnapshotAge  time.Duration
-	SnapshotPath string
-	SnapshotOK   bool
-	Authority    blackboxAuthorityStatus
-	Records      []captaincode.BlackboxSecurityRecord
-	Total        int
-	Partial      int
+	Mode              string
+	ModeValid         bool
+	ClaudeHook        bool
+	SnapshotID        string
+	SnapshotAge       time.Duration
+	SnapshotPath      string
+	SnapshotOK        bool
+	SnapshotFromStore bool
+	StoreClosed       bool
+	Authority         blackboxAuthorityStatus
+	Records           []captaincode.BlackboxSecurityRecord
+	Total             int
+	Partial           int
 }
 
 func runBlackboxStatus(args []string, stdout io.Writer) error {
@@ -78,8 +80,23 @@ func collectBlackboxStatus() blackboxStatus {
 	}
 	status.ClaudeHook = claudeBlackboxMode() != "" && captaincode.ClaudeHookInstalled("captain redact --hook")
 
+	// Match evaluateBlackboxHookAction. An explicit snapshot file wins. With
+	// none, a configured store is the only source: a closed store fails closed
+	// and the unused legacy file is not a degraded screening.
 	status.SnapshotPath = blackboxSnapshotPath("")
-	if file, err := os.Open(status.SnapshotPath); err == nil {
+	if os.Getenv("CAPTAIN_BLACKBOX_SNAPSHOT") == "" && status.Authority.Configured {
+		status.SnapshotFromStore = true
+		status.SnapshotPath = "authenticated store"
+		if status.Authority.ID != "" {
+			status.SnapshotID = status.Authority.ID
+			status.SnapshotOK = status.Authority.OK
+			if !status.Authority.VerifiedAt.IsZero() {
+				status.SnapshotAge = time.Since(status.Authority.VerifiedAt)
+			}
+		} else {
+			status.StoreClosed = true
+		}
+	} else if file, err := os.Open(status.SnapshotPath); err == nil {
 		if snapshot, decodeErr := captaincode.DecodeBlackboxSnapshot(io.LimitReader(file, captaincode.BlackboxMaxSnapshotBytes+1)); decodeErr == nil {
 			status.SnapshotOK = true
 			status.SnapshotID = safeField(snapshot.ID + " " + snapshot.Source)
@@ -181,6 +198,12 @@ func (s blackboxStatus) String() string {
 		fmt.Fprintf(&b, "claude     unknown - mode %s here\n", s.Mode)
 	}
 	switch {
+	case s.SnapshotFromStore && s.StoreClosed:
+		fmt.Fprintln(&b, "snapshot   authenticated store unavailable - screenings fail closed; the legacy file is not used")
+	case s.SnapshotFromStore && s.Authority.Expired:
+		fmt.Fprintf(&b, "snapshot   %s, expired at %s - authenticated store; screenings fail closed until renewal\n", s.SnapshotID, s.Authority.ExpiresAt.Format(time.RFC3339))
+	case s.SnapshotFromStore && s.SnapshotOK:
+		fmt.Fprintf(&b, "snapshot   %s, verified age %s - authenticated store\n", s.SnapshotID, ageText(s.SnapshotAge))
 	case s.SnapshotOK:
 		fmt.Fprintf(&b, "snapshot   %s, age %s - %s\n", s.SnapshotID, ageText(s.SnapshotAge), s.SnapshotPath)
 	default:
@@ -194,7 +217,11 @@ func (s blackboxStatus) String() string {
 	case s.Authority.Expired:
 		fmt.Fprintf(&b, "authority  %s, expired at %s - authenticated but not fresh\n", s.Authority.ID, s.Authority.ExpiresAt.Format(time.RFC3339))
 	default:
-		fmt.Fprintln(&b, "authority  unavailable - check the store and trust pins; the file snapshot remains unverified")
+		if s.SnapshotFromStore {
+			fmt.Fprintln(&b, "authority  unavailable - check the store and trust pins; screenings fail closed")
+		} else {
+			fmt.Fprintln(&b, "authority  unavailable - check the store and trust pins; the file snapshot remains unverified")
+		}
 	}
 
 	byDisposition := map[string]int{}

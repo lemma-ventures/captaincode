@@ -131,6 +131,103 @@ func TestBlackboxStatusAuthorityFailsClosed(t *testing.T) {
 	}
 }
 
+// No CAPTAIN_BLACKBOX_SNAPSHOT means the hooks read the authenticated store.
+// The snapshot line must name that store. A missing legacy file is not a
+// degraded screening.
+func TestBlackboxStatusNamesTheAuthenticatedStore(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("HOME", fixture.dir)
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", "")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+
+	status := collectBlackboxStatus()
+	if !status.SnapshotFromStore || !status.SnapshotOK || status.SnapshotID != "fixture-export agent-blackbox-export" {
+		t.Fatalf("snapshot status = ok %t fromStore %t id %q", status.SnapshotOK, status.SnapshotFromStore, status.SnapshotID)
+	}
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	report := out.String()
+	for _, want := range []string{
+		"snapshot   fixture-export agent-blackbox-export, verified age ",
+		"authenticated store",
+	} {
+		if !strings.Contains(report, want) {
+			t.Errorf("missing %q in report:\n%s", want, report)
+		}
+	}
+	for _, leak := range []string{"unreadable", "blackbox-snapshot.json", fixture.store, "every screening stays degraded"} {
+		if strings.Contains(report, leak) {
+			t.Errorf("report blames the unused file or names the store path:\n%s", report)
+		}
+	}
+}
+
+// A configured store that does not open is the hook source. Status must say
+// screenings fail closed, and must not blame the default file the hooks skip.
+func TestBlackboxStatusClosedStoreDoesNotBlameTheLegacyFile(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("HOME", fixture.dir)
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", "")
+	t.Setenv("CAPTAIN_BLACKBOX_PUBLIC_KEY", "not-base64")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+
+	status := collectBlackboxStatus()
+	if !status.SnapshotFromStore || !status.StoreClosed || status.SnapshotOK {
+		t.Fatalf("snapshot status = %+v", status)
+	}
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	report := out.String()
+	if !strings.Contains(report, "snapshot   authenticated store unavailable - screenings fail closed; the legacy file is not used") {
+		t.Fatalf("report = %s", report)
+	}
+	if !strings.Contains(report, "authority  unavailable - check the store and trust pins; screenings fail closed") {
+		t.Fatalf("report = %s", report)
+	}
+	if strings.Contains(report, "blackbox-snapshot.json") || strings.Contains(report, "every screening stays degraded") || strings.Contains(report, "file snapshot remains unverified") {
+		t.Fatalf("report blames the unused file:\n%s", report)
+	}
+}
+
+func TestBlackboxStatusExpiredStoreFailsClosed(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(append(fixture.args(), "--ttl", "1ns"), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("HOME", fixture.dir)
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", "")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+
+	status := collectBlackboxStatus()
+	if !status.SnapshotFromStore || status.SnapshotOK || !status.Authority.Expired {
+		t.Fatalf("snapshot status = ok %t expired %t", status.SnapshotOK, status.Authority.Expired)
+	}
+	var out bytes.Buffer
+	if err := runBlackboxStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	report := out.String()
+	if !strings.Contains(report, "expired at ") || !strings.Contains(report, "screenings fail closed until renewal") {
+		t.Fatalf("report = %s", report)
+	}
+	if strings.Contains(report, "blackbox-snapshot.json") || strings.Contains(report, "every screening stays degraded") {
+		t.Fatalf("report blames the unused file:\n%s", report)
+	}
+}
+
 func TestBlackboxStatusAuthorityReportsExpiry(t *testing.T) {
 	fixture := newBlackboxExportCommandFixture(t)
 	if err := runBlackboxExport(append(fixture.args(), "--ttl", "1ns"), &bytes.Buffer{}); err != nil {
@@ -317,6 +414,21 @@ func BenchmarkBlackboxAuthorityStatusCollect(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		collectBlackboxAuthorityStatus(time.Now().UTC())
+	}
+}
+
+func BenchmarkBlackboxStatusAuthenticatedStore(b *testing.B) {
+	fixture := newBlackboxExportCommandFixture(b)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		b.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(b, fixture)
+	b.Setenv("HOME", fixture.dir)
+	b.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", "")
+	b.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		collectBlackboxStatus()
 	}
 }
 

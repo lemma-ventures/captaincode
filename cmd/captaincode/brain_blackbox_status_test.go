@@ -100,6 +100,37 @@ func TestBlackboxWorkspaceStatusReportsAuthority(t *testing.T) {
 	}
 }
 
+func TestBlackboxWorkspaceStatusUsesTheAuthenticatedStore(t *testing.T) {
+	fixture := newBlackboxExportCommandFixture(t)
+	if err := runBlackboxExport(fixture.args(), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	setBlackboxAuthorityEnv(t, fixture)
+	t.Setenv("HOME", fixture.dir)
+	t.Setenv("CAPTAIN_BLACKBOX_SNAPSHOT", "")
+	t.Setenv("CAPTAIN_BLACKBOX_STATE", filepath.Join(fixture.dir, "security.jsonl"))
+	workspace := t.TempDir()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/blackbox/status?cwd="+url.QueryEscape(workspace), nil)
+	(&brain{}).blackboxStatusHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		SnapshotID string `json:"snapshot_id"`
+		SnapshotOK bool   `json:"snapshot_ok"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.SnapshotOK || body.SnapshotID != "fixture-export agent-blackbox-export" {
+		t.Fatalf("snapshot = %+v body %s", body, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), fixture.store) {
+		t.Fatalf("response names the store path: %s", rec.Body.String())
+	}
+}
+
 func TestBlackboxWorkspaceStatusRequiresScopeAndGET(t *testing.T) {
 	for _, req := range []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/v1/blackbox/status", nil),
