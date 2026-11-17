@@ -218,6 +218,9 @@ func main() {
 		case "secrets": // credential inventory and the secrets-file split
 			cmdSecrets(os.Args[2:])
 			return
+		case "link": // which folders this machine offers to a hub (F6)
+			cmdLink(args[1:])
+			return
 		case "send":
 			cmdSend(os.Args[2:])
 			return

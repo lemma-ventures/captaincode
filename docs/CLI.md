@@ -42,6 +42,7 @@ This command uses a separate profile and does not start or restart the brain.
 | `captain priors refit [--apply]` | Move each prior toward the cross-vendor judges' mean measured here (30% of the gap, at most 0.5); the brain does it weekly |
 | `captain adi` / `adi refresh` | ADI standing per leg (green, red, not measured) and green tuples no leg serves; `refresh` fetches the feed now |
 | `captain state [--last] [<folder>]` | The per-folder TUI state directory (history, model, preferences); `--last` prints the newest session id |
+| `captain link add <dir> [--queue]` / `off [<dir>]` / `status [--json]` | Which folders this machine offers to a hub: opt one in, drop one (or all), and see the key fingerprint, machine id and list. A folder is linked only when it is listed here; `--queue` holds prompts until a keyboard is free. Terminal only (F6 step 1) |
 
 ## Local small calls
 
