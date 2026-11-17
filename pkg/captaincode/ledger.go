@@ -563,8 +563,14 @@ func LoadLedger() (*Ledger, error) {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		_ = os.Rename(filepath.Join(home, ".superagent"), dir) // carry over pre-rename state
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
+	}
+	// A state directory an older build made is 0755; bring it back to 0700
+	// like every other captain state directory. Existing owners and group
+	// bits on files inside are untouched.
+	if info, err := os.Lstat(dir); err == nil && info.Mode().IsDir() && info.Mode().Perm() != 0o700 {
+		_ = os.Chmod(dir, 0o700)
 	}
 	l := &Ledger{
 		Sessions:  map[string]string{},
