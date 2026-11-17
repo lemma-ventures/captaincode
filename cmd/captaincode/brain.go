@@ -475,6 +475,9 @@ type brain struct {
 	// autoDistill throttles background consolidation of the Euclid journal.
 	autoDistill autoDistillState
 
+	// logins runs the passkey-signed CLI login repairs (brain_login_repair.go).
+	logins loginRepair
+
 	// chatFn stubs one repeat round in tests; nil → a real chatCompletions call.
 	chatFn func(w *captureWriter)
 	// judgeFn stubs the injection judge in tests (brain_inbox.go).

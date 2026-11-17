@@ -362,6 +362,34 @@ above, excludes `approval`, displays the new key and metadata, and signs it.
 The approval must come from the same named user. A relay cannot issue a code,
 import a key, or add a key using an unsigned message.
 
+## Login repair
+
+A browser client may repair a lapsed CLI login on the machine the brain owns,
+without copying any credential. The flow covers the CLIs whose documented
+login prints a verification URL and a user code headlessly (`codex login
+--device-auth`, `grok login --device-auth`); Claude and Cursor log in through
+a browser or the Keychain with no code to return, so they stay terminal-only.
+The request never carries an argv: the brain runs one fixed command per CLI.
+
+1. `POST /v1/presence/login/challenge` `{"cli":"codex"}` answers the
+   challenge `SHA-256("captain.presence.login.v1", machine, cli)`.
+2. `POST /v1/presence/login/repair` `{"cli","assertion"}` verifies the
+   assertion against that challenge with any enrolled owner, refuses a second
+   repair for the same CLI while one runs (`409 repair_busy`), starts the
+   fixed command with `HOME`, `PATH`, `TERM=dumb` and `LC_ALL=C` only, and
+   answers the URL and code once it parses both (bounded scan, 30 s; the
+   process may then wait for the browser for 15 minutes). A CLI that prints
+   no usable pair answers `502 no_code`.
+3. `GET /v1/presence/login/status?cli=` reports `none`, `running`,
+   `waiting`, `done` or `failed` and never repeats the URL or code.
+4. `POST /v1/presence/login/cancel` `{"cli","assertion"}` stops a repair
+   with the owner's passkey and forgets it.
+
+Only the strict URL and code shapes leave the process: anything else the CLI
+prints is dropped. Neither value is logged, written to a run record, kept
+after the process ends, or repeated by the status route. The audit trail
+records `login:<cli>` with the signing user and credential only.
+
 ## Trust and separate decisions
 
 The inbox hands the exact signed text to the existing TUI consumer. A TUI must
@@ -517,6 +545,7 @@ Unsupported methods return 405. Unknown presence routes return 404.
 | `expired_registration`, `invalid_enrollment_code`, `enrollment_proof_required`, `invalid_attestation`, `unsupported_attestation` | Registration proof failed. |
 | `held_text_mismatch`, `expired_grant`, `unknown_decision` | Held item, execution grant, or decision no longer valid. |
 | `unknown_project`, `project_not_allowed`, `admission_conflict`, `setup_failed`, `unknown_admission`, `invalid_state`, `root_not_found`, `root_not_directory`, `root_overlaps` | Project discovery, allowed roots, or the prepare admission failed. |
+| `unknown_cli` | Login repair asked for a CLI outside the fixed allowlist. `repair_busy` (409) and `no_code` (502) answer the repair itself. |
 
 Tool refusals use `signed_decision_required: ID`. They do not execute the
 action. Store failures refuse instead of falling back to full trust. The

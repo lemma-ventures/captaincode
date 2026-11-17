@@ -219,6 +219,30 @@ func (b *brain) presenceHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Printf("captain presence: purged %d pending decision(s)\n", n)
 		writeJSON(w, 200, map[string]any{"ok": true, "purged": n})
+	case "login/challenge":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		b.loginRepairChallenge(w, r)
+	case "login/repair":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		b.loginRepairStart(w, r)
+	case "login/status":
+		if r.Method != http.MethodGet {
+			writeErr(w, 405, "GET")
+			return
+		}
+		b.loginRepairStatus(w, r)
+	case "login/cancel":
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "POST")
+			return
+		}
+		b.loginRepairCancel(w, r)
 	default:
 		writeErr(w, 404, "unknown presence route")
 	}
