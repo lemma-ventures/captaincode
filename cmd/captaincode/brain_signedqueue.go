@@ -106,8 +106,7 @@ func sqFinish(id, how, result string) {
 		return
 	}
 	e.Done, e.DoneAt, e.Result = how, time.Now(), result
-	if e.PromptID != "" && how == "headless" {
-		summary := captaincode.NewLinkTurnSummary(e.PromptID, result, e.DoneAt)
+	if summary, ok := linkSummaryForQueueEntry(e); ok {
 		e.Summary = &summary
 	}
 	if sqWrite("done", e) == nil {

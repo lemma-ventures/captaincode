@@ -2,9 +2,26 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/lemma-ventures/captaincode/pkg/captaincode"
 )
+
+func linkSummaryForQueueEntry(entry sqEntry) (captaincode.LinkTurnSummary, bool) {
+	if entry.PromptID == "" {
+		return captaincode.LinkTurnSummary{}, false
+	}
+	switch entry.Done {
+	case "headless":
+	case "expired", "dropped":
+		if !strings.HasPrefix(entry.Result, "failed:") {
+			entry.Result = "failed: " + entry.Result
+		}
+	default:
+		return captaincode.LinkTurnSummary{}, false
+	}
+	return captaincode.NewLinkTurnSummary(entry.PromptID, entry.Result, entry.DoneAt), true
+}
 
 func (b *brain) linkTurnSummaries() ([]captaincode.LinkTurnSummary, error) {
 	linked, err := captaincode.LinkFolders()
@@ -23,9 +40,11 @@ func (b *brain) linkTurnSummaries() ([]captaincode.LinkTurnSummary, error) {
 			continue
 		}
 		summary := entry.Summary
-		if summary == nil && entry.Done == "headless" {
-			built := captaincode.NewLinkTurnSummary(entry.PromptID, entry.Result, entry.DoneAt)
-			summary = &built
+		if summary == nil {
+			built, ok := linkSummaryForQueueEntry(entry)
+			if ok {
+				summary = &built
+			}
 		}
 		if summary == nil {
 			continue
