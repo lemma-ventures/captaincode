@@ -116,10 +116,12 @@ keep the entries from both sides.
 
 ## captaincode (dq-261117-5008de) answered: Make the codex app-server transport the default
 
-- Answered: 2026-11-17 12:14 UTC, in galaxy
-- Choice: a, Default to app-server
+- Question: The codex app-server transport (/btw steering on codex workers) passed live qualification on codex-cli 0.169.0: one real turn answered with thread id, usage and first-output time, and a mid-turn note amended the running turn's answer. Should it become the codex-cli default?
+- Answered: 2026-11-17
+- Choice: a: Default to app-server - codex-cli workers take /btw notes mid-run; CAPTAIN_CODEX_TRANSPORT=exec opts out; the schema gate still falls back to exec on a version mismatch
 
 ## captaincode (dq-261117-f0191b) answered: P7 step 3: the offline shadow router
 
-- Answered: 2026-11-17 12:14 UTC, in galaxy
-- Choice: a, Build step 3
+- Question: P7 steps 1-2 are delivered: the routing dataset export and the by-date scoring of the director and hand priors. Should step 3 build the shadow router next?
+- Answered: 2026-11-17
+- Choice: a: Build step 3 - offline shadow router over the exported dataset; no routing change, no spend
