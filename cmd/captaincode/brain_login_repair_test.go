@@ -184,6 +184,19 @@ func TestParseLoginLine(t *testing.T) {
 	}
 }
 
+func BenchmarkParseLoginLine(b *testing.B) {
+	line := "Visit https://auth.example.org/activate and enter code WDJB-MJHT"
+	for i := 0; i < b.N; i++ {
+		parseLoginLine(line)
+	}
+}
+
+func BenchmarkLoginRepairChallenge(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		pres.LoginRepairChallenge("test-machine", "codex")
+	}
+}
+
 func TestLoginRepairCommandNotFound(t *testing.T) {
 	old := loginRepairTimeout
 	loginRepairTimeout = 500 * time.Millisecond
