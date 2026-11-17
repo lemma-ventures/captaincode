@@ -47,7 +47,10 @@ var linkPairCode = regexp.MustCompile(`^[A-Z2-7]{8}$`)
 
 // LinkHub is one hub paired with this machine. The key is the hub's public key
 // pinned over verified HTTPS. PairID and Code belong to the live pairing
-// window; ApprovedAt is set once the hub says an account approved it.
+// window; ApprovedAt is set once the hub says an account approved it. CAFile
+// remembers where `pair --ca` found the hub's private certificate authority,
+// so the brain's own stream verifies this hub the same way pairing did
+// without being told again; it is local state and never travels.
 type LinkHub struct {
 	URL         string `json:"url"`
 	PublicKey   string `json:"public_key"`
@@ -56,6 +59,7 @@ type LinkHub struct {
 	RequestedAt int64  `json:"requested_at"`
 	ExpiresAt   int64  `json:"expires_at"`
 	ApprovedAt  int64  `json:"approved_at,omitempty"`
+	CAFile      string `json:"ca_file,omitempty"`
 }
 
 // LinkHubState reads the pinned hub, if this machine paired with one.
@@ -389,6 +393,7 @@ func LinkPair(ctx context.Context, hubURL, caFile string) (LinkHub, bool, error)
 		Code:        pending.Code,
 		RequestedAt: now.Unix(),
 		ExpiresAt:   pending.ExpiresAt.Unix(),
+		CAFile:      caFile,
 	}
 	if _, err := linkUpdate(true, func(s *linkState) error {
 		if s.Hub != nil && s.Hub.ApprovedAt > 0 && s.Hub.URL == base {
