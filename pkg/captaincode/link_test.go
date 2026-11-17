@@ -200,6 +200,43 @@ func TestLinkFolderOptIn(t *testing.T) {
 	}
 }
 
+func TestLinkProjectMapping(t *testing.T) {
+	linkConfig(t)
+	folder := t.TempDir()
+	if _, err := LinkAdd(folder, LinkModeActive); err != nil {
+		t.Fatal(err)
+	}
+	mapped, err := LinkMap(folder, "owner-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapped.ProjectID != "owner-project" {
+		t.Fatalf("mapped folder: %+v", mapped)
+	}
+	mapped, err = LinkAdd(folder, LinkModeQueue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapped.ProjectID != "owner-project" || mapped.Mode != LinkModeQueue {
+		t.Fatalf("re-adding changed the mapping: %+v", mapped)
+	}
+	for _, id := range []string{"", "bad/id", "../project", "has space", strings.Repeat("x", 129)} {
+		if _, err := LinkMap(folder, id); err == nil {
+			t.Fatalf("project id %q was accepted", id)
+		}
+	}
+	if _, err := LinkMap(t.TempDir(), "owner-project"); err == nil {
+		t.Fatal("an unlinked folder accepted a project id")
+	}
+	cleared, err := LinkUnmap(folder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.ProjectID != "" {
+		t.Fatalf("cleared folder: %+v", cleared)
+	}
+}
+
 func TestLinkOffClosesEveryFolder(t *testing.T) {
 	linkConfig(t)
 	for _, dir := range []string{t.TempDir(), t.TempDir(), t.TempDir()} {
@@ -517,6 +554,21 @@ func BenchmarkLinkMode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, ok := LinkMode(folder); !ok {
 			b.Fatal("lookup failed")
+		}
+	}
+}
+
+func BenchmarkLinkMap(b *testing.B) {
+	b.Setenv("XDG_CONFIG_HOME", b.TempDir())
+	folder := b.TempDir()
+	if _, err := LinkAdd(folder, LinkModeActive); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := LinkMap(folder, "owner-project"); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

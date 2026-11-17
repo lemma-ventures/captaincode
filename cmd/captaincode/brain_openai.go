@@ -473,7 +473,11 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			req.ws.SentBy = by
 		}
 		if grant != nil {
-			req.ws.PresenceID = grant.ID
+			if grant.ReadOnly {
+				req.ws.ReadOnly = true
+			} else {
+				req.ws.PresenceID = grant.ID
+			}
 		}
 	}
 	// The worker guard's two facts for this turn (pkg workerguard.go): a

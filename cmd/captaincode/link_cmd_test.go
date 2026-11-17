@@ -128,6 +128,45 @@ func TestRunLinkQueueMode(t *testing.T) {
 	}
 }
 
+func TestRunLinkMapAndUnmap(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	folder := t.TempDir()
+	if _, err := linkCapture(t, func() error { return runLink([]string{"add", folder}) }); err != nil {
+		t.Fatal(err)
+	}
+	out, err := linkCapture(t, func() error { return runLink([]string{"map", folder, "owner-project"}) })
+	if err != nil || !strings.Contains(out, "owner-project") {
+		t.Fatalf("map printed %q, err %v", out, err)
+	}
+	out, err = linkCapture(t, func() error { return runLink([]string{"status", "--json"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status struct {
+		Folders []struct {
+			ProjectID string `json:"project_id"`
+		} `json:"folders"`
+	}
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Folders) != 1 || status.Folders[0].ProjectID != "owner-project" {
+		t.Fatalf("status: %s", out)
+	}
+	for _, args := range [][]string{{"map", folder}, {"map", folder, "bad/id"}, {"map", t.TempDir(), "owner-project"}, {"unmap", folder, "extra"}} {
+		if _, err := linkCapture(t, func() error { return runLink(args) }); err == nil {
+			t.Fatalf("runLink(%v) accepted an invalid mapping", args)
+		}
+	}
+	if _, err := linkCapture(t, func() error { return runLink([]string{"unmap", folder}) }); err != nil {
+		t.Fatal(err)
+	}
+	folders, err := captaincode.LinkFolders()
+	if err != nil || len(folders) != 1 || folders[0].ProjectID != "" {
+		t.Fatalf("folders after unmap: %+v, %v", folders, err)
+	}
+}
+
 func TestRunLinkStatusWithoutKey(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	out, err := linkCapture(t, func() error { return runLink([]string{"status"}) })
@@ -142,7 +181,7 @@ func TestRunLinkStatusWithoutKey(t *testing.T) {
 func TestRunLinkRefusesWorkers(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv(captaincode.GuardEnv, "1")
-	for _, args := range [][]string{{"add", t.TempDir()}, {"off"}} {
+	for _, args := range [][]string{{"add", t.TempDir()}, {"off"}, {"map", t.TempDir(), "owner-project"}, {"unmap", t.TempDir()}} {
 		err := runLink(args)
 		if err == nil || !strings.Contains(err.Error(), "terminal") {
 			t.Fatalf("runLink(%v) err = %v, want a terminal refusal", args, err)

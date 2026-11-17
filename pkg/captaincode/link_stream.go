@@ -274,6 +274,11 @@ type LinkStreamReport struct {
 	Posted         int
 	Acknowledged   int
 	Cards          int
+	Answers        int
+	AnswerErrors   int
+	Prompts        int
+	PromptRefusals int
+	Summaries      int
 	ProviderErrors int
 	StreamID       string
 	LastSequence   int64
@@ -336,10 +341,16 @@ type LinkStreamOptions struct {
 	// Cards reads the current decision cards on demand. An error means
 	// the register could not be read: nothing is sent this beat. A card
 	// is pushed when it is new or when its comparable form changed.
-	Cards    func() ([]LinkDecisionCard, error)
-	cardSent *linkCardState
-	Interval time.Duration // defaults to 2.5 seconds
-	Policy   LinkStreamPolicy
+	Cards func() ([]LinkDecisionCard, error)
+	// Answer applies one verified owner answer to the local register. An
+	// error means no receipt is sent, so the hub may offer it again later.
+	Answer      func(LinkDecisionAnswer) error
+	Prompt      func(LinkPrompt) error
+	Summaries   func() ([]LinkTurnSummary, error)
+	cardSent    *linkCardState
+	summarySent *linkCardState
+	Interval    time.Duration // defaults to 2.5 seconds
+	Policy      LinkStreamPolicy
 	// Client overrides the client built from the hub's CA file; the tests
 	// set it so a stub hub runs on the system's own verification path.
 	Client *http.Client
@@ -405,6 +416,8 @@ type linkStreamMsg struct {
 	ping     bool
 	ready    bool
 	streamID string
+	answer   *LinkDecisionAnswer
+	prompt   *LinkPrompt
 	err      error
 }
 
@@ -470,6 +483,24 @@ func linkStreamFrame(frame map[string]string, hasEvent, hasID bool, pub ed25519.
 	switch env.Type {
 	case "link.ready":
 	case "link.ping":
+	case "decision.answer":
+		var answer LinkDecisionAnswer
+		if err := LinkDecodePayload(env, &answer); err != nil {
+			return linkStreamMsg{err: linkRefuse("the hub sent a decision answer this machine cannot read")}
+		}
+		if err := linkDecisionAnswerValid(answer, time.Now()); err != nil {
+			return linkStreamMsg{err: linkRefuse("the hub sent a decision answer this machine cannot accept")}
+		}
+		return linkStreamMsg{answer: &answer, streamID: answer.StreamID}
+	case "prompt":
+		var prompt LinkPrompt
+		if err := LinkDecodePayload(env, &prompt); err != nil {
+			return linkStreamMsg{err: linkRefuse("the hub sent a prompt this machine cannot read")}
+		}
+		if _, err := prompt.Signed(); err != nil {
+			return linkStreamMsg{err: linkRefuse("the hub sent a prompt this machine cannot accept")}
+		}
+		return linkStreamMsg{prompt: &prompt, streamID: prompt.StreamID}
 	default:
 		return linkStreamMsg{err: linkRefuse("the hub sent a message type this machine does not use")}
 	}
@@ -764,6 +795,70 @@ func linkStreamPostCard(ctx context.Context, client *http.Client, opts LinkStrea
 	return nil
 }
 
+// linkStreamPostReceipt acknowledges an answer only after the local register
+// accepted it. The signed hub reply binds both ids, so a lost receipt is safe
+// to retry and a reply for another answer cannot consume it.
+func linkStreamPostReceipt(ctx context.Context, client *http.Client, opts LinkStreamOptions, pub ed25519.PublicKey, answer LinkDecisionAnswer) error {
+	payload := struct {
+		AnswerID   string `json:"answer_id"`
+		DecisionID string `json:"decision_id"`
+	}{AnswerID: answer.AnswerID, DecisionID: answer.DecisionID}
+	posted, err := LinkSign(opts.Key, opts.MachineID, linkBrainDirection, "decision.receipt", payload, time.Now())
+	if err != nil {
+		return linkRefuse("the link signing key is missing: %v", err)
+	}
+	raw, err := json.Marshal(posted)
+	if err != nil || len(raw) > linkMaxBody {
+		return linkRefuse("the decision receipt this machine builds is too large")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, linkPostLimit)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, linkEndpoint(opts.Hub.URL, "/messages"), bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("the decision receipt request could not be built: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("the decision receipt could not be delivered: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, linkMaxBody+1))
+	if err != nil {
+		return fmt.Errorf("the hub's receipt acknowledgement could not be read: %w", err)
+	}
+	if len(body) > linkMaxBody {
+		return linkRefuse("the hub's receipt acknowledgement is too large")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return linkStreamStatus(pub, opts.MachineID, resp.StatusCode, body)
+	}
+	var reply LinkEnvelope
+	if err := LinkDecodeEnvelope(body, &reply); err != nil {
+		return linkRefuse("the hub's receipt acknowledgement is not a link envelope")
+	}
+	if err := LinkVerify(pub, reply, linkHubDirection, time.Now()); err != nil {
+		return linkRefuse("the hub's receipt acknowledgement cannot be verified")
+	}
+	if reply.MachineID != opts.MachineID || reply.Type != "decision.answered" {
+		return linkRefuse("the hub answered a decision receipt with another machine or message type")
+	}
+	var ack struct {
+		AnswerID   string `json:"answer_id"`
+		DecisionID string `json:"decision_id"`
+	}
+	if err := LinkDecodePayload(reply, &ack); err != nil {
+		return linkRefuse("the hub's receipt acknowledgement cannot be read")
+	}
+	if ack.AnswerID != answer.AnswerID || ack.DecisionID != answer.DecisionID {
+		return linkRefuse("the hub acknowledged a different decision answer")
+	}
+	return nil
+}
+
 // errLinkEnd says the session is over because no folder is left to report.
 // The supervisor re-reads state when it arrives, so the machine stops its
 // traffic instead of streaming an empty set forever.
@@ -828,13 +923,14 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 	tick := opts.tick()
 	interval := opts.interval()
 	var (
-		streamID     string
-		seq          int64
-		lastCanon    string
-		lastSent     time.Time
-		lastEvent    = time.Now()
-		lastCardRead time.Time
-		sent         bool
+		streamID        string
+		seq             int64
+		lastCanon       string
+		lastSent        time.Time
+		lastEvent       = time.Now()
+		lastCardRead    time.Time
+		lastSummaryRead time.Time
+		sent            bool
 	)
 	report.Reason = "waiting for the hub"
 	// snapshot sends one snapshot when one is due and does nothing when
@@ -926,6 +1022,37 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 		}
 		return nil
 	}
+	summaries := func() error {
+		if streamID == "" || opts.Summaries == nil || opts.summarySent == nil {
+			return nil
+		}
+		if !lastSummaryRead.IsZero() && time.Since(lastSummaryRead) < interval {
+			return nil
+		}
+		lastSummaryRead = time.Now()
+		list, err := opts.Summaries()
+		if err != nil {
+			report.ProviderErrors++
+			return nil
+		}
+		for _, summary := range list {
+			if err := LinkTurnSummaryValid(summary); err != nil {
+				return linkRefuse("a turn summary this machine builds would be refused: %v", err)
+			}
+			raw, _ := json.Marshal(summary)
+			canon := string(raw)
+			if opts.summarySent.known(summary.PromptID, canon) {
+				continue
+			}
+			if err := linkStreamPostSummary(sessionCtx, client, options, pub, summary); err != nil {
+				return err
+			}
+			opts.summarySent.sent(summary.PromptID, canon)
+			report.Summaries++
+			report.Reason = "stream open"
+		}
+		return nil
+	}
 	for {
 		if streamID == "" && time.Since(lastEvent) > linkIdleLimit {
 			report.Reason = "the hub did not open the stream"
@@ -938,6 +1065,12 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 			return report, err
 		}
 		if err := cards(); err != nil {
+			if ctx.Err() != nil {
+				return report, ctx.Err()
+			}
+			return report, err
+		}
+		if err := summaries(); err != nil {
 			if ctx.Err() != nil {
 				return report, ctx.Err()
 			}
@@ -996,6 +1129,40 @@ func linkStreamSession(ctx context.Context, opts LinkStreamOptions) (LinkStreamR
 				if msg.streamID != streamID {
 					return report, linkRefuse("the hub pinged another stream")
 				}
+			case msg.prompt != nil:
+				if streamID == "" || msg.streamID != streamID {
+					return report, linkRefuse("the hub prompted on a stream it has not opened")
+				}
+				if opts.Prompt == nil {
+					return report, linkRefuse("the hub sent a prompt but this machine has no prompt handler")
+				}
+				acceptErr := opts.Prompt(*msg.prompt)
+				if err := linkStreamPostPromptReceipt(sessionCtx, client, options, pub, *msg.prompt, acceptErr); err != nil {
+					return report, err
+				}
+				if acceptErr != nil {
+					report.PromptRefusals++
+				} else {
+					report.Prompts++
+				}
+				report.Reason = "stream open"
+			case msg.answer != nil:
+				if streamID == "" || msg.streamID != streamID {
+					return report, linkRefuse("the hub answered on a stream it has not opened")
+				}
+				if opts.Answer == nil {
+					return report, linkRefuse("the hub sent a decision answer but this machine has no answer handler")
+				}
+				if err := opts.Answer(*msg.answer); err != nil {
+					report.AnswerErrors++
+					report.Reason = "a decision answer was not applied"
+					continue
+				}
+				if err := linkStreamPostReceipt(sessionCtx, client, options, pub, *msg.answer); err != nil {
+					return report, err
+				}
+				report.Answers++
+				report.Reason = "stream open"
 			}
 		case <-timer.C:
 		}
@@ -1051,6 +1218,9 @@ func LinkStreamLoop(ctx context.Context, opts LinkStreamOptions) (LinkStreamRepo
 		// repeat every card the hub already holds.
 		opts.cardSent = &linkCardState{}
 	}
+	if opts.Summaries != nil && opts.summarySent == nil {
+		opts.summarySent = &linkCardState{}
+	}
 	var report LinkStreamReport
 	attempt := 0
 	for {
@@ -1062,6 +1232,11 @@ func LinkStreamLoop(ctx context.Context, opts LinkStreamOptions) (LinkStreamRepo
 		report.Posted += run.Posted
 		report.Acknowledged += run.Acknowledged
 		report.Cards += run.Cards
+		report.Answers += run.Answers
+		report.AnswerErrors += run.AnswerErrors
+		report.Prompts += run.Prompts
+		report.PromptRefusals += run.PromptRefusals
+		report.Summaries += run.Summaries
 		report.ProviderErrors += run.ProviderErrors
 		report.StreamID = run.StreamID
 		report.LastSequence = run.LastSequence

@@ -94,8 +94,9 @@ func (b *brain) linkPresenceFolders() ([]captaincode.LinkPresenceFolder, error) 
 			continue
 		}
 		out = append(out, captaincode.LinkPresenceFolder{
-			Label:   label,
-			TUIOpen: b.inbox.sqTUIOpen(folder.Root),
+			Label:     label,
+			TUIOpen:   b.inbox.sqTUIOpen(folder.Root),
+			ProjectID: folder.ProjectID,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
@@ -246,6 +247,9 @@ func (b *brain) linkStreamReady() (captaincode.LinkStreamReady, error) {
 			BrainVersion: linkBrainVersion(),
 			Folders:      b.linkPresenceFolders,
 			Cards:        b.linkDecisionCards,
+			Answer:       b.linkDecisionAnswer,
+			Prompt:       b.linkPromptAccept,
+			Summaries:    b.linkTurnSummaries,
 		},
 	}, nil
 }

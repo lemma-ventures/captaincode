@@ -27,8 +27,8 @@ type sentSessions struct {
 // by another agent, a release asked for, a checkout already dirty. guessed:
 // the serve did not answer, so sent is a fail-closed assumption, not a fact.
 type sessionFacts struct {
-	sent, mayPublish, dirty, guessed bool
-	presenceID                       string
+	sent, mayPublish, dirty, guessed, readOnly bool
+	presenceID                                 string
 }
 
 var sentSessionCache = &sentSessions{}
@@ -51,7 +51,8 @@ func (s *sentSessions) facts(session string, fetch func(string) (string, error))
 	}
 	v = sessionFacts{presenceID: captaincode.PresenceGrantID(prompt), sent: captaincode.IsSentTurn(prompt),
 		mayPublish: strings.Contains(prompt, captaincode.PublishGrantMarker),
-		dirty:      strings.Contains(prompt, captaincode.DirtyCheckoutMarker)}
+		dirty:      strings.Contains(prompt, captaincode.DirtyCheckoutMarker),
+		readOnly:   captaincode.IsReadOnlyTurn(prompt)}
 	s.mu.Lock()
 	if s.seen == nil || len(s.seen) > 5000 {
 		s.seen = map[string]sessionFacts{}
@@ -179,7 +180,12 @@ func (b *brain) gateSentHTTP(w http.ResponseWriter, r *http.Request) {
 	if d, err := dirFn(req.Session); err == nil && d != "" {
 		a.Cwd = d
 	}
-	why, jail := captaincode.SentTurnDecision(a)
+	why, jail := "", false
+	if f.readOnly {
+		why, jail = captaincode.ReadOnlyTurnDecision(a)
+	} else {
+		why, jail = captaincode.SentTurnDecision(a)
+	}
 	if why != "" {
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
 		fmt.Printf("captain brain: sent turn %s - %s refused: %s\n", req.Session, a.Tool, why)

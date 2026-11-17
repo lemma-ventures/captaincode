@@ -208,7 +208,12 @@ func sentHookOutput(toolName string, input map[string]any, cwd string) (map[stri
 	a := captaincode.GateAction{Tool: strings.ToLower(toolName),
 		Command: firstString(input, "command", "url"),
 		Path:    firstString(input, "file_path", "filePath", "path", "notebook_path"), Cwd: cwd}
-	why, jail := captaincode.SentTurnDecision(a)
+	why, jail := "", false
+	if os.Getenv(captaincode.ReadOnlyTurnEnv) == "1" {
+		why, jail = captaincode.ReadOnlyTurnDecision(a)
+	} else {
+		why, jail = captaincode.SentTurnDecision(a)
+	}
 	if why != "" {
 		captaincode.AppendInjectionLog(captaincode.InjectionEvent{Channel: "tool", Action: "refused", Detail: a.Tool + ": " + truncate(a.Command+a.Path, 160), Why: why})
 		tripBrainInbox(cwd, a.Tool, why)

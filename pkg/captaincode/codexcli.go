@@ -89,14 +89,17 @@ func codexCLICmdArgsLeg(leg Leg, dir, task string, effort Effort) []string {
 	if dir != "" {
 		args = append(args, "-C", dir)
 	}
-	args = append(args, CodexMCPArgs(dir)...)   // Euclid memory tools, same as the opencode workers get
-	args = append(args, SerenaCodexMCP(dir)...) // optional LSP code tools (CAPTAIN_SERENA_MCP=1)
-	args = append(args, CodexProxyArgs()...)    // the model turn crosses the egress proxy while it is up
+	if !IsReadOnlyTurn(task) {
+		args = append(args, CodexMCPArgs(dir)...)
+		args = append(args, SerenaCodexMCP(dir)...)
+	}
+	args = append(args, CodexProxyArgs()...)
 	sb := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_SANDBOX"))
 	if IsSentTurn(task) {
-		// A sent turn runs in codex's own sandbox: writes in the workspace
-		// only, no network for its commands (sentpolicy.go).
 		sb = "workspace-write"
+		if IsReadOnlyTurn(task) {
+			sb = "read-only"
+		}
 	}
 	switch sb {
 	case "", "skip":

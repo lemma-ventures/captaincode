@@ -163,11 +163,12 @@ func EnsureLinkKey() (ed25519.PublicKey, error) {
 }
 
 // LinkFolder is one folder that opted in. Root is machine-local state, never
-// sent: a peer sees the folder's label alone.
+// sent: a peer sees the folder's label and optional hub project id.
 type LinkFolder struct {
-	Root    string `json:"root"`
-	Mode    string `json:"mode"`
-	AddedAt int64  `json:"added_at"`
+	Root      string `json:"root"`
+	Mode      string `json:"mode"`
+	AddedAt   int64  `json:"added_at"`
+	ProjectID string `json:"project_id,omitempty"`
 }
 
 type linkState struct {
@@ -348,6 +349,39 @@ func LinkAdd(dir, mode string) (LinkFolder, error) {
 		out = LinkFolder{Root: root, Mode: mode, AddedAt: time.Now().Unix()}
 		s.Folders = append(s.Folders, out)
 		return nil
+	})
+	if err != nil {
+		return LinkFolder{}, err
+	}
+	return out, nil
+}
+
+func LinkMap(dir, projectID string) (LinkFolder, error) {
+	if !linkIdentifier.MatchString(projectID) {
+		return LinkFolder{}, fmt.Errorf("project id must use 1-128 letters, numbers, underscores or hyphens")
+	}
+	return linkSetProject(dir, projectID)
+}
+
+func LinkUnmap(dir string) (LinkFolder, error) {
+	return linkSetProject(dir, "")
+}
+
+func linkSetProject(dir, projectID string) (LinkFolder, error) {
+	root, err := LinkCanonicalRoot(dir)
+	if err != nil {
+		return LinkFolder{}, err
+	}
+	var out LinkFolder
+	_, err = linkUpdate(true, func(s *linkState) error {
+		for i, folder := range s.Folders {
+			if folder.Root == root {
+				s.Folders[i].ProjectID = projectID
+				out = s.Folders[i]
+				return nil
+			}
+		}
+		return fmt.Errorf("folder is not linked")
 	})
 	if err != nil {
 		return LinkFolder{}, err

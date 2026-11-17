@@ -165,6 +165,16 @@ func TestLinkPresenceFoldersUsesLabelsAndTUIState(t *testing.T) {
 	if !got[1].TUIOpen || got[0].TUIOpen {
 		t.Fatalf("TUI states wrong: %+v", got)
 	}
+	if _, err := captaincode.LinkMap(elm, "owner-project"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = b.linkPresenceFolders()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].ProjectID != "owner-project" || got[1].ProjectID != "" {
+		t.Fatalf("project mapping did not reach presence: %+v", got)
+	}
 	if !strings.Contains(out, "no presence label") {
 		t.Fatalf("an unlabelled folder was silent: %q", out)
 	}

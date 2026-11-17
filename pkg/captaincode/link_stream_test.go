@@ -39,6 +39,8 @@ type streamHub struct {
 	ackWrong        bool   // ack another message id and sequence
 	tamper          func(LinkEnvelope) LinkEnvelope
 	sendKind        string // send one extra event of this kind after ready
+	answer          *LinkDecisionAnswer
+	prompt          *LinkPrompt
 	repeatReady     bool   // send the ready frame twice under one id
 	eventMachine    string // sign stream events for another machine
 
@@ -47,6 +49,9 @@ type streamHub struct {
 	streamIDs []string
 	posts     []streamPost
 	cards     []LinkDecisionCard
+	summaries []LinkTurnSummary
+	receipts  []string
+	promptAck []string
 	current   string
 	seen      map[string]bool
 	seq       int64
@@ -235,6 +240,22 @@ func (h *streamHub) serveStream(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 	}
+	if h.answer != nil {
+		answer := *h.answer
+		answer.StreamID = streamID
+		if _, err := io.WriteString(w, h.signedFrame("decision.answer", answer)); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
+	if h.prompt != nil {
+		prompt := *h.prompt
+		prompt.StreamID = streamID
+		if _, err := io.WriteString(w, h.signedFrame("prompt", prompt)); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
 	ticker := time.NewTicker(h.pingEvery)
 	defer ticker.Stop()
 	for {
@@ -261,6 +282,49 @@ func (h *streamHub) serveMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if e.Type == "decision.card" {
 		h.serveCard(w, e)
+		return
+	}
+	if e.Type == "decision.receipt" {
+		var receipt struct {
+			AnswerID   string `json:"answer_id"`
+			DecisionID string `json:"decision_id"`
+		}
+		if LinkDecodePayload(e, &receipt) != nil || h.answer == nil || receipt.AnswerID != h.answer.AnswerID || receipt.DecisionID != h.answer.DecisionID {
+			h.hubError(w, e.MachineID, http.StatusConflict)
+			return
+		}
+		h.mu.Lock()
+		h.receipts = append(h.receipts, receipt.AnswerID)
+		h.mu.Unlock()
+		h.writeEnvelope(w, http.StatusOK, h.sign("decision.answered", receipt))
+		return
+	}
+	if e.Type == "prompt.receipt" {
+		var receipt struct {
+			PromptID string `json:"prompt_id"`
+			Status   string `json:"status"`
+			Code     string `json:"code"`
+		}
+		if LinkDecodePayload(e, &receipt) != nil || h.prompt == nil || receipt.PromptID != h.prompt.PromptID || (receipt.Status != "accepted" && receipt.Status != "refused") {
+			h.hubError(w, e.MachineID, http.StatusConflict)
+			return
+		}
+		h.mu.Lock()
+		h.promptAck = append(h.promptAck, receipt.PromptID+":"+receipt.Status+":"+receipt.Code)
+		h.mu.Unlock()
+		h.writeEnvelope(w, http.StatusOK, h.sign("prompt.acknowledged", map[string]string{"prompt_id": receipt.PromptID, "status": receipt.Status}))
+		return
+	}
+	if e.Type == "turn.summary" {
+		var summary LinkTurnSummary
+		if LinkDecodePayload(e, &summary) != nil || LinkTurnSummaryValid(summary) != nil {
+			h.hubError(w, e.MachineID, http.StatusBadRequest)
+			return
+		}
+		h.mu.Lock()
+		h.summaries = append(h.summaries, summary)
+		h.mu.Unlock()
+		h.writeEnvelope(w, http.StatusOK, h.sign("turn.accepted", map[string]string{"message_id": e.ID, "prompt_id": summary.PromptID}))
 		return
 	}
 	if e.Type != "presence" {
@@ -705,7 +769,7 @@ func TestLinkStreamRefusesMessageItCannotVerify(t *testing.T) {
 		if !LinkRefusalOf(got.err) {
 			t.Fatalf("want a refusal, got %v", got.err)
 		}
-		if !strings.Contains(got.err.Error(), "verify") {
+		if !strings.Contains(got.err.Error(), "verif") {
 			t.Fatalf("reason = %q", got.err)
 		}
 	case <-time.After(2 * time.Second):
@@ -718,7 +782,7 @@ func TestLinkStreamRefusesMessageItCannotVerify(t *testing.T) {
 
 func TestLinkStreamRefusesUnknownHubMessageType(t *testing.T) {
 	fx := newStreamFixture(t)
-	fx.hub.sendKind = "decision.answer"
+	fx.hub.sendKind = "turn.summary"
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := fx.runLoop(ctx)

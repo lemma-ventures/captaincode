@@ -163,6 +163,9 @@ func classifyGrokCLIFailure(msg string) error {
 // go to onStatus, `end` carries usage and cost, `error` is the failure. Time
 // bounds follow the CLI legs' progress contract (progressCtx), as codex exec.
 func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), steer *Steer) (result Result, runErr error) {
+	if IsReadOnlyTurn(task) {
+		return Result{}, fmt.Errorf("grok cli does not enforce the remote read-only tool policy")
+	}
 	start := time.Now()
 	ctx := context.Background()
 	prog := &progress{}

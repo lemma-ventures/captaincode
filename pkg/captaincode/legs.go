@@ -46,6 +46,7 @@ type Workspace struct {
 	// typed it): the worker prompt then says so (sentTurnContract).
 	SentBy     string
 	PresenceID string
+	ReadOnly   bool
 	// MayPublish: the user's turn asked for a release or a publish;
 	// DirtyBefore: the folder had uncommitted changes when the turn started
 	// (workerguard.go).
@@ -2503,7 +2504,10 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 	fenv = append(fenv, GateWorkerEnv(LegClaude, task, steer.Task())...)
 	fenv = append(fenv, WorkerGuardEnv(task)...) // no unrequested tags, releases or bulk staging (workerguard.go)
 	if IsSentTurn(task) {
-		fenv = append(fenv, SentTurnEnv+"=1", SentDirEnv+"="+dir) // the PreToolUse hook applies the sent-turn policy (sentpolicy.go)
+		fenv = append(fenv, SentTurnEnv+"=1", SentDirEnv+"="+dir)
+		if IsReadOnlyTurn(task) {
+			fenv = append(fenv, ReadOnlyTurnEnv+"=1")
+		}
 	}
 	if len(fenv) > 0 {
 		cmd.Env = append(os.Environ(), fenv...)
@@ -2752,6 +2756,9 @@ func runCursor(dir, task string) (string, error) {
 }
 
 func runCursorModel(dir, task, model string) (string, error) {
+	if IsReadOnlyTurn(task) {
+		return "", fmt.Errorf("cursor does not enforce the remote read-only tool policy")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	// --trust clears cursor-agent's workspace-trust prompt (headless -p can't
@@ -2815,6 +2822,9 @@ func cursorUsageLimit(msg string) bool {
 // us map a rate-limited Cursor subscription to ErrRateLimited so the leg cools
 // down instead of being retried forever.
 func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStatus func(string), steer *Steer, model string) (Result, error) {
+	if IsReadOnlyTurn(task) {
+		return Result{}, fmt.Errorf("cursor does not enforce the remote read-only tool policy")
+	}
 	start := time.Now() // DurationMs gates the grading loop - a zero duration silently exempted cursor from ALL scoring (13 unscored runs, 2026-07-25)
 	ctx := context.Background()
 	prog := &progress{}

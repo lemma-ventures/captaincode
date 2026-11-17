@@ -163,6 +163,14 @@ func (s *Store) Prepare(e Envelope, text string) error {
 	})
 }
 func (s *Store) VerifyPrompt(p Signed) (Grant, error) {
+	return s.verifyPrompt(p, false)
+}
+
+func (s *Store) VerifyPromptReadOnly(p Signed) (Grant, error) {
+	return s.verifyPrompt(p, true)
+}
+
+func (s *Store) verifyPrompt(p Signed, readOnly bool) (Grant, error) {
 	var g Grant
 	err := s.Update(func(c *Config) error {
 		now := nowUnix()
@@ -193,7 +201,7 @@ func (s *Store) VerifyPrompt(p Signed) (Grant, error) {
 		if e != nil {
 			return e
 		}
-		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: now + GrantLifetime, Push: PushIntent(p.Text)}
+		g = Grant{ID: id, User: user, CredentialID: key.ID, Label: key.Label, Device: key.Label, Machine: c.Machine, Folder: p.Envelope.Folder, Dir: dir, TextSHA256: p.Envelope.TextSHA256, Expires: now + GrantLifetime, Push: PushIntent(p.Text), ReadOnly: readOnly}
 		if c.Used == nil {
 			c.Used = map[string]int64{}
 		}

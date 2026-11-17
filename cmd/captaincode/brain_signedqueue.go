@@ -33,14 +33,18 @@ import (
 
 // sqEntry is one signed prompt, by the inbox item ID it was handed as.
 type sqEntry struct {
-	ID     string    `json:"id"`
-	Grant  string    `json:"grant"`
-	Dir    string    `json:"dir"`
-	Text   string    `json:"text"`
-	At     time.Time `json:"at"`
-	Done   string    `json:"done,omitempty"` // tui, headless, dropped, expired
-	DoneAt time.Time `json:"done_at,omitempty"`
-	Result string    `json:"result,omitempty"`
+	ID       string                       `json:"id"`
+	PromptID string                       `json:"prompt_id,omitempty"`
+	Folder   string                       `json:"folder,omitempty"`
+	Grant    string                       `json:"grant"`
+	Dir      string                       `json:"dir"`
+	Text     string                       `json:"text"`
+	At       time.Time                    `json:"at"`
+	Hold     bool                         `json:"hold,omitempty"`
+	Done     string                       `json:"done,omitempty"` // tui, headless, dropped, expired
+	DoneAt   time.Time                    `json:"done_at,omitempty"`
+	Result   string                       `json:"result,omitempty"`
+	Summary  *captaincode.LinkTurnSummary `json:"summary,omitempty"`
 }
 
 var (
@@ -102,6 +106,10 @@ func sqFinish(id, how, result string) {
 		return
 	}
 	e.Done, e.DoneAt, e.Result = how, time.Now(), result
+	if e.PromptID != "" && how == "headless" {
+		summary := captaincode.NewLinkTurnSummary(e.PromptID, result, e.DoneAt)
+		e.Summary = &summary
+	}
 	if sqWrite("done", e) == nil {
 		_ = os.Remove(filepath.Join(sqRoot(), "pending", id+".json"))
 	}
@@ -224,7 +232,7 @@ func sqMarkRunning(dir string, on bool) {
 
 func (b *brain) signedQueueStep() {
 	for _, e := range sqList("pending") {
-		if time.Since(e.At) < sqHeadlessAfter || b.inbox.sqTUIOpen(e.Dir) {
+		if e.Hold || time.Since(e.At) < sqHeadlessAfter || b.inbox.sqTUIOpen(e.Dir) {
 			continue
 		}
 		control := sqControl(e.Text)

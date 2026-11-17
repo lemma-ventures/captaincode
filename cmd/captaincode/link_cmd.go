@@ -36,7 +36,7 @@ func linkTerminal() error {
 	return nil
 }
 
-const linkUsage = "usage: captain link add <dir> [--queue] | off [<dir>] | pair [--ca <file>] [--wait <duration>] <hub-url> | unpair | status [--json]"
+const linkUsage = "usage: captain link add <dir> [--queue] | off [<dir>] | map <dir> <project-id> | unmap <dir> | pair [--ca <file>] [--wait <duration>] <hub-url> | unpair | status [--json]"
 
 func runLink(args []string) error {
 	if len(args) == 0 {
@@ -94,6 +94,29 @@ func runLink(args []string) error {
 			fmt.Println("1 folder stopped listening")
 		default:
 			fmt.Printf("%d folders stopped listening\n", stopped)
+		}
+		return nil
+	case "map", "unmap":
+		if e := linkTerminal(); e != nil {
+			return e
+		}
+		if (args[0] == "map" && len(args) != 3) || (args[0] == "unmap" && len(args) != 2) {
+			return fmt.Errorf("usage: captain link map <dir> <project-id> | unmap <dir>")
+		}
+		var folder captaincode.LinkFolder
+		var err error
+		if args[0] == "map" {
+			folder, err = captaincode.LinkMap(args[1], args[2])
+		} else {
+			folder, err = captaincode.LinkUnmap(args[1])
+		}
+		if err != nil {
+			return err
+		}
+		if folder.ProjectID == "" {
+			fmt.Printf("cleared the project mapping for %s\n", filepath.Base(folder.Root))
+		} else {
+			fmt.Printf("mapped %s to project %s\n", filepath.Base(folder.Root), folder.ProjectID)
 		}
 		return nil
 	case "pair":
@@ -231,10 +254,11 @@ func linkPair(hubURL, caFile string, wait time.Duration) error {
 }
 
 type linkStatusFolder struct {
-	Label   string `json:"label"`
-	Mode    string `json:"mode"`
-	AddedAt string `json:"added_at"`
-	Root    string `json:"root"`
+	Label     string `json:"label"`
+	Mode      string `json:"mode"`
+	AddedAt   string `json:"added_at"`
+	Root      string `json:"root"`
+	ProjectID string `json:"project_id,omitempty"`
 }
 
 type linkStatusHub struct {
@@ -313,10 +337,11 @@ func linkStatus(asJSON bool) error {
 	list := make([]linkStatusFolder, 0, len(folders))
 	for _, folder := range folders {
 		list = append(list, linkStatusFolder{
-			Label:   filepath.Base(folder.Root),
-			Mode:    folder.Mode,
-			AddedAt: time.Unix(folder.AddedAt, 0).UTC().Format(time.RFC3339),
-			Root:    folder.Root,
+			Label:     filepath.Base(folder.Root),
+			Mode:      folder.Mode,
+			AddedAt:   time.Unix(folder.AddedAt, 0).UTC().Format(time.RFC3339),
+			Root:      folder.Root,
+			ProjectID: folder.ProjectID,
 		})
 	}
 	hub, err := linkHubView()
@@ -346,7 +371,11 @@ func linkStatus(asJSON bool) error {
 	}
 	fmt.Printf("linked folders: %d\n", len(list))
 	for _, folder := range list {
-		fmt.Printf("  %-24s %-6s %s\n", folder.Label, folder.Mode, folder.Root)
+		project := folder.ProjectID
+		if project == "" {
+			project = "-"
+		}
+		fmt.Printf("  %-24s %-6s %-32s %s\n", folder.Label, folder.Mode, project, folder.Root)
 	}
 	return nil
 }

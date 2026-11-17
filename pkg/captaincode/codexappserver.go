@@ -299,10 +299,12 @@ func CheckCodexAppServer() error {
 	return nil
 }
 
-func codexAppServerCmdArgs(dir string) []string {
+func codexAppServerCmdArgs(dir, task string) []string {
 	args := []string{"app-server", "--stdio"}
-	args = append(args, CodexMCPArgs(dir)...)
-	args = append(args, SerenaCodexMCP(dir)...)
+	if !IsReadOnlyTurn(task) {
+		args = append(args, CodexMCPArgs(dir)...)
+		args = append(args, SerenaCodexMCP(dir)...)
+	}
 	return append(args, CodexProxyArgs()...)
 }
 
@@ -322,6 +324,9 @@ func codexAppServerSettings(leg Leg, dir, task string, effort Effort) (map[strin
 	sandbox := strings.TrimSpace(os.Getenv("CAPTAIN_CODEX_CLI_SANDBOX"))
 	if IsSentTurn(task) {
 		sandbox = "workspace-write"
+		if IsReadOnlyTurn(task) {
+			sandbox = "read-only"
+		}
 	}
 	if sandbox == "" || sandbox == "skip" {
 		sandbox = "danger-full-access"
@@ -534,7 +539,7 @@ func runCodexAppServerStreamLeg(leg Leg, dir, task string, base, ceil time.Durat
 		result.TokenUsage = stream.detail
 		result.FirstOutputMs = stream.firstOutput
 	}()
-	cmd := exec.CommandContext(ctx, "codex", codexAppServerCmdArgs(dir)...)
+	cmd := exec.CommandContext(ctx, "codex", codexAppServerCmdArgs(dir, task)...)
 	cmd.Dir = dir
 	cmd.Env = append(append(os.Environ(), GateWorkerEnv(leg, task, steer.Task())...), WorkerGuardEnv(task)...)
 	var stderr strings.Builder

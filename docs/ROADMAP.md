@@ -142,8 +142,54 @@ same day too: the brain now keeps one signed stream open to its hub and
 reports linked folders by presence label every 2.5 seconds. Step 4 landed
 the same day as well: decision cards ride that stream, the hub stores them
 for the owner's read, and the register's open, answered and withdrawn states
-all travel. The next buildable step on F6 is the folder-to-project id
-mapping, then the owner's answers down this stream.
+all travel. Step 5 landed the same day: `captain link map <dir> <project-id>`
+and `unmap` bind an opted-in folder to an existing hub project id, the brain
+includes that id in presence, and the hub remains the ownership authority.
+New and extended tests cover registry persistence and refusal, CLI behavior
+and presence propagation; all link tests, focused race checks, both full package
+suites, `go vet ./...` and formatting pass. Three 100-run mapping samples cost
+12.0-22.3 ms and 87 allocations per durable write. Step 6 landed the
+same day: the hub queues an authenticated owner's answer for the exact card
+digest and offered option, the stream redelivers it under a stable answer id
+until receipt, and the brain applies it to the local register and repository
+decision log only after its own signature, expiry, digest and option checks. `decision.receipt` is
+idempotent under a fresh envelope and replay-refusing under the same one.
+Tests cover owner isolation, stale cards, unoffered options, reconnects,
+receipt replay, local refusal, register idempotence and a shared digest
+vector. Both full runtime suites, focused race checks, `go vet ./...` and
+formatting pass; the hub suite also passes against PostgreSQL 16 with
+migration 052. Three 3,000-run digest samples cost 0.919-0.984 microseconds,
+801 bytes and 5 allocations. Step 7 delivered the first remote read-only prompt
+on 17 November 2026. The hub queues the exact signed envelope, assertion and
+text for an owned, currently linked folder. The brain repeats every local
+passkey and nonce check, records a durable read-only grant, and runs one
+sent-turn inspection after the existing headless wait. Queue-only folders
+still wait for a keyboard. Writes, tests, network, loops, teams and MCP calls
+are refused; repository reads, search and read-only Git history remain. The
+receipt is stable and idempotent, and the hub erases prompt content after it.
+Tests cover exact retry, replay, foreign accounts, unlinking, local refusal,
+headless execution and read-only tool policy; the formal model checks 203
+transitions. Both full runtime suites, focused race checks, `go vet ./...`,
+the full hub link suite against PostgreSQL 16 and formatting pass. Three
+300-run samples cost 2.455-3.189 microseconds and 24 allocations per prompt
+decode, and 30.862-32.739 microseconds per repository read-policy check.
+Step 8 delivered `turn.summary` on 17 November 2026. A completed headless hub
+prompt now stores a bounded, masked result in the durable queue and sends it
+over the existing signed stream. The hub accepts it only for an accepted
+prompt on the same machine, returns it only to the owning account, accepts an
+exact retry under a fresh envelope, and refuses changed content. Prompt text,
+transcripts and tool output do not travel. Cost remains `unknown` until the
+queue has a billed total. Unlinking a folder stops later delivery. Tests cover
+secret masking, size bounds, signed acknowledgement, stream delivery, restart
+replay, unlinked folders, owner isolation, exact retry, conflicting content,
+and the PostgreSQL lifecycle through migration 054. Full Captain and hub-link
+suites, focused race checks, both `go vet ./...` runs, formatting and leak
+checks pass. Three 3,000-run summary builds cost 21.471–21.992 microseconds,
+about 2.6 KB and 54 allocations; three 10,000-run hub validations cost
+159.8–170.7 nanoseconds and zero allocations. The broader migration gate
+applied migration 054 but stopped on the unrelated existing account-backfill
+assertion that expected 502 skipped rows and got 501. The next F6 step is the
+signed browser prompt flow and physical-passkey acceptance on two hosts.
 The committed tree at `25e600c` verified clean on 16 November 2026:
 `go vet ./...` is clean, `gofmt -l pkg cmd` prints nothing, and both full
 suites pass with `go test -count=1` (pkg 236.7 s, cmd 349.4 s) on a tree with

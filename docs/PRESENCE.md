@@ -384,6 +384,37 @@ queue` lists pending and recent entries, `captain queue show ID` prints one,
 and `captain queue drop ID` removes a pending one before it runs. The
 Gouvernail link will write to the same queue.
 
+## Hub read-only prompts
+
+A paired hub relays the exact envelope, assertion and text as a signed `prompt`
+event. The hub account and link signature authorize transport only. The brain
+performs the same local screening receipt, passkey, machine, folder, text,
+expiry, origin, RP ID, counter and nonce checks as a direct signed prompt.
+The folder must also have opted in with `captain link add`.
+
+`VerifyPromptReadOnly` records the read-only scope in the durable grant. The
+worker is a sent turn with an additional read-only contract, not a typed turn.
+It can read and search inside the linked repository and use read-only Git
+history commands. It cannot write, run project code or tests, use the network,
+start a loop or team, call MCP tools, or read outside that repository. Shell
+commands use the sent-turn jail. Codex uses its own read-only sandbox and no
+MCP servers. Cursor and Grok CLI refuse this scope because their adapters do
+not enforce the same tool contract.
+
+An `active` folder runs after the normal one-minute headless wait. A
+`--queue` folder waits for its TUI. Every accepted prompt is durable before
+its `prompt.receipt` goes back. A refused prompt gets a signed refusal code.
+An exact redelivery returns the existing receipt without consuming the nonce
+again; a different nonce or different content cannot reuse the queue entry.
+The result stays in the local queue and run log. A completed headless hub
+prompt also stores a `turn.summary` beside that result. The stream sends the
+bounded, secret-masked 160-character outcome and completion state, never the
+prompt, transcript or tool output. Cost is `unknown` until the queue has a
+billed total. Unlinking the folder stops later delivery. A fresh envelope can
+retry the same summary after a restart; the hub accepts that exact retry and
+refuses changed content. The owner's existing prompt-status route returns the
+summary.
+
 Only the always-ask list needs a separate signed decision, whatever the prompt
 says: a force push (`-f`, `--force*`, a `+` refspec, `--mirror`), deleting a
 remote branch (`--delete`, a `:` refspec) or force-deleting a local one
@@ -483,7 +514,8 @@ action. Store failures refuse instead of falling back to full trust. The
 envelope window bounds delivery: a signed prompt must be accepted before it
 expires. An accepted prompt keeps its typed trust for 24 hours
 (`GrantLifetime`), and its later `/repeat` rounds keep it too; after that a
-round runs with sent-turn restrictions.
+round runs with sent-turn restrictions. A hub prompt never inherits typed
+trust: its durable grant keeps read-only scope for the same period.
 
 ## Evidence and open decisions
 
@@ -500,7 +532,7 @@ unavailable; no Lean proof is claimed.
 | P4, P6, P7 | `cmd/captaincode/brain_presence_test.go` | Tree only; generated-key integration. |
 | P5 | Decision and action-gate tests | Tree only; hook/shim boundary, not complete containment. |
 | Browser device approval | Exact calls above | Not tested with a physical passkey. |
-| Hub transport | Payload contract above | Specified; hub implementation is separate. |
+| Hub transport | `pkg/captaincode/link_prompt*_test.go`, `pkg/captaincode/link_summary_test.go`, `cmd/captaincode/brain_link_prompt_test.go`, `cmd/captaincode/brain_link_summary_test.go`, `formal/link_prompt_model.py` | Tree only; 203 model transitions, generated-key verification, replay, summary and read-only policy tests. |
 
 Open decision for the operator: the maximum window for an offline hub queue.
 Decided on 23 October: a signed prompt runs as a typed turn with the

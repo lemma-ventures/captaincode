@@ -116,7 +116,8 @@ type Grant struct {
 	Expires      int64  `json:"expires_at"`
 	// Push: the signed text asks to push, so a plain push in the project
 	// needs no separate decision (PushIntent).
-	Push bool `json:"push,omitempty"`
+	Push     bool `json:"push,omitempty"`
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 type Event struct {
 	Grant

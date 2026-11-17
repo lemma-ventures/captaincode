@@ -279,6 +279,9 @@ func (ib *inbox) notePresenceTurn(dir, text string) (string, bool, *pres.Grant) 
 		if h.Presence != nil {
 			if g, e := pres.DefaultStore().Grant(h.Presence.ID); e == nil && g.Dir == dir && g.TextSHA256 == pres.HashText(h.Text) {
 				delete(ib.sent, dir)
+				if g.ReadOnly {
+					return "hub (read-only)", true, &g
+				}
 				return "", false, &g
 			}
 			return "presence_refused: expired or revoked approval", true, nil
