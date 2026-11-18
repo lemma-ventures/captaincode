@@ -235,7 +235,12 @@ const repeatDecisionLimit = 5
 const repeatDecisionContextLimit = 6000
 
 func repeatDecisionContext(dir string) string {
-	repo := captaincode.RepoRoot(dir)
+	// Answered decisions name the main checkout (DecisionPlace), so a loop in
+	// a linked worktree matches by its repository, not the worktree's root.
+	repo := ""
+	if captaincode.GitRoot(dir) != "" {
+		repo, _, _ = captaincode.DecisionPlace(dir)
+	}
 	if repo == "" {
 		return ""
 	}

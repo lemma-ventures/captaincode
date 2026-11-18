@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -438,4 +439,24 @@ func TestARecordTurnInFlightHoldsTheLoop(t *testing.T) {
 	end()
 	why, _ = b.recordPending(dir, nil)
 	assert.Empty(t, why)
+}
+
+// A loop in a linked worktree gets the repository's answered decisions in its
+// round prompt: answers store the main checkout, not the worktree's root.
+func TestRepeatDecisionContextInAWorktreeReadsTheRepositorysAnswers(t *testing.T) {
+	t.Setenv(captaincode.DecisionsDirEnv, filepath.Join(t.TempDir(), "decisions"))
+	repo := t.TempDir()
+	recGit(t, repo, "init", "--quiet")
+	recGit(t, repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init", "--quiet")
+	wt := repo + "/.worktrees/loop"
+	recGit(t, repo, "worktree", "add", "--quiet", "-b", "loop", wt)
+	main, _, _ := captaincode.DecisionPlace(repo)
+	d, err := captaincode.PostDecision(captaincode.OwnerDecision{Repo: main, Title: "Pick", Question: "Which way?",
+		Options: []captaincode.DecisionOption{{ID: "a", Label: "Left"}, {ID: "b", Label: "Right"}}})
+	require.NoError(t, err)
+	_, err = captaincode.AnswerDecision(d.ID, "b", "", "", "test")
+	require.NoError(t, err)
+	assert.Contains(t, repeatDecisionContext(wt), "Which way?", "the worktree's loop reads the repository's answer")
+	assert.Contains(t, repeatDecisionContext(repo), "Which way?")
+	assert.Empty(t, repeatDecisionContext(t.TempDir()), "another folder does not")
 }
