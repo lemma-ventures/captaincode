@@ -67,6 +67,22 @@ func TestWorkerLogKeepsFullToolInput(t *testing.T) {
 	assert.Contains(t, text, "OPENAI_API_KEY=[secret]", "and named as a secret line")
 }
 
+func TestWorkerLogWritesAMultiLineInputOnOneLine(t *testing.T) {
+	runsHome(t)
+	ws := captaincode.Workspace{Dir: t.TempDir()}
+	l := openWorkerLog(ws, "codex", "[user]\nrun it\n\n")
+	require.NotNil(t, l)
+	l.status(captaincode.StatusInput("⚙ shell cat <<EOF", "cat <<EOF\nfirst\nsecond\nEOF"))
+	l.delta("The reply starts here.")
+	l.close(captaincode.Result{Text: "The reply starts here."}, nil)
+
+	data, err := os.ReadFile(l.path)
+	require.NoError(t, err)
+	text := string(data)
+	assert.Contains(t, text, "input: cat <<EOF\\nfirst\\nsecond\\nEOF\n", "the input is one line")
+	assert.NotContains(t, text, "\nfirst\n", "no input line stands alone where the reply would be")
+}
+
 func TestToolInputOverSixteenKiBIsCut(t *testing.T) {
 	status := captaincode.StatusInput("⚙ edit big.go", strings.Repeat("x", 20_000))
 	show, input := captaincode.StatusParts(status)

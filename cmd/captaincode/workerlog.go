@@ -106,7 +106,9 @@ func (l *workerLog) delta(d string) {
 
 // status writes one status line. A status carrying a full tool input gets a
 // second `input:` line under the short line, so the log keeps what the TUI's
-// one-line view leaves out.
+// one-line view leaves out. The input is one line, its newlines written as
+// `\n`: a multi-line command ran on into the lines below it, and a reader
+// took them for the worker's reply.
 func (l *workerLog) status(s string) {
 	if l == nil || strings.TrimSpace(s) == "" {
 		return
@@ -116,7 +118,7 @@ func (l *workerLog) status(s string) {
 	show, input := captaincode.StatusParts(s)
 	_, _ = fmt.Fprintf(l.f, "\n[%s] %s\n", time.Since(l.started).Round(time.Second), strings.TrimSpace(show))
 	if input != "" {
-		_, _ = fmt.Fprintf(l.f, "input: %s\n", strings.TrimRight(input, "\n"))
+		_, _ = fmt.Fprintf(l.f, "input: %s\n", strings.ReplaceAll(strings.TrimRight(input, "\n"), "\n", `\n`))
 	}
 }
 
