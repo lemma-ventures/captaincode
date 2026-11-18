@@ -27,6 +27,13 @@ import (
 // repoBusy reports whether the repository at dir has work in flight: a
 // worker running in it, or an unfinished /repeat thread or program there.
 func (b *brain) repoBusy(dir string) (bool, string) {
+	return b.repoBusyFor(dir, false)
+}
+
+// repoBusyFor is repoBusy for a prompt about to run there; a decision record
+// (record) does not count a /repeat loop that is waiting for a record
+// between its rounds (brain_recordfirst.go).
+func (b *brain) repoBusyFor(dir string, record bool) (bool, string) {
 	root := captaincode.GitRoot(dir)
 	if root == "" {
 		root = filepath.Clean(dir)
@@ -43,6 +50,9 @@ func (b *brain) repoBusy(dir string) (bool, string) {
 	b.rmu.Lock()
 	defer b.rmu.Unlock()
 	for id, th := range b.repeatState() {
+		if record && th.awaitRecord != "" && !th.inFlight {
+			continue
+		}
 		if !th.finished && inside(th.dir) {
 			return true, fmt.Sprintf("%s is running there", id)
 		}

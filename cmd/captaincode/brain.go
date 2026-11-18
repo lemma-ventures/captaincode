@@ -585,6 +585,11 @@ type brain struct {
 	// recordRuns counts decision-record runs in flight per folder and leg, so
 	// their done lines are tagged too (brain_activity.go). Guarded by amu.
 	recordRuns map[string]int
+	// recordTurns are the decision-record turns in flight, by folder, so a
+	// /repeat loop holds its next round until they end (brain_recordfirst.go).
+	recMu       sync.Mutex
+	recordTurns map[int]string
+	recordSeq   int
 
 	bmu sync.Mutex // guards budget mutations (M2.4): reserve/reconcile across concurrent workers
 

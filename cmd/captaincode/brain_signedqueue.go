@@ -158,6 +158,7 @@ func (ib *inbox) sqClaim(dir, id string) (inboxItem, bool) {
 			if ib.handed == nil {
 				ib.handed = map[string][]inboxItem{}
 			}
+			it.handedAt = time.Now()
 			ib.handed[dir] = append(ib.handed[dir], it)
 			return it, true
 		}
@@ -201,14 +202,17 @@ func sqControl(text string) bool {
 	return false
 }
 
-func (b *brain) sqFolderBusy(dir string) bool {
+// sqFolderBusy: a decision record (record) does not wait for a /repeat loop
+// that is itself waiting for a record between rounds (brain_recordfirst.go):
+// waiting for each other, the loop would hold the record until it ended.
+func (b *brain) sqFolderBusy(dir string, record bool) bool {
 	sqRunMu.Lock()
 	running := sqRunDir[filepath.Clean(dir)]
 	sqRunMu.Unlock()
 	if running {
 		return true
 	}
-	busy, _ := b.repoBusy(dir)
+	busy, _ := b.repoBusyFor(dir, record)
 	return busy
 }
 
@@ -223,12 +227,33 @@ func sqMarkRunning(dir string, on bool) {
 }
 
 func (b *brain) signedQueueStep() {
-	for _, e := range sqList("pending") {
+	// A folder's decision records go first, in their own order, and its
+	// other prompts wait while one is pending, even one still waiting for
+	// its TUI (brain_recordfirst.go).
+	pending, _ := recordsFirst(sqList("pending"), func(e sqEntry) bool { return isRecordTask(e.Text) })
+	var recordDirs []string
+	for _, e := range pending {
+		if isRecordTask(e.Text) && time.Since(e.At) < inboxTTL { // one the inbox dropped no longer runs
+			recordDirs = append(recordDirs, e.Dir)
+		}
+	}
+	behindRecord := func(dir string) bool {
+		for _, d := range recordDirs {
+			if sameRepo(d, dir) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, e := range pending {
 		if time.Since(e.At) < sqHeadlessAfter || b.inbox.sqTUIOpen(e.Dir) {
 			continue
 		}
-		control := sqControl(e.Text)
-		if !control && b.sqFolderBusy(e.Dir) {
+		control, record := sqControl(e.Text), isRecordTask(e.Text)
+		if !control && !record && behindRecord(e.Dir) {
+			continue
+		}
+		if !control && b.sqFolderBusy(e.Dir, record) {
 			continue
 		}
 		it, ok := b.inbox.sqClaim(e.Dir, e.ID)
