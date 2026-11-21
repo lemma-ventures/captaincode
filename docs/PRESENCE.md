@@ -410,7 +410,9 @@ has passed, the brain runs the prompt itself as a typed turn in that folder,
 with the same approval; its output is a run log like any other. `captain
 queue` lists pending and recent entries, `captain queue show ID` prints one,
 and `captain queue drop ID` removes a pending one before it runs. The
-Gouvernail link will write to the same queue.
+Gouvernail link will write to the same queue. A folder's decision records go
+first: its other pending prompts wait while one is pending, and a record may
+run while the folder's `/repeat` loop waits for it between rounds.
 
 ## Hub read-only prompts
 

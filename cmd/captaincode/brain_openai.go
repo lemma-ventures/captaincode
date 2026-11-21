@@ -464,6 +464,12 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+		// A decision record is counted from here, before it is crossed off
+		// the inbox's handed list: a /repeat loop holds its next round
+		// until it ends (brain_recordfirst.go).
+		if isRecordTask(text) {
+			defer b.beginRecordTurn(req.ws.Dir)()
+		}
 		by, sent, grant := b.inbox.notePresenceTurn(req.ws.Dir, text)
 		if strings.HasPrefix(by, "presence_refused:") {
 			writeErr(w, 403, by)

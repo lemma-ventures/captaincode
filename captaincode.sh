@@ -371,6 +371,9 @@ check_retrieval_ref() {
 # restart (2026-09-16). It builds main whatever the checkout is on: an -rr
 # from a feature branch rebuilt that branch, and the brain lost a day of
 # fixes on main (2026-10-03). The checkout itself is never touched.
+# By default it builds origin/main, fetched first, never the local main: a
+# local main 49 commits off origin was built in place of the pushed fixes
+# (2026-11-18). Without an origin copy it falls back to the local main.
 # `-rr --branch feat-x` (or CAPTAIN_BUILD_REF=feat-x) builds that branch
 # instead, the newer of its local and origin copies; `--checkout` (or
 # CAPTAIN_BUILD_REF=checkout) builds the working tree, edits included; any
@@ -393,14 +396,17 @@ rebuild() {
     echo "✓ installed $dest ($rev, checkout)"
     return
   fi
-  [ -n "$ref" ] || ref=main
-  ref=$(latest_ref "$ref")
+  if [ -z "$ref" ]; then
+    ref=$(origin_main)
+  else
+    ref=$(latest_ref "$ref")
+  fi
   local sha; sha=$(git -C "$SCRIPT_DIR" rev-parse --verify -q "$ref^{commit}") || {
     echo "✗ no such branch or ref: $ref. Branches: $(git -C "$SCRIPT_DIR" for-each-ref --sort=-committerdate --count=8 --format='%(refname:short)' refs/heads | tr '\n' ' ')" >&2
     exit 1
   }
   if ! check_retrieval_ref "$sha"; then rm -f "$tmp"; exit 1; fi
-  echo "→ building captain from ${CAPTAIN_BUILD_REF:-main} at ${sha:0:7} ($(git -C "$SCRIPT_DIR" log -1 --format=%s "$sha" | cut -c1-60))…"
+  echo "→ building captain from ${CAPTAIN_BUILD_REF:-origin/main} at ${sha:0:7} ($(git -C "$SCRIPT_DIR" log -1 --format=%s "$sha" | cut -c1-60))…"
   local src; src=$(mktemp -d "${TMPDIR:-/tmp}/captain.src.XXXXXX")
   rmdir "$src" # git clone wants to create it
   # A throwaway clone sharing the checkout's objects, not an archive: Go
@@ -413,6 +419,24 @@ rebuild() {
   rm -rf "$src"
   install -m 755 "$tmp" "$dest" && rm -f "$tmp"
   echo "✓ installed $dest (${sha:0:7})"
+}
+
+# origin_main resolves the default build source: origin/main after a fetch,
+# or the local main when there is no origin copy. A local main that differs
+# is named, so the build line never hides it.
+origin_main() {
+  local l o
+  git -C "$SCRIPT_DIR" fetch -q origin main 2>/dev/null || echo "  ! could not fetch origin main - building the last fetched origin/main" >&2
+  o=$(git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/remotes/origin/main" 2>/dev/null || true)
+  if [ -z "$o" ]; then
+    echo "  ! no origin/main - building the local main" >&2
+    echo main; return
+  fi
+  l=$(git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/heads/main" 2>/dev/null || true)
+  if [ -n "$l" ] && [ "$l" != "$o" ]; then
+    echo "  ! the local main (${l:0:7}) differs from origin/main - building origin/main; --branch main builds the local one" >&2
+  fi
+  echo "$o"
 }
 
 # latest_ref resolves a branch to the newer of its local copy and its origin

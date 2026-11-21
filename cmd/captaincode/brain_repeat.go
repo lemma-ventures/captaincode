@@ -139,6 +139,9 @@ type repeatThread struct {
 	// is the answer of its last turn, printed when the program ends.
 	program *captaincode.Program
 	final   string
+	// awaitRecord says which decision record the loop waits for before its
+	// next round; "" when it does not wait (brain_recordfirst.go).
+	awaitRecord string
 }
 
 // unit is what one record of the thread is called.
@@ -232,7 +235,12 @@ const repeatDecisionLimit = 5
 const repeatDecisionContextLimit = 6000
 
 func repeatDecisionContext(dir string) string {
-	repo := captaincode.RepoRoot(dir)
+	// Answered decisions name the main checkout (DecisionPlace), so a loop in
+	// a linked worktree matches by its repository, not the worktree's root.
+	repo := ""
+	if captaincode.GitRoot(dir) != "" {
+		repo, _, _ = captaincode.DecisionPlace(dir)
+	}
 	if repo == "" {
 		return ""
 	}
@@ -777,6 +785,17 @@ func (b *brain) repeatWatch(ctx context.Context, emit, status func(string), dir,
 			}
 			return
 		}
+		// The loop waits for a decision record that the TUI took and queued
+		// behind this watch: the watch ends so the record can run, and the
+		// loop goes on after it (brain_recordfirst.go).
+		b.rmu.Lock()
+		waiting := th.awaitRecord != ""
+		b.rmu.Unlock()
+		if waiting && b.inbox.handedRecordStuck(dir) {
+			emit(fmt.Sprintf("\n---\n\n**watch paused** - %s waits for a decision record that is queued behind this watch, so the watch ends to let it run. The loop goes on once it is recorded; `/repeat watch %s` follows it again.\n",
+				th.id, th.id))
+			return
+		}
 		select {
 		case <-ctx.Done(): // the user stopped watching; the loop continues
 			return
@@ -863,6 +882,9 @@ func (b *brain) repeatStatus(dir string) string {
 			} else {
 				fmt.Fprintf(&sb, "  started from `%s`\n", th.origin)
 			}
+		}
+		if th.awaitRecord != "" {
+			fmt.Fprintf(&sb, "  waiting for the decision record before %s %d: %s\n", th.unit(), th.done+1, th.awaitRecord)
 		}
 		if th.stopReason != "" {
 			fmt.Fprintf(&sb, "  stopped: %s\n", th.stopReason)
@@ -1095,11 +1117,17 @@ func (b *brain) runRepeat(ctx context.Context, th *repeatThread, iter oaiChatReq
 	if cap == 0 || cap > repeatHardCap() {
 		cap = repeatHardCap()
 	}
+	recordSkip := map[string]bool{} // records waited for past repeatRecordWait
 	for i := 0; i < cap; i++ {
 		b.rmu.Lock()
 		halted := th.stopped
 		b.rmu.Unlock()
 		if halted || ctx.Err() != nil {
+			break
+		}
+		// A decision the user answered for this repository is recorded
+		// before the round is built, so the round reads the answer.
+		if !b.awaitRecords(ctx, th, iter.ws.Dir, recordSkip) {
 			break
 		}
 		if !th.budget.take() {

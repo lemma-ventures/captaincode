@@ -103,7 +103,7 @@ How LangGraph, CrewAI, AutoGen and others map onto programs:
 
 | Word | What it does |
 |---|---|
-| `/repeat N <task>` | Repeat until N rounds (no N = until stopped); rounds stream in that turn. `… until: <cmd>` also ends the loop when the command exits 0 |
+| `/repeat N <task>` | Repeat until N rounds (no N = until stopped); rounds stream in that turn. `… until: <cmd>` also ends the loop when the command exits 0. A round does not start while a decision record for the repository is pending or running (up to 30 min); the watch ends if that record is queued behind it |
 | `/repeat status` · `show` · `watch` | Loops in this folder · what recent rounds did · follow a loop live |
 | `/repeat stop` (`finish`, `wrapup`) · `/repeat abort` | End after the current round · kill it now |
 | `/parallel <task>` | Run a second task beside this chat; `/parallel show`, `status`, `stop`. Typed while a turn runs, it starts at once instead of waiting in the queue |

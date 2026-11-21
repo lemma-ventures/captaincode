@@ -643,7 +643,9 @@ prompt it concerns, as "A note I added while this was queued: …", and does
 not run on its own. The answer opens with what changed, for example
 `[captain] queue: order: 3 → 1 · note 2 joins 1 - the review reads the paper
 after the security change`. A failed or malformed reply runs the queue as
-typed. `CAPTAIN_QUEUE_ORDER=off` always runs it as typed.
+typed. `CAPTAIN_QUEUE_ORDER=off` always runs it as typed. In either case a
+decision record (a prompt that starts "Record the user's") runs before the
+other waiting prompts, so they work from the answer.
 
 ### Steering a running worker: `/btw`
 

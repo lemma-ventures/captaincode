@@ -52,6 +52,10 @@ type inboxItem struct {
 	// Screening: the injection judge has not answered yet; the sidebar does
 	// not get the item until it has (judgeInbox).
 	Screening bool `json:"-"`
+	// handedAt is when the item left the inbox; toTUI when a TUI took it
+	// (it may then sit queued behind that session's running turn).
+	handedAt time.Time
+	toTUI    bool
 }
 
 // inboxSessionWait is how long a reply waits for its own session before any
@@ -348,6 +352,7 @@ func (ib *inbox) take(dir, session string) []inboxItem {
 			if it.Presence != nil {
 				sqFinish(it.ID, "tui", "handed to the TUI")
 			}
+			it.handedAt, it.toTUI = time.Now(), true
 			fresh = append(fresh, it)
 			if ib.handed == nil {
 				ib.handed = map[string][]inboxItem{}
@@ -355,6 +360,9 @@ func (ib *inbox) take(dir, session string) []inboxItem {
 			ib.handed[dir] = append(ib.handed[dir], it)
 		}
 	}
+	// The TUI submits in this order: a decision record goes before the
+	// folder's other prompts (brain_recordfirst.go).
+	fresh, _ = recordsFirst(fresh, func(it inboxItem) bool { return isRecordTask(it.Text) })
 	return fresh
 }
 

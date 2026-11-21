@@ -286,10 +286,24 @@ func (b *brain) planQueue(req oaiChatReq, pending []int) ([]queueStep, string) {
 			prompts++
 		}
 	}
+	// A decision record runs before the queue's other prompts, whatever
+	// order they take: they should work from the user's answer
+	// (brain_recordfirst.go).
+	isRecord := func(i int) bool { return !items[i].Note && isRecordTask(items[i].Text) }
 	if prompts == 0 || os.Getenv("CAPTAIN_QUEUE_ORDER") == "off" {
+		order := make([]int, len(items))
+		for i := range items {
+			order[i] = i
+		}
+		order, moved := recordsFirst(order, isRecord)
 		steps := make([]queueStep, len(items))
-		for i, it := range items {
-			steps[i] = queueStep{text: it.Text}
+		for k, i := range order {
+			steps[k] = queueStep{text: items[i].Text}
+		}
+		if moved {
+			line := "queue: decision records first"
+			fmt.Printf("captain brain: %s\n", line)
+			return steps, line
 		}
 		return steps, ""
 	}
@@ -310,6 +324,8 @@ func (b *brain) planQueue(req oaiChatReq, pending []int) ([]queueStep, string) {
 		}
 		plan = captaincode.CheckQueueOrder(plan, items)
 	}
+	var recordsMoved bool
+	plan.Order, recordsMoved = recordsFirst(plan.Order, isRecord)
 	notes := map[int][]string{}
 	for ni := range items {
 		if target, ok := plan.Notes[ni]; ok {
@@ -336,6 +352,9 @@ func (b *brain) planQueue(req oaiChatReq, pending []int) ([]queueStep, string) {
 	var parts []string
 	if reordered {
 		parts = append(parts, "order: "+strings.Join(order, " → "))
+	}
+	if recordsMoved {
+		parts = append(parts, "decision records first")
 	}
 	for ni := range items {
 		if target, ok := plan.Notes[ni]; ok && target >= 0 {
