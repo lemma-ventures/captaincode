@@ -11,4 +11,5 @@ paths = [
   '''pkg/captaincode/redact_test\.go''',
   '''cmd/captaincode/sharedctx_test\.go''',
   '''cmd/captaincode/brain_proxy_test\.go''',
+  '''pkg/captaincode/envfile_test\.go''',
 ]
