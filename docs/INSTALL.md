@@ -33,15 +33,27 @@ Neither is compiled into the binary, so a `go install` machine has nothing for
 `captain init` to register - it will say so rather than come up silently
 unrouted.
 
-To update the brain, run `./captaincode.sh -rr` from the checkout. It builds
-the newer of your local `main` and `origin/main` - whatever branch the checkout
-is on, and without touching it - installs the binary, and restarts the brain.
+To update the brain, run `./captaincode.sh -rr` from the checkout. It fetches
+and builds `origin/main` - never the local `main`, whatever branch the checkout
+is on, and without touching the checkout - installs the binary, and restarts
+the brain. Only a checkout with no `origin/main` falls back to the local `main`.
 
 ```sh
-./captaincode.sh -rr                       # the latest main
-./captaincode.sh -rr --branch feat/arxiv   # the latest of that branch (local or origin)
+./captaincode.sh -rr                       # origin/main, fetched first
+./captaincode.sh -rr --branch feat/arxiv   # the newer of that branch's local and origin copies
 ./captaincode.sh -rr --checkout            # the working tree, uncommitted edits included
 ```
+
+A checkout whose `captaincode.sh` predates this default (no `origin_main` in
+the script) built the newer of the local and origin `main`; run
+`./captaincode.sh -rr --branch origin/main` there. After a restart,
+`go version -m ~/.local/bin/captain` names the revision that was built.
+
+On macOS, run `-rr` and `restart` in a Terminal on that Mac, not over SSH. A
+brain started from an SSH session cannot read the login keychain, so its
+`claude -p` workers report "not logged in" and its fetch fails. To restart a
+remote Mac, open a Terminal there:
+`ssh HOST "osascript -e 'tell application \"Terminal\" to do script \"cd ~/Gits/captaincode && ./captaincode.sh -rr\"'"`.
 
 Run the brain through `captaincode.sh` only. The launcher sources
 `~/.config/captain/env`, puts `~/.opencode/bin` on PATH and supervises the
