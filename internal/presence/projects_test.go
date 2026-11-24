@@ -1,6 +1,7 @@
 package presence
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -194,5 +195,23 @@ func TestAdmissionReceipt(t *testing.T) {
 	}
 	if e = s.FinishAdmission("not-a-nonce", "ready"); e == nil || Code(e) != "unknown_admission" {
 		t.Fatal(e)
+	}
+}
+
+// A machine with no allowed root has no projects. The list must still be a
+// JSON array: Galaxy refuses `null` and showed "Project discovery returned an
+// invalid list." instead of an empty list (24 Nov).
+func TestScanProjectsWithNoRootIsAnEmptyList(t *testing.T) {
+	s := rootFixture(t)
+	items, e := s.ScanProjects()
+	if e != nil {
+		t.Fatal(e)
+	}
+	b, e := json.Marshal(map[string]any{"items": items})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if string(b) != `{"items":[]}` {
+		t.Fatalf("got %s", b)
 	}
 }

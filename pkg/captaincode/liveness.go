@@ -43,6 +43,15 @@ const (
 	livenessNet = 4096
 )
 
+// frozenCPU is the CPU a minute below which a process counts as frozen.
+// A healthy claude -p that waits on a tool still spends about 0.4 s a minute
+// on its own timers (measured 2026-11-24: 0.56 s in 90 s). On 20-22 Nov
+// eight claude workers on one Mac stopped at a `find` into ~/Downloads,
+// ~/Desktop and ~/Documents (folders macOS guards with a privacy prompt).
+// Each spent 0.0 s a minute, it and its tool alike, until the 2h tool
+// window ended it.
+const frozenCPU = 50 * time.Millisecond
+
 type procNode struct {
 	PID, PPID int
 	CPU       time.Duration
@@ -149,6 +158,45 @@ type liveness struct {
 	sampled bool
 	kids    []procNode // the worker's descendants at the last sample
 	note    func(string)
+	// tree is the worker's descendants at the last sample, by pid; frozen
+	// counts the samples in a row in which neither the worker nor any of
+	// them moved and none started or ended.
+	tree   map[int]procNode
+	frozen int
+	// every is the sampling interval, fixed when the watch starts so the
+	// watchdog goroutine never reads livenessEvery itself.
+	every time.Duration
+}
+
+// interval is how often this worker is sampled.
+func (l *liveness) interval() time.Duration {
+	if l.every > 0 {
+		return l.every
+	}
+	return time.Minute
+}
+
+// frozenSamples is the number of samples in a row in which the worker and
+// its tools did nothing at all.
+func (l *liveness) frozenSamples() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.frozen
+}
+
+// treeStill reports whether no descendant started, ended or spent
+// frozenCPU between two samples.
+func treeStill(before, now map[int]procNode) bool {
+	if len(before) != len(now) {
+		return false
+	}
+	for pid, n := range now {
+		b, ok := before[pid]
+		if !ok || b.Cmd != n.Cmd || n.CPU-b.CPU >= frozenCPU {
+			return false
+		}
+	}
+	return true
 }
 
 // sample reads the process; active reports CPU or network movement since the
@@ -163,14 +211,25 @@ func (l *liveness) sample() (active bool, detail string, ok bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.kids = descendantsOf(table, l.pid)
+	tree := make(map[int]procNode, len(l.kids))
+	for _, k := range l.kids {
+		tree[k.PID] = k
+	}
 	if !l.sampled {
-		l.cpu, l.net, l.hasNet, l.sampled = self.CPU, net, hasNet, true
+		l.cpu, l.net, l.hasNet, l.sampled, l.tree = self.CPU, net, hasNet, true, tree
 		return false, "", true
 	}
 	dCPU := self.CPU - l.cpu
 	dNet := net - l.net
 	l.cpu, l.net = self.CPU, net
-	moved := dCPU >= livenessCPU || (hasNet && l.hasNet && dNet >= livenessNet)
+	netMoved := hasNet && l.hasNet && dNet >= livenessNet
+	moved := dCPU >= livenessCPU || netMoved
+	if dCPU < frozenCPU && !netMoved && treeStill(l.tree, tree) {
+		l.frozen++
+	} else {
+		l.frozen = 0
+	}
+	l.tree = tree
 	l.hasNet = hasNet
 	detail = fmt.Sprintf("%.1fs CPU", dCPU.Seconds())
 	if hasNet {
