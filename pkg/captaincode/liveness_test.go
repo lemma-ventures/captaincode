@@ -93,3 +93,103 @@ func TestLivenessNamesWhatAFinishedWorkerLeftRunning(t *testing.T) {
 	l := &liveness{kids: []procNode{{PID: left[0].PID, Cmd: "something else"}}}
 	assert.Empty(t, l.leftovers())
 }
+
+// 20-22 Nov: eight claude workers on one Mac stopped at a `find` into
+// privacy-guarded home folders. The worker and the find spent no CPU for two
+// hours. A tree in which nothing moves counts as frozen; a tree with a busy
+// tool or a tool that keeps starting processes does not.
+func TestLivenessCountsOnlyAFrozenTree(t *testing.T) {
+	saved := livenessEvery
+	livenessEvery = time.Millisecond
+	t.Cleanup(func() { livenessEvery = saved })
+
+	for _, tc := range []struct {
+		name   string
+		script string
+		frozen bool
+	}{
+		{"stuck tool", "sleep 60 & wait", true},
+		{"busy tool", "(while :; do :; done) & wait", false},
+		{"polling tool", "while :; do sleep 0.05; done", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			proc := startProc(t, tc.script)
+			l := &liveness{pid: proc.Process.Pid, name: "claude"}
+			time.Sleep(200 * time.Millisecond) // let the child start
+			for i := 0; i < 4; i++ {
+				_, _, ok := l.sample()
+				require.True(t, ok)
+				time.Sleep(300 * time.Millisecond)
+			}
+			if tc.frozen {
+				assert.GreaterOrEqual(t, l.frozenSamples(), 3)
+			} else {
+				assert.Zero(t, l.frozenSamples())
+			}
+		})
+	}
+}
+
+func TestTreeStill(t *testing.T) {
+	a := map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: time.Second}}
+	assert.True(t, treeStill(a, map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: time.Second + 10*time.Millisecond}}))
+	assert.False(t, treeStill(a, map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: 2 * time.Second}}), "the tool worked")
+	assert.False(t, treeStill(a, map[int]procNode{10: {PID: 10, Cmd: "other", CPU: time.Second}}), "a reused pid")
+	assert.False(t, treeStill(a, map[int]procNode{11: {PID: 11, Cmd: "find ~/Downloads", CPU: time.Second}}), "a new process")
+	assert.False(t, treeStill(a, map[int]procNode{}), "the tool ended")
+	assert.True(t, treeStill(map[int]procNode{}, map[int]procNode{}))
+}
+
+// A frozen claude run is cut after its frozen window, not after the 2h tool
+// window, and says why. A run that keeps working is not cut.
+func TestProgressCutsAFrozenRunAndKeepsABusyOne(t *testing.T) {
+	saved := livenessEvery
+	livenessEvery = 5 * time.Millisecond
+	t.Cleanup(func() { livenessEvery = saved })
+
+	stuck := startProc(t, "sleep 60 & wait")
+	ctx, cancel, prog, capped := progressCtx(10*time.Millisecond, 0)
+	defer cancel()
+	prog.watch(stuck.Process.Pid, "claude", nil)
+	prog.setFrozen(20 * time.Millisecond)
+	prog.toolStart()
+	select {
+	case <-ctx.Done():
+	case <-time.After(20 * time.Second):
+		t.Fatal("a frozen run with a tool in flight was not cut")
+	}
+	assert.True(t, capped.Load())
+	assert.Contains(t, prog.frozeNote(), "frozen for")
+	assert.Contains(t, prog.frozeNote(), "spent no CPU")
+
+	busy := startProc(t, "while :; do :; done")
+	ctx2, cancel2, prog2, capped2 := progressCtx(10*time.Millisecond, 0)
+	defer cancel2()
+	prog2.watch(busy.Process.Pid, "claude", nil)
+	prog2.setFrozen(20 * time.Millisecond)
+	prog2.toolStart()
+	select {
+	case <-ctx2.Done():
+		t.Fatal("a busy run was cut")
+	case <-time.After(1500 * time.Millisecond):
+	}
+	assert.False(t, capped2.Load())
+	assert.Empty(t, prog2.frozeNote())
+}
+
+func TestClaudeFrozenTimeoutSetting(t *testing.T) {
+	t.Setenv("CAPTAIN_WORKER_FROZEN_TIMEOUT", "")
+	assert.Equal(t, 15*time.Minute, claudeFrozenTimeout())
+	t.Setenv("CAPTAIN_WORKER_FROZEN_TIMEOUT", "40m")
+	assert.Equal(t, 40*time.Minute, claudeFrozenTimeout())
+	t.Setenv("CAPTAIN_WORKER_FROZEN_TIMEOUT", "0")
+	assert.Equal(t, time.Duration(0), claudeFrozenTimeout(), "0 turns it off")
+	t.Setenv("CAPTAIN_WORKER_FROZEN_TIMEOUT", "garbage")
+	assert.Equal(t, 15*time.Minute, claudeFrozenTimeout())
+
+	var p *progress
+	assert.False(t, p.isFrozen(), "nil-safe")
+	assert.Empty(t, p.frozeNote())
+	off := &progress{}
+	assert.False(t, off.isFrozen(), "no window, never frozen")
+}

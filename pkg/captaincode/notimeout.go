@@ -111,6 +111,22 @@ func cliToolTimeout() time.Duration {
 	return 2 * time.Hour
 }
 
+// claudeFrozenTimeout is how long a claude -p worker may stay frozen - no
+// CPU in it or in any process it started, no network, no process started or
+// ended - before it counts as quiet, whatever its tool window says. A live
+// claude process ticks even while it waits on a tool, and its Bash tool
+// stops itself at 10 minutes, so a frozen one is stuck, not slow (see
+// frozenCPU). Default 15m; CAPTAIN_WORKER_FROZEN_TIMEOUT overrides, 0 turns
+// it off.
+func claudeFrozenTimeout() time.Duration {
+	if v := os.Getenv("CAPTAIN_WORKER_FROZEN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return 15 * time.Minute
+}
+
 // progress is what a running worker reports about itself: when it last did
 // anything, and how many tools it has in flight. A run is QUIET only when it
 // has been silent longer than the window its state allows - idle between
@@ -121,9 +137,52 @@ type progress struct {
 	tools atomic.Int32
 	idle  time.Duration // 0 = cliIdleTimeout()
 	tool  time.Duration // 0 = cliToolTimeout()
+	// frozen > 0 makes a run quiet once its process tree has been frozen
+	// this long (claudeFrozenTimeout); froze records that this is why the
+	// run was cut.
+	frozen atomic.Int64 // a time.Duration; see setFrozen
+	froze  atomic.Bool
 	// live samples the worker process (liveness.go): CPU or network
 	// movement keeps a silent run alive, and a quiet one says it is idle.
 	live atomic.Pointer[liveness]
+}
+
+// setFrozen sets the run's frozen window (0 = off). Safe on a nil progress
+// and while the watchdog runs.
+func (p *progress) setFrozen(d time.Duration) {
+	if p != nil {
+		p.frozen.Store(int64(d))
+	}
+}
+
+func (p *progress) frozenWindow() time.Duration {
+	if p == nil {
+		return 0
+	}
+	return time.Duration(p.frozen.Load())
+}
+
+// isFrozen reports whether the worker and its tools have been frozen for the
+// run's frozen window. Safe on a nil progress.
+func (p *progress) isFrozen() bool {
+	window := p.frozenWindow()
+	if window <= 0 {
+		return false
+	}
+	l := p.live.Load()
+	if l == nil {
+		return false
+	}
+	return time.Duration(l.frozenSamples())*l.interval() >= window
+}
+
+// frozeNote says why a run that froze was cut, or "". Safe on a nil
+// progress.
+func (p *progress) frozeNote() string {
+	if p == nil || !p.froze.Load() {
+		return ""
+	}
+	return fmt.Sprintf("frozen for %s: the worker and its tools spent no CPU and started no process", p.frozenWindow().Round(time.Minute))
 }
 
 // watch starts sampling the worker process: name labels its status lines,
@@ -132,7 +191,7 @@ func (p *progress) watch(pid int, name string, note func(string)) {
 	if p == nil || pid <= 0 || os.Getenv("CAPTAIN_WORKER_LIVENESS") == "0" {
 		return
 	}
-	p.live.Store(&liveness{pid: pid, name: name, note: note})
+	p.live.Store(&liveness{pid: pid, name: name, note: note, every: livenessEvery})
 }
 
 // snapshotKids records the worker's children now, before it exits. Safe on
@@ -167,7 +226,7 @@ func (p *progress) checkLive(now time.Time, lastSample *time.Time, lastNote *tim
 		return
 	}
 	l.snapshot() // every poll: a child started in the last minute still counts
-	if now.Sub(*lastSample) < livenessEvery {
+	if now.Sub(*lastSample) < l.interval() {
 		return
 	}
 	*lastSample = now
@@ -188,6 +247,9 @@ func (p *progress) checkLive(now time.Time, lastSample *time.Time, lastNote *tim
 		state := "idle"
 		if p.tools.Load() > 0 {
 			state = "a tool is running"
+		}
+		if n, window := l.frozenSamples(), p.frozenWindow(); n > 1 && window > 0 {
+			detail += fmt.Sprintf("; frozen %s of %s, its tools too", (time.Duration(n) * l.interval()).Round(time.Minute), window.Round(time.Minute))
 		}
 		l.note(fmt.Sprintf("%s quiet %s, process %s (%s)", l.name, silent.Round(time.Minute), state, detail))
 	}
@@ -210,6 +272,9 @@ func (p *progress) toolEnd() {
 // quiet reports whether the run has been silent past the window its state
 // allows.
 func (p *progress) quiet() bool {
+	if p.isFrozen() {
+		return true
+	}
 	window := p.idle
 	if window <= 0 {
 		window = cliIdleTimeout()
@@ -252,6 +317,9 @@ func progressCtx(base, ceil time.Duration) (context.Context, context.CancelFunc,
 				p.checkLive(time.Now(), &lastSample, &lastNote)
 				el := time.Since(start)
 				if (ceil > 0 && el >= ceil) || (el >= base && p.quiet()) {
+					if el >= base && p.isFrozen() {
+						p.froze.Store(true)
+					}
 					capped.Store(true)
 					cancel()
 					return

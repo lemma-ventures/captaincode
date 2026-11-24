@@ -127,7 +127,7 @@ func (s *Store) ScanProjects() ([]ProjectSummary, error) {
 			return nil
 		})
 	}
-	var out []ProjectSummary
+	out := []ProjectSummary{}
 	e := s.Update(func(c *Config) error {
 		if len(c.Projects)+len(repos) >= 4096 {
 			return fail("capacity")

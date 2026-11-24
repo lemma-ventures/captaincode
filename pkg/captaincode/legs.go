@@ -2527,6 +2527,7 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 		return Result{}, fmt.Errorf("claude -p start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "claude", onStatus)
+	prog.setFrozen(claudeFrozenTimeout())
 	defer TrackWorker(cmd.Process, "claude")()
 	in := &claudeStdin{w: stdinPipe}
 	defer in.close()
@@ -2706,11 +2707,15 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 			fmt.Errorf("claude -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
+		why := ""
+		if note := prog.frozeNote(); note != "" {
+			why = " (" + note + ")"
+		}
 		if partial := strings.TrimSpace(acc.String()); partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
-				fmt.Errorf("claude -p did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+				fmt.Errorf("claude -p did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 		}
-		return Result{}, fmt.Errorf("claude -p did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+		return Result{}, fmt.Errorf("claude -p did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 	}
 	if haveFinal {
 		if final.APIErrorStatus == http.StatusTooManyRequests ||
