@@ -1,6 +1,7 @@
 package captaincode
 
 import (
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -130,6 +131,260 @@ func TestLivenessCountsOnlyAFrozenTree(t *testing.T) {
 	}
 }
 
+// A tool can move bytes while its own CPU stays under the frozen line.
+// That traffic is not the worker's. The tree is not frozen.
+func TestLivenessDoesNotFreezeAChildThatMovesNetwork(t *testing.T) {
+	savedEvery := livenessEvery
+	savedNet := readNetBytes
+	livenessEvery = time.Millisecond
+	t.Cleanup(func() {
+		livenessEvery = savedEvery
+		readNetBytes = savedNet
+	})
+
+	proc := startProc(t, "sleep 60 & wait")
+	parent := proc.Process.Pid
+	var moved int64
+	readNetBytes = func(pid int) (int64, bool) {
+		if pid == parent {
+			return 0, true
+		}
+		moved += 8192
+		return moved, true
+	}
+	l := &liveness{pid: parent, name: "claude"}
+	time.Sleep(200 * time.Millisecond)
+	for i := 0; i < 4; i++ {
+		_, _, ok := l.sample()
+		require.True(t, ok)
+		time.Sleep(50 * time.Millisecond)
+	}
+	assert.Zero(t, l.frozenSamples())
+	assert.Greater(t, moved, int64(0), "the child was measured")
+}
+
+func BenchmarkSampleNet(b *testing.B) {
+	saved := readNetBytes
+	b.Cleanup(func() { readNetBytes = saved })
+	readNetBytes = func(int) (int64, bool) { return 4096, true }
+	pids := []int{1, 2}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sampleNet(pids)
+	}
+}
+
+func BenchmarkSampleNetMissing(b *testing.B) {
+	saved := readNetBytes
+	b.Cleanup(func() { readNetBytes = saved })
+	readNetBytes = func(pid int) (int64, bool) {
+		if pid == 2 {
+			return 0, false
+		}
+		return 4096, true
+	}
+	pids := []int{1, 2, 3}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sampleNet(pids)
+	}
+}
+
+func BenchmarkSampleNetOverflow(b *testing.B) {
+	saved := readNetBytes
+	b.Cleanup(func() { readNetBytes = saved })
+	readNetBytes = func(int) (int64, bool) { return math.MaxInt64, true }
+	pids := []int{1, 2}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		sampleNet(pids)
+	}
+}
+
+func TestSampleNetStopsAtTheTreeCap(t *testing.T) {
+	saved := readNetBytes
+	t.Cleanup(func() { readNetBytes = saved })
+	calls := 0
+	readNetBytes = func(int) (int64, bool) {
+		calls++
+		return 1, true
+	}
+	_, _, complete := sampleNet(make([]int, frozenTreeCap+1))
+	assert.False(t, complete)
+	assert.Zero(t, calls)
+
+	sum, ok, complete := sampleNet([]int{1, 2})
+	assert.True(t, complete)
+	assert.True(t, ok)
+	assert.Equal(t, int64(2), sum)
+	assert.Equal(t, 2, calls)
+}
+
+func TestSampleNetIncompleteWhenCountersDisagree(t *testing.T) {
+	saved := readNetBytes
+	t.Cleanup(func() { readNetBytes = saved })
+	calls := 0
+	readNetBytes = func(pid int) (int64, bool) {
+		calls++
+		if pid == 2 {
+			return 0, false
+		}
+		return 10, true
+	}
+	_, _, complete := sampleNet([]int{1, 2, 3})
+	assert.False(t, complete)
+	assert.Equal(t, 2, calls, "a missing counter after a real one stops the sum")
+
+	calls = 0
+	readNetBytes = func(pid int) (int64, bool) {
+		calls++
+		if pid == 1 {
+			return 0, false
+		}
+		return 10, true
+	}
+	_, _, complete = sampleNet([]int{1, 2, 3})
+	assert.False(t, complete)
+	assert.Equal(t, 2, calls, "a real counter after a missing one stops the sum")
+
+	calls = 0
+	readNetBytes = func(int) (int64, bool) {
+		calls++
+		return 0, false
+	}
+	sum, ok, complete := sampleNet([]int{1, 2})
+	assert.True(t, complete, "no counter at all stays on CPU")
+	assert.False(t, ok)
+	assert.Equal(t, int64(0), sum)
+	assert.Equal(t, 2, calls)
+}
+
+func TestLivenessDoesNotFreezeWhenAChildCounterIsMissing(t *testing.T) {
+	savedEvery := livenessEvery
+	savedNet := readNetBytes
+	livenessEvery = time.Millisecond
+	t.Cleanup(func() {
+		livenessEvery = savedEvery
+		readNetBytes = savedNet
+	})
+
+	proc := startProc(t, "sleep 60 & wait")
+	parent := proc.Process.Pid
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(descendantsOf(psTable(), parent)) == 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotEmpty(t, descendantsOf(psTable(), parent))
+	readNetBytes = func(pid int) (int64, bool) {
+		if pid == parent {
+			return 0, true
+		}
+		return 0, false
+	}
+	l := &liveness{pid: parent, name: "claude"}
+	for i := 0; i < 4; i++ {
+		_, _, ok := l.sample()
+		require.True(t, ok)
+		time.Sleep(20 * time.Millisecond)
+	}
+	assert.Zero(t, l.frozenSamples())
+}
+
+func TestLivenessCountsCPUWhenTheNetworkSampleIsIncomplete(t *testing.T) {
+	savedEvery := livenessEvery
+	savedNet := readNetBytes
+	livenessEvery = time.Millisecond
+	t.Cleanup(func() {
+		livenessEvery = savedEvery
+		readNetBytes = savedNet
+	})
+
+	proc := startProc(t, "sleep 60 & while :; do :; done")
+	parent := proc.Process.Pid
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(descendantsOf(psTable(), parent)) == 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotEmpty(t, descendantsOf(psTable(), parent))
+	readNetBytes = func(pid int) (int64, bool) {
+		if pid == parent {
+			return 0, true
+		}
+		return 0, false
+	}
+	l := &liveness{pid: parent, name: "claude"}
+	active := false
+	for i := 0; i < 4; i++ {
+		moved, _, ok := l.sample()
+		require.True(t, ok)
+		active = active || moved
+		time.Sleep(400 * time.Millisecond)
+	}
+	assert.True(t, active, "the worker's own CPU still counts")
+	assert.Zero(t, l.frozenSamples())
+}
+
+func TestSampleNetRejectsOverflowAndANegativeCounter(t *testing.T) {
+	saved := readNetBytes
+	t.Cleanup(func() { readNetBytes = saved })
+	calls := 0
+	readNetBytes = func(int) (int64, bool) {
+		calls++
+		return math.MaxInt64, true
+	}
+	_, _, complete := sampleNet([]int{1, 2})
+	assert.False(t, complete)
+	assert.Equal(t, 2, calls)
+
+	calls = 0
+	readNetBytes = func(int) (int64, bool) {
+		calls++
+		return -1, true
+	}
+	_, _, complete = sampleNet([]int{1, 2})
+	assert.False(t, complete)
+	assert.Equal(t, 1, calls, "a negative counter stops the sum")
+}
+
+func TestLivenessDoesNotFreezeWhenTheNetworkSumBreaks(t *testing.T) {
+	saved := readNetBytes
+	t.Cleanup(func() { readNetBytes = saved })
+	proc := startProc(t, "sleep 60 & wait")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(descendantsOf(psTable(), proc.Process.Pid)) == 0 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	require.NotEmpty(t, descendantsOf(psTable(), proc.Process.Pid))
+	phase := 0
+	readNetBytes = func(int) (int64, bool) {
+		switch phase {
+		case 0:
+			return 1000, true
+		case 1:
+			return math.MaxInt64, true
+		default:
+			return 0, true
+		}
+	}
+	l := &liveness{pid: proc.Process.Pid, name: "claude"}
+	_, _, ok := l.sample()
+	require.True(t, ok)
+	base := l.net
+	require.GreaterOrEqual(t, base, int64(2000))
+
+	phase = 1
+	_, _, ok = l.sample()
+	require.True(t, ok)
+	assert.Zero(t, l.frozenSamples())
+	assert.Equal(t, base, l.net, "the last good total stays")
+
+	phase = 2
+	_, _, ok = l.sample()
+	require.True(t, ok)
+	assert.Zero(t, l.frozenSamples(), "a counter that goes backwards is not stillness")
+	assert.Equal(t, int64(0), l.net)
+}
+
 func TestTreeStill(t *testing.T) {
 	a := map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: time.Second}}
 	assert.True(t, treeStill(a, map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: time.Second + 10*time.Millisecond}}))
@@ -138,6 +393,7 @@ func TestTreeStill(t *testing.T) {
 	assert.False(t, treeStill(a, map[int]procNode{11: {PID: 11, Cmd: "find ~/Downloads", CPU: time.Second}}), "a new process")
 	assert.False(t, treeStill(a, map[int]procNode{}), "the tool ended")
 	assert.True(t, treeStill(map[int]procNode{}, map[int]procNode{}))
+	assert.False(t, treeStill(a, map[int]procNode{10: {PID: 10, Cmd: "find ~/Downloads", CPU: 0}}), "the tool counter went backwards")
 }
 
 // A frozen claude run is cut after its frozen window, not after the 2h tool

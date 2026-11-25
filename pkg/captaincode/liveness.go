@@ -12,8 +12,15 @@ package captaincode
 // servers it had started kept running afterwards, reachable from the LAN.
 //
 // The sampler reads the worker process once a minute. CPU or network
-// movement counts as activity (the run is not quiet); otherwise a status
-// line says how long the run has been quiet and that the process is idle.
+// movement counts as activity (the run is not quiet). Network bytes of
+// each descendant count too, up to 32 processes. A larger tree is not
+// called frozen. A negative counter, a counter that goes backwards, or a
+// total that does not fit in a signed 64-bit sum is not called frozen.
+// A tree where some processes have a network counter and some do not is
+// not called frozen. An incomplete network sample still counts the
+// worker's own CPU as activity. A tree where no process has a counter
+// stays on CPU. Otherwise a status line says how long the run has been
+// quiet and that the process is idle.
 // At the end, processes the worker started and left running are named,
 // not killed: a deliberate watcher armed with `captain send` must survive.
 
@@ -21,6 +28,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"math"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -123,6 +131,45 @@ func descendantsOf(table map[int]procNode, root int) []procNode {
 	return out
 }
 
+// readNetBytes is the network counter sample uses. Tests replace it.
+var readNetBytes = netBytes
+
+// frozenTreeCap is how many processes one frozen sample will measure.
+// A larger tree is not called frozen: the sample cannot see every child.
+const frozenTreeCap = 32
+
+// sampleNet sums network bytes for pids. complete is false when pids is
+// longer than frozenTreeCap, when a counter is negative, when the sum
+// would pass MaxInt64, or when some counters exist and some do not. No
+// further counter is read in those cases. A tree with no counter at all
+// is complete and has no network total: the host may have no per-process
+// total, and CPU still decides.
+func sampleNet(pids []int) (sum int64, ok bool, complete bool) {
+	if len(pids) > frozenTreeCap {
+		return 0, false, false
+	}
+	missing := false
+	for _, pid := range pids {
+		n, one := readNetBytes(pid)
+		if !one {
+			if ok {
+				return 0, false, false
+			}
+			missing = true
+			continue
+		}
+		if missing {
+			return 0, false, false
+		}
+		if n < 0 || sum > math.MaxInt64-n {
+			return 0, false, false
+		}
+		ok = true
+		sum += n
+	}
+	return sum, ok, true
+}
+
 // netBytes is the bytes a process has received and sent, where the system
 // can say (macOS nettop); ok is false elsewhere.
 func netBytes(pid int) (int64, bool) {
@@ -192,7 +239,7 @@ func treeStill(before, now map[int]procNode) bool {
 	}
 	for pid, n := range now {
 		b, ok := before[pid]
-		if !ok || b.Cmd != n.Cmd || n.CPU-b.CPU >= frozenCPU {
+		if !ok || b.Cmd != n.Cmd || n.CPU < b.CPU || n.CPU-b.CPU >= frozenCPU {
 			return false
 		}
 	}
@@ -207,13 +254,36 @@ func (l *liveness) sample() (active bool, detail string, ok bool) {
 	if !found {
 		return false, "", false
 	}
-	net, hasNet := netBytes(l.pid)
+	kids := descendantsOf(table, l.pid)
+	tree := make(map[int]procNode, len(kids))
+	pids := make([]int, 1, 1+len(kids))
+	pids[0] = l.pid
+	for _, k := range kids {
+		tree[k.PID] = k
+		pids = append(pids, k.PID)
+	}
+	net, hasNet, complete := sampleNet(pids)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.kids = descendantsOf(table, l.pid)
-	tree := make(map[int]procNode, len(l.kids))
-	for _, k := range l.kids {
-		tree[k.PID] = k
+	l.kids = kids
+	if !complete {
+		// Keep the last good network baseline. A wrapped sum stored as
+		// zero would make the next quiet sample look still. The worker's
+		// own CPU still counts: an unreadable child counter must not hide
+		// a busy worker from the idle clock.
+		l.frozen = 0
+		var dCPU time.Duration
+		active := false
+		if l.sampled {
+			dCPU = self.CPU - l.cpu
+			if dCPU < 0 {
+				dCPU = 0
+			}
+			active = dCPU >= livenessCPU
+		}
+		l.cpu, l.sampled, l.tree = self.CPU, true, tree
+		detail := fmt.Sprintf("%.1fs CPU", dCPU.Seconds())
+		return active, detail + " in the last minute", true
 	}
 	if !l.sampled {
 		l.cpu, l.net, l.hasNet, l.sampled, l.tree = self.CPU, net, hasNet, true, tree
@@ -221,6 +291,11 @@ func (l *liveness) sample() (active bool, detail string, ok bool) {
 	}
 	dCPU := self.CPU - l.cpu
 	dNet := net - l.net
+	if dCPU < 0 || (hasNet && l.hasNet && dNet < 0) {
+		l.cpu, l.net, l.hasNet, l.tree = self.CPU, net, hasNet, tree
+		l.frozen = 0
+		return false, "", true
+	}
 	l.cpu, l.net = self.CPU, net
 	netMoved := hasNet && l.hasNet && dNet >= livenessNet
 	moved := dCPU >= livenessCPU || netMoved
