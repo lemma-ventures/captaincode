@@ -193,6 +193,7 @@ func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSta
 		return Result{}, fmt.Errorf("grok start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "grok-cli", onStatus)
+	prog.armFrozen()
 	defer TrackWorker(cmd.Process, "grok-cli")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
@@ -287,11 +288,12 @@ func runGrokCLIStream(dir, task string, base, ceil time.Duration, onDelta, onSta
 			fmt.Errorf("grok -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
+		why := prog.frozeSuffix()
 		if partial := strings.TrimSpace(acc.String()); partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
-				fmt.Errorf("grok -p did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+				fmt.Errorf("grok -p did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 		}
-		return Result{}, fmt.Errorf("grok -p did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+		return Result{}, fmt.Errorf("grok -p did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 	}
 	if haveFailed {
 		err := classifyGrokCLIFailure(failed)

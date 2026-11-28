@@ -272,8 +272,9 @@ func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, o
 	prog := &progress{}
 	var capped *atomic.Bool
 	if base > 0 {
-		// Progress-aware always: past base the run dies only when quiet, and
-		// a running command is never quiet (a CI watch, a long test).
+		// Progress-aware always: past base the run dies only when quiet.
+		// A command that spends CPU, moves network, or starts a process
+		// is not quiet. A frozen tree is quiet after the frozen window.
 		var cancel context.CancelFunc
 		ctx, cancel, prog, capped = progressCtx(base, ceil)
 		defer cancel()
@@ -298,6 +299,7 @@ func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, o
 		return Result{}, fmt.Errorf("codex exec start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "codex-cli", onStatus)
+	prog.armFrozen()
 	defer TrackWorker(cmd.Process, "codex-cli")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
@@ -417,11 +419,12 @@ func runCodexCLIStreamLeg(leg Leg, dir, task string, base, ceil time.Duration, o
 			fmt.Errorf("codex exec stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
+		why := prog.frozeSuffix()
 		if partial := strings.TrimSpace(acc.String()); partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
-				fmt.Errorf("codex exec did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+				fmt.Errorf("codex exec did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 		}
-		return Result{}, fmt.Errorf("codex exec did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+		return Result{}, fmt.Errorf("codex exec did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 	}
 	if haveFailed {
 		err := classifyCodexCLIFailureLeg(leg, failed)

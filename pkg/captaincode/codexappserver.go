@@ -616,6 +616,7 @@ func runCodexAppServerStreamLeg(leg Leg, dir, task string, base, ceil time.Durat
 		return Result{}, fmt.Errorf("codex app-server start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "codex-app-server", onStatus)
+	prog.armFrozen()
 	defer TrackWorker(cmd.Process, "codex-app-server")()
 	go client.readLoop(stdout)
 	defer client.shutdown()
@@ -702,11 +703,12 @@ func runCodexAppServerStreamLeg(leg Leg, dir, task string, base, ceil time.Durat
 			fmt.Errorf("codex app-server stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
+		why := prog.frozeSuffix()
 		if partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
-				fmt.Errorf("codex app-server did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+				fmt.Errorf("codex app-server did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 		}
-		return Result{}, fmt.Errorf("codex app-server did not finish within %s: %w", time.Since(start).Round(time.Second), ErrWorkerTimeout)
+		return Result{}, fmt.Errorf("codex app-server did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
 	}
 	if err != nil {
 		return Result{Text: partial, Partial: partial != "", DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil}, err

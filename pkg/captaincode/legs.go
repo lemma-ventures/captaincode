@@ -2440,8 +2440,9 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 	prog := &progress{}
 	var capped *atomic.Bool
 	if timeout > 0 {
-		// Progress-aware always (see progressCtx): a run with a tool in
-		// flight or output flowing is never cut for taking long.
+		// Progress-aware always (see progressCtx): a run that still spends
+		// CPU, moves network, or starts a process is not cut for taking
+		// long. A frozen tree is cut after the frozen window.
 		var cancel context.CancelFunc
 		ctx, cancel, prog, capped = progressCtx(timeout, ceil)
 		defer cancel()
@@ -2527,7 +2528,7 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 		return Result{}, fmt.Errorf("claude -p start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "claude", onStatus)
-	prog.setFrozen(claudeFrozenTimeout())
+	prog.armFrozen()
 	defer TrackWorker(cmd.Process, "claude")()
 	in := &claudeStdin{w: stdinPipe}
 	defer in.close()
@@ -2707,10 +2708,7 @@ func runClaudeStreamModel(dir, task string, timeout, ceil time.Duration, onDelta
 			fmt.Errorf("claude -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
-		why := ""
-		if note := prog.frozeNote(); note != "" {
-			why = " (" + note + ")"
-		}
+		why := prog.frozeSuffix()
 		if partial := strings.TrimSpace(acc.String()); partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
 				fmt.Errorf("claude -p did not finish within %s%s: %w", time.Since(start).Round(time.Second), why, ErrWorkerTimeout)
@@ -2863,6 +2861,7 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 		return Result{}, fmt.Errorf("cursor-agent start: %w", err)
 	}
 	prog.watch(cmd.Process.Pid, "cursor", onStatus)
+	prog.armFrozen()
 	defer TrackWorker(cmd.Process, "cursor")()
 	scanDone := make(chan struct{})
 	defer close(scanDone)
@@ -2943,11 +2942,12 @@ func runCursorStream(dir, task string, base, ceil time.Duration, onDelta, onStat
 			fmt.Errorf("cursor-agent -p stopped after %s: %w", time.Since(start).Round(time.Second), ErrInterrupted)
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (capped != nil && capped.Load()) {
+		why := prog.frozeSuffix()
 		if partial := strings.TrimSpace(acc.String()); partial != "" {
 			return Result{Text: partial, Partial: true, DurationMs: time.Since(start).Milliseconds(), Streamed: onDelta != nil},
-				fmt.Errorf("cursor-agent -p timed out: %w", ErrWorkerTimeout)
+				fmt.Errorf("cursor-agent -p timed out%s: %w", why, ErrWorkerTimeout)
 		}
-		return Result{}, fmt.Errorf("cursor-agent -p timed out: %w", ErrWorkerTimeout)
+		return Result{}, fmt.Errorf("cursor-agent -p timed out%s: %w", why, ErrWorkerTimeout)
 	}
 	final := result.String()
 	if final == "" {

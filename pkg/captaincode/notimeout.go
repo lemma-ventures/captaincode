@@ -111,13 +111,14 @@ func cliToolTimeout() time.Duration {
 	return 2 * time.Hour
 }
 
-// claudeFrozenTimeout is how long a claude -p worker may stay frozen - no
+// claudeFrozenTimeout is how long a sampled CLI worker may stay frozen - no
 // CPU in it or in any process it started, no network, no process started or
-// ended - before it counts as quiet, whatever its tool window says. A live
-// claude process ticks even while it waits on a tool, and its Bash tool
-// stops itself at 10 minutes, so a frozen one is stuck, not slow (see
-// frozenCPU). Default 15m; CAPTAIN_WORKER_FROZEN_TIMEOUT overrides, 0 turns
-// it off.
+// ended - before it counts as quiet, whatever its tool window says. The same
+// window covers claude -p, cursor-agent -p, codex exec, codex app-server and
+// grok -p. A live claude process ticks even while it waits on a tool, and
+// its Bash tool stops itself at 10 minutes, so a frozen one is stuck, not
+// slow (see frozenCPU). Default 15m; CAPTAIN_WORKER_FROZEN_TIMEOUT overrides,
+// 0 turns it off.
 func claudeFrozenTimeout() time.Duration {
 	if v := os.Getenv("CAPTAIN_WORKER_FROZEN_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
@@ -155,6 +156,11 @@ func (p *progress) setFrozen(d time.Duration) {
 	}
 }
 
+// armFrozen applies the shared CLI frozen window. Safe on a nil progress.
+func (p *progress) armFrozen() {
+	p.setFrozen(claudeFrozenTimeout())
+}
+
 func (p *progress) frozenWindow() time.Duration {
 	if p == nil {
 		return 0
@@ -183,6 +189,14 @@ func (p *progress) frozeNote() string {
 		return ""
 	}
 	return fmt.Sprintf("frozen for %s: the worker and its tools spent no CPU and started no process", p.frozenWindow().Round(time.Minute))
+}
+
+// frozeSuffix is the parenthetical for a timeout error, or "".
+func (p *progress) frozeSuffix() string {
+	if note := p.frozeNote(); note != "" {
+		return " (" + note + ")"
+	}
+	return ""
 }
 
 // watch starts sampling the worker process: name labels its status lines,

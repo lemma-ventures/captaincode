@@ -2,6 +2,7 @@ package captaincode
 
 import (
 	"math"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -446,6 +447,49 @@ func TestClaudeFrozenTimeoutSetting(t *testing.T) {
 	var p *progress
 	assert.False(t, p.isFrozen(), "nil-safe")
 	assert.Empty(t, p.frozeNote())
+	assert.Empty(t, p.frozeSuffix())
 	off := &progress{}
 	assert.False(t, off.isFrozen(), "no window, never frozen")
+	assert.Empty(t, off.frozeSuffix())
+
+	t.Setenv("CAPTAIN_WORKER_FROZEN_TIMEOUT", "40m")
+	armed := &progress{}
+	armed.armFrozen()
+	assert.Equal(t, 40*time.Minute, armed.frozenWindow())
+	armed.froze.Store(true)
+	assert.Equal(t, " (frozen for 40m0s: the worker and its tools spent no CPU and started no process)", armed.frozeSuffix())
+}
+
+// Every sampled CLI worker arms the same frozen window. A tool in flight
+// on cursor, codex or grok must not wait out the 2h tool window while the
+// process tree is frozen.
+func TestCLIWorkersArmTheFrozenWindow(t *testing.T) {
+	files := []string{"legs.go", "grokcli.go", "codexcli.go", "codexappserver.go"}
+	for _, name := range files {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(body)
+		watches := strings.Count(text, "prog.watch(")
+		arms := strings.Count(text, "prog.armFrozen()")
+		if watches == 0 {
+			t.Fatalf("%s has no worker watch", name)
+		}
+		if arms != watches {
+			t.Fatalf("%s arms the frozen window %d times for %d watches", name, arms, watches)
+		}
+	}
+}
+
+func BenchmarkFrozenSuffix(b *testing.B) {
+	p := &progress{}
+	p.setFrozen(15 * time.Minute)
+	p.froze.Store(true)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if p.frozeSuffix() == "" {
+			b.Fatal("empty")
+		}
+	}
 }
