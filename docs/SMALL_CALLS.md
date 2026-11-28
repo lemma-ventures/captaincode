@@ -164,3 +164,46 @@ sample reports `n/a`, not zero percent.
 This supplies future evidence. It does not prove savings, faster reviews, or a
 lower frontier share. Compare acceptance and repair outcomes with cost before
 changing the routing defaults further.
+
+### W1 readout, 28 November 2026
+
+Measured on the development Mac from its durable routing history with the
+installed binary (`ee2ec27`). The frontier share of automatic decisions
+(`captain why --share --days 7,14,30,52,60`):
+
+| Window | Frontier / automatic | Share |
+|---|---|---|
+| 7 days | 0 / 20 | 0.0% |
+| 14 days | 0 / 52 | 0.0% |
+| 30 days | 0 / 98 | 0.0% |
+| 52 days (since 7 October) | 6 / 1,380 | 0.4% |
+| 60 days | 6 / 1,392 | 0.4% |
+
+`cheap-capable-v1` first appears on 7 October 2026. The durable history has
+only 12 automatic decisions with a frontier mark before that date. The early
+October figure (55-60%) counted attempts, not automatic decisions. So there is
+no measured "before" share in the same unit.
+
+Acceptance, cost and repairs come from `captain why --export` (4,500 rows),
+then `captain why --score --cutoff 2026-10-07`:
+
+| Cohort | Rows | Tasks | Director acceptance (labeled) | Cost per accepted task | Rows with a repair | Repairs |
+|---|---|---|---|---|---|---|
+| 22 September - 6 October | 793 | 771 | 95.3% (306/321) | $2.34 | 27 | 42 |
+| 7 October - 28 November | 3,707 | 3,230 | 74.1% (137/185) | $0.87 | 12 | 12 |
+
+What this shows:
+
+- Automatic routing is now rare. Most turns name a lane or a model
+  (`/cursor`, `/frontier`), and the share excludes those turns. 20 automatic
+  decisions in 7 days is too small a sample for a share.
+- The cost per accepted task fell by 63%. The labeled acceptance fell by
+  21 points. The later cohort has labels on 6% of its tasks (185 of 3,230),
+  the earlier one on 42% (321 of 771), so the later figure is less certain.
+- The `claude` leg fell from 95.1% (78/82) to 39.1% (18/46) labeled
+  acceptance. The two cohorts ran different work, so this is not a model
+  comparison.
+- Repairs per row fell from 5.3% to 0.3%.
+
+Result: W1 does not support a further change to the routing defaults. A new
+measurement needs labeled outcomes on automatic turns, not more turns.

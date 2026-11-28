@@ -595,7 +595,9 @@ critical on secret and key locations, high on repository roots), fresh probes
 refuse the critical paths before any side effect, and both 1,000-action
 reviews pass with the path category active. The upstream cache from the sync
 container is kept at `~/.config/captain/blackbox-cache/` (0600 with a
-provenance record), so a renewal is a re-export instead of a new sync. See
+provenance record), so a renewal is a re-export instead of a new sync.
+Generation 7 of that store was signed that way on 28 November 2026 and
+expires 5 December 2026 12:25 UTC. See
 the BB5 entry in [ROADMAP.md](ROADMAP.md) for digests, timings and what stays
 owed.
 
