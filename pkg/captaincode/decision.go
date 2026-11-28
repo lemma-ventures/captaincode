@@ -80,13 +80,16 @@ type Decision struct {
 	At             time.Time `json:"at"`
 	TaskID         string    `json:"task_id,omitempty"` // joins to the M1.2 charge tree
 	Task           string    `json:"task"`
-	Class          Class     `json:"class"`
-	Domain         Domain    `json:"domain,omitempty"`
-	Path           string    `json:"path"`
-	Chosen         Leg       `json:"chosen"`
-	Rationale      string    `json:"rationale,omitempty"`
-	NeedVision     bool      `json:"need_vision,omitempty"`
-	DecidedMs      int64     `json:"decided_ms,omitempty"`
+	// Workspace is the checkout this decision is for. Two checkouts can run
+	// the same prompt at once. Empty on records written before this field.
+	Workspace  string `json:"workspace,omitempty"`
+	Class      Class  `json:"class"`
+	Domain     Domain `json:"domain,omitempty"`
+	Path       string `json:"path"`
+	Chosen     Leg    `json:"chosen"`
+	Rationale  string `json:"rationale,omitempty"`
+	NeedVision bool   `json:"need_vision,omitempty"`
+	DecidedMs  int64  `json:"decided_ms,omitempty"`
 
 	// Exploration is recorded as what it is: a deliberate departure from the
 	// ranking, naming the leg that was passed over. Without PassedOver an

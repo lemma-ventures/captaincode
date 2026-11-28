@@ -292,7 +292,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 		req.ws.Steer.Describe(wk.Leg, wk.Brief) // a /btw is routed by the briefs (brain_btw.go)
 		shelf := b.stockShelf(req.ws, task)     // M3.9: one worker, the user's own directory
 		defer shelf.Remove()
-		taskID := b.openTask(task)
+		taskID := b.openTaskAt(req.ws.Dir, task)
 		w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
 		b.noteTurnTask(req.turn, taskID)
 		leg, res, err := b.runWorker(req.ws, wk.Leg, b.teamWorkerPrompt(req.ws, prompt, wk.Brief, wk.Leg, taskID), nil, feed.note)
@@ -326,7 +326,7 @@ func (b *brain) teamChat(w http.ResponseWriter, req oaiChatReq, prompt string) {
 	// One turn, one task: the workers are ATTEMPTS under a fan-out stage, not
 	// one task each. The identity adopts what routing already spent on the
 	// plan that chose this team (ROADMAP M1.2).
-	taskID := b.openTask(task)
+	taskID := b.openTaskAt(req.ws.Dir, task)
 	req.ws.Steer.SetTask(taskID)                // a note's shadow joins this task's outcome (brain_shadow.go)
 	w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
 	b.noteTurnTask(req.turn, taskID)
@@ -624,8 +624,8 @@ func (b *brain) frontierChat(w http.ResponseWriter, req oaiChatReq, prompt strin
 	// 17-minute run would outlive a parked decision.
 	taskID := ""
 	if task := lastUserTurn(prompt); !req.internal {
-		b.recordDecision(task, frontierDecision(task, pick))
-		taskID = b.openTask(task)
+		b.recordDecisionAt(req.ws.Dir, task, frontierDecision(task, pick))
+		taskID = b.openTaskAt(req.ws.Dir, task)
 		if taskID != "" { // Q13: the session's outcome words act on it
 			w.Header().Set("X-Captain-Task-ID", taskID)
 			b.noteTurnTask(req.turn, taskID)

@@ -482,7 +482,7 @@ func (b *brain) runWorkflow(w http.ResponseWriter, req oaiChatReq, prompt string
 	// One workflow turn is ONE task: its stages are stage rows and its workers
 	// attempts beneath them, so a five-run pipeline no longer reads as five
 	// unrelated tasks in the bill (ROADMAP M1.2).
-	taskID := b.openTask(task)
+	taskID := b.openTaskAt(req.ws.Dir, task)
 	req.ws.Steer.SetTask(taskID)                // a note's shadow joins this task's outcome (brain_shadow.go)
 	w.Header().Set("X-Captain-Task-ID", taskID) // Q13: the session's outcome words act on it
 	b.noteTurnTask(req.turn, taskID)

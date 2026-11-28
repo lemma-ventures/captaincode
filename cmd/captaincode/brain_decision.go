@@ -31,17 +31,106 @@ type pendingDecision struct {
 	at  time.Time
 }
 
+// turnKey separates two checkouts that run the same prompt. An empty or
+// unsafe directory keeps the old text-only key, so a caller that has no
+// checkout still finds the decision it parked.
+func turnKey(dir, task string) string {
+	text := truncate(task, 120)
+	place := workspaceLabel(dir)
+	if place == "" {
+		return text
+	}
+	return place + "\n" + text
+}
+
+// workspaceLabel is a checkout path safe to store and to use as a map key.
+// It is not opened. A relative path, a parent step, a control character, or
+// a path over 4096 bytes is refused. A trailing slash, a "." component, and
+// a repeated slash do not make a second key.
+func workspaceLabel(dir string) string {
+	if strings.ContainsAny(dir, "\n\r\x00") {
+		return ""
+	}
+	dir = strings.Trim(dir, " \t")
+	if dir == "" || len(dir) > 4096 {
+		return ""
+	}
+	if !strings.HasPrefix(dir, "/") {
+		return ""
+	}
+	clean := make([]string, 0, strings.Count(dir, "/"))
+	for _, part := range strings.Split(dir, "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		if part == ".." {
+			return ""
+		}
+		clean = append(clean, part)
+	}
+	if len(clean) == 0 {
+		return ""
+	}
+	out := "/" + strings.Join(clean, "/")
+	if len(out) > 4096 {
+		return ""
+	}
+	return out
+}
+
+// takePending removes the parked decision for this checkout. A caller that
+// names no checkout takes the one text-only record, or the single checkout
+// record for that prompt. Two checkout records stay put: neither is the
+// caller's.
+func (b *brain) takePending(dir, task string) (pendingDecision, bool) {
+	text := truncate(task, 120)
+	exact := turnKey(dir, task)
+	b.rtmu.Lock()
+	defer b.rtmu.Unlock()
+	if p, ok := b.pendingDecisions[exact]; ok {
+		delete(b.pendingDecisions, exact)
+		return p, true
+	}
+	if workspaceLabel(dir) != "" {
+		return pendingDecision{}, false
+	}
+	suffix := "\n" + text
+	found := ""
+	var got pendingDecision
+	n := 0
+	for key, pending := range b.pendingDecisions {
+		if key == text || strings.HasSuffix(key, suffix) {
+			n++
+			found = key
+			got = pending
+		}
+	}
+	if n != 1 {
+		return pendingDecision{}, false
+	}
+	delete(b.pendingDecisions, found)
+	return got, true
+}
+
 // decisionTTL bounds the wait for the same reason routeTurnTTL does: the
 // wrapper turn follows its route within seconds, and adopting an older
 // decision would explain this turn with the last one's ranking.
 const decisionTTL = routeTurnTTL
 
-// recordDecision parks the evidence behind a routing choice. Keyed by the same
-// truncated task text the route-time identity and the exploration tag use, so
-// all three resolve from the wrapper's flattened prompt.
+// recordDecision parks the evidence behind a routing choice. Keyed by the
+// truncated task text, so a caller with no checkout still resolves it.
 func (b *brain) recordDecision(task string, d captaincode.Decision) {
+	b.recordDecisionAt("", task, d)
+}
+
+// recordDecisionAt parks one decision for one checkout. The same prompt in
+// another checkout keeps its own record.
+func (b *brain) recordDecisionAt(dir, task string, d captaincode.Decision) {
 	d.Task = truncate(task, 120)
 	d.At = time.Now()
+	if place := workspaceLabel(dir); place != "" {
+		d.Workspace = place
+	}
 	if d.Propensities == nil && d.Chosen != "" {
 		d.Propensities = map[captaincode.Leg]float64{d.Chosen: 1} // a deterministic pick
 	}
@@ -55,7 +144,7 @@ func (b *brain) recordDecision(task string, d captaincode.Decision) {
 			delete(b.pendingDecisions, k)
 		}
 	}
-	b.pendingDecisions[d.Task] = pendingDecision{dec: d, at: time.Now()}
+	b.pendingDecisions[turnKey(dir, task)] = pendingDecision{dec: d, at: time.Now()}
 }
 
 // stampTriage puts the triage verdict on the record: who settled the class,
@@ -72,14 +161,19 @@ func stampTriage(d *captaincode.Decision, tr captaincode.TriageResult) {
 // stampPendingEffort writes the effort decideRoute settled onto the parked
 // decision, which was recorded by decideLeg before the effort existed.
 func (b *brain) stampPendingEffort(task string, e captaincode.Effort) {
+	b.stampPendingEffortAt("", task, e)
+}
+
+func (b *brain) stampPendingEffortAt(dir, task string, e captaincode.Effort) {
 	if e == "" {
 		return
 	}
 	b.rtmu.Lock()
 	defer b.rtmu.Unlock()
-	if p, ok := b.pendingDecisions[truncate(task, 120)]; ok {
+	key := turnKey(dir, task)
+	if p, ok := b.pendingDecisions[key]; ok {
 		p.dec.Effort = e
-		b.pendingDecisions[truncate(task, 120)] = p
+		b.pendingDecisions[key] = p
 	}
 }
 
@@ -192,11 +286,11 @@ func (b *brain) recordFollowUpLocked(taskID, text string) {
 // re-attaching this one would credit it with a ranking it never ran.
 // Caller holds b.mu; rtmu is taken inside, matching adoptRouteTurn's order.
 func (b *brain) attachDecision(taskID, task string) {
-	key := truncate(task, 120)
-	b.rtmu.Lock()
-	p, ok := b.pendingDecisions[key]
-	delete(b.pendingDecisions, key)
-	b.rtmu.Unlock()
+	b.attachDecisionAt("", taskID, task)
+}
+
+func (b *brain) attachDecisionAt(dir, taskID, task string) {
+	p, ok := b.takePending(dir, task)
 	if !ok || time.Since(p.at) > decisionTTL {
 		return
 	}

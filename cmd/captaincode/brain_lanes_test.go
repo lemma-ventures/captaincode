@@ -250,7 +250,7 @@ func TestSaveLaneRunsOpenWeightsAtTheirQualityTier(t *testing.T) {
 
 	resp := routeBody(t, b, "refactor the lexer, /save tokens", nil)
 	assert.Contains(t, resp["rationale"], "cheap lane:", "a mid-prompt /save is the same lane")
-	p := b.pendingDecisions[truncate("refactor the lexer, /save tokens", 120)]
+	p := parkedDecision(t, b, "refactor the lexer, /save tokens")
 	assert.Equal(t, captaincode.PathLane, p.dec.Path, "the record says the lane settled it")
 }
 
@@ -294,7 +294,7 @@ func TestQualityLaneSpreadsOverTheTopLegs(t *testing.T) {
 	// 2026-10-02: a menu of two sent 68 of 72 turns to claude and grok-max.
 	assert.GreaterOrEqual(t, len(seen), 3, "the top legs share the lane, not just two: %v", seen)
 	assert.Equal(t, 2, open, "open weights take the mix's default 20%%: %v", seen)
-	p := b.pendingDecisions[truncate("refactor the lexer", 120)]
+	p := parkedDecision(t, b, "refactor the lexer")
 	assert.Equal(t, captaincode.PathLane, p.dec.Path)
 
 	resp := routeBody(t, b, "/q refactor the lexer", nil)
@@ -460,4 +460,23 @@ func TestSpeedLanePicksTheFastestMeasuredLeg(t *testing.T) {
 	assert.Equal(t, "low", resp["effort"])
 	resp = routeBody(t, b, "/speed fix the typo in the README", nil)
 	assert.Equal(t, "free", resp["leg"], "…also as a word in the prompt")
+}
+
+// parkedDecision reads the one decision parked for task. The route request
+// names a checkout, so the key carries that checkout before the text.
+func parkedDecision(t *testing.T, b *brain, task string) pendingDecision {
+	t.Helper()
+	text := truncate(task, 120)
+	b.rtmu.Lock()
+	defer b.rtmu.Unlock()
+	var got pendingDecision
+	n := 0
+	for key, pending := range b.pendingDecisions {
+		if key == text || strings.HasSuffix(key, "\n"+text) {
+			got = pending
+			n++
+		}
+	}
+	require.Equal(t, 1, n, "one parked decision for %q", task)
+	return got
 }

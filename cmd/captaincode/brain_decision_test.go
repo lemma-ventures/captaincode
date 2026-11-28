@@ -226,3 +226,69 @@ func TestDecisionsRecordPickProbabilities(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, map[captaincode.Leg]float64{captaincode.LegGLM: 1}, d.Propensities, "a deterministic pick")
 }
+
+// Two checkouts can run the same prompt at once. Each keeps the ranking
+// that was made for it.
+func TestSamePromptKeepsOneDecisionPerCheckout(t *testing.T) {
+	b := teamBrain()
+	oak := t.TempDir() + "/oak"
+	elm := t.TempDir() + "/elm"
+	task := "define what should be the next items to work on"
+	b.recordDecisionAt(oak, task, captaincode.Decision{Chosen: captaincode.LegClaude, Path: captaincode.PathValue})
+	b.recordDecisionAt(elm, task, captaincode.Decision{Chosen: captaincode.LegCodex, Path: captaincode.PathValue})
+	oakID := b.openTaskAt(oak, task)
+	elmID := b.openTaskAt(elm, task)
+	require.NotEqual(t, oakID, elmID)
+	oakDec, ok := b.ledger.DecisionFor(oakID)
+	require.True(t, ok)
+	elmDec, ok := b.ledger.DecisionFor(elmID)
+	require.True(t, ok)
+	assert.Equal(t, captaincode.LegClaude, oakDec.Chosen)
+	assert.Equal(t, captaincode.LegCodex, elmDec.Chosen)
+	assert.Equal(t, oak, oakDec.Workspace)
+	assert.Equal(t, elm, elmDec.Workspace)
+	_, ok = b.ledger.DecisionFor(b.openTaskAt(oak, task))
+	assert.False(t, ok, "the oak decision was already used")
+}
+
+func TestWorkspaceLabelRefusesParentAndRelative(t *testing.T) {
+	assert.Equal(t, "", workspaceLabel("oak"))
+	assert.Equal(t, "", workspaceLabel("/tmp/../etc"))
+	assert.Equal(t, "", workspaceLabel("/tmp/oak\n"))
+	assert.Equal(t, "", workspaceLabel("/"))
+	assert.Equal(t, "/tmp/oak", workspaceLabel("  /tmp/oak  "))
+	assert.Equal(t, "/tmp/oak", workspaceLabel("/tmp/oak/"))
+	assert.Equal(t, "/tmp/oak", workspaceLabel("/tmp//oak/."))
+}
+
+// The same directory is one checkout. A trailing slash is not a second
+// ranking, and a different directory with the same last component is not
+// this one.
+func TestCheckoutSpellingSharesOneDecision(t *testing.T) {
+	b := teamBrain()
+	task := "define what should be the next items to work on"
+	b.recordDecisionAt("/checkouts/oak/", task, captaincode.Decision{Chosen: captaincode.LegClaude, Path: captaincode.PathValue})
+	b.recordDecisionAt("/other/oak", task, captaincode.Decision{Chosen: captaincode.LegCodex, Path: captaincode.PathValue})
+	oakID := b.openTaskAt("/checkouts//oak/.", task)
+	otherID := b.openTaskAt("/other/oak/", task)
+	require.NotEqual(t, oakID, otherID)
+	oakDec, ok := b.ledger.DecisionFor(oakID)
+	require.True(t, ok)
+	otherDec, ok := b.ledger.DecisionFor(otherID)
+	require.True(t, ok)
+	assert.Equal(t, captaincode.LegClaude, oakDec.Chosen)
+	assert.Equal(t, "/checkouts/oak", oakDec.Workspace)
+	assert.Equal(t, captaincode.LegCodex, otherDec.Chosen)
+	assert.Equal(t, "/other/oak", otherDec.Workspace)
+}
+
+func BenchmarkTurnKey(b *testing.B) {
+	dir := "/checkouts/oak"
+	task := "define what should be the next items to work on based on previous rounds"
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if turnKey(dir, task) == "" {
+			b.Fatal("empty key")
+		}
+	}
+}

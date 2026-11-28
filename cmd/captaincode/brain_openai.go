@@ -878,7 +878,7 @@ func (b *brain) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	taskID := ""
 	if !titleReq && !internal {
 		b.noteFollowUp(req.ws.Dir, lastUserTurn(prompt), lastUserRaw(req.Messages))
-		taskID = b.openTask(lastUserTurn(prompt))
+		taskID = b.openTaskAt(req.ws.Dir, lastUserTurn(prompt))
 		b.noteVerifyBase(taskID, req.ws.Dir)
 		// Q13: the session's outcome words and the sidebar act on this task.
 		if taskID != "" {

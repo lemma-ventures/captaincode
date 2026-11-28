@@ -1156,13 +1156,24 @@ func (b *brain) chargeUnder(taskID, parent string, leg captaincode.Leg, label st
 // prompt. It adopts what routing minted (so the plan that chose the team is
 // billed to the team's own task) or mints the task row itself.
 func (b *brain) openTask(task string) string {
+	return b.openTaskAt("", task)
+}
+
+// openTaskAt opens the task for one checkout. The same prompt in another
+// checkout does not take this decision.
+func (b *brain) openTaskAt(dir, task string) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.openTaskLocked(task)
+	return b.openTaskLockedAt(dir, task)
 }
 
 // openTaskLocked is openTask with b.mu already held.
 func (b *brain) openTaskLocked(task string) string {
+	return b.openTaskLockedAt("", task)
+}
+
+// openTaskLockedAt is openTaskAt with b.mu already held.
+func (b *brain) openTaskLockedAt(dir, task string) string {
 	taskID, adopted := b.adoptRouteTurn(task)
 	if !adopted {
 		taskID = captaincode.NewChargeID(captaincode.KindTask)
@@ -1171,7 +1182,7 @@ func (b *brain) openTaskLocked(task string) string {
 	// This is the one point every turn passes through with its identity
 	// settled, so it is where the routing evidence stops being pending and
 	// becomes a record joined to the charges below it (ROADMAP M2.1).
-	b.attachDecision(taskID, task)
+	b.attachDecisionAt(dir, taskID, task)
 	// Open the shared resource envelope: every provider call this turn makes
 	// — worker, reroute, gate repair, narration nudge, director, review —
 	// draws from one budget (ROADMAP M2.4).
@@ -2219,7 +2230,7 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 	// run, so the scoring call - a real provider call against real quota -
 	// is billed to the task that caused it instead of vanishing (M1.2).
 	b.mu.Lock()
-	ev.TaskID, ev.AttemptID = b.chargeTurn(taskID, leg, task, usage, res.DurationMs, res.Nudged, label)
+	ev.TaskID, ev.AttemptID = b.chargeTurnAt(wsDir, taskID, leg, task, usage, res.DurationMs, res.Nudged, label)
 	// The class that ROUTED, and who settled it: read off the decision the
 	// identity just attached (stage 1). Without this the scorecards learned
 	// per-class quality under the old keyword classifier's class.
@@ -2347,10 +2358,14 @@ func (b *brain) recordRunAt(leg captaincode.Leg, prompt string, res captaincode.
 // through. Only the call row carries money - the task and attempt rows exist
 // so a later charge can find its parent. Caller holds b.mu.
 func (b *brain) chargeTurn(taskID string, leg captaincode.Leg, task string, usage captaincode.Usage, durationMs int64, nudged bool, label string) (string, string) {
+	return b.chargeTurnAt("", taskID, leg, task, usage, durationMs, nudged, label)
+}
+
+func (b *brain) chargeTurnAt(dir, taskID string, leg captaincode.Leg, task string, usage captaincode.Usage, durationMs int64, nudged bool, label string) (string, string) {
 	if taskID == "" {
-		taskID = b.openTaskLocked(task)
+		taskID = b.openTaskLockedAt(dir, task)
 	} else {
-		b.attachDecision(taskID, task) // the decision parked at route time joins the identity the run opened
+		b.attachDecisionAt(dir, taskID, task) // the decision parked at route time joins the identity the run opened
 	}
 	if label == "" {
 		label = "worker"
@@ -2669,7 +2684,7 @@ func (b *brain) decideRoute(req routeReq) (routeResp, *routeFail) {
 	if resp.Effort == "" || prefer != "" {
 		resp.Effort = string(captaincode.DecideEffort(prefer, captaincode.Class(resp.Class), captaincode.Leg(resp.Leg), tr.Irreversible, 1))
 	}
-	b.stampPendingEffort(req.Task, captaincode.Effort(resp.Effort))
+	b.stampPendingEffortAt(req.ws.Dir, req.Task, captaincode.Effort(resp.Effort))
 	return resp, nil
 }
 
@@ -2924,7 +2939,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				stampTriage(&dec, tr)
 				stampShadow(&dec, shadow, classBy)
 				b.recordOpenShadow(req.Task, dec, openCh, classBy)
-				b.recordDecision(req.Task, dec)
+				b.recordDecisionAt(req.ws.Dir, req.Task, dec)
 				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Rationale: rationale, At: time.Now().Format("15:04:05")}
 				fmt.Printf("captain brain: routed %q → class=%s leg=%s in %dms [triage %s]\n", b.last.Task, tr.Class, leg, totalMs, tr.Why)
 				b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: captaincode.ModelIDAt(leg, effort), Effort: string(effort), Text: rationale, Ms: totalMs})
@@ -3169,7 +3184,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 				stampTriage(&dec, *out)
 				stampShadow(&dec, shadow, classBy)
 				b.recordOpenShadow(req.Task, dec, openCh, classBy)
-				b.recordDecision(req.Task, dec)
+				b.recordDecisionAt(req.ws.Dir, req.Task, dec)
 				b.last = &lastRoute{Task: truncate(req.Task, 72), Leg: "team", Model: "team",
 					Rationale: rationale, At: time.Now().Format("15:04:05")}
 				fmt.Printf("captain brain: routed %q → class=%s leg=team (%d workers) in %dms [director %dms] - %s\n",
@@ -3255,7 +3270,7 @@ func (b *brain) decideLegWith(req routeReq, out *captaincode.TriageResult) (rout
 		dec.TimePick, dec.Propensities, dec.Explored = onPick, onPick.Propensities, onPick.Explored
 	}
 	b.recordOpenShadow(req.Task, dec, openCh, classBy)
-	b.recordDecision(req.Task, dec)
+	b.recordDecisionAt(req.ws.Dir, req.Task, dec)
 	fmt.Printf("captain brain: routed %q → class=%s leg=%s (%s) in %dms [director %dms] - %s\n",
 		b.last.Task, class, leg, model, totalMs, directorMs, rationale)
 	b.pushActivity(activity{Dir: req.ws.Dir, Kind: "route", Leg: string(leg), Model: model, Effort: string(req.ws.Effort), Text: rationale, Ms: totalMs})
