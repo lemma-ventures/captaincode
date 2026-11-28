@@ -17,11 +17,18 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 		result.Status = "error"
 		result.Errors = []string{"invalid_action"}
 	}
-	actionIncomplete := action.Kind == "unknown" || action.ParseStatus != "parsed" || action.Truncated
+	// A text cap drops the tail of a file edit. The path and package
+	// checks still have their own targets, so that gap does not make
+	// those checks incomplete. Any other truncation does.
+	textLimited := blackboxTextLimited(action)
+	actionIncomplete := action.Kind == "unknown" || action.ParseStatus != "parsed" || (action.Truncated && !textLimited)
 	shellIncomplete := false
 	for _, field := range action.OmittedFields {
 		if blackboxShellGapNames[field] {
 			shellIncomplete = true
+			continue
+		}
+		if field == "text_limit" {
 			continue
 		}
 		actionIncomplete = true
@@ -35,7 +42,7 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 		} else if category != "secret_exposure" && blackboxSnapshotRuleCount(snapshot, category) == 0 {
 			coverage.Status = "incomplete"
 			coverage.Reason = "no_rules"
-		} else if actionIncomplete || (shellIncomplete && category == "dependency") {
+		} else if blackboxCategoryInputMissing(category, actionIncomplete, shellIncomplete, textLimited) {
 			coverage.Status = "incomplete"
 			coverage.Reason = "action_input_incomplete"
 		}
@@ -131,6 +138,42 @@ func EvaluateBlackbox(ctx context.Context, action BlackboxAction, snapshot Black
 		result.Errors = append(result.Errors, "finding_limit")
 	}
 	return result
+}
+
+// blackboxTextLimited reports a truncation that cut only screened text.
+// The path list and the package list are complete. A second gap, an
+// unknown tool, or an unparsed action is not this case.
+func blackboxTextLimited(action BlackboxAction) bool {
+	if !action.Truncated || action.Kind == "unknown" || action.ParseStatus != "parsed" {
+		return false
+	}
+	sawText := false
+	for _, field := range action.OmittedFields {
+		if field == "text_limit" {
+			sawText = true
+			continue
+		}
+		if blackboxShellGapNames[field] {
+			continue
+		}
+		return false
+	}
+	return sawText
+}
+
+// blackboxCategoryInputMissing reports that one category did not see the
+// input it screens. Text loss affects secret and pattern checks. A shell
+// tokenization gap affects the package check. An action-wide gap affects
+// every category.
+func blackboxCategoryInputMissing(category string, actionIncomplete, shellIncomplete, textLimited bool) bool {
+	switch category {
+	case "secret_exposure", "pattern":
+		return actionIncomplete || textLimited
+	case "dependency":
+		return actionIncomplete || shellIncomplete
+	default:
+		return actionIncomplete
+	}
 }
 
 func blackboxPathMatch(pattern, target string) bool {

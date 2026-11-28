@@ -43,13 +43,15 @@ func NormalizeBlackboxAction(host, phase, tool string, raw json.RawMessage) (Bla
 		blackboxParseShell(&action, gaps)
 	}
 	// A shell gap names a tokenization the package extractor does not
-	// support; the action input itself parsed. Only an action-wide gap
-	// leaves the action unsupported.
+	// support. A text cap names a tail the secret and pattern checks
+	// did not read. The action input itself parsed. Only an action-wide
+	// gap leaves the action unsupported.
 	for gap := range gaps {
-		if !blackboxShellGapNames[gap] {
-			action.ParseStatus = "unsupported"
-			break
+		if blackboxShellGapNames[gap] || gap == "text_limit" {
+			continue
 		}
+		action.ParseStatus = "unsupported"
+		break
 	}
 	action.OmittedFields = sortedBlackboxGaps(gaps)
 	return action, action.OmittedFields

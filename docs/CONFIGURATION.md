@@ -262,7 +262,10 @@ will actually run - independent of the action gate, the routing plugin and
 `CAPTAIN_BLACKBOX=enforce` additionally refuses an action before it runs when
 an exact package or explicit path rule matches at critical severity, and
 refuses with `security_check_unavailable` when a required check cannot run.
-Pattern, secret and heuristic findings stay advisory. Operator overrides live
+A file edit whose arguments exceed 256 KiB still runs the path check on the
+complete path list. The secret and pattern checks record that tail as
+incomplete, and that record does not refuse the edit. Pattern, secret and
+heuristic findings stay advisory. Operator overrides live
 in `~/.config/captain/blackbox-overrides.json` (`CAPTAIN_BLACKBOX_OVERRIDES`
 moves it): one rule, one workspace, one expiry of at most 24 hours, and a
 reason; mode 0600, no symlinks, and a file that cannot be trusted grants

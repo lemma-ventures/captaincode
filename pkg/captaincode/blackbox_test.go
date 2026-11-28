@@ -161,6 +161,68 @@ func TestBlackboxNormalizeKeepsParsedForShellGaps(t *testing.T) {
 	}
 }
 
+func TestBlackboxTextLimitKeepsThePathCheck(t *testing.T) {
+	body := `{"path":"notes/readme.md","new_string":"` + strings.Repeat("a", blackboxMaxText) + `"}`
+	action, gaps := NormalizeBlackboxAction("claude", "pre", "write", json.RawMessage(body))
+	if action.ParseStatus != "parsed" || !action.Truncated {
+		t.Fatalf("action parse = %s truncated = %v", action.ParseStatus, action.Truncated)
+	}
+	if len(action.Paths) != 1 || action.Paths[0] != "notes/readme.md" {
+		t.Fatalf("paths = %v", action.Paths)
+	}
+	if len(gaps) != 1 || gaps[0] != "text_limit" {
+		t.Fatalf("gaps = %v", gaps)
+	}
+	result := EvaluateBlackbox(context.Background(), action, blackboxFixtureSnapshot())
+	if result.Status != "incomplete" {
+		t.Fatalf("status = %s", result.Status)
+	}
+	for _, coverage := range result.Coverage {
+		switch coverage.Category {
+		case "protected_path", "dependency":
+			if coverage.Status != "covered" {
+				t.Fatalf("%s coverage = %+v", coverage.Category, coverage)
+			}
+		case "secret_exposure", "pattern":
+			if coverage.Status != "incomplete" || coverage.Reason != "action_input_incomplete" {
+				t.Fatalf("%s coverage = %+v", coverage.Category, coverage)
+			}
+		}
+	}
+	decision := DecideBlackboxEnforcement("pre", result, nil, "ws_0123456789abcdef", time.Now())
+	if decision.Refuse {
+		t.Fatalf("decision = %+v", decision)
+	}
+
+	matched := `{"path":"config/private/nested/token.json","new_string":"` + strings.Repeat("b", blackboxMaxText) + `"}`
+	hit, _ := NormalizeBlackboxAction("claude", "pre", "write", json.RawMessage(matched))
+	screened := EvaluateBlackbox(context.Background(), hit, blackboxFixtureSnapshot())
+	found := false
+	for _, finding := range screened.Findings {
+		if finding.RuleID == "path-exact" && finding.Severity == "critical" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("findings = %+v", screened.Findings)
+	}
+	blocked := DecideBlackboxEnforcement("pre", screened, nil, "ws_0123456789abcdef", time.Now())
+	if !blocked.Refuse || blocked.Reason != "blackbox_rule_match:path-exact" {
+		t.Fatalf("decision = %+v", blocked)
+	}
+}
+
+func BenchmarkBlackboxTextLimitPathCheck(b *testing.B) {
+	body := json.RawMessage(`{"path":"notes/readme.md","new_string":"` + strings.Repeat("a", blackboxMaxText) + `"}`)
+	snapshot := blackboxFixtureSnapshot()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		action, _ := NormalizeBlackboxAction("claude", "pre", "write", body)
+		EvaluateBlackbox(context.Background(), action, snapshot)
+	}
+}
+
 func TestBlackboxIncompleteInputIsNotClean(t *testing.T) {
 	for _, action := range []BlackboxAction{
 		{Schema: 1, Tool: "unknown", Kind: "unknown", Phase: "pre", ParseStatus: "parsed"},
